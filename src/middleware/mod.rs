@@ -1,11 +1,13 @@
 //! Middleware: cross cutting HTTP concerns.
 
+pub mod auth;
+pub mod csrf;
 pub mod security;
 
 use std::net::{IpAddr, SocketAddr};
 
 use axum::extract::{ConnectInfo, Request};
-use axum::http::{header, HeaderValue};
+use axum::http::{Extensions, HeaderMap, HeaderValue};
 use axum::middleware::Next;
 use axum::response::Response;
 
@@ -15,10 +17,14 @@ use crate::services::secret;
 /// Best effort client address. Proxy headers are only honoured when
 /// `UWURLS_TRUST_PROXY` is enabled, so a spoofed header cannot bypass the
 /// rate limiter in a direct-exposure deployment.
-pub fn client_ip(request: &Request, config: &Config) -> Option<IpAddr> {
+pub fn client_ip_parts(
+    headers: &HeaderMap,
+    extensions: &Extensions,
+    config: &Config,
+) -> Option<IpAddr> {
     if config.trust_proxy {
         for name in ["x-forwarded-for", "x-real-ip"] {
-            if let Some(value) = request.headers().get(name).and_then(|v| v.to_str().ok()) {
+            if let Some(value) = headers.get(name).and_then(|v| v.to_str().ok()) {
                 if let Some(first) = value.split(',').next() {
                     if let Ok(ip) = first.trim().parse::<IpAddr>() {
                         return Some(ip);
@@ -27,16 +33,21 @@ pub fn client_ip(request: &Request, config: &Config) -> Option<IpAddr> {
             }
         }
     }
-    request.extensions().get::<ConnectInfo<SocketAddr>>().map(|info| info.0.ip())
+    extensions.get::<ConnectInfo<SocketAddr>>().map(|info| info.0.ip())
+}
+
+/// [`client_ip_parts`] for a whole request.
+pub fn client_ip(request: &Request, config: &Config) -> Option<IpAddr> {
+    client_ip_parts(request.headers(), request.extensions(), config)
 }
 
 /// True when the request was made over TLS (directly or via a trusted proxy).
-pub fn is_secure_request(request: &Request, config: &Config) -> bool {
+pub fn is_secure_request(headers: &HeaderMap, config: &Config) -> bool {
     if config.is_https() {
         return true;
     }
     if config.trust_proxy {
-        if let Some(proto) = request.headers().get("x-forwarded-proto").and_then(|v| v.to_str().ok()) {
+        if let Some(proto) = headers.get("x-forwarded-proto").and_then(|v| v.to_str().ok()) {
             return proto.split(',').next().unwrap_or_default().trim() == "https";
         }
     }
@@ -44,8 +55,18 @@ pub fn is_secure_request(request: &Request, config: &Config) -> bool {
 }
 
 /// Anonymised client identity, safe to store and to log.
+pub fn hashed_client_ip_parts(
+    headers: &HeaderMap,
+    extensions: &Extensions,
+    config: &Config,
+) -> Option<String> {
+    client_ip_parts(headers, extensions, config)
+        .map(|ip| secret::hmac_hex(&config.secret, &ip.to_string()))
+}
+
+/// [`hashed_client_ip_parts`] for a whole request.
 pub fn hashed_client_ip(request: &Request, config: &Config) -> Option<String> {
-    client_ip(request, config).map(|ip| secret::hmac_hex(&config.secret, &ip.to_string()))
+    hashed_client_ip_parts(request.headers(), request.extensions(), config)
 }
 
 /// Assign a request id, emit one structured access log line per request.
@@ -76,11 +97,6 @@ pub async fn request_id(mut request: Request, next: Next) -> Response {
 /// Request id, injected by [`request_id`].
 #[derive(Debug, Clone)]
 pub struct RequestId(pub String);
-
-/// `Set-Cookie` helper used by the session and unlock flows.
-pub fn set_cookie_header(value: String) -> (header::HeaderName, HeaderValue) {
-    (header::SET_COOKIE, HeaderValue::from_str(&value).unwrap_or_else(|_| HeaderValue::from_static("")))
-}
 
 #[cfg(test)]
 mod tests {
@@ -122,13 +138,9 @@ mod tests {
     #[test]
     fn detects_secure_request_from_proxy() {
         let config = test_config(true);
-        let request = HttpRequest::builder()
-            .header("x-forwarded-proto", "https")
-            .body(Body::empty())
-            .expect("request");
-        assert!(is_secure_request(&request, &config));
-
-        let plain = HttpRequest::builder().body(Body::empty()).expect("request");
-        assert!(!is_secure_request(&plain, &test_config(false)));
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+        assert!(is_secure_request(&headers, &config));
+        assert!(!is_secure_request(&HeaderMap::new(), &test_config(false)));
     }
 }

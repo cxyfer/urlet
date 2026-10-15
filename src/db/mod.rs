@@ -3,8 +3,15 @@
 //! All SQL lives in this module tree; services and routes never build queries
 //! inline. Queries use the runtime API (no compile time `DATABASE_URL` needed).
 
+pub mod audit;
 pub mod domains;
+pub mod invites;
+pub mod login_attempts;
 pub mod migrate;
+pub mod sessions;
+pub mod settings;
+pub mod tokens;
+pub mod users;
 
 use std::str::FromStr;
 use std::time::Duration;

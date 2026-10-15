@@ -238,6 +238,12 @@ impl From<AppError> for ApiError {
     }
 }
 
+impl From<ApiError> for AppError {
+    fn from(error: ApiError) -> Self {
+        error.0
+    }
+}
+
 impl From<sqlx::Error> for ApiError {
     fn from(error: sqlx::Error) -> Self {
         Self(AppError::from(error))

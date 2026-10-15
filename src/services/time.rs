@@ -67,6 +67,11 @@ pub fn iso_days_ago(days: i64) -> String {
     to_iso(now() - Duration::days(days))
 }
 
+/// `now - seconds`, formatted for storage.
+pub fn iso_seconds_ago(seconds: i64) -> String {
+    to_iso(now() - Duration::seconds(seconds))
+}
+
 /// First instant of the UTC day `days` ago (inclusive lower bound for charts).
 pub fn day_start_days_ago(days: i64) -> String {
     let start = (now() - Duration::days(days))
