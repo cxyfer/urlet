@@ -1,0 +1,23 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Local runtime data
+/data
+*.db
+*.db-wal
+*.db-shm
+secret.key
+
+# Environment
+.env
+.env.local
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Tooling
+.omx/
