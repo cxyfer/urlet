@@ -1,0 +1,69 @@
+# uwurls — single container deployment (SQLite, no external services).
+#
+#   cp .env.example .env   # then edit it
+#   docker compose up -d --build
+#
+# Optional TLS overlay (Caddy + automatic HTTPS):
+#   UWURLS_DOMAIN=s.example.com docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
+
+name: uwurls
+
+services:
+  uwurls:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: uwurls:1.0.0
+    container_name: uwurls
+    restart: unless-stopped
+
+    ports:
+      # Host port is configurable; the container always listens on 8080.
+      - "${UWURLS_PORT:-8080}:8080"
+
+    environment:
+      UWURLS_BIND: 0.0.0.0:8080
+      UWURLS_BASE_URL: ${UWURLS_BASE_URL:-http://localhost:8080}
+      UWURLS_DATABASE_URL: "sqlite:///data/uwurls.db?mode=rwc"
+      UWURLS_DATA_DIR: /data
+      # Leave the secret empty to let the container generate one into the volume.
+      UWURLS_SECRET: ${UWURLS_SECRET:-}
+      UWURLS_ADMIN_EMAIL: ${UWURLS_ADMIN_EMAIL:-}
+      UWURLS_ADMIN_PASSWORD: ${UWURLS_ADMIN_PASSWORD:-}
+      UWURLS_REGISTRATION: ${UWURLS_REGISTRATION:-}
+      UWURLS_SECURE_COOKIES: ${UWURLS_SECURE_COOKIES:-false}
+      UWURLS_TRUST_PROXY: ${UWURLS_TRUST_PROXY:-false}
+      UWURLS_SESSION_TTL_HOURS: ${UWURLS_SESSION_TTL_HOURS:-168}
+      UWURLS_UNLOCK_TTL_MINUTES: ${UWURLS_UNLOCK_TTL_MINUTES:-30}
+      UWURLS_DEFAULT_SLUG_LENGTH: ${UWURLS_DEFAULT_SLUG_LENGTH:-}
+      UWURLS_LOG: ${UWURLS_LOG:-info}
+      UWURLS_LOG_FORMAT: ${UWURLS_LOG_FORMAT:-compact}
+
+    volumes:
+      - uwurls-data:/data
+
+    # Hardening: the process only ever writes to /data.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/uwurls", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  uwurls-data:
+    name: uwurls-data

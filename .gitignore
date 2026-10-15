@@ -21,3 +21,7 @@ secret.key
 
 # Tooling
 .omx/
+.cargo-home/
+
+# Scratch space
+.tmp/

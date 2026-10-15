@@ -1,0 +1,19 @@
+# Build context exclusions: keep the image build fast and reproducible.
+.git
+.gitignore
+.github
+target
+.cargo-home
+.tmp
+data
+docs
+scripts
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.local
+Dockerfile
+docker-compose*.yml
+README.md
+LICENSE

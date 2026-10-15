@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}{{ status_code }} — {{ title }}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 520px; margin: 8vh auto;">
+    <h1>{{ status_code }} — {{ title }}</h1>
+    <p class="muted">{{ message }}</p>
+    <div class="row">
+        <a class="btn" href="/app">Dashboard</a>
+        <a class="btn btn-ghost" href="/app/login">Sign in</a>
+    </div>
+</div>
+{% endblock %}

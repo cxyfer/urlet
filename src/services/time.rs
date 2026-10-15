@@ -1,0 +1,153 @@
+//! Time helpers.
+//!
+//! Every timestamp stored in the database is an ISO-8601 UTC string with a
+//! *fixed* width (`YYYY-MM-DDTHH:MM:SS.sssZ`). Fixed width matters: it makes
+//! lexicographic comparison in SQL identical to chronological comparison.
+
+use time::format_description::FormatItem;
+use time::macros::format_description;
+use time::{Duration, OffsetDateTime, PrimitiveDateTime, UtcOffset};
+
+/// The canonical on-disk timestamp format. The trailing `Z` is a literal, so
+/// parsing goes through [`PrimitiveDateTime`] and assumes UTC.
+pub const ISO: &[FormatItem<'static>] =
+    format_description!("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z");
+
+/// The canonical on-disk date format (daily rollups).
+pub const DAY: &[FormatItem<'static>] = format_description!("[year]-[month]-[day]");
+
+/// Current UTC time.
+pub fn now() -> OffsetDateTime {
+    OffsetDateTime::now_utc()
+}
+
+/// Format an instant for storage.
+pub fn to_iso(t: OffsetDateTime) -> String {
+    t.to_offset(UtcOffset::UTC)
+        .format(ISO)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00.000Z".to_string())
+}
+
+/// Current instant, formatted for storage.
+pub fn now_iso() -> String {
+    to_iso(now())
+}
+
+/// Parse a stored timestamp. Returns `None` for malformed input.
+pub fn parse_iso(s: &str) -> Option<OffsetDateTime> {
+    PrimitiveDateTime::parse(s, ISO).ok().map(PrimitiveDateTime::assume_utc)
+}
+
+/// Format a date-only value for daily rollups.
+pub fn to_day(t: OffsetDateTime) -> String {
+    t.format(DAY).unwrap_or_else(|_| "1970-01-01".to_string())
+}
+
+/// `true` when `timestamp` is strictly in the past.
+pub fn is_past(s: &str) -> bool {
+    match parse_iso(s) {
+        Some(t) => t < now(),
+        // A malformed expiry must not silently keep a link alive.
+        None => true,
+    }
+}
+
+/// `now + hours`, formatted for storage.
+pub fn iso_in_hours(hours: i64) -> String {
+    to_iso(now() + Duration::hours(hours))
+}
+
+/// `now + minutes`, formatted for storage.
+pub fn iso_in_minutes(minutes: i64) -> String {
+    to_iso(now() + Duration::minutes(minutes))
+}
+
+/// `now - days`, formatted for storage.
+pub fn iso_days_ago(days: i64) -> String {
+    to_iso(now() - Duration::days(days))
+}
+
+/// First instant of the UTC day `days` ago (inclusive lower bound for charts).
+pub fn day_start_days_ago(days: i64) -> String {
+    let start = (now() - Duration::days(days))
+        .replace_time(time::Time::MIDNIGHT);
+    to_iso(start)
+}
+
+/// Day string for `days` ago.
+pub fn day_days_ago(days: i64) -> String {
+    to_day(now() - Duration::days(days))
+}
+
+/// A human friendly relative description such as `in 3 days` / `2 hours ago`.
+pub fn humanize(timestamp: &str) -> String {
+    let Some(t) = parse_iso(timestamp) else {
+        return "unknown".to_string();
+    };
+    let delta = t - now();
+    let secs = delta.whole_seconds();
+    let abs = secs.abs();
+
+    // Thresholds are chosen so that rounding never produces "60 minutes".
+    let (unit, unit_secs) = if abs < 60 {
+        ("second", 1)
+    } else if abs < 3_570 {
+        ("minute", 60)
+    } else if abs < 82_800 {
+        ("hour", 3_600)
+    } else if abs < 3_888_000 {
+        ("day", 86_400)
+    } else {
+        ("month", 2_592_000)
+    };
+
+    let mut value = (abs + unit_secs / 2) / unit_secs;
+    if unit_secs > 1 && value == 0 {
+        value = 1;
+    }
+    let plural = if value == 1 { "" } else { "s" };
+
+    if secs > 0 {
+        format!("in {value} {unit}{plural}")
+    } else {
+        format!("{value} {unit}{plural} ago")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iso_round_trip() {
+        let now = now();
+        let s = to_iso(now);
+        assert_eq!(s.len(), 24, "fixed width timestamp: {s}");
+        assert!(s.ends_with('Z'));
+        let parsed = parse_iso(&s).expect("parses back");
+        assert_eq!(parsed.unix_timestamp(), now.unix_timestamp());
+    }
+
+    #[test]
+    fn fixed_width_sorts_chronologically() {
+        let a = to_iso(now());
+        let b = to_iso(now() + Duration::milliseconds(1));
+        assert!(a < b, "{a} should sort before {b}");
+        let c = to_iso(now() + Duration::seconds(1));
+        assert!(b < c);
+    }
+
+    #[test]
+    fn malformed_expiry_is_treated_as_expired() {
+        assert!(is_past("not-a-date"));
+        assert!(is_past(&to_iso(now() - Duration::seconds(1))));
+        assert!(!is_past(&to_iso(now() + Duration::hours(1))));
+    }
+
+    #[test]
+    fn humanize_handles_both_directions() {
+        assert!(humanize(&iso_in_hours(2)).starts_with("in 2 hours"));
+        assert!(humanize(&iso_in_minutes(-5)).ends_with("ago"));
+        assert_eq!(humanize("garbage"), "unknown");
+    }
+}

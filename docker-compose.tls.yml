@@ -1,0 +1,50 @@
+# uwurls — optional TLS overlay.
+#
+# Adds Caddy in front of the app so certificates are obtained and renewed
+# automatically. Requires a public DNS record pointing at this host and
+# Docker Compose >= 2.24 (for the `!override` tag).
+#
+#   export UWURLS_DOMAIN=s.example.com
+#   docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
+
+name: uwurls
+
+services:
+  uwurls:
+    # Not published directly any more: Caddy proxies it over the compose network.
+    ports: !override []
+    environment:
+      UWURLS_BASE_URL: https://${UWURLS_DOMAIN:?set UWURLS_DOMAIN}
+      UWURLS_SECURE_COOKIES: "true"
+      UWURLS_TRUST_PROXY: "true"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: uwurls-caddy
+    restart: unless-stopped
+    depends_on:
+      uwurls:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      UWURLS_DOMAIN: ${UWURLS_DOMAIN:?set UWURLS_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy-data:
+    name: uwurls-caddy-data
+  caddy-config:
+    name: uwurls-caddy-config

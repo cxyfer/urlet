@@ -1,0 +1,23 @@
+# Caddyfile for the optional TLS overlay.
+#
+# Caddy obtains and renews a Let's Encrypt certificate for UWURLS_DOMAIN and
+# forwards everything to the uwurls container. The app is told to trust the
+# X-Forwarded-* headers through UWURLS_TRUST_PROXY=true.
+
+{$UWURLS_DOMAIN} {
+	encode zstd gzip
+
+	# Never log query strings or cookies at the edge.
+	log {
+		output stdout
+		format console
+	}
+
+	reverse_proxy uwurls:8080 {
+		header_up X-Real-IP {remote_host}
+	}
+
+	header {
+		-Server
+	}
+}

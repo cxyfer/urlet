@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ site_name }}{% endblock %}</title>
+    <link rel="stylesheet" href="/assets/app.css">
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+</head>
+<body>
+{% block topbar %}{% endblock %}
+{% block body %}
+<main class="wrap">
+    {% block content %}{% endblock %}
+</main>
+{% endblock %}
+<footer class="site">
+    {{ site_name }} — lightweight multi-user URL shortener
+</footer>
+<script src="/assets/app.js" defer></script>
+</body>
+</html>
