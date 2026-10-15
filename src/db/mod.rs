@@ -10,7 +10,9 @@ pub mod login_attempts;
 pub mod migrate;
 pub mod sessions;
 pub mod settings;
+pub mod tags;
 pub mod tokens;
+pub mod urls;
 pub mod users;
 
 use std::str::FromStr;

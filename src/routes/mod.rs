@@ -2,6 +2,8 @@
 
 pub mod api;
 pub mod api_auth;
+pub mod api_tags;
+pub mod api_urls;
 pub mod assets;
 pub mod dto;
 pub mod health;

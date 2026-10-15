@@ -1,0 +1,540 @@
+//! Short link business logic: validation, quota, slug allocation, tags, audit.
+
+use sqlx::SqlitePool;
+
+use crate::db::tags;
+use crate::db::urls::{self, NewUrl, Url, UrlUpdate, UrlState};
+use crate::db::users::User;
+use crate::error::{AppError, Result};
+use crate::services::audit::{action, target, Audit};
+use crate::services::settings::Settings;
+use crate::services::{password, slug, target as target_url, time};
+
+/// Maximum tags attached to one link.
+pub const MAX_TAGS: usize = 10;
+/// Maximum tag length.
+pub const MAX_TAG_LEN: usize = 32;
+/// Maximum title length.
+pub const MAX_TITLE_LEN: usize = 200;
+/// Maximum notes length.
+pub const MAX_NOTES_LEN: usize = 1000;
+/// How often slug allocation retries on a collision.
+const SLUG_RETRIES: usize = 6;
+
+/// Everything the link service needs from the request context.
+pub struct UrlContext<'a> {
+    pub pool: &'a SqlitePool,
+    pub settings: &'a Settings,
+    pub actor: &'a User,
+    pub ip_hash: Option<&'a str>,
+}
+
+/// Input for creating a short link.
+#[derive(Debug, Clone, Default)]
+pub struct CreateInput {
+    pub target_url: String,
+    pub slug: Option<String>,
+    pub title: Option<String>,
+    pub notes: Option<String>,
+    pub tags: Vec<String>,
+    pub password: Option<String>,
+    pub expires_at: Option<String>,
+    pub max_clicks: Option<i64>,
+    pub redirect_type: Option<i64>,
+}
+
+/// Input for a partial update. `None` leaves a field untouched; the inner
+/// `None` of a double option clears it.
+#[derive(Debug, Clone, Default)]
+pub struct UpdateInput {
+    pub target_url: Option<String>,
+    pub slug: Option<String>,
+    pub title: Option<Option<String>>,
+    pub notes: Option<Option<String>>,
+    pub tags: Option<Vec<String>>,
+    pub password: Option<Option<String>>,
+    pub expires_at: Option<Option<String>>,
+    pub max_clicks: Option<Option<i64>>,
+    pub redirect_type: Option<i64>,
+    pub status: Option<String>,
+}
+
+/// Validate a redirect type.
+pub fn validate_redirect_type(value: i64) -> Result<i64> {
+    match value {
+        301 | 302 | 307 | 308 => Ok(value),
+        _ => Err(AppError::validation("redirect_type", "redirect type must be 301, 302, 307 or 308")),
+    }
+}
+
+/// Validate an expiry timestamp and normalise it to the storage format.
+pub fn validate_expiry(raw: &str) -> Result<String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Err(AppError::validation("expires_at", "expiry must be a date or empty"));
+    }
+    let parsed = time::parse_flexible(raw).ok_or_else(|| {
+        AppError::validation("expires_at", "expiry must look like 2030-01-31T12:00:00Z")
+    })?;
+    if parsed <= time::now() {
+        return Err(AppError::validation("expires_at", "expiry must be in the future"));
+    }
+    Ok(time::to_iso(parsed))
+}
+
+/// Validate the click limit.
+pub fn validate_max_clicks(value: i64) -> Result<i64> {
+    if value < 1 {
+        return Err(AppError::validation("max_clicks", "the click limit must be at least 1"));
+    }
+    if value > 100_000_000 {
+        return Err(AppError::validation("max_clicks", "the click limit is too large"));
+    }
+    Ok(value)
+}
+
+/// Validate an optional title.
+pub fn validate_title(raw: &str) -> Result<Option<String>> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if trimmed.chars().count() > MAX_TITLE_LEN {
+        return Err(AppError::validation(
+            "title",
+            format!("the title must be at most {MAX_TITLE_LEN} characters"),
+        ));
+    }
+    if trimmed.chars().any(|c| c.is_control()) {
+        return Err(AppError::validation("title", "the title must not contain control characters"));
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
+/// Validate optional notes.
+pub fn validate_notes(raw: &str) -> Result<Option<String>> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if trimmed.chars().count() > MAX_NOTES_LEN {
+        return Err(AppError::validation(
+            "notes",
+            format!("notes must be at most {MAX_NOTES_LEN} characters"),
+        ));
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
+/// Normalise a tag list: trimmed, de-duplicated case-insensitively, bounded.
+pub fn normalize_tags(tags: &[String]) -> Result<Vec<String>> {
+    let mut seen: Vec<String> = Vec::new();
+    let mut result: Vec<String> = Vec::new();
+    for tag in tags {
+        let trimmed = tag.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.chars().count() > MAX_TAG_LEN {
+            return Err(AppError::validation(
+                "tags",
+                format!("each tag must be at most {MAX_TAG_LEN} characters"),
+            ));
+        }
+        if trimmed.chars().any(|c| c.is_control() || c == ',') {
+            return Err(AppError::validation("tags", "tags must not contain commas or control characters"));
+        }
+        let lowered = trimmed.to_lowercase();
+        if seen.contains(&lowered) {
+            continue;
+        }
+        seen.push(lowered);
+        result.push(trimmed.to_string());
+    }
+    if result.len() > MAX_TAGS {
+        return Err(AppError::validation(
+            "tags",
+            format!("a link can carry at most {MAX_TAGS} tags"),
+        ));
+    }
+    Ok(result)
+}
+
+/// Validate an optional link password. `Ok(None)` means "no password".
+pub fn prepare_password(raw: Option<&str>) -> Result<Option<String>> {
+    match raw.map(str::trim) {
+        None => Ok(None),
+        Some("") => Ok(None),
+        Some(plain) => {
+            if plain.chars().count() < 4 {
+                return Err(AppError::validation(
+                    "password",
+                    "the link password must be at least 4 characters",
+                ));
+            }
+            if plain.chars().count() > 128 {
+                return Err(AppError::validation(
+                    "password",
+                    "the link password must be at most 128 characters",
+                ));
+            }
+            Ok(Some(password::hash(plain)?))
+        }
+    }
+}
+
+impl UrlContext<'_> {
+    /// Create a short link for the current actor.
+    pub async fn create(&self, input: CreateInput) -> Result<Url> {
+        let target = target_url::validate(&input.target_url)?;
+
+        let quota = self.settings.max_urls_per_user();
+        if quota > 0 {
+            let used = urls::count_for_user(self.pool, self.actor.id).await.map_err(AppError::from)?;
+            if used >= quota {
+                return Err(AppError::forbidden(format!(
+                    "you have reached your limit of {quota} links"
+                )));
+            }
+        }
+
+        let tags = normalize_tags(&input.tags)?;
+        let (slug, is_custom) = match input.slug.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            Some(custom) => {
+                let custom = slug::validate(custom)?;
+                if urls::slug_taken(self.pool, &custom).await.map_err(AppError::from)? {
+                    return Err(AppError::conflict(format!("the slug '{custom}' is already taken")));
+                }
+                (custom, true)
+            }
+            None => (self.allocate_slug().await?, false),
+        };
+
+        let expires_at = match input.expires_at.as_deref() {
+            Some(raw) if !raw.trim().is_empty() => Some(validate_expiry(raw)?),
+            _ => None,
+        };
+        let max_clicks = match input.max_clicks {
+            Some(value) => Some(validate_max_clicks(value)?),
+            None => None,
+        };
+        let redirect_type = match input.redirect_type {
+            Some(value) => validate_redirect_type(value)?,
+            None => self.settings.default_redirect_type(),
+        };
+        let title = match input.title.as_deref() {
+            Some(raw) => validate_title(raw)?,
+            None => None,
+        };
+        let notes = match input.notes.as_deref() {
+            Some(raw) => validate_notes(raw)?,
+            None => None,
+        };
+        let password_hash = prepare_password(input.password.as_deref())?;
+        let domain_id = crate::db::domains::default_id(self.pool).await.map_err(AppError::from)?;
+
+        let url_id = urls::create(
+            self.pool,
+            &NewUrl {
+                user_id: self.actor.id,
+                domain_id,
+                slug: slug.clone(),
+                target_url: target.clone(),
+                title,
+                notes,
+                password_hash,
+                expires_at,
+                max_clicks,
+                redirect_type,
+                is_custom_slug: is_custom,
+            },
+        )
+        .await
+        .map_err(|err| {
+            if is_unique_violation(&err) {
+                AppError::conflict(format!("the slug '{slug}' is already taken"))
+            } else {
+                AppError::from(err)
+            }
+        })?;
+
+        self.sync_tags(url_id, &tags).await?;
+
+        Audit::new(action::URL_CREATED)
+            .actor(self.actor.id, &self.actor.role)
+            .target(target::URL, url_id)
+            .metadata(serde_json::json!({ "slug": slug, "custom_slug": is_custom }))
+            .ip_hash(self.ip_hash.map(str::to_string))
+            .record(self.pool)
+            .await;
+
+        self.reload(url_id).await
+    }
+
+    /// Apply a partial update to a link owned by the current actor.
+    pub async fn update(&self, url: &Url, input: UpdateInput) -> Result<Url> {
+        let mut changes = UrlUpdate::default();
+
+        if let Some(raw) = input.target_url.as_deref() {
+            changes.target_url = Some(target_url::validate(raw)?);
+        }
+        if let Some(raw) = input.slug.as_deref() {
+            let custom = slug::validate(raw)?;
+            if custom != url.slug {
+                if urls::slug_taken(self.pool, &custom).await.map_err(AppError::from)? {
+                    return Err(AppError::conflict(format!("the slug '{custom}' is already taken")));
+                }
+                changes.slug = Some(custom);
+                changes.is_custom_slug = Some(true);
+            }
+        }
+        if let Some(raw) = &input.title {
+            changes.title = Some(match raw.as_deref() {
+                Some(value) => validate_title(value)?,
+                None => None,
+            });
+        }
+        if let Some(raw) = &input.notes {
+            changes.notes = Some(match raw.as_deref() {
+                Some(value) => validate_notes(value)?,
+                None => None,
+            });
+        }
+        if let Some(raw) = &input.password {
+            changes.password_hash = Some(prepare_password(raw.as_deref())?);
+        }
+        if let Some(raw) = &input.expires_at {
+            changes.expires_at = Some(match raw.as_deref() {
+                Some(value) if !value.trim().is_empty() => Some(validate_expiry(value)?),
+                _ => None,
+            });
+        }
+        if let Some(raw) = &input.max_clicks {
+            changes.max_clicks = Some(match raw {
+                Some(value) => Some(validate_max_clicks(*value)?),
+                None => None,
+            });
+        }
+        if let Some(value) = input.redirect_type {
+            changes.redirect_type = Some(validate_redirect_type(value)?);
+        }
+        if let Some(status) = input.status.as_deref() {
+            let status = status.trim().to_ascii_lowercase();
+            if status != "active" && status != "disabled" {
+                return Err(AppError::validation("status", "status must be 'active' or 'disabled'"));
+            }
+            changes.status = Some(status);
+        }
+
+        if changes.is_empty() && input.tags.is_none() {
+            return Err(AppError::bad_request("no changes were submitted"));
+        }
+
+        if !changes.is_empty() {
+            let affected = urls::update(self.pool, url.id, Some(self.actor.id), &changes)
+                .await
+                .map_err(|err| {
+                    if is_unique_violation(&err) {
+                        AppError::conflict("that slug is already taken")
+                    } else {
+                        AppError::from(err)
+                    }
+                })?;
+            if affected == 0 {
+                return Err(AppError::not_found());
+            }
+        }
+
+        if let Some(tags) = &input.tags {
+            let tags = normalize_tags(tags)?;
+            self.sync_tags(url.id, &tags).await?;
+        }
+
+        Audit::new(action::URL_UPDATED)
+            .actor(self.actor.id, &self.actor.role)
+            .target(target::URL, url.id)
+            .metadata(serde_json::json!({
+                "slug": url.slug,
+                "fields": describe_changes(&changes, input.tags.is_some()),
+            }))
+            .ip_hash(self.ip_hash.map(str::to_string))
+            .record(self.pool)
+            .await;
+
+        self.reload(url.id).await
+    }
+
+    /// Soft delete a link.
+    pub async fn delete(&self, url: &Url) -> Result<()> {
+        let deleted = urls::soft_delete(self.pool, url.id, Some(self.actor.id))
+            .await
+            .map_err(AppError::from)?;
+        if !deleted {
+            return Err(AppError::not_found());
+        }
+        Audit::new(action::URL_DELETED)
+            .actor(self.actor.id, &self.actor.role)
+            .target(target::URL, url.id)
+            .metadata(serde_json::json!({ "slug": url.slug }))
+            .ip_hash(self.ip_hash.map(str::to_string))
+            .record(self.pool)
+            .await;
+        Ok(())
+    }
+
+    /// Load a link that must belong to the actor.
+    pub async fn find_owned(&self, id: i64) -> Result<Url> {
+        urls::find_owned(self.pool, id, self.actor.id)
+            .await
+            .map_err(AppError::from)?
+            .ok_or_else(AppError::not_found)
+    }
+
+    /// Allocate a random slug that is not taken yet.
+    async fn allocate_slug(&self) -> Result<String> {
+        let length = self.settings.default_slug_length();
+        for _ in 0..SLUG_RETRIES {
+            let candidate = slug::generate(length);
+            if !urls::slug_taken(self.pool, &candidate).await.map_err(AppError::from)? {
+                return Ok(candidate);
+            }
+        }
+        // Extremely unlikely; fall back to a longer slug before giving up.
+        for _ in 0..SLUG_RETRIES {
+            let candidate = slug::generate(length + 4);
+            if !urls::slug_taken(self.pool, &candidate).await.map_err(AppError::from)? {
+                return Ok(candidate);
+            }
+        }
+        Err(AppError::internal("could not allocate a unique slug"))
+    }
+
+    async fn sync_tags(&self, url_id: i64, tags: &[String]) -> Result<()> {
+        let mut ids = Vec::with_capacity(tags.len());
+        for tag in tags {
+            let id = tags::ensure(self.pool, self.actor.id, tag).await.map_err(AppError::from)?;
+            ids.push(id);
+        }
+        tags::set_for_url(self.pool, url_id, &ids).await.map_err(AppError::from)?;
+        Ok(())
+    }
+
+    async fn reload(&self, url_id: i64) -> Result<Url> {
+        urls::find_by_id(self.pool, url_id)
+            .await
+            .map_err(AppError::from)?
+            .ok_or_else(AppError::not_found)
+    }
+}
+
+/// Human readable summary of a change set, stored in the audit metadata.
+fn describe_changes(changes: &UrlUpdate, tags_changed: bool) -> Vec<&'static str> {
+    let mut fields = Vec::new();
+    if changes.slug.is_some() {
+        fields.push("slug");
+    }
+    if changes.target_url.is_some() {
+        fields.push("target_url");
+    }
+    if changes.title.is_some() {
+        fields.push("title");
+    }
+    if changes.notes.is_some() {
+        fields.push("notes");
+    }
+    if changes.password_hash.is_some() {
+        fields.push("password");
+    }
+    if changes.expires_at.is_some() {
+        fields.push("expires_at");
+    }
+    if changes.max_clicks.is_some() {
+        fields.push("max_clicks");
+    }
+    if changes.redirect_type.is_some() {
+        fields.push("redirect_type");
+    }
+    if changes.status.is_some() {
+        fields.push("status");
+    }
+    if tags_changed {
+        fields.push("tags");
+    }
+    fields
+}
+
+/// Convenience accessor for the state of a link.
+pub fn state_of(url: &Url) -> UrlState {
+    url.state()
+}
+
+fn is_unique_violation(err: &sqlx::Error) -> bool {
+    matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("2067"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validates_redirect_types() {
+        for code in [301, 302, 307, 308] {
+            assert_eq!(validate_redirect_type(code).expect("valid"), code);
+        }
+        assert!(validate_redirect_type(200).is_err());
+        assert!(validate_redirect_type(404).is_err());
+    }
+
+    #[test]
+    fn validates_expiry() {
+        let future = time::iso_in_hours(24);
+        assert_eq!(validate_expiry(&future).expect("valid"), future);
+        assert!(validate_expiry("2030-01-01").is_ok());
+        assert!(validate_expiry("yesterday").is_err());
+        let past = time::iso_days_ago(1);
+        assert!(validate_expiry(&past).is_err());
+        assert!(validate_expiry("").is_err());
+    }
+
+    #[test]
+    fn validates_click_limits() {
+        assert_eq!(validate_max_clicks(1).expect("valid"), 1);
+        assert!(validate_max_clicks(0).is_err());
+        assert!(validate_max_clicks(-5).is_err());
+    }
+
+    #[test]
+    fn normalises_tags() {
+        let tags = vec![
+            "  Promo ".to_string(),
+            "promo".to_string(),
+            String::new(),
+            "News".to_string(),
+        ];
+        assert_eq!(normalize_tags(&tags).expect("valid"), vec!["Promo", "News"]);
+        assert!(normalize_tags(&["a,b".to_string()]).is_err());
+        assert!(normalize_tags(&["x".repeat(MAX_TAG_LEN + 1)]).is_err());
+        let too_many: Vec<String> = (0..MAX_TAGS + 1).map(|index| format!("t{index}")).collect();
+        assert!(normalize_tags(&too_many).is_err());
+    }
+
+    #[test]
+    fn validates_titles_and_notes() {
+        assert_eq!(validate_title("  Hello  ").expect("valid"), Some("Hello".to_string()));
+        assert_eq!(validate_title("   ").expect("valid"), None);
+        assert!(validate_title(&"x".repeat(MAX_TITLE_LEN + 1)).is_err());
+        assert_eq!(validate_notes(" note ").expect("valid"), Some("note".to_string()));
+        assert!(validate_notes(&"x".repeat(MAX_NOTES_LEN + 1)).is_err());
+    }
+
+    #[test]
+    fn prepares_link_passwords() {
+        assert_eq!(prepare_password(None).expect("none"), None);
+        assert_eq!(prepare_password(Some("")).expect("empty"), None);
+        assert_eq!(prepare_password(Some("   ")).expect("blank"), None);
+        assert!(prepare_password(Some("abc")).is_err());
+        let hash = prepare_password(Some("linkpass")).expect("hashed").expect("some");
+        assert!(hash.starts_with("$argon2id$"));
+        assert!(password::verify("linkpass", &hash));
+    }
+}

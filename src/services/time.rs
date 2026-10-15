@@ -38,6 +38,38 @@ pub fn parse_iso(s: &str) -> Option<OffsetDateTime> {
     PrimitiveDateTime::parse(s, ISO).ok().map(PrimitiveDateTime::assume_utc)
 }
 
+/// Parse user supplied timestamps leniently.
+///
+/// Accepted: the canonical storage format, `...:SSZ`, full RFC 3339 with an
+/// offset, and a bare `YYYY-MM-DD` date (interpreted as midnight UTC).
+pub fn parse_flexible(input: &str) -> Option<OffsetDateTime> {
+    let input = input.trim();
+    if input.is_empty() {
+        return None;
+    }
+    if let Some(parsed) = parse_iso(input) {
+        return Some(parsed);
+    }
+
+    const SECONDS: &[FormatItem<'static>] =
+        format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]Z");
+    if let Ok(parsed) = PrimitiveDateTime::parse(input, SECONDS) {
+        return Some(parsed.assume_utc());
+    }
+
+    if let Ok(parsed) =
+        OffsetDateTime::parse(input, &time::format_description::well_known::Rfc3339)
+    {
+        return Some(parsed.to_offset(UtcOffset::UTC));
+    }
+
+    if let Ok(date) = time::Date::parse(input, DAY) {
+        return Some(date.midnight().assume_utc());
+    }
+
+    None
+}
+
 /// Format a date-only value for daily rollups.
 pub fn to_day(t: OffsetDateTime) -> String {
     t.format(DAY).unwrap_or_else(|_| "1970-01-01".to_string())
@@ -154,5 +186,22 @@ mod tests {
         assert!(humanize(&iso_in_hours(2)).starts_with("in 2 hours"));
         assert!(humanize(&iso_in_minutes(-5)).ends_with("ago"));
         assert_eq!(humanize("garbage"), "unknown");
+    }
+
+    #[test]
+    fn parses_user_supplied_timestamps() {
+        assert!(parse_flexible("2030-01-02T03:04:05Z").is_some());
+        assert!(parse_flexible("2030-01-02T03:04:05.123Z").is_some());
+        assert!(parse_flexible("2030-01-02T03:04:05+08:00").is_some());
+        assert!(parse_flexible("2030-01-02").is_some());
+        assert!(parse_flexible(" 2030-01-02T03:04:05Z ").is_some());
+        assert!(parse_flexible("tomorrow").is_none());
+        assert!(parse_flexible("").is_none());
+    }
+
+    #[test]
+    fn offsets_are_normalised_to_utc() {
+        let parsed = parse_flexible("2030-01-02T11:04:05+08:00").expect("parses");
+        assert_eq!(to_iso(parsed), "2030-01-02T03:04:05.000Z");
     }
 }

@@ -1,9 +1,26 @@
 //! Data transfer objects shared by the JSON API and the HTML views.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::db::sessions::Session;
+use crate::db::tags::TagWithCount;
+use crate::db::urls::Url;
 use crate::db::users::User;
+use crate::services::time;
+
+/// Deserialize `Option<Option<T>>` so that a missing field and an explicit
+/// `null` mean different things in `PATCH` payloads.
+///
+/// * field absent  → `None`          (leave unchanged)
+/// * field `null`  → `Some(None)`    (clear the value)
+/// * field present → `Some(Some(v))` (set the value)
+pub fn double_option<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
 
 /// Public representation of a user. Never contains a password hash.
 #[derive(Debug, Clone, Serialize)]
@@ -107,6 +124,75 @@ pub struct OkResponse {
 impl Default for OkResponse {
     fn default() -> Self {
         Self { ok: true }
+    }
+}
+
+/// Public representation of a short link.
+#[derive(Debug, Clone, Serialize)]
+pub struct UrlDto {
+    pub id: i64,
+    pub slug: String,
+    pub short_url: String,
+    pub target_url: String,
+    pub title: Option<String>,
+    pub notes: Option<String>,
+    pub tags: Vec<String>,
+    pub has_password: bool,
+    pub expires_at: Option<String>,
+    pub expires_in: Option<String>,
+    pub max_clicks: Option<i64>,
+    pub click_count: i64,
+    pub unique_click_count: i64,
+    pub redirect_type: i64,
+    pub status: String,
+    /// `active`, `expired`, `limit_reached`, `disabled` or `deleted`.
+    pub state: String,
+    pub is_custom_slug: bool,
+    pub last_clicked_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl UrlDto {
+    pub fn new(url: &Url, base_url: &str, tags: Vec<String>) -> Self {
+        let state = url.state();
+        Self {
+            id: url.id,
+            slug: url.slug.clone(),
+            short_url: format!("{}/{}", base_url.trim_end_matches('/'), url.slug),
+            target_url: url.target_url.clone(),
+            title: url.title.clone(),
+            notes: url.notes.clone(),
+            tags,
+            has_password: url.has_password(),
+            expires_at: url.expires_at.clone(),
+            expires_in: url.expires_at.as_deref().map(time::humanize),
+            max_clicks: url.max_clicks,
+            click_count: url.click_count,
+            unique_click_count: url.unique_click_count,
+            redirect_type: url.redirect_type,
+            status: url.status.clone(),
+            state: state.as_str().to_string(),
+            is_custom_slug: url.is_custom(),
+            last_clicked_at: url.last_clicked_at.clone(),
+            created_at: url.created_at.clone(),
+            updated_at: url.updated_at.clone(),
+        }
+    }
+}
+
+/// Public representation of a tag.
+#[derive(Debug, Clone, Serialize)]
+pub struct TagDto {
+    pub id: i64,
+    pub name: String,
+    pub color: Option<String>,
+    pub url_count: i64,
+}
+
+impl From<&TagWithCount> for TagDto {
+    fn from(tag: &TagWithCount) -> Self {
+        Self { id: tag.id, name: tag.name.clone(), color: tag.color.clone(), url_count: tag.url_count }
     }
 }
 

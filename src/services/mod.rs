@@ -7,4 +7,7 @@ pub mod password;
 pub mod ratelimit;
 pub mod secret;
 pub mod settings;
+pub mod slug;
+pub mod target;
 pub mod time;
+pub mod urls;
