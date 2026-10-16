@@ -359,6 +359,10 @@ the site key is non-empty, the secret key is non-empty, and the matching per-for
 Failure is **closed**: a missing, malformed, expired or already-used token — including a timeout
 or any non-2xx response from the provider — rejects the submission.
 
+The `hostname` reported by the provider is also checked: it must equal the host of the instance's
+base URL or one of the extra hostnames in `captcha_allowed_hostnames` (comma-separated, up to 10).
+A response without a `hostname` is accepted, and a mismatch is rejected and logged at `WARN`.
+
 | Surface | Verification |
 |---------|--------------|
 | Web registration form (`POST /app/register`) | Applies when enabled for registration |
@@ -400,8 +404,8 @@ Editable setting keys: `site_name`, `registration_mode` (`open`/`invite`/`closed
 `default_redirect_type` (301/302/307/308), `analytics_enabled`,
 `click_retention_days` (0 = keep forever), plus the bot verification keys
 `captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`,
-`captcha_on_login` and `captcha_on_create`. The secret key is write-only: it is never returned in
-plaintext, and submitting it empty keeps the stored value.
+`captcha_on_login`, `captcha_on_create` and `captcha_allowed_hostnames`. The secret key is
+write-only: it is never returned in plaintext, and submitting it empty keeps the stored value.
 
 ---
 

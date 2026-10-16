@@ -342,6 +342,10 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 驗證失敗一律**拒絕**（fail closed）：token 缺少、格式錯誤、逾期或已使用過，
 以及逾時或供應商回應非 2xx，都會拒絕該次提交。
 
+供應商回報的 `hostname` 也會一併檢查：必須等於實例 base URL 的主機名稱，或
+`captcha_allowed_hostnames` 中的其中一個（以逗號分隔，最多 10 項）。回應未帶 `hostname`
+時予以接受；不符時拒絕並記一筆 `WARN`。
+
 | 套用位置 | 是否驗證 |
 |----------|----------|
 | 網頁註冊表單（`POST /app/register`） | 註冊流程啟用時套用 |
@@ -382,8 +386,8 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 `default_redirect_type`（301/302/307/308）、`analytics_enabled`、
 `click_retention_days`（0 = 永久保留），以及防機器人驗證的
 `captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、
-`captcha_on_login`、`captcha_on_create`。secret key 為唯寫：永不回傳明文，
-留白送出表示維持已儲存的值。
+`captcha_on_login`、`captcha_on_create`、`captcha_allowed_hostnames`。secret key 為唯寫：
+永不回傳明文，留白送出表示維持已儲存的值。
 
 ---
 

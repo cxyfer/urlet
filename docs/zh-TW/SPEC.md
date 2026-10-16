@@ -278,13 +278,14 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | ID | 需求 | 說明 |
 |----|------|------|
 | FR-BOT-1 | 供應商 | 可選 Cloudflare Turnstile（元件回應欄位 `cf-turnstile-response`）或 Google reCAPTCHA v2 checkbox（`g-recaptcha-response`），預設 `none`（關閉） |
-| FR-BOT-2 | 設定來源 | 同時支援環境變數與管理後台設定（settings 表新增 key：`captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、`captcha_on_login`、`captcha_on_create`）。非空環境變數覆蓋後台值，與 `registration_mode` 的覆蓋規則一致 |
+| FR-BOT-2 | 設定來源 | 同時支援環境變數與管理後台設定（settings 表新增 key：`captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、`captcha_on_login`、`captcha_on_create`、`captcha_allowed_hostnames`）。非空環境變數覆蓋後台值，與 `registration_mode` 的覆蓋規則一致 |
 | FR-BOT-3 | 啟用條件 | 四個條件同時成立才啟用：provider ≠ `none`、兩把 key 皆非空、對應表單的開關（`on_register`、`on_login` 或 `on_create`）為 `true` |
 | FR-BOT-4 | 驗證方式 | 伺服器端以表單編碼（form-encoded）HTTPS POST 呼叫供應商的 siteverify 端點（帶 `secret`、`response`，以及可判定時的 `remoteip`）：Cloudflare `https://challenges.cloudflare.com/turnstile/v0/siteverify`、Google `https://www.google.com/recaptcha/api/siteverify`，逾時 5 秒，並透過 `ureq` 2 + rustls + webpki-roots 發出 |
 | FR-BOT-5 | 失敗關閉 | 任何失敗（逾時、非 2xx、回應無法解析）一律拒絕（fail closed） |
 | FR-BOT-6 | 套用範圍 | 網頁註冊表單、網頁登入表單、網頁建立短網址表單，以及 `POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`（JSON 欄位 `captcha_token`，失敗回 400 `captcha_failed`）。`POST /api/v1/urls` 的 Session Cookie 呼叫見 FR-BOT-7 |
 | FR-BOT-7 | API Token 路徑 | `POST /api/v1/urls` **僅在**帶 API Token（`Authorization: Bearer uw_...`）時豁免驗證碼。使用 Session Cookie 者屬瀏覽器工作階段，受 `on_create` 約束，可帶 optional `captcha_token` |
 | FR-BOT-8 | 後台介面 | secret key 欄位為唯寫：不回顯已存值，留白送出表示維持原值 |
+| FR-BOT-9 | Token 主機名稱 | 供應商 siteverify 回應中的 `hostname` 必須等於 `UWURLS_BASE_URL` 的主機名稱，或 `captcha_allowed_hostnames` 中的任一個（逗號分隔的裸主機名稱，逐項 trim、轉小寫、丟棄空項，最多 10 項、每項 1–253 字元且不得含空白、`/`、`:`、`@`）。回應未帶 `hostname` 時予以接受；不符時拒絕並記一筆 `WARN`，內容含回報的 hostname 與目前接受的候選清單 |
 
 ---
 
@@ -421,7 +422,7 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
   `max_urls_per_user=1000`、`default_redirect_type=302`、`analytics_enabled=true`、`click_retention_days=0`。
 - `settings`（v1.1 驗證碼 key）：`captcha_provider=none`、`captcha_site_key=`（空）、
   `captcha_secret_key=`（空）、`captcha_on_register=false`、`captcha_on_login=false`、
-  `captcha_on_create=false`。非空的環境變數會覆蓋表中值（FR-BOT-2）。
+  `captcha_on_create=false`、`captcha_allowed_hostnames=`（空）。非空的環境變數會覆蓋表中值（FR-BOT-2）。
 - `domains`：啟動時依 `UWURLS_BASE_URL` 的 host 插入/更新預設網域（`is_default=1`）。
 
 ---
@@ -520,6 +521,7 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 | `UWURLS_CAPTCHA_ON_REGISTER` | `false` | 註冊表單是否要求驗證碼；非空時覆蓋 `captcha_on_register` |
 | `UWURLS_CAPTCHA_ON_LOGIN` | `false` | 網頁登入表單與 `POST /api/v1/auth/login` 是否要求驗證碼；非空時覆蓋 `captcha_on_login` |
 | `UWURLS_CAPTCHA_ON_CREATE` | `false` | 網頁建立短網址表單是否要求驗證碼；非空時覆蓋 `captcha_on_create` |
+| `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` | — | 供應商 `hostname` 回應中額外接受的主機名稱，以逗號分隔（最多 10 項）；非空時覆蓋 `captcha_allowed_hostnames`。`UWURLS_BASE_URL` 的主機名稱一律接受 |
 
 驗證碼相關變數的覆蓋規則與 `UWURLS_REGISTRATION`、`UWURLS_DEFAULT_SLUG_LENGTH` 相同：
 非空的環境變數優先於 `settings` 表中的值（FR-BOT-2）。
@@ -619,6 +621,7 @@ v1.1 新增項目（本批次）：
 - [ ] JSON API 回應不受請求語言影響，一律英文
 - [ ] 驗證碼僅在 provider ≠ none、兩把 key 非空、對應開關（`on_register`、`on_login` 或 `on_create`）為 true 時啟用；非空環境變數覆蓋後台設定
 - [ ] 驗證碼逾時、非 2xx 或無法解析時一律拒絕，並套用於網頁註冊、網頁登入、網頁建立、`POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`（400 `captcha_failed`）
+- [ ] 回報的 `hostname` 僅在符合 `UWURLS_BASE_URL` 的主機名稱或 `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` 時接受；未帶 `hostname` 時接受，不符時拒絕並記一筆 `WARN`
 - [ ] siteverify 是系統唯一的對外 HTTP 請求，透過 `ureq` 2 + rustls + webpki-roots（不需 OpenSSL）發出，且預設關閉
 - [ ] `POST /api/v1/urls` 僅在 API Token 呼叫時豁免驗證碼（Session Cookie 呼叫受 `on_create` 約束）；後台 secret key 欄位為唯寫
 - [ ] `GET /` 對未登入與已登入使用者皆回 200 的導覽首頁，不再 302 至 `/app`

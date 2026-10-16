@@ -284,13 +284,14 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 | ID | Requirement | Description |
 |----|-------------|-------------|
 | FR-BOT-1 | Providers | Optional Cloudflare Turnstile (widget response field `cf-turnstile-response`) or Google reCAPTCHA v2 checkbox (`g-recaptcha-response`); the default is `none` (disabled) |
-| FR-BOT-2 | Configuration | Configurable through both environment variables and the admin settings table (new keys `captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`, `captcha_on_login`, `captcha_on_create`). A non-empty environment variable overrides the stored value, consistent with the `registration_mode` override rule |
+| FR-BOT-2 | Configuration | Configurable through both environment variables and the admin settings table (new keys `captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`, `captcha_on_login`, `captcha_on_create`, `captcha_allowed_hostnames`). A non-empty environment variable overrides the stored value, consistent with the `registration_mode` override rule |
 | FR-BOT-3 | Enablement | All four conditions must hold at once: provider ≠ `none`, both keys non-empty, and the switch for the relevant form (`on_register`, `on_login` or `on_create`) is `true` |
 | FR-BOT-4 | Verification | The server issues a form-encoded HTTPS POST (`secret`, `response`, plus `remoteip` when the client address can be determined) to the provider's siteverify endpoint — Cloudflare `https://challenges.cloudflare.com/turnstile/v0/siteverify`, Google `https://www.google.com/recaptcha/api/siteverify` — with a 5-second timeout, through `ureq` 2 over rustls with webpki-roots |
 | FR-BOT-5 | Fail closed | Any failure (timeout, non-2xx status, unparsable response) rejects the request |
 | FR-BOT-6 | Coverage | Enforced on the web registration form, the web sign-in form, the web create-short-link form, `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (JSON field `captcha_token`; a failure returns 400 `captcha_failed`). The session-cookie form of `POST /api/v1/urls` is covered by FR-BOT-7 |
 | FR-BOT-7 | API token routes | `POST /api/v1/urls` is exempt from captcha **only** when it carries an API token (`Authorization: Bearer uw_...`). A session-cookie call is a browser session and is subject to `on_create`; it accepts an optional `captcha_token` |
 | FR-BOT-8 | Admin UI | The secret key field is write-only: the stored value is never rendered back, and submitting the field empty keeps the current value |
+| FR-BOT-9 | Token hostname | The `hostname` reported in the provider's siteverify response must equal the host of `UWURLS_BASE_URL` or one of `captcha_allowed_hostnames` (comma-separated bare hostnames, trimmed and lowercased, empty items dropped, at most 10 items of 1–253 characters with no whitespace, `/`, `:` or `@`). A response without a `hostname` is accepted; a mismatch is rejected and logged at `WARN` with the reported hostname and the accepted candidates |
 
 ---
 
@@ -428,7 +429,8 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
   `max_urls_per_user=1000`, `default_redirect_type=302`, `analytics_enabled=true`, `click_retention_days=0`.
 - `settings` (v1.1 captcha keys): `captcha_provider=none`, `captcha_site_key=` (empty),
   `captcha_secret_key=` (empty), `captcha_on_register=false`, `captcha_on_login=false`,
-  `captcha_on_create=false`. A non-empty environment variable overrides the stored value (FR-BOT-2).
+  `captcha_on_create=false`, `captcha_allowed_hostnames=` (empty). A non-empty environment variable
+  overrides the stored value (FR-BOT-2).
 - `domains`: at startup the default domain is inserted/updated from the host of `UWURLS_BASE_URL` (`is_default=1`).
 
 ---
@@ -527,6 +529,7 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 | `UWURLS_CAPTCHA_ON_REGISTER` | `false` | Require captcha on the registration forms; overrides `captcha_on_register` when non-empty |
 | `UWURLS_CAPTCHA_ON_LOGIN` | `false` | Require captcha on the web sign-in form and on `POST /api/v1/auth/login`; overrides `captcha_on_login` when non-empty |
 | `UWURLS_CAPTCHA_ON_CREATE` | `false` | Require captcha on the web create-short-link form; overrides `captcha_on_create` when non-empty |
+| `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` | — | Extra hostnames accepted in the provider's `hostname` response, comma-separated (up to 10); overrides `captcha_allowed_hostnames` when non-empty. The host of `UWURLS_BASE_URL` is always accepted |
 
 The captcha variables follow the same override rule as `UWURLS_REGISTRATION` and
 `UWURLS_DEFAULT_SLUG_LENGTH`: a non-empty environment variable wins over the value stored in the
@@ -627,6 +630,7 @@ v1.1 additions (this batch):
 - [ ] JSON API responses stay English regardless of the request language
 - [ ] Captcha is enabled only when provider ≠ none, both keys are non-empty, and the matching switch (`on_register`, `on_login` or `on_create`) is true; a non-empty environment variable overrides the stored setting
 - [ ] Captcha verification fails closed on timeout, non-2xx status, or an unparsable response, and is enforced on web register, web sign-in, web create, `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (400 `captcha_failed`)
+- [ ] A reported `hostname` is accepted only when it matches the `UWURLS_BASE_URL` host or `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES`, a missing `hostname` is accepted, and a mismatch is rejected with a `WARN` log line
 - [ ] The siteverify call is the only outbound HTTP request, goes through `ureq` 2 over rustls + webpki-roots (no OpenSSL), and is off by default
 - [ ] `POST /api/v1/urls` is captcha-exempt only for API-token calls (a session-cookie call honours `on_create`), and the admin secret-key field is write-only
 - [ ] `GET /` returns 200 as a landing/navigation page for anonymous and signed-in visitors, and no longer redirects to `/app`
