@@ -48,6 +48,9 @@ pub struct MaybeUser(pub Option<CurrentUser>);
 /// Client metadata useful for rate limiting, audit trails and analytics.
 #[derive(Debug, Clone, Default)]
 pub struct ClientInfo {
+    /// Best effort client address, resolved exactly like the rate limiter key.
+    /// Forwarded to the captcha provider as `remoteip` when present.
+    pub ip: Option<std::net::IpAddr>,
     pub ip_hash: Option<String>,
     pub user_agent: Option<String>,
     pub referrer: Option<String>,
@@ -176,6 +179,11 @@ impl FromRequestParts<AppState> for ClientInfo {
         };
 
         Ok(ClientInfo {
+            ip: crate::middleware::client_ip_parts(
+                &parts.headers,
+                &parts.extensions,
+                &state.config,
+            ),
             ip_hash: crate::middleware::hashed_client_ip_parts(
                 &parts.headers,
                 &parts.extensions,

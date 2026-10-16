@@ -13,6 +13,7 @@ use crate::routes::dto::{SessionDto, UserDto};
 use crate::services::audit::{action, target, Audit};
 use crate::services::auth;
 use crate::services::auth::{AuthContext, SessionToken};
+use crate::services::captcha::{CaptchaFlow, CaptchaGuard};
 use crate::services::cookies;
 use crate::services::ratelimit::limits;
 use crate::services::time;
@@ -26,12 +27,20 @@ pub struct RegisterPayload {
     pub invite_code: Option<String>,
     #[serde(default)]
     pub display_name: Option<String>,
+    /// Bot protection token. Optional in the schema: it is only required when
+    /// the instance has Turnstile or reCAPTCHA enabled for registration.
+    #[serde(default)]
+    pub captcha_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct LoginPayload {
     pub email: String,
     pub password: String,
+    /// Bot protection token. Optional in the schema: it is only required when
+    /// the instance has Turnstile or reCAPTCHA enabled for sign in.
+    #[serde(default)]
+    pub captcha_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,6 +78,13 @@ pub async fn register(
         limits::REGISTER_CAPACITY,
         limits::REGISTER_REFILL_PER_SEC,
     )?;
+    verify_captcha(
+        &state,
+        &client,
+        CaptchaFlow::Register,
+        payload.captcha_token.as_deref(),
+    )
+    .await?;
 
     let context = context(&state, &client);
     let user = context
@@ -115,6 +131,15 @@ pub async fn login(
         limits::LOGIN_CAPACITY,
         limits::LOGIN_REFILL_PER_SEC,
     )?;
+
+    // Bot protection runs before any password hashing work.
+    verify_captcha(
+        &state,
+        &client,
+        CaptchaFlow::Login,
+        payload.captcha_token.as_deref(),
+    )
+    .await?;
 
     let context = context(&state, &client);
     let (user, token) = context.login(&payload.email, &payload.password).await?;
@@ -266,6 +291,36 @@ fn enforce(state: &AppState, key: &str, capacity: f64, refill: f64) -> Result<()
         .check(key, capacity, refill)
         .map_err(AppError::rate_limited)
         .map_err(ApiError)
+}
+
+/// Reject the request when `flow` is guarded and the token does not verify.
+///
+/// An unguarded flow never contacts the provider, so the JSON contract is
+/// unchanged on instances that do not use bot protection.
+async fn verify_captcha(
+    state: &AppState,
+    client: &ClientInfo,
+    flow: CaptchaFlow,
+    token: Option<&str>,
+) -> Result<(), ApiError> {
+    let guard = CaptchaGuard::from_settings(
+        &state.settings,
+        flow,
+        state.config.captcha_verify_url.as_deref(),
+    );
+    if !guard.enabled() {
+        return Ok(());
+    }
+    match guard.verify(token, client.ip).await {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            // The token itself is never logged.
+            tracing::debug!(reason = err.code(), "api captcha check rejected a request");
+            Err(ApiError(AppError::captcha_failed(
+                crate::services::captcha::FAILURE_MESSAGE,
+            )))
+        }
+    }
 }
 
 /// Append the session cookie to a response.

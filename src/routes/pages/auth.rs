@@ -11,8 +11,11 @@ use serde::Deserialize;
 use crate::error::{AppError, Result};
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
-use crate::routes::pages::{redirect_ok, safe_next};
+use crate::routes::pages::{
+    captcha_rejected, captcha_widget, redirect_err, redirect_ok, safe_next,
+};
 use crate::services::auth::{self, AuthContext};
+use crate::services::captcha::{self, CaptchaFlow, CaptchaWidget};
 use crate::services::ratelimit::limits;
 use crate::services::settings::RegistrationMode;
 use crate::state::AppState;
@@ -25,6 +28,8 @@ pub struct LoginPage {
     pub notice: Option<String>,
     pub next: String,
     pub email: String,
+    /// Provider widget to render, or `None` when sign in is not protected.
+    pub captcha: Option<CaptchaWidget>,
     pub lang: Lang,
 }
 
@@ -40,6 +45,8 @@ pub struct RegisterPage {
     pub email: String,
     pub display_name: String,
     pub invite_code: String,
+    /// Provider widget to render, or `None` when registration is not protected.
+    pub captcha: Option<CaptchaWidget>,
     pub lang: Lang,
 }
 
@@ -59,6 +66,22 @@ pub struct LoginForm {
     pub password: String,
     #[serde(default)]
     pub next: Option<String>,
+    /// Cloudflare Turnstile token, submitted by the rendered widget.
+    #[serde(default, rename = "cf-turnstile-response")]
+    pub turnstile_token: Option<String>,
+    /// Google reCAPTCHA token.
+    #[serde(default, rename = "g-recaptcha-response")]
+    pub recaptcha_token: Option<String>,
+}
+
+impl LoginForm {
+    /// Token of whichever provider is configured.
+    fn captcha_token(&self) -> Option<&str> {
+        captcha::submitted_token(
+            self.turnstile_token.as_deref(),
+            self.recaptcha_token.as_deref(),
+        )
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,6 +94,22 @@ pub struct RegisterForm {
     pub invite_code: Option<String>,
     #[serde(default)]
     pub next: Option<String>,
+    /// Cloudflare Turnstile token, submitted by the rendered widget.
+    #[serde(default, rename = "cf-turnstile-response")]
+    pub turnstile_token: Option<String>,
+    /// Google reCAPTCHA token.
+    #[serde(default, rename = "g-recaptcha-response")]
+    pub recaptcha_token: Option<String>,
+}
+
+impl RegisterForm {
+    /// Token of whichever provider is configured.
+    fn captcha_token(&self) -> Option<&str> {
+        captcha::submitted_token(
+            self.turnstile_token.as_deref(),
+            self.recaptcha_token.as_deref(),
+        )
+    }
 }
 
 /// `GET /app/login`
@@ -94,6 +133,7 @@ pub async fn login_page(
         Some("rate_limited") => Some(lang.t("auth.login.rate_limited").to_string()),
         Some("denied") => Some(lang.t("auth.login.suspended").to_string()),
         Some("session") => Some(lang.t("auth.login.session_expired").to_string()),
+        Some("captcha") => Some(lang.t("flash.err.captcha").to_string()),
         _ => None,
     };
 
@@ -103,6 +143,7 @@ pub async fn login_page(
         notice,
         next: safe_next(query.next.as_deref()).unwrap_or_default(),
         email: String::new(),
+        captcha: captcha_widget(&state, CaptchaFlow::Login),
         lang,
     }))
 }
@@ -120,6 +161,7 @@ pub async fn login_submit(
             notice: None,
             next: String::new(),
             email: String::new(),
+            captcha: captcha_widget(&state, CaptchaFlow::Login),
             lang: i18n::current(),
         }));
     };
@@ -147,6 +189,11 @@ pub async fn login_submit(
         .is_err()
     {
         return Ok(Redirect::to("/app/login?err=rate_limited").into_response());
+    }
+
+    // Bot protection runs before any password hashing work.
+    if captcha_rejected(&state, &client, CaptchaFlow::Login, payload.captcha_token()).await {
+        return Ok(redirect_err("/app/login", "captcha").into_response());
     }
 
     let context = AuthContext {
@@ -178,6 +225,7 @@ pub async fn login_submit(
             notice: None,
             next: safe_next(payload.next.as_deref()).unwrap_or_default(),
             email: payload.email,
+            captcha: captcha_widget(&state, CaptchaFlow::Login),
             lang: i18n::current(),
         })),
     }
@@ -200,6 +248,7 @@ pub async fn register_page(
         Some("conflict") => Some(lang.t("auth.register.err.conflict").to_string()),
         Some("invalid") => Some(lang.t("auth.register.err.invalid").to_string()),
         Some("rate_limited") => Some(lang.t("auth.login.rate_limited").to_string()),
+        Some("captcha") => Some(lang.t("flash.err.captcha").to_string()),
         _ => None,
     };
 
@@ -213,6 +262,7 @@ pub async fn register_page(
         email: String::new(),
         display_name: String::new(),
         invite_code: String::new(),
+        captcha: captcha_widget(&state, CaptchaFlow::Register),
         lang,
     }))
 }
@@ -238,6 +288,18 @@ pub async fn register_submit(
         .is_err()
     {
         return Ok(Redirect::to("/app/register?err=rate_limited").into_response());
+    }
+
+    // Bot protection runs before the account is created.
+    if captcha_rejected(
+        &state,
+        &client,
+        CaptchaFlow::Register,
+        payload.captcha_token(),
+    )
+    .await
+    {
+        return Ok(redirect_err("/app/register", "captcha").into_response());
     }
 
     let context = AuthContext {
@@ -296,6 +358,7 @@ pub async fn register_submit(
                         email: payload.email,
                         display_name: payload.display_name.unwrap_or_default(),
                         invite_code: payload.invite_code.unwrap_or_default(),
+                        captcha: captcha_widget(&state, CaptchaFlow::Register),
                         lang,
                     }));
                 }

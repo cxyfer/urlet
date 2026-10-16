@@ -15,6 +15,7 @@ use crate::routes::dto::{DailyPointDto, DimensionDto, OverviewDto, TagDto, TopLi
 use crate::routes::pages::{
     flash_from_query, page_links, redirect_to_login, Chrome, Flash, PageLink, UrlRow,
 };
+use crate::services::captcha::CaptchaFlow;
 use crate::services::chart;
 use crate::services::time;
 use crate::state::AppState;
@@ -41,6 +42,8 @@ pub struct DashboardPage {
     pub used: i64,
     pub default_redirect_type: i64,
     pub public_base: String,
+    /// Provider widget for the create form, or `None` when it is not protected.
+    pub captcha: Option<crate::services::captcha::CaptchaWidget>,
     /// Localised "3 of 10 links used" line.
     pub usage: String,
     /// Localised "Page 2 of 5 (30 links)" line.
@@ -159,6 +162,7 @@ pub async fn dashboard(
         used,
         default_redirect_type: state.settings.default_redirect_type(),
         public_base: state.config.base_url.clone(),
+        captcha: crate::routes::pages::captcha_widget(&state, CaptchaFlow::Create),
         usage: i18n::format(
             lang,
             "dashboard.usage",

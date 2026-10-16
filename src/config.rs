@@ -53,6 +53,18 @@ pub struct Config {
     pub trust_proxy: bool,
     pub registration_override: Option<String>,
     pub slug_length_override: Option<usize>,
+    /// Bot protection overrides. A non empty variable wins over the settings
+    /// table, exactly like `registration_override`.
+    pub captcha_provider_override: Option<String>,
+    pub captcha_site_key_override: Option<String>,
+    pub captcha_secret_key_override: Option<String>,
+    pub captcha_on_register_override: Option<bool>,
+    pub captcha_on_login_override: Option<bool>,
+    pub captcha_on_create_override: Option<bool>,
+    /// Test only: replace the provider `siteverify` endpoint. There is
+    /// deliberately no environment variable for it, so a deployment can never be
+    /// pointed at a host that would learn the secret key.
+    pub captcha_verify_url: Option<String>,
     pub admin_email: Option<String>,
     pub admin_password: Option<String>,
     pub log_filter: String,
@@ -119,6 +131,17 @@ impl Config {
             slug_length_override: env_str("UWURLS_DEFAULT_SLUG_LENGTH")
                 .and_then(|v| v.trim().parse::<usize>().ok())
                 .filter(|v| (4..=16).contains(v)),
+            captcha_provider_override: env_str("UWURLS_CAPTCHA_PROVIDER")
+                .filter(|v| !v.trim().is_empty())
+                .map(|v| v.trim().to_ascii_lowercase()),
+            captcha_site_key_override: env_str("UWURLS_CAPTCHA_SITE_KEY")
+                .filter(|v| !v.trim().is_empty()),
+            captcha_secret_key_override: env_str("UWURLS_CAPTCHA_SECRET_KEY")
+                .filter(|v| !v.trim().is_empty()),
+            captcha_on_register_override: env_bool("UWURLS_CAPTCHA_ON_REGISTER"),
+            captcha_on_login_override: env_bool("UWURLS_CAPTCHA_ON_LOGIN"),
+            captcha_on_create_override: env_bool("UWURLS_CAPTCHA_ON_CREATE"),
+            captcha_verify_url: None,
             admin_email: env_str("UWURLS_ADMIN_EMAIL").filter(|v| !v.trim().is_empty()),
             admin_password: env_str("UWURLS_ADMIN_PASSWORD").filter(|v| !v.is_empty()),
             log_filter: env_str("UWURLS_LOG").unwrap_or_else(|| "info".into()),
@@ -145,6 +168,13 @@ impl Config {
             trust_proxy: false,
             registration_override: None,
             slug_length_override: None,
+            captcha_provider_override: None,
+            captcha_site_key_override: None,
+            captcha_secret_key_override: None,
+            captcha_on_register_override: None,
+            captcha_on_login_override: None,
+            captcha_on_create_override: None,
+            captcha_verify_url: None,
             admin_email: None,
             admin_password: None,
             log_filter: "warn".into(),
@@ -178,6 +208,14 @@ fn env_i64(name: &str, default: i64) -> i64 {
     env_str(name)
         .and_then(|v| v.trim().parse().ok())
         .unwrap_or(default)
+}
+
+/// Boolean override: `None` when the variable is unset or empty, so the
+/// settings table keeps its value.
+fn env_bool(name: &str) -> Option<bool> {
+    env_str(name)
+        .filter(|v| !v.trim().is_empty())
+        .map(|v| parse_bool(&v))
 }
 
 fn parse_bool(value: &str) -> bool {

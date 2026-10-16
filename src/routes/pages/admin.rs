@@ -173,6 +173,13 @@ pub struct SettingsValues {
     pub default_redirect_type: i64,
     pub analytics_enabled: bool,
     pub click_retention_days: i64,
+    pub captcha_provider: String,
+    pub captcha_site_key: String,
+    /// Whether a secret is stored. The secret itself is never rendered.
+    pub captcha_secret_configured: bool,
+    pub captcha_on_register: bool,
+    pub captcha_on_login: bool,
+    pub captcha_on_create: bool,
 }
 
 /// Audit page.
@@ -268,6 +275,21 @@ pub struct SettingsForm {
     #[serde(default)]
     pub analytics_enabled: Option<String>,
     pub click_retention_days: String,
+    // Bot protection. All optional so a form from an older page, or a partial
+    // submission, never fails to deserialize.
+    #[serde(default)]
+    pub captcha_provider: Option<String>,
+    #[serde(default)]
+    pub captcha_site_key: Option<String>,
+    /// Write only: an empty field keeps the stored secret.
+    #[serde(default)]
+    pub captcha_secret_key: Option<String>,
+    #[serde(default)]
+    pub captcha_on_register: Option<String>,
+    #[serde(default)]
+    pub captcha_on_login: Option<String>,
+    #[serde(default)]
+    pub captcha_on_create: Option<String>,
 }
 
 /// `GET /app/admin`
@@ -629,7 +651,7 @@ pub async fn update_settings(
         return Ok(redirect_err("/app/admin/settings", "invalid").into_response());
     };
 
-    let values = vec![
+    let mut values = vec![
         ("site_name".to_string(), payload.site_name),
         ("registration_mode".to_string(), payload.registration_mode),
         (
@@ -655,6 +677,36 @@ pub async fn update_settings(
             payload.click_retention_days,
         ),
     ];
+
+    // Bot protection. The provider and the public site key are echoed back by
+    // the form, so an empty value there is an explicit clear. The secret is
+    // never echoed, so an empty value means "keep the stored one".
+    if let Some(provider) = payload
+        .captcha_provider
+        .filter(|value| !value.trim().is_empty())
+    {
+        values.push(("captcha_provider".to_string(), provider));
+    }
+    if let Some(site_key) = payload.captcha_site_key {
+        values.push(("captcha_site_key".to_string(), site_key));
+    }
+    if let Some(secret) = payload
+        .captcha_secret_key
+        .filter(|value| !value.trim().is_empty())
+    {
+        values.push(("captcha_secret_key".to_string(), secret));
+    }
+    // An unchecked box is simply absent from the body, so absence means "off".
+    for (key, checked) in [
+        ("captcha_on_register", payload.captcha_on_register.is_some()),
+        ("captcha_on_login", payload.captcha_on_login.is_some()),
+        ("captcha_on_create", payload.captcha_on_create.is_some()),
+    ] {
+        values.push((
+            key.to_string(),
+            if checked { "true" } else { "false" }.to_string(),
+        ));
+    }
 
     Ok(
         match context(&state, &client, &current.user)
@@ -990,6 +1042,12 @@ pub fn settings_values(settings: &Settings) -> SettingsValues {
         default_redirect_type: settings.default_redirect_type(),
         analytics_enabled: settings.analytics_enabled(),
         click_retention_days: settings.click_retention_days(),
+        captcha_provider: settings.captcha_provider().as_str().to_string(),
+        captcha_site_key: settings.captcha_site_key(),
+        captcha_secret_configured: settings.captcha_secret_configured(),
+        captcha_on_register: settings.captcha_on_register(),
+        captcha_on_login: settings.captcha_on_login(),
+        captcha_on_create: settings.captcha_on_create(),
     }
 }
 

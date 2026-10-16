@@ -310,6 +310,11 @@ pub fn message(lang: Lang, english: &str) -> String {
 
 /// Exact matches between a service message and a catalogue key.
 fn message_key(english: &str) -> Option<&'static str> {
+    // Bot protection: one constant is shared with the error type, so the two
+    // can never drift apart.
+    if english == crate::services::captcha::FAILURE_MESSAGE {
+        return Some("error.captcha");
+    }
     Some(match english {
         // auth
         "a valid email address is required" => "error.email.invalid",
@@ -869,6 +874,21 @@ mod tests {
         assert_eq!(
             message(Lang::ZhHant, "some brand new failure"),
             "some brand new failure"
+        );
+    }
+
+    #[test]
+    fn translates_the_captcha_failure_message() {
+        let english = crate::services::captcha::FAILURE_MESSAGE;
+        assert_eq!(message(Lang::En, english), english);
+        assert_eq!(
+            message(Lang::ZhHant, english),
+            Lang::ZhHant.t("error.captcha")
+        );
+        assert_ne!(message(Lang::ZhHant, english), english);
+        assert_eq!(
+            message(Lang::ZhHans, english),
+            Lang::ZhHans.t("error.captcha")
         );
     }
 }

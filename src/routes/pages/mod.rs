@@ -20,6 +20,8 @@ use serde::Deserialize;
 
 use crate::db::users::User;
 use crate::i18n::{self, Lang};
+use crate::middleware::auth::ClientInfo;
+use crate::services::captcha::{CaptchaFlow, CaptchaGuard, CaptchaWidget};
 use crate::state::AppState;
 
 /// A banner shown at the top of a page.
@@ -106,6 +108,7 @@ pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
             "target" => "flash.err.target",
             "password_rules" => "flash.err.password_rules",
             "tags" => "flash.err.tags",
+            "captcha" => "flash.err.captcha",
             _ => return None,
         };
         return Some(Flash {
@@ -125,6 +128,46 @@ pub fn redirect_ok(path: &str, code: &str) -> Redirect {
 /// Redirect back to a page with an error code.
 pub fn redirect_err(path: &str, code: &str) -> Redirect {
     Redirect::to(&with_param(path, "err", code))
+}
+
+/// Widget a browser form must render for `flow`, or `None` when the flow is not
+/// protected. The guard is inert unless a provider, a site key, a secret key and
+/// the per-flow switch are all set.
+pub fn captcha_widget(state: &AppState, flow: CaptchaFlow) -> Option<CaptchaWidget> {
+    CaptchaGuard::from_settings(
+        &state.settings,
+        flow,
+        state.config.captcha_verify_url.as_deref(),
+    )
+    .widget(i18n::current())
+}
+
+/// Verify the bot protection token of a browser flow.
+///
+/// Returns `true` when the submission must be rejected with `?err=captcha`; an
+/// unguarded flow always returns `false`, so it behaves as before.
+pub async fn captcha_rejected(
+    state: &AppState,
+    client: &ClientInfo,
+    flow: CaptchaFlow,
+    token: Option<&str>,
+) -> bool {
+    let guard = CaptchaGuard::from_settings(
+        &state.settings,
+        flow,
+        state.config.captcha_verify_url.as_deref(),
+    );
+    if !guard.enabled() {
+        return false;
+    }
+    match guard.verify(token, client.ip).await {
+        Ok(()) => false,
+        Err(err) => {
+            // Only the reason code is logged; the token never is.
+            tracing::debug!(reason = err.code(), "web captcha check rejected a request");
+            true
+        }
+    }
 }
 
 /// Redirect to the login screen, remembering where the visitor wanted to go.
@@ -509,6 +552,9 @@ mod tests {
             .expect("flash")
             .message
             .contains("future"));
+        let captcha = flash_from_query(None, Some("captcha")).expect("flash");
+        assert_eq!(captcha.kind, "error");
+        assert_eq!(captcha.message, Lang::En.t("flash.err.captcha"));
         assert!(flash_from_query(None, None).is_none());
     }
 }

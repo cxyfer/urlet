@@ -15,6 +15,14 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("default_redirect_type", "302"),
     ("analytics_enabled", "true"),
     ("click_retention_days", "0"),
+    // Bot protection. Disabled until a provider, a site key and a secret key are
+    // all set; see `services::captcha`.
+    ("captcha_provider", "none"),
+    ("captcha_site_key", ""),
+    ("captcha_secret_key", ""),
+    ("captcha_on_register", "false"),
+    ("captcha_on_login", "false"),
+    ("captcha_on_create", "false"),
 ];
 
 /// Load all settings.

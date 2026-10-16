@@ -46,6 +46,7 @@
                 <span class="hint">{{ lang.t("auth.register.invite_hint") }}</span>
             </div>
             {% endif %}
+            {% include "partials/captcha.html" %}
             <button class="btn btn-primary btn-block" type="submit">{{ lang.t("auth.register.submit") }}</button>
         </form>
         {% endif %}

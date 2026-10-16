@@ -11,6 +11,7 @@ use sqlx::SqlitePool;
 use crate::config::Config;
 use crate::db;
 use crate::error::{AppError, Result};
+use crate::services::captcha::CaptchaProvider;
 
 /// Who may register.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,13 +52,28 @@ pub const EDITABLE_KEYS: &[&str] = &[
     "default_redirect_type",
     "analytics_enabled",
     "click_retention_days",
+    "captcha_provider",
+    "captcha_site_key",
+    "captcha_secret_key",
+    "captcha_on_register",
+    "captcha_on_login",
+    "captcha_on_create",
 ];
+
+/// Settings that are write only: stored, used, but never handed back out.
+pub const SECRET_KEYS: &[&str] = &["captcha_secret_key"];
 
 #[derive(Debug)]
 pub struct Settings {
     values: RwLock<HashMap<String, String>>,
     registration_override: Option<RegistrationMode>,
     slug_length_override: Option<usize>,
+    captcha_provider_override: Option<CaptchaProvider>,
+    captcha_site_key_override: Option<String>,
+    captcha_secret_key_override: Option<String>,
+    captcha_on_register_override: Option<bool>,
+    captcha_on_login_override: Option<bool>,
+    captcha_on_create_override: Option<bool>,
 }
 
 impl Settings {
@@ -76,6 +92,15 @@ impl Settings {
                 .as_deref()
                 .map(RegistrationMode::parse),
             slug_length_override: config.slug_length_override,
+            captcha_provider_override: config
+                .captcha_provider_override
+                .as_deref()
+                .map(CaptchaProvider::parse),
+            captcha_site_key_override: config.captcha_site_key_override.clone(),
+            captcha_secret_key_override: config.captcha_secret_key_override.clone(),
+            captcha_on_register_override: config.captcha_on_register_override,
+            captcha_on_login_override: config.captcha_on_login_override,
+            captcha_on_create_override: config.captcha_on_create_override,
         })
     }
 
@@ -144,12 +169,71 @@ impl Settings {
         self.raw_i64("click_retention_days", 0).max(0)
     }
 
+    /// Configured bot protection provider.
+    pub fn captcha_provider(&self) -> CaptchaProvider {
+        self.captcha_provider_override.unwrap_or_else(|| {
+            CaptchaProvider::parse(&self.raw("captcha_provider").unwrap_or_default())
+        })
+    }
+
+    /// Public site key. Not a secret, so it is safe to render.
+    pub fn captcha_site_key(&self) -> String {
+        match &self.captcha_site_key_override {
+            Some(value) => value.trim().to_string(),
+            None => self
+                .raw("captcha_site_key")
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+        }
+    }
+
+    /// Provider secret. Never rendered and never returned by the admin API.
+    pub fn captcha_secret_key(&self) -> String {
+        match &self.captcha_secret_key_override {
+            Some(value) => value.trim().to_string(),
+            None => self
+                .raw("captcha_secret_key")
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+        }
+    }
+
+    /// True when a secret is stored, without revealing it.
+    pub fn captcha_secret_configured(&self) -> bool {
+        !self.captcha_secret_key().is_empty()
+    }
+
+    pub fn captcha_on_register(&self) -> bool {
+        self.captcha_on_register_override
+            .unwrap_or_else(|| self.raw_bool("captcha_on_register", false))
+    }
+
+    pub fn captcha_on_login(&self) -> bool {
+        self.captcha_on_login_override
+            .unwrap_or_else(|| self.raw_bool("captcha_on_login", false))
+    }
+
+    pub fn captcha_on_create(&self) -> bool {
+        self.captcha_on_create_override
+            .unwrap_or_else(|| self.raw_bool("captcha_on_create", false))
+    }
+
     /// Snapshot of all settings, for the admin API.
+    ///
+    /// Write only settings are dropped: the secret key must never leave the
+    /// process, not even to an authenticated administrator.
     pub fn snapshot(&self) -> HashMap<String, String> {
-        self.values
+        let mut values = self
+            .values
             .read()
             .map(|values| values.clone())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        for key in SECRET_KEYS {
+            values.remove(*key);
+        }
+        values
     }
 
     /// Validate and persist one setting, then refresh the cache.
@@ -231,6 +315,28 @@ fn validate_value(key: &str, value: &str) -> Result<String> {
             }
             Ok(parsed.to_string())
         }
+        "captcha_provider" => {
+            if !CaptchaProvider::is_known(value) {
+                return Err(invalid("provider must be none, turnstile or recaptcha"));
+            }
+            Ok(CaptchaProvider::parse(value).as_str().to_string())
+        }
+        // The site key is public and may be cleared; the secret is write only
+        // and is only stored when the administrator typed a new one.
+        "captcha_site_key" | "captcha_secret_key" => {
+            if value.chars().count() > crate::services::captcha::MAX_KEY_LEN {
+                return Err(invalid("the key must be at most 200 characters"));
+            }
+            if value.chars().any(char::is_control) {
+                return Err(invalid("the key must not contain control characters"));
+            }
+            Ok(value.to_string())
+        }
+        "captcha_on_register" | "captcha_on_login" | "captcha_on_create" => Ok(matches!(
+            value.to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+        .to_string()),
         _ => Err(invalid("unknown setting")),
     }
 }
@@ -269,5 +375,49 @@ mod tests {
         );
         assert!(validate_value("unknown_key", "x").is_err());
         assert!(validate_value("site_name", "").is_err());
+    }
+
+    #[test]
+    fn validates_captcha_values() {
+        assert_eq!(
+            validate_value("captcha_provider", " TURNSTILE ").expect("ok"),
+            "turnstile"
+        );
+        assert_eq!(
+            validate_value("captcha_provider", "recaptcha").expect("ok"),
+            "recaptcha"
+        );
+        assert_eq!(
+            validate_value("captcha_provider", "none").expect("ok"),
+            "none"
+        );
+        assert!(validate_value("captcha_provider", "hcaptcha").is_err());
+
+        assert_eq!(
+            validate_value("captcha_on_login", "on").expect("ok"),
+            "true"
+        );
+        assert_eq!(
+            validate_value("captcha_on_create", "no").expect("ok"),
+            "false"
+        );
+        assert_eq!(
+            validate_value("captcha_site_key", " 0x4AAAAAA ").expect("ok"),
+            "0x4AAAAAA"
+        );
+        // The site key can be cleared; the secret is skipped by the route when
+        // the administrator leaves the field empty.
+        assert_eq!(validate_value("captcha_site_key", "").expect("ok"), "");
+        assert!(validate_value("captcha_secret_key", &"x".repeat(201)).is_err());
+        assert!(validate_value("captcha_secret_key", "bad\u{7}key").is_err());
+        assert!(validate_value("captcha_secret_key", "fine").is_ok());
+    }
+
+    #[test]
+    fn secret_settings_are_editable_but_write_only() {
+        assert!(!SECRET_KEYS.is_empty());
+        for key in SECRET_KEYS {
+            assert!(EDITABLE_KEYS.contains(key), "{key} must be editable");
+        }
     }
 }

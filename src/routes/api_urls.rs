@@ -140,6 +140,13 @@ pub async fn list(
 }
 
 /// `POST /api/v1/urls`
+///
+/// Deliberately **not** guarded by bot protection: this endpoint authenticates
+/// with a session cookie or an `Authorization: Bearer uw_...` API token, and a
+/// machine caller that already holds a credential is not the threat the captcha
+/// guards against. Adding a challenge here would break every existing API
+/// client. It is also the only creation path reachable without a browser: the
+/// HTML form (`POST /app/urls`) and both authentication endpoints are guarded.
 pub async fn create(
     State(state): State<AppState>,
     client: ClientInfo,
