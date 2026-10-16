@@ -5,7 +5,7 @@
 //! `AppError::into_response` all render in the same language.
 
 use axum::extract::Request;
-use axum::http::{header, HeaderValue};
+use axum::http::{header, HeaderMap, HeaderValue};
 use axum::middleware::Next;
 use axum::response::Response;
 
@@ -20,7 +20,24 @@ pub async fn locale(request: Request, next: Next) -> Response {
             .headers_mut()
             .insert(header::CONTENT_LANGUAGE, value);
     }
+    // HTML depends on the negotiation inputs, so a shared cache must key on
+    // them. Static assets do not, and adding `Vary` there would defeat their
+    // long cache lifetime.
+    if is_html(response.headers()) {
+        response.headers_mut().insert(
+            header::VARY,
+            HeaderValue::from_static("Accept-Language, Cookie"),
+        );
+    }
     response
+}
+
+fn is_html(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.starts_with("text/html"))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -84,5 +101,48 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.headers()["content-language"], "en");
+    }
+
+    #[tokio::test]
+    async fn html_responses_vary_on_the_negotiation_inputs() {
+        use axum::http::header;
+
+        async fn html() -> axum::response::Html<&'static str> {
+            axum::response::Html("page")
+        }
+        async fn asset() -> impl axum::response::IntoResponse {
+            (
+                [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+                "body {}",
+            )
+        }
+
+        let app = Router::new()
+            .route("/", get(html))
+            .route("/app.css", get(asset))
+            .layer(axum::middleware::from_fn(locale));
+
+        let response = app
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.headers()[header::VARY], "Accept-Language, Cookie");
+
+        let response = app
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/app.css")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert!(response.headers().get(header::VARY).is_none());
     }
 }
