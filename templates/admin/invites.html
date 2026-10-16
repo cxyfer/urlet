@@ -1,52 +1,51 @@
 {% extends "app_base.html" %}
 
-{% block title %}Invites — {{ site_name }}{% endblock %}
+{% block title %}{{ lang.t("admin.invites.title") }} — {{ site_name }}{% endblock %}
 
 {% block content %}
 {% include "admin/tabs.html" %}
 
 <div class="row between">
-    <h1>Invite codes</h1>
+    <h1>{{ lang.t("admin.invites.heading") }}</h1>
     <span class="badge {% if registration_mode == "invite" %}badge-accent{% endif %}">
-        registration: {{ registration_mode }}
+        {{ lang.t("admin.invites.registration") }} {{ registration_mode }}
     </span>
 </div>
 
 {% if registration_mode != "invite" %}
 <div class="alert alert-info">
-    Registration is currently <strong>{{ registration_mode }}</strong>. Invite codes are only
-    required when the registration mode is set to <code>invite</code>.
+    {{ lang.t("admin.invites.mode_prefix") }} <strong>{{ registration_mode }}</strong>{{ lang.t("admin.invites.mode_suffix")|safe }}
 </div>
 {% endif %}
 
 {% match new_code %}
 {% when Some with (code) %}
 <div class="alert alert-info">
-    <strong>Copy this invite code now.</strong> It is shown only once.
+    <strong>{{ lang.t("admin.invites.copy_now") }}</strong> {{ lang.t("admin.invites.copy_once") }}
     <div class="copy-row mt">
         <input class="input" id="new-invite" type="text" value="{{ code }}" readonly>
-        <button class="btn" type="button" data-copy="#new-invite">Copy</button>
+        <button class="btn" type="button" data-copy="#new-invite">{{ lang.t("common.copy") }}</button>
     </div>
 </div>
 {% when None %}
 {% endmatch %}
 
 <div class="card mt">
-    <h2>Create invite</h2>
+    <h2>{{ lang.t("admin.invites.create") }}</h2>
     <form method="post" action="/app/admin/invites" class="row">
         <div class="field" style="flex: 2 1 220px; margin-bottom: 0;">
-            <label class="label" for="note">Note</label>
-            <input class="input" type="text" id="note" name="note" placeholder="for the design team">
+            <label class="label" for="note">{{ lang.t("common.note") }}</label>
+            <input class="input" type="text" id="note" name="note" placeholder="{{ lang.t("admin.invites.note_placeholder") }}">
         </div>
         <div class="field" style="flex: 0 1 130px; margin-bottom: 0;">
-            <label class="label" for="max_uses">Max uses</label>
+            <label class="label" for="max_uses">{{ lang.t("admin.invites.max_uses") }}</label>
             <input class="input" type="number" id="max_uses" name="max_uses" min="1" value="1">
         </div>
         <div class="field" style="flex: 1 1 190px; margin-bottom: 0;">
-            <label class="label" for="expires_at">Expires at (UTC)</label>
-            <input class="input" type="text" id="expires_at" name="expires_at" placeholder="2030-01-31 12:00">
+            <label class="label" for="expires_at">{{ lang.t("common.expires_at") }}</label>
+            <input class="input" type="text" id="expires_at" name="expires_at" placeholder="{{ lang.t("common.password_placeholder") }}">
         </div>
-        <button class="btn btn-primary" type="submit">Create</button>
+        <button class="btn btn-primary" type="submit">{{ lang.t("admin.invites.create") }}</button>
     </form>
 </div>
 
@@ -55,7 +54,7 @@
     <div class="table-wrap">
         <table class="table">
             <thead>
-                <tr><th>Prefix</th><th>Note</th><th>Uses</th><th>Expires</th><th>Status</th><th>Created</th><th></th></tr>
+                <tr><th>{{ lang.t("common.prefix") }}</th><th>{{ lang.t("common.note") }}</th><th>{{ lang.t("admin.invites.uses") }}</th><th>{{ lang.t("common.expires") }}</th><th>{{ lang.t("common.status") }}</th><th>{{ lang.t("common.created") }}</th><th></th></tr>
             </thead>
             <tbody>
                 {% for invite in invites %}
@@ -74,7 +73,7 @@
                         {% if invite.usable %}
                         <form method="post" action="/app/admin/invites/{{ invite.id }}/delete">
                             <button class="btn btn-sm btn-danger" type="submit"
-                                    data-confirm="Revoke this invite code?">Revoke</button>
+                                    data-confirm="{{ lang.t("admin.invites.confirm") }}">{{ lang.t("common.revoke") }}</button>
                         </form>
                         {% endif %}
                     </td>
@@ -84,7 +83,7 @@
         </table>
     </div>
     {% else %}
-    <p class="empty">No invite codes yet.</p>
+    <p class="empty">{{ lang.t("admin.invites.empty") }}</p>
     {% endif %}
 </div>
 {% endblock %}

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Create account — {{ site_name }}{% endblock %}
+{% block title %}{{ lang.t("auth.register.title") }} — {{ site_name }}{% endblock %}
 
 {% block body %}
 <div class="wrap-narrow">
@@ -9,7 +9,7 @@
     <div class="card">
         {% if !registration_open %}
         <div class="alert alert-warn">
-            Registration is currently closed on this instance.
+            {{ lang.t("auth.register.closed") }}
         </div>
         {% endif %}
 
@@ -23,36 +23,36 @@
         <form method="post" action="/app/register">
             <input type="hidden" name="next" value="{{ next }}">
             <div class="field">
-                <label class="label" for="email">Email</label>
+                <label class="label" for="email">{{ lang.t("common.email") }}</label>
                 <input class="input" type="email" id="email" name="email" value="{{ email }}"
                        autocomplete="username" required autofocus>
             </div>
             <div class="field">
-                <label class="label" for="display_name">Display name <span class="muted">(optional)</span></label>
+                <label class="label" for="display_name">{{ lang.t("auth.register.display_name") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
                 <input class="input" type="text" id="display_name" name="display_name"
                        value="{{ display_name }}" maxlength="60">
             </div>
             <div class="field">
-                <label class="label" for="password">Password</label>
+                <label class="label" for="password">{{ lang.t("common.password") }}</label>
                 <input class="input" type="password" id="password" name="password"
                        autocomplete="new-password" minlength="8" required>
-                <span class="hint">At least 8 characters.</span>
+                <span class="hint">{{ lang.t("auth.register.password_hint") }}</span>
             </div>
             {% if invite_required %}
             <div class="field">
-                <label class="label" for="invite_code">Invite code</label>
+                <label class="label" for="invite_code">{{ lang.t("auth.register.invite_code") }}</label>
                 <input class="input" type="text" id="invite_code" name="invite_code"
                        value="{{ invite_code }}" required>
-                <span class="hint">This instance is invite only.</span>
+                <span class="hint">{{ lang.t("auth.register.invite_hint") }}</span>
             </div>
             {% endif %}
-            <button class="btn btn-primary btn-block" type="submit">Create account</button>
+            <button class="btn btn-primary btn-block" type="submit">{{ lang.t("auth.register.submit") }}</button>
         </form>
         {% endif %}
 
         <hr>
         <p class="center small muted">
-            Already registered? <a href="/app/login">Sign in</a>
+            {{ lang.t("auth.register.have_account") }} <a href="/app/login">{{ lang.t("auth.register.sign_in") }}</a>
         </p>
     </div>
 </div>

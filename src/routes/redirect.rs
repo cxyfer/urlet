@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::urls::{self, Url, UrlState};
 use crate::error::{AppError, Result};
+use crate::i18n;
 use crate::middleware::auth::ClientInfo;
 use crate::routes::extract::Flexible;
 use crate::services::click::ClickInput;
@@ -23,6 +24,7 @@ pub struct PasswordPage {
     pub site_name: String,
     pub slug: String,
     pub error: Option<String>,
+    pub lang: i18n::Lang,
 }
 
 /// 404/410 page for a link that cannot be followed.
@@ -33,6 +35,7 @@ pub struct LinkErrorPage {
     pub status_code: u16,
     pub title: String,
     pub message: String,
+    pub lang: i18n::Lang,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,13 +63,13 @@ pub async fn redirect(
         UrlState::Deleted | UrlState::Disabled => Ok(not_found_page(&state)),
         UrlState::Expired => Ok(gone_page(
             &state,
-            "Link expired",
-            "This short link reached its expiry date and no longer redirects.",
+            "link.expired.title",
+            "link.expired.message",
         )),
         UrlState::LimitReached => Ok(gone_page(
             &state,
-            "Link expired",
-            "This short link reached its maximum number of clicks and no longer redirects.",
+            "link.expired.title",
+            "link.limit.message",
         )),
         UrlState::Active => {
             if url.has_password() && !is_unlocked(&state, &client, &url.slug) {
@@ -112,15 +115,15 @@ pub async fn unlock_link(
         UrlState::Expired => {
             return Ok(gone_page(
                 &state,
-                "Link expired",
-                "This short link reached its expiry date and no longer redirects.",
+                "link.expired.title",
+                "link.expired.message",
             ))
         }
         UrlState::LimitReached => {
             return Ok(gone_page(
                 &state,
-                "Link expired",
-                "This short link reached its maximum number of clicks and no longer redirects.",
+                "link.expired.title",
+                "link.limit.message",
             ))
         }
         UrlState::Active => {}
@@ -142,7 +145,7 @@ pub async fn unlock_link(
             Ok(password_page(
                 &state,
                 &url.slug,
-                Some("Incorrect password. Try again."),
+                Some(i18n::current().t("link.password.incorrect")),
                 StatusCode::UNAUTHORIZED,
             ))
         };
@@ -256,26 +259,32 @@ fn password_page(
         site_name: state.settings.site_name(),
         slug: slug.to_string(),
         error: error.map(str::to_string),
+        lang: i18n::current(),
     };
     render(page, status)
 }
 
 fn not_found_page(state: &AppState) -> Response {
+    let lang = i18n::current();
     let page = LinkErrorPage {
         site_name: state.settings.site_name(),
         status_code: 404,
-        title: "Link not found".to_string(),
-        message: "This short link does not exist, was removed, or is disabled.".to_string(),
+        title: lang.t("link.not_found.title").to_string(),
+        message: lang.t("link.not_found.message").to_string(),
+        lang,
     };
     render(page, StatusCode::NOT_FOUND)
 }
 
-fn gone_page(state: &AppState, title: &str, message: &str) -> Response {
+/// `title_key` and `message_key` are catalogue keys, not display strings.
+fn gone_page(state: &AppState, title_key: &str, message_key: &str) -> Response {
+    let lang = i18n::current();
     let page = LinkErrorPage {
         site_name: state.settings.site_name(),
         status_code: 410,
-        title: title.to_string(),
-        message: message.to_string(),
+        title: lang.t(title_key).to_string(),
+        message: lang.t(message_key).to_string(),
+        lang,
     };
     render(page, StatusCode::GONE)
 }

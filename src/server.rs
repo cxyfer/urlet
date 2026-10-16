@@ -43,6 +43,9 @@ pub fn build_router(state: AppState) -> Router {
             state.clone(),
             middleware::csrf::csrf_protect,
         ))
+        // Outermost: every handler, and every error response rendered by
+        // `AppError::into_response`, runs with the request language installed.
+        .layer(axum::middleware::from_fn(middleware::locale::locale))
         .with_state(state)
 }
 

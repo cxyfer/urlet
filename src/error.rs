@@ -115,17 +115,18 @@ impl AppError {
         }
     }
 
-    fn title(&self) -> &'static str {
+    /// Catalogue key of the heading shown on the HTML error page.
+    fn title_key(&self) -> &'static str {
         match self.status() {
-            StatusCode::BAD_REQUEST => "Bad request",
-            StatusCode::UNPROCESSABLE_ENTITY => "Invalid input",
-            StatusCode::UNAUTHORIZED => "Sign in required",
-            StatusCode::FORBIDDEN => "Not allowed",
-            StatusCode::NOT_FOUND => "Not found",
-            StatusCode::CONFLICT => "Conflict",
-            StatusCode::GONE => "Link expired",
-            StatusCode::TOO_MANY_REQUESTS => "Slow down",
-            _ => "Server error",
+            StatusCode::BAD_REQUEST => "error.bad_request.title",
+            StatusCode::UNPROCESSABLE_ENTITY => "error.validation.title",
+            StatusCode::UNAUTHORIZED => "error.unauthorized.title",
+            StatusCode::FORBIDDEN => "error.forbidden.title",
+            StatusCode::NOT_FOUND => "error.not_found.title",
+            StatusCode::CONFLICT => "error.conflict.title",
+            StatusCode::GONE => "error.gone.title",
+            StatusCode::TOO_MANY_REQUESTS => "error.rate_limited.title",
+            _ => "error.internal.title",
         }
     }
 
@@ -144,17 +145,23 @@ pub struct ErrorTemplate {
     pub title: String,
     pub message: String,
     pub site_name: String,
+    pub lang: crate::i18n::Lang,
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = self.status();
+        // The page renders in the language installed by the locale middleware.
+        // `self.message()` stays English for the JSON API; the HTML page maps the
+        // known service messages through the catalogue.
+        let lang = crate::i18n::current();
         let mut response = if wants_html() {
             let template = ErrorTemplate {
                 status_code: status.as_u16(),
-                title: self.title().to_string(),
-                message: self.message(),
+                title: lang.t(self.title_key()).to_string(),
+                message: crate::i18n::message(lang, &self.message()),
                 site_name: "uwurls".to_string(),
+                lang,
             };
             match template.render() {
                 Ok(html) => (status, Html(html)).into_response(),

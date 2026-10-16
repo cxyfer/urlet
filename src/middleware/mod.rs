@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod csrf;
+pub mod locale;
 pub mod security;
 
 use std::net::{IpAddr, SocketAddr};

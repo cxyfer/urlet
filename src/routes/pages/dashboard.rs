@@ -9,6 +9,7 @@ use serde::Deserialize;
 use crate::db::urls::{UrlSort, UserUrlFilter};
 use crate::db::{clicks, tags, urls};
 use crate::error::AppError;
+use crate::i18n::{self, Lang};
 use crate::middleware::auth::MaybeUser;
 use crate::routes::dto::{DailyPointDto, DimensionDto, OverviewDto, TagDto, TopLinkDto, UrlDto};
 use crate::routes::pages::{
@@ -40,6 +41,11 @@ pub struct DashboardPage {
     pub used: i64,
     pub default_redirect_type: i64,
     pub public_base: String,
+    /// Localised "3 of 10 links used" line.
+    pub usage: String,
+    /// Localised "Page 2 of 5 (30 links)" line.
+    pub pagination_note: String,
+    pub lang: Lang,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -127,6 +133,12 @@ pub async fn dashboard(
         .await
         .map_err(AppError::from)?;
 
+    let lang = i18n::current();
+    let quota = state.settings.max_urls_per_user();
+    let used = urls::count_for_user(&state.db, user.id)
+        .await
+        .map_err(AppError::from)?;
+
     let page_render = DashboardPage {
         site_name: state.settings.site_name(),
         chrome: Chrome::new(&state, &user, "dashboard", flash),
@@ -143,12 +155,35 @@ pub async fn dashboard(
         tag: clean(&query.tag).unwrap_or_default(),
         status: clean(&query.status).unwrap_or_default(),
         sort: clean(&query.sort).unwrap_or_default(),
-        quota: state.settings.max_urls_per_user(),
-        used: urls::count_for_user(&state.db, user.id)
-            .await
-            .map_err(AppError::from)?,
+        quota,
+        used,
         default_redirect_type: state.settings.default_redirect_type(),
         public_base: state.config.base_url.clone(),
+        usage: i18n::format(
+            lang,
+            "dashboard.usage",
+            &[
+                ("used", used.to_string()),
+                (
+                    "quota",
+                    if quota > 0 {
+                        quota.to_string()
+                    } else {
+                        lang.t("common.unlimited").to_string()
+                    },
+                ),
+            ],
+        ),
+        pagination_note: i18n::format(
+            lang,
+            "dashboard.pagination_note",
+            &[
+                ("page", page.to_string()),
+                ("total", total_pages.to_string()),
+                ("count", total.to_string()),
+            ],
+        ),
+        lang,
     };
 
     match page_render.render() {

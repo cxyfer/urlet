@@ -1,62 +1,60 @@
 {% extends "app_base.html" %}
 
-{% block title %}Admin — {{ site_name }}{% endblock %}
+{% block title %}{{ lang.t("admin.overview.title") }} — {{ site_name }}{% endblock %}
 
 {% block content %}
 {% include "admin/tabs.html" %}
 
 <div class="row between">
-    <h1>System overview</h1>
-    <span class="muted small">v{{ stats.version }} · up {{ stats.uptime }}</span>
+    <h1>{{ lang.t("admin.overview.heading") }}</h1>
+    <span class="muted small">v{{ stats.version }} · {{ lang.t("admin.overview.up") }} {{ stats.uptime }}</span>
 </div>
 
 <div class="grid grid-4 mt">
     <div class="stat">
-        <div class="stat-label">Users</div>
+        <div class="stat-label">{{ lang.t("admin.overview.stat.users") }}</div>
         <div class="stat-value">{{ stats.users }}</div>
     </div>
     <div class="stat">
-        <div class="stat-label">Admins</div>
+        <div class="stat-label">{{ lang.t("admin.overview.stat.admins") }}</div>
         <div class="stat-value">{{ stats.admins }}</div>
     </div>
     <div class="stat">
-        <div class="stat-label">Links</div>
+        <div class="stat-label">{{ lang.t("admin.overview.stat.links") }}</div>
         <div class="stat-value">{{ stats.links }}</div>
     </div>
     <div class="stat">
-        <div class="stat-label">Expired links</div>
+        <div class="stat-label">{{ lang.t("admin.overview.stat.expired_links") }}</div>
         <div class="stat-value">{{ stats.expired_links }}</div>
     </div>
     <div class="stat">
-        <div class="stat-label">Total clicks</div>
+        <div class="stat-label">{{ lang.t("admin.overview.stat.total_clicks") }}</div>
         <div class="stat-value">{{ stats.total_clicks }}</div>
     </div>
     <div class="stat">
-        <div class="stat-label">Unique visitors</div>
+        <div class="stat-label">{{ lang.t("admin.overview.stat.unique_visitors") }}</div>
         <div class="stat-value">{{ stats.unique_clicks }}</div>
     </div>
     <div class="stat">
-        <div class="stat-label">Bot clicks</div>
+        <div class="stat-label">{{ lang.t("admin.overview.stat.bot_clicks") }}</div>
         <div class="stat-value">{{ stats.bot_clicks }}</div>
     </div>
     <div class="stat">
-        <div class="stat-label">Active invites</div>
+        <div class="stat-label">{{ lang.t("admin.overview.stat.active_invites") }}</div>
         <div class="stat-value">{{ stats.active_invites }}</div>
     </div>
 </div>
 
 <div class="card mt">
-    <h2>Instance</h2>
+    <h2>{{ lang.t("admin.overview.instance") }}</h2>
     <dl class="meta">
-        <dt>Registration</dt><dd>{{ stats.registration_mode }}</dd>
-        <dt>Database size</dt><dd>{{ stats.database_size }}</dd>
-        <dt>Uptime</dt><dd>{{ stats.uptime }}</dd>
-        <dt>Version</dt><dd>{{ stats.version }}</dd>
+        <dt>{{ lang.t("admin.overview.registration") }}</dt><dd>{{ stats.registration_mode }}</dd>
+        <dt>{{ lang.t("admin.overview.database_size") }}</dt><dd>{{ stats.database_size }}</dd>
+        <dt>{{ lang.t("admin.overview.uptime") }}</dt><dd>{{ stats.uptime }}</dd>
+        <dt>{{ lang.t("admin.overview.version") }}</dt><dd>{{ stats.version }}</dd>
     </dl>
     <p class="hint mt">
-        Retention is controlled by the settings page: click history is pruned when
-        <em>click retention</em> is greater than zero. Sessions, expired login attempts and
-        audit entries older than 180 days are cleaned up automatically.
+        {{ lang.t("admin.overview.retention_hint")|safe }}
     </p>
 </div>
 {% endblock %}

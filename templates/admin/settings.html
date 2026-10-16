@@ -1,65 +1,65 @@
 {% extends "app_base.html" %}
 
-{% block title %}Settings — {{ site_name }}{% endblock %}
+{% block title %}{{ lang.t("admin.settings.title") }} — {{ site_name }}{% endblock %}
 
 {% block content %}
 {% include "admin/tabs.html" %}
 
-<h1>Instance settings</h1>
+<h1>{{ lang.t("admin.settings.heading") }}</h1>
 
 <div class="card mt">
     <form method="post" action="/app/admin/settings">
         <div class="grid grid-2">
             <div class="field">
-                <label class="label" for="site_name">Site name</label>
+                <label class="label" for="site_name">{{ lang.t("admin.settings.site_name") }}</label>
                 <input class="input" type="text" id="site_name" name="site_name"
                        value="{{ values.site_name }}" maxlength="60" required>
             </div>
             <div class="field">
-                <label class="label" for="registration_mode">Registration mode</label>
+                <label class="label" for="registration_mode">{{ lang.t("admin.settings.registration_mode") }}</label>
                 <select class="select" id="registration_mode" name="registration_mode">
-                    <option value="open" {% if values.registration_mode == "open" %}selected{% endif %}>open — anyone can register</option>
-                    <option value="invite" {% if values.registration_mode == "invite" %}selected{% endif %}>invite — invite code required</option>
-                    <option value="closed" {% if values.registration_mode == "closed" %}selected{% endif %}>closed — no new accounts</option>
+                    <option value="open" {% if values.registration_mode == "open" %}selected{% endif %}>{{ lang.t("admin.settings.mode.open") }}</option>
+                    <option value="invite" {% if values.registration_mode == "invite" %}selected{% endif %}>{{ lang.t("admin.settings.mode.invite") }}</option>
+                    <option value="closed" {% if values.registration_mode == "closed" %}selected{% endif %}>{{ lang.t("admin.settings.mode.closed") }}</option>
                 </select>
             </div>
             <div class="field">
-                <label class="label" for="default_slug_length">Generated slug length</label>
+                <label class="label" for="default_slug_length">{{ lang.t("admin.settings.slug_length") }}</label>
                 <input class="input" type="number" id="default_slug_length" name="default_slug_length"
                        min="4" max="16" value="{{ values.default_slug_length }}" required>
-                <span class="hint">Between 4 and 16 characters.</span>
+                <span class="hint">{{ lang.t("admin.settings.slug_length_hint") }}</span>
             </div>
             <div class="field">
-                <label class="label" for="max_urls_per_user">Links per user</label>
+                <label class="label" for="max_urls_per_user">{{ lang.t("admin.settings.links_per_user") }}</label>
                 <input class="input" type="number" id="max_urls_per_user" name="max_urls_per_user"
                        min="0" value="{{ values.max_urls_per_user }}" required>
-                <span class="hint">0 means unlimited.</span>
+                <span class="hint">{{ lang.t("admin.settings.links_per_user_hint") }}</span>
             </div>
             <div class="field">
-                <label class="label" for="default_redirect_type">Default redirect type</label>
+                <label class="label" for="default_redirect_type">{{ lang.t("admin.settings.default_redirect") }}</label>
                 <select class="select" id="default_redirect_type" name="default_redirect_type">
-                    <option value="302" {% if values.default_redirect_type == 302 %}selected{% endif %}>302 temporary</option>
-                    <option value="301" {% if values.default_redirect_type == 301 %}selected{% endif %}>301 permanent</option>
-                    <option value="307" {% if values.default_redirect_type == 307 %}selected{% endif %}>307 temporary</option>
-                    <option value="308" {% if values.default_redirect_type == 308 %}selected{% endif %}>308 permanent</option>
+                    <option value="302" {% if values.default_redirect_type == 302 %}selected{% endif %}>{{ lang.t("dashboard.redirect.302") }}</option>
+                    <option value="301" {% if values.default_redirect_type == 301 %}selected{% endif %}>{{ lang.t("dashboard.redirect.301") }}</option>
+                    <option value="307" {% if values.default_redirect_type == 307 %}selected{% endif %}>{{ lang.t("dashboard.redirect.307") }}</option>
+                    <option value="308" {% if values.default_redirect_type == 308 %}selected{% endif %}>{{ lang.t("dashboard.redirect.308") }}</option>
                 </select>
             </div>
             <div class="field">
-                <label class="label" for="click_retention_days">Click retention (days)</label>
+                <label class="label" for="click_retention_days">{{ lang.t("admin.settings.retention") }}</label>
                 <input class="input" type="number" id="click_retention_days" name="click_retention_days"
                        min="0" max="3650" value="{{ values.click_retention_days }}" required>
-                <span class="hint">0 keeps click history forever.</span>
+                <span class="hint">{{ lang.t("admin.settings.retention_hint") }}</span>
             </div>
         </div>
 
         <label class="checkbox">
             <input type="checkbox" name="analytics_enabled" value="on"
                    {% if values.analytics_enabled %}checked{% endif %}>
-            Record click analytics
+            {{ lang.t("admin.settings.analytics") }}
         </label>
 
         <div class="row row-end mt">
-            <button class="btn btn-primary" type="submit">Save settings</button>
+            <button class="btn btn-primary" type="submit">{{ lang.t("admin.settings.save") }}</button>
         </div>
     </form>
 </div>

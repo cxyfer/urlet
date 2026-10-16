@@ -2,6 +2,19 @@
 (function () {
     "use strict";
 
+    /* The handful of strings JavaScript itself produces. Everything else is
+       rendered server side; these are keyed by <html lang="...">. */
+    var STRINGS = {
+        en: { copied: "Copied", copyFailed: "Copy failed" },
+        "zh-Hant": { copied: "已複製", copyFailed: "複製失敗" },
+        "zh-Hans": { copied: "已复制", copyFailed: "复制失败" }
+    };
+
+    function strings() {
+        var lang = document.documentElement.getAttribute("lang") || "en";
+        return STRINGS[lang] || STRINGS.en;
+    }
+
     function copyText(text) {
         if (navigator.clipboard && window.isSecureContext) {
             return navigator.clipboard.writeText(text);
@@ -41,9 +54,9 @@
             var value = source ? (source.value !== undefined ? source.value : source.textContent) : "";
             if (!value) { return; }
             copyText(value.trim()).then(function () {
-                flash(copyButton, "Copied");
+                flash(copyButton, strings().copied);
             }).catch(function () {
-                flash(copyButton, "Copy failed");
+                flash(copyButton, strings().copyFailed);
             });
             return;
         }
@@ -52,6 +65,17 @@
         if (confirmable && !window.confirm(confirmable.getAttribute("data-confirm"))) {
             event.preventDefault();
         }
+    });
+
+    /* Carry the current path into the language switcher so the visitor stays on
+       the page they were reading. Without JS the links still work and land on
+       the dashboard. */
+    document.querySelectorAll("[data-lang-switcher] a").forEach(function (link) {
+        var href = link.getAttribute("href");
+        if (!href || href.indexOf("next=") !== -1) { return; }
+        var next = window.location.pathname + window.location.search;
+        if (!next || next === "/") { return; }
+        link.setAttribute("href", href + "?next=" + encodeURIComponent(next));
     });
 
     /* Reveal password inputs on demand. */

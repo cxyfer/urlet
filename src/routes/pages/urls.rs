@@ -11,6 +11,7 @@ use serde::Deserialize;
 use crate::db::clicks::{self, Click, Dimension};
 use crate::db::{tags, urls};
 use crate::error::AppError;
+use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::routes::api_stats::{click_dto, summary_dto};
 use crate::routes::dto::{StatsSummaryDto, UrlDto};
@@ -39,6 +40,11 @@ pub struct UrlDetailPage {
     pub clicks: Vec<ClickRow>,
     pub tags_csv: String,
     pub days: i64,
+    /// Localised "30 days ago" label of the chart axis.
+    pub days_label: String,
+    /// Localised "42 clicks in this window; grey segments are bots" legend.
+    pub chart_legend: String,
+    pub lang: Lang,
 }
 
 /// One row of the recent click log.
@@ -54,21 +60,29 @@ pub struct ClickRow {
 }
 
 impl ClickRow {
-    fn new(click: &Click) -> Self {
+    fn new(click: &Click, lang: Lang) -> Self {
         let dto = click_dto(click);
         let (kind, kind_class) = if dto.is_bot {
-            ("Bot", "badge-muted")
+            (lang.t("click.kind.bot"), "badge-muted")
         } else if dto.is_unique {
-            ("Unique", "badge-accent")
+            (lang.t("click.kind.unique"), "badge-accent")
         } else {
-            ("Repeat", "badge")
+            (lang.t("click.kind.repeat"), "badge")
         };
         Self {
-            when: time::humanize(&dto.clicked_at),
-            referrer: dto.referrer_host.unwrap_or_else(|| "direct".to_string()),
-            device: dto.device_type.unwrap_or_else(|| "Unknown".to_string()),
-            browser: dto.browser.unwrap_or_else(|| "Other".to_string()),
-            os: dto.os.unwrap_or_else(|| "Unknown".to_string()),
+            when: time::humanize_lang(lang, &dto.clicked_at),
+            referrer: dto
+                .referrer_host
+                .unwrap_or_else(|| lang.t("common.direct").to_string()),
+            device: dto
+                .device_type
+                .unwrap_or_else(|| lang.t("common.unknown").to_string()),
+            browser: dto
+                .browser
+                .unwrap_or_else(|| lang.t("common.other").to_string()),
+            os: dto
+                .os
+                .unwrap_or_else(|| lang.t("common.unknown").to_string()),
             kind,
             kind_class,
         }
@@ -275,6 +289,8 @@ pub async fn detail(
         .collect();
 
     let dto = UrlDto::new(&url, &state.config.base_url, tag_names.clone());
+    let lang = i18n::current();
+    let daily_total: i64 = daily.iter().map(|point| point.clicks).sum();
     let page = UrlDetailPage {
         site_name: state.settings.site_name(),
         chrome: Chrome::new(
@@ -286,14 +302,28 @@ pub async fn detail(
         url: UrlRow::new(&dto),
         summary: summary_dto(&summary),
         chart: chart::svg_bars(&daily),
-        daily_total: daily.iter().map(|point| point.clicks).sum(),
+        daily_total,
         referrers: bar_rows(dimension_dtos(referrers)),
         devices: bar_rows(dimension_dtos(devices)),
         browsers: bar_rows(dimension_dtos(browsers)),
         operating_systems: bar_rows(dimension_dtos(operating_systems)),
-        clicks: recent.iter().map(ClickRow::new).collect(),
+        clicks: recent
+            .iter()
+            .map(|click| ClickRow::new(click, lang))
+            .collect(),
         tags_csv: tag_names.join(", "),
         days,
+        days_label: i18n::format(
+            lang,
+            "url_detail.chart.days_ago",
+            &[("days", days.to_string())],
+        ),
+        chart_legend: i18n::format(
+            lang,
+            "url_detail.chart.legend",
+            &[("clicks", daily_total.to_string())],
+        ),
+        lang,
     };
 
     match page.render() {

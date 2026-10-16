@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Sign in — {{ site_name }}{% endblock %}
+{% block title %}{{ lang.t("auth.login.title") }} — {{ site_name }}{% endblock %}
 
 {% block body %}
 <div class="wrap-narrow">
     <h1 class="center">{{ site_name }}</h1>
-    <p class="center muted">Sign in to manage your short links.</p>
+    <p class="center muted">{{ lang.t("auth.login.subtitle") }}</p>
 
     <div class="card">
         {% match notice %}
@@ -23,21 +23,21 @@
         <form method="post" action="/app/login">
             <input type="hidden" name="next" value="{{ next }}">
             <div class="field">
-                <label class="label" for="email">Email</label>
+                <label class="label" for="email">{{ lang.t("common.email") }}</label>
                 <input class="input" type="email" id="email" name="email" value="{{ email }}"
                        autocomplete="username" required autofocus>
             </div>
             <div class="field">
-                <label class="label" for="password">Password</label>
+                <label class="label" for="password">{{ lang.t("common.password") }}</label>
                 <input class="input" type="password" id="password" name="password"
                        autocomplete="current-password" required>
             </div>
-            <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+            <button class="btn btn-primary btn-block" type="submit">{{ lang.t("auth.login.submit") }}</button>
         </form>
 
         <hr>
         <p class="center small muted">
-            No account yet? <a href="/app/register">Create one</a>
+            {{ lang.t("auth.login.no_account") }} <a href="/app/register">{{ lang.t("auth.login.create_one") }}</a>
         </p>
     </div>
 </div>

@@ -9,6 +9,7 @@ use axum::Form;
 use serde::Deserialize;
 
 use crate::error::{AppError, Result};
+use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::routes::pages::{redirect_ok, safe_next};
 use crate::services::auth::{self, AuthContext};
@@ -24,6 +25,7 @@ pub struct LoginPage {
     pub notice: Option<String>,
     pub next: String,
     pub email: String,
+    pub lang: Lang,
 }
 
 #[derive(Debug, Template)]
@@ -38,6 +40,7 @@ pub struct RegisterPage {
     pub email: String,
     pub display_name: String,
     pub invite_code: String,
+    pub lang: Lang,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -79,17 +82,18 @@ pub async fn login_page(
     if current.is_some() {
         return Ok(Redirect::to("/app").into_response());
     }
+    let lang = i18n::current();
     let notice = match query.ok.as_deref() {
-        Some("logout") => Some("You have been signed out.".to_string()),
-        Some("registered") => Some("Account created. Please sign in.".to_string()),
-        Some("password") => Some("Password changed. Please sign in again.".to_string()),
+        Some("logout") => Some(lang.t("auth.login.logged_out").to_string()),
+        Some("registered") => Some(lang.t("auth.login.registered").to_string()),
+        Some("password") => Some(lang.t("auth.login.password_changed").to_string()),
         _ => None,
     };
     let error = match query.err.as_deref() {
-        Some("login") => Some("Invalid email or password.".to_string()),
-        Some("rate_limited") => Some("Too many attempts. Please wait a moment.".to_string()),
-        Some("denied") => Some("That account is suspended.".to_string()),
-        Some("session") => Some("Your session expired. Please sign in again.".to_string()),
+        Some("login") => Some(lang.t("auth.login.invalid").to_string()),
+        Some("rate_limited") => Some(lang.t("auth.login.rate_limited").to_string()),
+        Some("denied") => Some(lang.t("auth.login.suspended").to_string()),
+        Some("session") => Some(lang.t("auth.login.session_expired").to_string()),
         _ => None,
     };
 
@@ -99,6 +103,7 @@ pub async fn login_page(
         notice,
         next: safe_next(query.next.as_deref()).unwrap_or_default(),
         email: String::new(),
+        lang,
     }))
 }
 
@@ -111,10 +116,11 @@ pub async fn login_submit(
     let Ok(Form(payload)) = form else {
         return Ok(render(LoginPage {
             site_name: state.settings.site_name(),
-            error: Some("Please fill in every field.".to_string()),
+            error: Some(i18n::current().t("auth.login.missing_fields").to_string()),
             notice: None,
             next: String::new(),
             email: String::new(),
+            lang: i18n::current(),
         }));
     };
 
@@ -168,10 +174,11 @@ pub async fn login_submit(
         }
         Err(_) => Ok(render(LoginPage {
             site_name: state.settings.site_name(),
-            error: Some("Invalid email or password.".to_string()),
+            error: Some(i18n::current().t("auth.login.invalid").to_string()),
             notice: None,
             next: safe_next(payload.next.as_deref()).unwrap_or_default(),
             email: payload.email,
+            lang: i18n::current(),
         })),
     }
 }
@@ -186,12 +193,13 @@ pub async fn register_page(
         return Ok(Redirect::to("/app").into_response());
     }
     let mode = state.settings.registration_mode();
+    let lang = i18n::current();
     let error = match query.err.as_deref() {
-        Some("invite") => Some("That invite code is not valid.".to_string()),
-        Some("registration") => Some("Registration is currently closed.".to_string()),
-        Some("conflict") => Some("An account with that email already exists.".to_string()),
-        Some("invalid") => Some("Please check the form and try again.".to_string()),
-        Some("rate_limited") => Some("Too many attempts. Please wait a moment.".to_string()),
+        Some("invite") => Some(lang.t("auth.register.err.invite").to_string()),
+        Some("registration") => Some(lang.t("auth.register.err.closed").to_string()),
+        Some("conflict") => Some(lang.t("auth.register.err.conflict").to_string()),
+        Some("invalid") => Some(lang.t("auth.register.err.invalid").to_string()),
+        Some("rate_limited") => Some(lang.t("auth.login.rate_limited").to_string()),
         _ => None,
     };
 
@@ -205,6 +213,7 @@ pub async fn register_page(
         email: String::new(),
         display_name: String::new(),
         invite_code: String::new(),
+        lang,
     }))
 }
 
@@ -274,9 +283,12 @@ pub async fn register_submit(
                 }
                 AppError::RateLimited { .. } => "rate_limited",
                 AppError::Validation { message, .. } => {
+                    let lang = i18n::current();
                     return Ok(render(RegisterPage {
                         site_name: state.settings.site_name(),
-                        error: Some(message),
+                        // Validation text comes from the service layer in
+                        // English; map the known messages onto the catalogue.
+                        error: Some(i18n::message(lang, &message)),
                         mode: mode.as_str(),
                         invite_required: mode == RegistrationMode::Invite,
                         registration_open: mode != RegistrationMode::Closed,
@@ -284,7 +296,8 @@ pub async fn register_submit(
                         email: payload.email,
                         display_name: payload.display_name.unwrap_or_default(),
                         invite_code: payload.invite_code.unwrap_or_default(),
-                    }))
+                        lang,
+                    }));
                 }
                 _ => "invalid",
             };

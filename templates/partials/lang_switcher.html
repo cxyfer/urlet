@@ -1,0 +1,4 @@
+{# Language switcher shared by every page. Requires the `lang` template field. #}
+<div class="lang-switcher" role="group" aria-label="{{ lang.t("lang.switcher_label") }}" data-lang-switcher>
+    {% for option in lang.all() %}<a href="/app/lang/{{ option.code() }}" rel="nofollow"{% if option.code() == lang.code() %} class="active"{% endif %}>{{ option.label() }}</a>{% endfor %}
+</div>
