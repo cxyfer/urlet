@@ -83,6 +83,29 @@ async fn defaults_to_english_without_any_hint() {
 }
 
 #[tokio::test]
+async fn landing_page_is_translated() {
+    let app = TestApp::spawn().await;
+    let page = app.get("/").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert_eq!(page.header("content-language").as_deref(), Some("en"));
+    assert!(page.body.contains("Short links for teams"));
+    assert!(page
+        .body
+        .contains("<meta name=\"description\" content=\"A lightweight, self-hosted"));
+
+    let page = app
+        .send(get_with("/", Some("zh-TW,zh;q=0.9,en;q=0.8"), None))
+        .await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert_eq!(page.header("content-language").as_deref(), Some("zh-Hant"));
+    assert!(page.body.contains("為喜歡簡單的團隊而做的短網址服務。"));
+    assert!(page.body.contains("建立帳號"));
+    // The meta description is localised too.
+    assert!(page.body.contains("輕量、可自架的多用戶短網址服務"));
+    assert!(!page.body.contains("Create account"));
+}
+
+#[tokio::test]
 async fn accept_language_selects_traditional_chinese() {
     let app = TestApp::spawn().await;
     let page = app
@@ -220,6 +243,21 @@ async fn language_route_honours_a_safe_next_target() {
             "off-site target {target} must be ignored"
         );
     }
+}
+
+#[tokio::test]
+async fn language_route_keeps_the_landing_page() {
+    let app = TestApp::spawn().await;
+    // The switcher enhancement sends `next=/` from the landing page, so the
+    // route must return the visitor there instead of falling through to the
+    // dashboard (which would bounce anonymous visitors to the login screen).
+    let response = app.get("/app/lang/zh-Hant?next=%2F").await;
+    assert_eq!(response.status, StatusCode::FOUND);
+    assert_eq!(response.header("location").as_deref(), Some("/"));
+    assert_eq!(
+        response.cookie_named("uwurls_lang").as_deref(),
+        Some("uwurls_lang=zh-Hant")
+    );
 }
 
 #[tokio::test]

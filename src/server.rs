@@ -25,7 +25,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/assets/app.js", get(routes::assets::js))
         .route("/assets/favicon.svg", get(routes::assets::favicon))
         .route("/favicon.ico", get(routes::assets::favicon_ico))
-        .route("/", get(routes::pages::home))
+        .route("/", get(routes::pages::home::home))
         .nest("/app", routes::pages::router())
         .route("/{slug}", get(routes::redirect::redirect))
         .route(

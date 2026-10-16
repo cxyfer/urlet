@@ -9,6 +9,7 @@ pub mod account;
 pub mod admin;
 pub mod auth;
 pub mod dashboard;
+pub mod home;
 pub mod urls;
 
 use axum::extract::{Path, Query, State};
@@ -453,11 +454,6 @@ pub async fn lang_switch(
         response.headers_mut().append(header::SET_COOKIE, value);
     }
     response
-}
-
-/// `GET /` — send visitors to the dashboard (or the login screen).
-pub async fn home() -> Redirect {
-    Redirect::to("/app")
 }
 
 #[cfg(test)]

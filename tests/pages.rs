@@ -25,11 +25,72 @@ async fn login(app: &TestApp, email: &str, password: &str) -> String {
 }
 
 #[tokio::test]
-async fn home_redirects_to_the_app() {
+async fn landing_page_serves_anonymous_visitors() {
     let app = TestApp::spawn().await;
     let response = app.get("/").await;
-    assert_eq!(response.status, StatusCode::SEE_OTHER);
-    assert_eq!(response.header("location").as_deref(), Some("/app"));
+    assert_eq!(response.status, StatusCode::OK);
+    // English is the default when neither a cookie nor Accept-Language is sent.
+    assert_eq!(response.header("content-language").as_deref(), Some("en"));
+    assert!(response.body.contains("<html lang=\"en\">"));
+    assert!(response.body.contains("Short links for teams"));
+    // The public page carries a description for search engines and previews.
+    assert!(response
+        .body
+        .contains("<meta name=\"description\" content=\"A lightweight, self-hosted"));
+    // Both entry points into the application are offered.
+    assert!(response.body.contains("href=\"/app/register\""));
+    assert!(response.body.contains("href=\"/app/login\""));
+    // Anonymous visitors keep the brand on the landing page.
+    assert!(response.body.contains("class=\"brand\" href=\"/\""));
+    assert!(!response.body.contains("Open dashboard"));
+    // One `h1`, six feature cards and a single language switcher.
+    assert_eq!(response.body.matches("<h1>").count(), 1);
+    assert_eq!(response.body.matches("landing-feature").count(), 6);
+    assert_eq!(response.body.matches("data-lang-switcher").count(), 1);
+}
+
+#[tokio::test]
+async fn landing_page_serves_signed_in_visitors() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let response = app.get_as("/", &cookie).await;
+    assert_eq!(response.status, StatusCode::OK);
+    assert!(response.body.contains("Open dashboard"));
+    // The top bar offers the dashboard and the sign-out form instead.
+    assert!(response.body.contains("class=\"brand\" href=\"/app\""));
+    assert!(response.body.contains("href=\"/app\">Dashboard</a>"));
+    assert!(response.body.contains("user@example.com"));
+    assert!(response.body.contains("action=\"/app/logout\""));
+    // Signed-in visitors get the dashboard instead of the sign-up funnel.
+    assert!(!response.body.contains("Create account"));
+}
+
+#[tokio::test]
+async fn landing_page_treats_a_stale_session_as_anonymous() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+
+    // A syntactically plausible but unknown cookie is simply ignored.
+    let response = app.get_as("/", "uwurls_session=not-a-real-token").await;
+    assert_eq!(response.status, StatusCode::OK);
+    assert!(response.body.contains("Short links for teams"));
+    assert!(!response.body.contains("Open dashboard"));
+    assert!(!response.body.contains("user@example.com"));
+    assert!(!response.body.contains("action=\"/app/logout\""));
+
+    // So is a real session that has expired.
+    sqlx::query("UPDATE sessions SET expires_at = ?")
+        .bind(uwurls::services::time::iso_in_hours(-1))
+        .execute(&app.state.db)
+        .await
+        .expect("expire the session");
+
+    let response = app.get_as("/", &cookie).await;
+    assert_eq!(response.status, StatusCode::OK);
+    assert!(response.body.contains("Short links for teams"));
+    assert!(!response.body.contains("Open dashboard"));
+    assert!(!response.body.contains("user@example.com"));
+    assert_eq!(response.body.matches("data-lang-switcher").count(), 1);
 }
 
 #[tokio::test]
