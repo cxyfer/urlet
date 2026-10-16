@@ -1,307 +1,360 @@
-# uwurls — 輕量化多用戶短網址系統規格書 (Spec)
+**English** | [繁體中文](zh-TW/SPEC.md)
 
-> 版本：1.0
-> 狀態：Approved for implementation
-> 最後更新：2026-02-11
+# uwurls — Lightweight Multi-User URL Shortener Specification
 
----
-
-## 1. 概述 (Overview)
-
-`uwurls` 是一套**自託管、多用戶**的短網址服務。每位使用者擁有自己獨立的短網址空間，
-可建立短網址、設定**密碼保護**與**過期機制**、檢視點擊統計，並透過個人 API Token 以程式方式操作。
-
-系統以「**盡可能輕量**」為最高設計原則：單一 Rust 二進位檔 + 單一 SQLite 檔案，
-一個 `docker compose up -d` 即可完成部署，不需要外部資料庫、快取或前端建置流程。
-
-### 1.1 核心設計原則 (來自需求方)
-
-| # | 原則 | 落實方式 |
-|---|------|----------|
-| P1 | 多用戶，各自獨立管理自己的網址 | 每個資源查詢都強制帶入 `user_id` 所有權過濾；跨用戶存取一律 404 |
-| P2 | 密碼保護 | 短網址層級 Argon2id 密碼雜湊 + 簽章解鎖 Cookie（TTL 30 分鐘） |
-| P3 | 過期機制 | 絕對時間 `expires_at` + 點擊次數上限 `max_clicks`，過期後回 410 Gone |
-| P4 | Docker Compose 部署 | 單一 `docker-compose.yml`（app + named volume），可選 Caddy TLS overlay |
-| P5 | 盡可能輕量化 | 單一二進位、SQLite（無 MySQL/Redis）、SSR 模板（無 Node 建置）、映像檔 < 40 MB |
-| P6 | Rust 實作 | Rust 2021 + Axum 0.8 + Tokio + sqlx(SQLite) |
-| P7 | 完善的資料表設計 | 14 張表、27 個索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
-| P8 | 適度添加功能 | 標籤、點擊分析、API Token、邀請碼、管理後台、稽核日誌、每日彙總 |
-
-### 1.2 與先前半成品 (OURLS / OURLS2) 的關係
-
-先前專案已探索過兩個方向，本專案**繼承其資料模型與功能構想**，但依 P5 重新選型：
-
-| 項目 | OURLS（半成品） | OURLS2（半成品） | **uwurls（本專案）** |
-|------|----------------|------------------|----------------------|
-| 執行環境 | Axum + MySQL + Redis | Cloudflare Workers (WASM) + D1 | **Axum + SQLite（單二進位）** |
-| 部署 | docker compose（3 容器） | Wrangler / Cloudflare | **docker compose（1 容器）** |
-| 認證 | JWT + Refresh Token + OAuth | JWT + OAuth | **伺服器端 Session + API Token** |
-| 前端 | React + Vite + Tailwind（需 Node 建置） | React + Vite + Pages | **Askama SSR + 原生 CSS/JS（零建置）** |
-| 權限 | 使用者群組 + 權限矩陣 | 群組 + 權限矩陣 | **角色 (user/admin) + 狀態** |
-| 統計 | 完整（GeoIP、MaxMind） | 完整 | **精簡（UA 解析、每日彙總、無 GeoIP）** |
-| 繼承 | 密碼保護、過期、點擊上限、標籤、API Token、邀請碼、稽核日誌 | 同上 + 公開預覽 API | 上述全部，去蕪存菁 |
-
-**刻意不做（Non-Goals）**：OAuth 第三方登入、使用者群組權限矩陣、GeoIP/MMDB、
-關鍵字黑名單、A/B 測試、Webhook、QR Code、Link-in-bio、多語系、郵件寄送。
+> Version: 1.1
+> Status: Approved for implementation
+> Last updated: 2026-10-16
 
 ---
 
-## 2. 名詞定義
+## 1. Overview
 
-| 名詞 | 說明 |
-|------|------|
-| Slug | 短網址的路徑片段，例如 `https://s.example.com/`**`aB3xK9z`** |
-| Target URL | 短網址導向的原始網址 |
-| 解鎖 (Unlock) | 輸入正確的短網址密碼後，取得短期授權 Cookie 的流程 |
-| 過期 (Expired) | `expires_at` 已過 **或** `max_clicks` 已達，回應 410 Gone |
-| Session | 伺服器端登入狀態（`sessions` 表 + HttpOnly Cookie） |
-| API Token | 供程式存取的長期憑證（`Authorization: Bearer <token>`） |
+`uwurls` is a **self-hosted, multi-user** URL shortener. Every user gets an isolated space
+for their own short links, can attach **password protection** and **expiry rules**, review click
+analytics, and drive the service programmatically with a personal API token.
+
+The top design principle is **as lightweight as possible**: a single Rust binary plus a single
+SQLite file, deployed with one `docker compose up -d`, with no external database, cache, or
+frontend build step. The v1.1 line adds a trilingual interface (English / Traditional Chinese /
+Simplified Chinese), optional bot protection, and a public landing page.
+
+### 1.1 Core Design Principles (from the requester)
+
+| # | Principle | How it is realized |
+|---|-----------|--------------------|
+| P1 | Multi-user, each user manages their own links | Every resource query is forced through a `user_id` ownership filter; cross-user access always returns 404 |
+| P2 | Password protection | Per-link Argon2id password hash + signed unlock cookie (TTL 30 minutes) |
+| P3 | Expiry | Absolute `expires_at` plus a `max_clicks` cap; an expired link returns 410 Gone |
+| P4 | Docker Compose deployment | A single `docker-compose.yml` (app + named volume), with an optional Caddy TLS overlay |
+| P5 | As lightweight as possible | One binary, SQLite (no MySQL/Redis), SSR templates (no Node build), image < 40 MB |
+| P6 | Rust implementation | Rust 2021 + Axum 0.8 + Tokio + sqlx (SQLite) |
+| P7 | Well-designed schema | 14 tables, 27 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
+| P8 | Sensible extra features | Tags, click analytics, API tokens, invite codes, admin panel, audit log, daily rollups, trilingual UI, optional bot protection |
+
+### 1.2 Relationship to the Earlier Prototypes (OURLS / OURLS2)
+
+Two directions were explored in earlier projects. This project **inherits their data model and
+feature ideas** but re-selects the stack to satisfy P5:
+
+| Aspect | OURLS (prototype) | OURLS2 (prototype) | **uwurls (this project)** |
+|--------|-------------------|--------------------|---------------------------|
+| Runtime | Axum + MySQL + Redis | Cloudflare Workers (WASM) + D1 | **Axum + SQLite (single binary)** |
+| Deployment | docker compose (3 containers) | Wrangler / Cloudflare | **docker compose (1 container)** |
+| Auth | JWT + refresh token + OAuth | JWT + OAuth | **Server-side sessions + API tokens** |
+| Frontend | React + Vite + Tailwind (Node build) | React + Vite + Pages | **Askama SSR + vanilla CSS/JS (zero build)** |
+| Permissions | User groups + permission matrix | Groups + permission matrix | **Role (user/admin) + status** |
+| Analytics | Full (GeoIP, MaxMind) | Full | **Lean (UA parsing, daily rollups, no GeoIP)** |
+| Inherited | Password protection, expiry, click cap, tags, API tokens, invite codes, audit log | Same + public preview API | All of the above, trimmed to essentials |
+
+**Deliberate non-goals**: OAuth third-party login, user-group permission matrices, GeoIP/MMDB,
+keyword blocklists, A/B testing, webhooks, QR codes, link-in-bio pages, and email delivery.
+Multilingual support was a non-goal in v1.0 and is now in scope as of v1.1 (§4.11).
 
 ---
 
-## 3. 系統架構
+## 2. Glossary
 
-### 3.1 架構圖
+| Term | Description |
+|------|-------------|
+| Slug | The path segment of a short link, for example `https://s.example.com/`**`aB3xK9z`** |
+| Target URL | The original URL that a short link redirects to |
+| Unlock | The flow that exchanges a correct link password for a short-lived authorization cookie |
+| Expired | `expires_at` has passed **or** `max_clicks` has been reached; the response is 410 Gone |
+| Session | Server-side login state (`sessions` table + HttpOnly cookie) |
+| API token | Long-lived credential for programmatic access (`Authorization: Bearer <token>`) |
+| Language tag | One of the supported UI locales: `en`, `zh-Hant`, `zh-Hans` |
+| Locale catalog | The JSON file embedded in the binary (`src/i18n/<tag>.json`) that holds one language's message keys |
+| Captcha token | The provider-issued response token submitted with a form and verified server-side |
+
+---
+
+## 3. System Architecture
+
+### 3.1 Architecture Diagram
 
 ```
-                         ┌──────────────────────────────────────────┐
-   Browser / curl        │            uwurls (單一容器)              │
-  ───────────────────►   │                                          │
-   :8080                 │  Axum Router                             │
-                         │   ├─ /{slug}            跳轉 / 密碼頁     │
-                         │   ├─ /api/v1/**         JSON API         │
-                         │   ├─ /app/**            SSR 管理介面      │
-                         │   ├─ /assets/**         內嵌 CSS/JS       │
-                         │   └─ /health            健康檢查          │
-                         │                                          │
-                         │  Middleware: 安全標頭 → 請求 ID → 日誌     │
-                         │              → Session/Token 認證         │
-                         │              → CSRF → 速率限制            │
-                         │                                          │
-                         │  Services: slug / url / click / ua /      │
-                         │            ratelimit / audit / settings   │
-                         │                                          │
-                         │  sqlx Pool (WAL)  ──►  /data/uwurls.db    │
-                         └──────────────────────────────────────────┘
-                                       named volume: uwurls-data
+                        ┌─────────────────────────────────────────────────┐
+                        │ uwurls (single container)                       │
+Browser / curl          │                                                 │
+───────────────────►    │ Axum Router                                     │
+:8080                   │  ├─ /                 landing / navigation page │
+                        │  ├─ /{slug}           redirect / password page  │
+                        │  ├─ /api/v1/**        JSON API                  │
+                        │  ├─ /app/**           SSR user + admin UI       │
+                        │  ├─ /app/lang/{code}  language switch (302)     │
+                        │  ├─ /assets/**        embedded CSS/JS           │
+                        │  └─ /health           health check              │
+                        │                                                 │
+                        │ Middleware: security headers → request ID → log │
+                        │             → session/token auth → language     │
+                        │             → CSRF → rate limit → captcha       │
+                        │                                                 │
+                        │ Services: slug / url / click / ua / ratelimit / │
+                        │           audit / settings / i18n / captcha     │
+                        │                                                 │
+                        │ sqlx Pool (WAL)  ──►  /data/uwurls.db           │
+                        └─────────────────────────────────────────────────┘
+                         named volume: uwurls-data
 ```
 
-### 3.2 技術選型與理由
+### 3.2 Technology Choices and Rationale
 
-| 層級 | 選擇 | 理由（相對於先前半成品） |
-|------|------|--------------------------|
-| HTTP | `axum` 0.8 + `tokio` | 生態成熟、型別安全、單一二進位 |
-| DB | `sqlx` 0.8 + SQLite（`bundled`） | 免外部服務、單檔備份、WAL 併發讀取足夠自託管規模 |
-| 遷移 | `include_str!` 內嵌 SQL + 自製 runner | 編譯期嵌入、啟動自動遷移、`schema_migrations` 記錄 checksum，無需 CLI |
-| 模板 | `askama` 0.12 | 編譯期檢查的 SSR，無 Node/Vite 建置流程 |
-| 靜態資產 | `include_str!` 內嵌 CSS/JS | 二進位自帶資源，映像檔不需檔案系統 |
-| 密碼 | `argon2` (Argon2id) | 業界標準，抗 GPU 暴力破解 |
-| Session/Token | 自製 `sha2` 雜湊 + 隨機 `getrandom` | 不引入 JWT 相依；伺服器端可即時撤銷 |
-| 日誌 | `tracing` + `tracing-subscriber` | 結構化日誌、`RUST_LOG` 控制 |
-| 時間 | `time` 0.3 | 較 `chrono` 輕，格式化 ISO-8601 足夠 |
+| Layer | Choice | Rationale (relative to the earlier prototypes) |
+|-------|--------|-----------------------------------------------|
+| HTTP | `axum` 0.8 + `tokio` | Mature ecosystem, type safety, single binary |
+| DB | `sqlx` 0.8 + SQLite (`bundled`) | No external service, single-file backup, WAL gives enough concurrent reads for a self-hosted scale |
+| Migrations | SQL embedded with `include_str!` + a small custom runner | Embedded at compile time, applied automatically on startup, checksums recorded in `schema_migrations`, no CLI needed |
+| Templates | `askama` 0.12 | Compile-time-checked SSR, no Node/Vite build pipeline |
+| Static assets | CSS/JS embedded with `include_str!` | The binary carries its own assets, so the image needs no writable filesystem |
+| i18n | JSON catalogs embedded with `include_str!` | Ships with the binary, no external locale files; a missing key falls back to English |
+| Passwords | `argon2` (Argon2id) | Industry standard, resistant to GPU brute force |
+| Sessions/tokens | Custom `sha2` hashing + random `getrandom` | No JWT dependency; server-side revocation is immediate |
+| Bot protection | Optional Cloudflare Turnstile or Google reCAPTCHA v2 over HTTPS | Off by default, no vendor lock-in, fail-closed verification |
+| Logging | `tracing` + `tracing-subscriber` | Structured logs controlled by `RUST_LOG` |
+| Time | `time` 0.3 | Lighter than `chrono`; ISO-8601 formatting is all that is needed |
 
-**刻意避免的相依**：Redis、MySQL client、jsonwebtoken、reqwest（不對外抓取目標網址標題 → 同時消除 SSRF 風險）、
-MaxMind/GeoIP、React/Node 工具鏈。
+**Dependencies deliberately avoided**: Redis, a MySQL client, jsonwebtoken, MaxMind/GeoIP, and the
+React/Node toolchain. No outbound request ever fetches the target URL, which also removes the SSRF
+risk. The only outbound HTTP call in the system is the optional captcha siteverify request, and it
+is disabled unless an administrator configures a provider.
 
-### 3.3 二進位檔與映像檔尺寸目標
+### 3.3 Binary and Image Size Targets
 
-| 項目 | 目標 | 實測 |
-|------|------|------|
-| Release 二進位（stripped, LTO, `opt-level=z`） | ≤ 15 MB | **4.2 MB**（glibc 本機）／4.5 MB（容器內 musl） |
-| 執行期映像（`alpine` + 二進位 + CA 憑證） | ≤ 40 MB | **13.2 MB** |
-| 閒置／負載記憶體 | ≤ 30 MB RSS | **6.8 MB**（500 次請求後） |
-| 冷啟動到可服務 | ≤ 1 秒 | **約 0.2 秒**（含遷移） |
+| Item | Target | Measured |
+|------|--------|----------|
+| Release binary (stripped, LTO, `opt-level=z`) | ≤ 15 MB | **4.2 MB** (glibc, local) / 4.5 MB (musl, in container) |
+| Runtime image (`alpine` + binary + CA certificates) | ≤ 40 MB | **13.2 MB** |
+| Idle / under-load memory | ≤ 30 MB RSS | **6.8 MB** (after 500 requests) |
+| Cold start to serving | ≤ 1 second | **~0.2 s** (including migrations) |
+
+The measured column records the v1.0 numbers. The v1.1 additions (embedded locale catalogs and the
+captcha client) are expected to stay within the same targets.
 
 ---
 
-## 4. 功能需求
+## 4. Functional Requirements
 
-### 4.1 使用者與認證 (FR-AUTH)
+### 4.1 Users and Authentication (FR-AUTH)
 
-| ID | 需求 | 說明 |
-|----|------|------|
-| FR-AUTH-1 | 註冊 | Email + 密碼。註冊模式由設定 `registration_mode` 控制：`open` / `invite` / `closed` |
-| FR-AUTH-2 | 登入 | Email + 密碼，成功後建立 Session（HttpOnly Cookie，預設 TTL 7 天）。每次活動（最多每分鐘一次寫入）同時更新 `last_seen_at` 與 `expires_at`，並重新簽發 Cookie，因此持續使用不會被登出 |
-| FR-AUTH-3 | 登出 | 撤銷當前 Session（`revoked_at`）並清除 Cookie |
-| FR-AUTH-4 | 修改密碼 | 需驗證當前密碼；成功後撤銷該使用者其他所有 Session |
-| FR-AUTH-5 | 個人資料 | 修改顯示名稱；檢視 Email、角色、建立時間 |
-| FR-AUTH-6 | Session 管理 | 檢視自己的登入裝置清單，可撤銷任一 Session |
-| FR-AUTH-7 | 首個使用者 | 若資料庫無任何使用者，第一位註冊者自動成為 `admin`；亦可用 `UWURLS_ADMIN_EMAIL/PASSWORD` 於啟動時建立 |
-| FR-AUTH-8 | 停權 | `status = suspended` 的使用者無法登入，既有 Session 立即失效 |
-| FR-AUTH-9 | 速率限制 | 登入/註冊/解鎖具記憶體令牌桶限制，並記錄 `login_attempts` 供稽核 |
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-AUTH-1 | Registration | Email + password. The registration mode is controlled by the `registration_mode` setting: `open` / `invite` / `closed` |
+| FR-AUTH-2 | Login | Email + password; on success a session is created (HttpOnly cookie, default TTL 7 days). Each activity (at most one write per minute) refreshes both `last_seen_at` and `expires_at` and re-issues the cookie, so continuous use never logs the user out |
+| FR-AUTH-3 | Logout | Revoke the current session (`revoked_at`) and clear the cookie |
+| FR-AUTH-4 | Change password | Requires the current password; on success all other sessions of that user are revoked |
+| FR-AUTH-5 | Profile | Change the display name; view email, role, and creation time |
+| FR-AUTH-6 | Session management | List your own signed-in devices and revoke any session |
+| FR-AUTH-7 | First user | If the database has no users, the first registrant automatically becomes `admin`; an admin can also be created at startup with `UWURLS_ADMIN_EMAIL/PASSWORD` |
+| FR-AUTH-8 | Suspension | A user with `status = suspended` cannot log in and existing sessions become invalid immediately |
+| FR-AUTH-9 | Rate limiting | Login, registration, and unlock are protected by in-memory token buckets, and `login_attempts` is recorded for auditing |
 
-**密碼政策**：長度 8–128 字元；Argon2id 參數 `m=19456 KiB, t=2, p=1`（OWASP 建議值）。
+**Password policy**: 8–128 characters; Argon2id parameters `m=19456 KiB, t=2, p=1` (OWASP recommendation).
 
-### 4.2 短網址管理 (FR-URL)
+### 4.2 Short Link Management (FR-URL)
 
-| ID | 需求 | 說明 |
-|----|------|------|
-| FR-URL-1 | 建立 | 必填 `target_url`；可選 `slug`、標題、備註、標籤、密碼、過期時間、點擊上限、轉址類型 |
-| FR-URL-2 | 自動 Slug | 未指定時產生 7 字元 base62 隨機 Slug，碰撞時重試（最多 5 次） |
-| FR-URL-3 | 自訂 Slug | 長度 1–64，僅 `[A-Za-z0-9_-]`，不得為保留字，全域唯一 |
-| FR-URL-4 | 編輯 | 可改 target、標題、備註、標籤、密碼（設定/清除）、過期、點擊上限、轉址類型、狀態 |
-| FR-URL-5 | 刪除 | 軟刪除（`deleted_at`），Slug 保留不釋出（避免連結被劫持），點擊紀錄保留 |
-| FR-URL-6 | 列表 | 分頁、關鍵字搜尋（slug/target/標題）、標籤篩選、狀態篩選、排序（建立時間/點擊數） |
-| FR-URL-7 | 狀態切換 | `active` / `disabled`；`disabled` 不轉址（回 404 頁面） |
-| FR-URL-8 | 標籤 | 使用者層級標籤，名稱唯一（同使用者內），建立網址時自動建立缺少的標籤 |
-| FR-URL-9 | 配額 | 每位使用者網址數量上限由設定 `max_urls_per_user` 控制（0 = 無限制） |
-| FR-URL-10 | 所有權隔離 | 所有 `/api/v1/urls*` 查詢強制 `user_id = current_user`；他人資源一律 404 |
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-URL-1 | Create | `target_url` is required; `slug`, title, notes, tags, password, expiry, click cap, and redirect type are optional |
+| FR-URL-2 | Automatic slug | When no slug is given, generate a 7-character base62 slug and retry on collision (at most 5 times) |
+| FR-URL-3 | Custom slug | Length 1–64, only `[A-Za-z0-9_-]`, must not be a reserved word, globally unique |
+| FR-URL-4 | Edit | Change target, title, notes, tags, password (set/clear), expiry, click cap, redirect type, and status |
+| FR-URL-5 | Delete | Soft delete (`deleted_at`); the slug is retained and never released (so links cannot be hijacked), and click records are kept |
+| FR-URL-6 | List | Pagination, keyword search (slug/target/title), tag filter, status filter, sorting (creation time / click count) |
+| FR-URL-7 | Status toggle | `active` / `disabled`; a `disabled` link does not redirect (returns a 404 page) |
+| FR-URL-8 | Tags | Per-user tags with unique names (within a user); missing tags are created automatically when a link is created |
+| FR-URL-9 | Quota | The per-user link limit is controlled by the `max_urls_per_user` setting (0 = unlimited) |
+| FR-URL-10 | Ownership isolation | Every `/api/v1/urls*` query is forced to `user_id = current_user`; another user's resource always returns 404 |
 
-### 4.3 密碼保護 (FR-PWD)
+### 4.3 Password Protection (FR-PWD)
 
-| ID | 需求 | 說明 |
-|----|------|------|
-| FR-PWD-1 | 設定 | 建立/編輯時提供明文密碼，系統以 Argon2id 雜湊存入 `urls.password_hash` |
-| FR-PWD-2 | 存取 | 受保護的短網址直接訪問時回傳 200 + 密碼輸入頁（**不洩漏目標網址**） |
-| FR-PWD-3 | 解鎖 | `POST /{slug}/unlock` 驗證密碼；成功後設定簽章 Cookie `uwurls_unlock_<slug>`（HMAC-SHA256，TTL 30 分鐘） |
-| FR-PWD-4 | 已解鎖 | 持有效解鎖 Cookie 時直接轉址，並記錄 `password_protected = 1` |
-| FR-PWD-5 | 速率限制 | 每個 (slug, IP) 5 分鐘內最多 10 次嘗試，超過回 429 |
-| FR-PWD-6 | 錯誤處理 | 密碼錯誤回 401 並在頁面上顯示錯誤，不揭露目標網址 |
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-PWD-1 | Set | The create/edit forms accept a plaintext password, which is stored as an Argon2id hash in `urls.password_hash` |
+| FR-PWD-2 | Access | Visiting a protected link returns 200 with a password entry page (**the target URL is not leaked**) |
+| FR-PWD-3 | Unlock | `POST /{slug}/unlock` verifies the password; on success it sets the signed cookie `uwurls_unlock_<slug>` (HMAC-SHA256, TTL 30 minutes) |
+| FR-PWD-4 | Already unlocked | With a valid unlock cookie the visitor is redirected immediately and the click is recorded with `password_protected = 1` |
+| FR-PWD-5 | Rate limiting | At most 10 attempts per (slug, IP) in 5 minutes; further attempts return 429 |
+| FR-PWD-6 | Error handling | A wrong password returns 401 and shows an error on the page without revealing the target URL |
 
-### 4.4 過期機制 (FR-EXP)
+### 4.4 Expiry (FR-EXP)
 
-| ID | 需求 | 說明 |
-|----|------|------|
-| FR-EXP-1 | 時間過期 | `expires_at`（ISO-8601 UTC）。到達後短網址失效，回 **410 Gone** 頁面 |
-| FR-EXP-2 | 點擊上限 | `max_clicks` 非空且 `click_count >= max_clicks` 時失效，回 410。計數器由背景 writer 非同步累加，因此並發請求可能略微超出上限（已知取捨：換取轉址路徑零寫入阻塞） |
-| FR-EXP-3 | 統計可見性 | 使用者介面以「已過期 / 已達上限」徽章標示，並可一鍵延長或提高上限 |
-| FR-EXP-4 | 過期不刪除 | 過期僅影響轉址，資料與統計保留 |
-| FR-EXP-5 | 已刪除 | `deleted_at` 非空 → 404（與不存在無法區分） |
-| FR-EXP-6 | 停用 | `status = disabled` → 404 |
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-EXP-1 | Time expiry | `expires_at` (ISO-8601 UTC). Once reached, the link stops working and returns a **410 Gone** page |
+| FR-EXP-2 | Click cap | When `max_clicks` is set and `click_count >= max_clicks`, the link stops working and returns 410. The counter is incremented asynchronously by a background writer, so concurrent requests may slightly exceed the cap (known trade-off: the redirect path never blocks on a write) |
+| FR-EXP-3 | Visibility | The UI marks links with "expired / cap reached" badges and offers one-click extend or raise-cap actions |
+| FR-EXP-4 | Expiry does not delete | Expiry only affects redirection; data and analytics are retained |
+| FR-EXP-5 | Deleted | A non-null `deleted_at` → 404 (indistinguishable from a missing link) |
+| FR-EXP-6 | Disabled | `status = disabled` → 404 |
 
-### 4.5 轉址與點擊記錄 (FR-REDIR)
+### 4.5 Redirection and Click Recording (FR-REDIR)
 
-| ID | 需求 | 說明 |
-|----|------|------|
-| FR-REDIR-1 | 路由 | `GET /{slug}`；`/api/**`、`/app/**`、`/assets/**`、`/health` 為保留前綴 |
-| FR-REDIR-2 | 轉址類型 | 支援 301 / 302（預設）/ 307 / 308 |
-| FR-REDIR-3 | 點擊記錄 | 非同步（`tokio::spawn`）寫入 `clicks` 與 `url_daily_stats`，不阻塞轉址 |
-| FR-REDIR-4 | 使用者代理分析 | 解析 device_type / browser / os；機器人（bot UA）標記 `is_bot = 1` |
-| FR-REDIR-5 | 隱私 | 僅存 `ip_hash = HMAC(secret, ip)` 與 `visitor_hash = HMAC(secret, ip + ua + 日期)`；**不存原始 IP** |
-| FR-REDIR-6 | 唯一訪客 | 同一 `visitor_hash` 於同一 URL 首次點擊記 `is_unique = 1` |
-| FR-REDIR-7 | 快取控制 | 密碼頁／410／404 為 `no-store`；302/307 轉址為 `private, no-store`；301/308 轉址為 `private, max-age=300`（永久轉址可短期快取，其餘一律不快取以維持點擊準確） |
-| FR-REDIR-8 | 統計開關 | 設定 `analytics_enabled = false` 時不寫入點擊 |
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-REDIR-1 | Routing | `GET /{slug}`; `/api/**`, `/app/**`, `/assets/**`, and `/health` are reserved prefixes |
+| FR-REDIR-2 | Redirect type | Supports 301 / 302 (default) / 307 / 308 |
+| FR-REDIR-3 | Click recording | Written asynchronously (`tokio::spawn`) to `clicks` and `url_daily_stats`, never blocking the redirect |
+| FR-REDIR-4 | User-agent parsing | Parses device_type / browser / os; bot user agents are flagged with `is_bot = 1` |
+| FR-REDIR-5 | Privacy | Only `ip_hash = HMAC(secret, ip)` and `visitor_hash = HMAC(secret, ip + ua + date)` are stored; **the raw IP is never stored** |
+| FR-REDIR-6 | Unique visitors | The first click for a given `visitor_hash` on a given URL is recorded with `is_unique = 1` |
+| FR-REDIR-7 | Cache control | Password pages / 410 / 404 are `no-store`; 302/307 redirects are `private, no-store`; 301/308 redirects are `private, max-age=300` (permanent redirects may be cached briefly; everything else is uncached to keep click counts accurate) |
+| FR-REDIR-8 | Analytics switch | When `analytics_enabled = false`, no click is written |
 
-### 4.6 統計與分析 (FR-STAT)
+### 4.6 Analytics (FR-STAT)
 
-| ID | 需求 | 說明 |
-|----|------|------|
-| FR-STAT-1 | 總覽 | 我的網址數、總點擊、近 7/30 日點擊、唯一訪客、機器人佔比 |
-| FR-STAT-2 | 單一網址 | 每日點擊趨勢（近 30 日）、Top 來源網域、裝置/瀏覽器/作業系統分佈、最近 50 筆點擊 |
-| FR-STAT-3 | 圖表 | 伺服器端渲染 SVG（無前端圖表函式庫） |
-| FR-STAT-4 | 資料保留 | `click_retention_days`（預設 0 = 永久）；> 0 時由每日維護任務清理 |
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-STAT-1 | Overview | Link count, total clicks, clicks over the last 7/30 days, unique visitors, bot share |
+| FR-STAT-2 | Single link | Daily click trend (last 30 days), top referrer domains, device/browser/OS breakdown, latest 50 clicks |
+| FR-STAT-3 | Charts | Server-rendered SVG (no frontend chart library) |
+| FR-STAT-4 | Retention | `click_retention_days` (default 0 = forever); when > 0, a daily maintenance task prunes old records |
 
-### 4.7 API Token (FR-TOK)
+### 4.7 API Tokens (FR-TOK)
 
-| ID | 需求 | 說明 |
-|----|------|------|
-| FR-TOK-1 | 建立 | 產生 `uw_` + 32 bytes CSPRNG 熵（base64url 編碼，43 字元）；**僅在建立時顯示一次**明文 |
-| FR-TOK-2 | 儲存 | 僅存 SHA-256 雜湊 + 前 8 字元前綴（供辨識） |
-| FR-TOK-3 | 使用 | `Authorization: Bearer <token>`；與 Session 認證並存 |
-| FR-TOK-4 | 生命週期 | 可設 `expires_at`、可撤銷（`revoked_at`）、記錄 `last_used_at`；使用者改密碼、管理員重設密碼或刪除帳號時，該帳號所有 Token 一併撤銷 |
-| FR-TOK-5 | 範圍 | `scopes` 欄位保留（v1 提供 `urls:read`、`urls:write`、`admin`），v1 僅檢查是否為 admin |
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-TOK-1 | Create | Generates `uw_` + 32 bytes of CSPRNG entropy (base64url, 43 characters); the plaintext is shown **only once** at creation time |
+| FR-TOK-2 | Storage | Only the SHA-256 hash plus the first 8 characters as a prefix (for identification) are stored |
+| FR-TOK-3 | Usage | `Authorization: Bearer <token>`; works alongside session authentication |
+| FR-TOK-4 | Lifecycle | Supports `expires_at`, revocation (`revoked_at`), and `last_used_at`; when a user changes their password, or an admin resets a password or deletes an account, all of that account's tokens are revoked too |
+| FR-TOK-5 | Scopes | The `scopes` column is reserved (v1 provides `urls:read`, `urls:write`, `admin`), but v1 only checks whether the token is an admin token |
 
-### 4.8 管理後台 (FR-ADMIN)
+### 4.8 Admin Panel (FR-ADMIN)
 
-| ID | 需求 | 說明 |
-|----|------|------|
-| FR-ADMIN-1 | 使用者管理 | 列表、搜尋、改角色、停權/復權、重設密碼、軟刪除 |
-| FR-ADMIN-2 | 全站網址 | 列表、搜尋、強制停用/刪除 |
-| FR-ADMIN-3 | 邀請碼 | 建立（次數/到期/備註）、列表、撤銷；`invite` 模式下註冊需邀請碼 |
-| FR-ADMIN-4 | 全站設定 | 編輯 `settings` 表（站名、註冊模式、配額、預設轉址類型、統計開關、保留天數） |
-| FR-ADMIN-5 | 稽核日誌 | 記錄登入、註冊、網址異動、管理操作、設定變更；可依動作/對象篩選 |
-| FR-ADMIN-6 | 系統資訊 | 版本、資料庫大小、使用者/網址/點擊總數、運行時間 |
-| FR-ADMIN-7 | 授權 | 所有 `/api/v1/admin/**` 與 `/app/admin/**` 需 `role = admin`，否則 403 |
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-ADMIN-1 | User management | List, search, change role, suspend/restore, reset password, soft delete |
+| FR-ADMIN-2 | All links | List, search, force-disable/delete |
+| FR-ADMIN-3 | Invite codes | Create (uses/expiry/note), list, revoke; registration in `invite` mode requires an invite code |
+| FR-ADMIN-4 | Site settings | Edit the `settings` table (site name, registration mode, quotas, default redirect type, analytics switch, retention days, captcha) |
+| FR-ADMIN-5 | Audit log | Records logins, registrations, link changes, admin actions, and setting changes; filterable by action/target |
+| FR-ADMIN-6 | System info | Version, database size, user/link/click totals, uptime |
+| FR-ADMIN-7 | Authorization | Every `/api/v1/admin/**` and `/app/admin/**` route requires `role = admin`, otherwise 403 |
 
 ### 4.9 JSON API (FR-API)
 
-- 前綴 `/api/v1`，回應 `application/json`。
-- 統一錯誤格式：
+- Prefix `/api/v1`, responses are `application/json`.
+- Uniform error format:
   ```json
   { "error": { "code": "validation_error", "message": "slug is invalid", "details": { "field": "slug" } } }
   ```
-- 錯誤代碼：`bad_request` `unauthorized` `forbidden` `not_found` `conflict` `gone` `validation_error` `rate_limited` `internal_error`
-- 分頁格式：`{ "items": [...], "page": 1, "per_page": 20, "total": 42, "total_pages": 3 }`
-- 認證：Session Cookie **或** `Authorization: Bearer <api_token>`。
-- 端點清單見 §7。
+- Error codes: `bad_request` `unauthorized` `forbidden` `not_found` `conflict` `gone` `validation_error` `captcha_failed` `rate_limited` `internal_error`
+- Pagination format: `{ "items": [...], "page": 1, "per_page": 20, "total": 42, "total_pages": 3 }`
+- Authentication: session cookie **or** `Authorization: Bearer <api_token>`.
+- **All JSON API responses are English** and are not affected by the request language or the `uwurls_lang` cookie.
+- See §7 for the endpoint list.
 
-### 4.10 網頁介面 (FR-UI)
+### 4.10 Web Interface (FR-UI)
 
-| 路徑 | 頁面 | 說明 |
-|------|------|------|
-| `/app/login` | 登入 | Email + 密碼 |
-| `/app/register` | 註冊 | 依註冊模式顯示邀請碼欄位或關閉提示 |
-| `/app` | 儀表板 | 統計卡片、每日趨勢圖、網址列表（搜尋/篩選/分頁）、建立表單 |
-| `/app/urls/{id}` | 網址詳情 | 編輯表單、QR 免（Non-Goal）、統計圖表、最近點擊、刪除 |
-| `/app/account` | 帳號 | 個人資料、修改密碼、Session 清單、API Token 管理 |
-| `/app/admin` | 管理後台 | 使用者、全站網址、邀請碼、設定、稽核日誌 |
-| `/{slug}` | 轉址 / 密碼頁 / 410 / 404 | 公開 |
+| Path | Page | Description |
+|------|------|-------------|
+| `/` | Landing / navigation | Hero, feature highlights, login and register entry points, language switcher, and footer; a signed-in visitor also gets an entry point to the dashboard. This is no longer a 302 redirect to `/app` |
+| `/app/login` | Login | Email + password |
+| `/app/register` | Register | Shows the invite-code field or a "closed" notice depending on the registration mode |
+| `/app` | Dashboard | Stat cards, daily trend chart, link list (search/filter/pagination), create form |
+| `/app/urls/{id}` | Link detail | Edit form, analytics charts, recent clicks, delete (QR codes are a non-goal) |
+| `/app/account` | Account | Profile, change password, session list, API token management |
+| `/app/admin` | Admin panel | Users, all links, invite codes, settings, audit log |
+| `/app/lang/{code}` | Language switch | Sets the `uwurls_lang` cookie and 302-redirects to `next` |
+| `/{slug}` | Redirect / password page / 410 / 404 | Public |
 
-**UI 技術**：Askama 模板 + 手寫 CSS（含 `prefers-color-scheme` 深色模式）+ 約 150 行原生 JS
-（複製到剪貼簿、確認對話框、表單增強）。**不使用**任何前端框架或 CDN 資源（CSP 可嚴格限制為 `'self'`）。
+**UI technology**: Askama templates + hand-written CSS (including `prefers-color-scheme` dark mode) +
+roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form enhancements).
+**No** frontend framework or CDN resource is used (so the CSP can be restricted to `'self'`).
 
----
+### 4.11 Multilingual UI (FR-I18N)
 
-## 5. 非功能需求
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-I18N-1 | Supported languages | Three interface languages: English (`en`, the default), Traditional Chinese (`zh-Hant`), and Simplified Chinese (`zh-Hans`). Catalogs are JSON files embedded in the binary at `src/i18n/{en,zh-Hant,zh-Hans}.json` |
+| FR-I18N-2 | Language selection | On the first visit (no cookie) the language is negotiated from `Accept-Language`, honoring `q=` weights in descending order; an unrecognized or absent header falls back to **English** |
+| FR-I18N-3 | Persistence | The chosen language is stored in the cookie `uwurls_lang` (`Path=/`, `SameSite=Lax`, `Max-Age` one year, **not** HttpOnly) |
+| FR-I18N-4 | Switching | `GET /app/lang/{code}?next=<path>` sets the cookie and returns 302; `next` accepts only same-site relative paths, and anything else falls back to `/` |
+| FR-I18N-5 | Markup | `<html lang>` reflects the active language, and a language switcher is available on the public pages and in the app shell |
+| FR-I18N-6 | Fallback | A key missing from a catalog falls back to the English string |
+| FR-I18N-7 | API responses | All JSON API responses are English regardless of the request language or cookie |
+| FR-I18N-8 | Error pages | Error pages (404/410/500 and friends) are rendered in the active language through a task-local language context |
 
-### 5.1 安全性 (NFR-SEC)
+### 4.12 Bot Protection (FR-BOT)
 
-| ID | 需求 |
-|----|------|
-| NFR-SEC-1 | 密碼：Argon2id；Session/API Token/邀請碼僅存 SHA-256 雜湊，查詢以雜湊值進行索引比對（不儲存明文，因此無可比較的長度差異）；解鎖 Cookie 的簽章以常數時間比較 |
-| NFR-SEC-2 | Cookie：`HttpOnly`、`SameSite=Lax`、`Secure`（當 `UWURLS_SECURE_COOKIES=true` 或 Base URL 為 https） |
-| NFR-SEC-3 | CSRF：狀態變更請求檢查 `Origin`/`Referer` 同源；Cookie 認證 + 非 GET 一律驗證；Bearer Token 請求豁免 |
-| NFR-SEC-4 | 安全標頭：`Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: strict-origin-when-cross-origin`、`X-Frame-Options: DENY`、https 時 `Strict-Transport-Security` |
-| NFR-SEC-5 | 開放轉址防護：目標僅允許 `http` / `https`；拒絕 `javascript:`、`data:`、`file:` 等 |
-| NFR-SEC-6 | 保留字防護：`api`、`app`、`assets`、`health`、`static`、`favicon.ico` 等不得作為 Slug |
-| NFR-SEC-7 | 錯誤訊息不洩漏內部細節；登入失敗統一回應「Email 或密碼錯誤」 |
-| NFR-SEC-8 | 使用者列舉防護：註冊重複 Email 回 409（可接受，屬常見取捨）；登入統一錯誤訊息 |
-| NFR-SEC-9 | 速率限制：登入 10 次/5 分鐘/(IP,email) **加** 40 次/5 分鐘/IP、註冊 5 次/小時/IP、解鎖 10 次/5 分鐘/(slug,IP)、建立短網址 120 次/小時/使用者、改密碼 10 次/小時/使用者 |
-| NFR-SEC-9b | 帳號鎖定：同一 email 15 分鐘內累積 30 次失敗即暫時拒絕登入（回 429），由 `login_attempts` 表持久化，重啟不重置；記憶體速率限制器的 key 以 SHA-256 儲存並有 5 萬筆上限 |
-| NFR-SEC-10 | SQL 一律參數化（sqlx bind），無字串拼接（`src/db/` 之外不得出現 SQL） |
-| NFR-SEC-11 | 稽核日誌涵蓋所有敏感操作 |
-| NFR-SEC-12 | 啟動時若 `UWURLS_SECRET` 未設定，於資料目錄產生並持久化隨機密鑰（建立時即為 0600；既有檔案若權限過寬會自動收緊） |
-| NFR-SEC-13 | 反向代理標頭：`UWURLS_TRUST_PROXY=true` 時優先採用代理自行改寫的 `X-Real-IP`，其次取 `X-Forwarded-For` **最右側**（最左側可被客戶端偽造） |
-| NFR-SEC-14 | 密碼雜湊在 `spawn_blocking` 中執行，並以信號量限制同時最多 4 個 Argon2 計算（每個約 19 MiB） |
-
-### 5.2 效能 (NFR-PERF)
-
-| ID | 需求 |
-|----|------|
-| NFR-PERF-1 | 轉址路徑：單次 `SELECT`（命中索引）+ 佇列化寫入；P95 < 10 ms（實測 0.74 ms） |
-| NFR-PERF-2 | SQLite：`journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000` |
-| NFR-PERF-3 | 連線池：`max_connections=8`；點擊寫入由單一背景 writer 序列化（避免 WAL 因並發寫入無法 checkpoint 而無限成長） |
-| NFR-PERF-4 | 列表查詢一律分頁（預設 20，上限 100） |
-| NFR-PERF-5 | 統計查詢使用 `url_daily_stats` 與索引，避免全表掃描 |
-
-### 5.3 運維 (NFR-OPS)
-
-| ID | 需求 |
-|----|------|
-| NFR-OPS-1 | `docker compose up -d` 即完成部署；首次啟動自動遷移 + 建立管理員 |
-| NFR-OPS-2 | 健康檢查：`GET /health`（200 JSON）與 `uwurls healthcheck` 子命令（供 Docker HEALTHCHECK 使用） |
-| NFR-OPS-3 | 資料持久化於 named volume `uwurls-data`，路徑 `/data` |
-| NFR-OPS-4 | 日誌輸出 stdout（`tracing`，JSON 或 compact 由 `UWURLS_LOG_FORMAT` 控制） |
-| NFR-OPS-5 | 設定全部來自環境變數（12-factor），`.env.example` 完整說明 |
-| NFR-OPS-6 | 每日維護任務：清理過期 Session、可選清理過期點擊紀錄 |
-| NFR-OPS-7 | 備份 = 複製 `uwurls.db`（WAL checkpoint 後），README 說明 |
-| NFR-OPS-8 | 非 root 使用者執行容器；唯讀根檔案系統可運作 |
-
-### 5.4 可維護性 (NFR-MAINT)
-
-| ID | 需求 |
-|----|------|
-| NFR-MAINT-1 | 分層：`routes/`（HTTP）→ `services/`（業務）→ `db/`（SQL）；不跨層直接查詢 |
-| NFR-MAINT-2 | 單一錯誤型別 `AppError`，集中轉換為 HTTP 回應 |
-| NFR-MAINT-3 | 所有 SQL 集中於 `src/db/` 各模組，使用執行期查詢（無需 `DATABASE_URL` 即可編譯） |
-| NFR-MAINT-4 | `cargo clippy -- -D warnings` 與 `cargo fmt --check` 通過 |
-| NFR-MAINT-5 | 單元測試 + 整合測試（含 `tower::ServiceExt::oneshot` 端到端）覆蓋核心流程 |
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-BOT-1 | Providers | Optional Cloudflare Turnstile or Google reCAPTCHA v2 checkbox; the default is `none` (disabled) |
+| FR-BOT-2 | Configuration | Configurable through both environment variables and the admin settings table (new keys `captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`, `captcha_on_create`). A non-empty environment variable overrides the stored value, consistent with the `registration_mode` override rule |
+| FR-BOT-3 | Enablement | All four conditions must hold at once: provider ≠ `none`, both keys non-empty, and the switch for the relevant form is `true` |
+| FR-BOT-4 | Verification | The server issues an HTTPS POST to the provider's siteverify endpoint — Cloudflare `https://challenges.cloudflare.com/turnstile/v0/siteverify`, Google `https://www.google.com/recaptcha/api/siteverify` — with a 5-second timeout |
+| FR-BOT-5 | Fail closed | Any failure (timeout, non-2xx status, unparsable response) rejects the request |
+| FR-BOT-6 | Coverage | Enforced on the web registration form, the web create-short-link form, and `POST /api/v1/auth/register` (JSON field `captcha_token`; a failure returns 400 `captcha_failed`) |
+| FR-BOT-7 | API token routes | `POST /api/v1/urls` authenticates with an API token and is not subject to captcha |
+| FR-BOT-8 | Admin UI | The secret key field is write-only: the stored value is never rendered back, and submitting the field empty keeps the current value |
 
 ---
 
-## 6. 資料模型
+## 5. Non-Functional Requirements
 
-### 6.1 ER 概觀
+### 5.1 Security (NFR-SEC)
+
+| ID | Requirement |
+|----|-------------|
+| NFR-SEC-1 | Passwords: Argon2id; sessions/API tokens/invite codes store only a SHA-256 hash and are looked up by indexed hash comparison (no plaintext is stored, so there is no comparable length difference); the unlock cookie signature is compared in constant time |
+| NFR-SEC-2 | Cookies: `HttpOnly`, `SameSite=Lax`, `Secure` (when `UWURLS_SECURE_COOKIES=true` or the base URL is https) |
+| NFR-SEC-3 | CSRF: state-changing requests check that `Origin`/`Referer` are same-origin; cookie-authenticated non-GET requests are always verified; Bearer token requests are exempt |
+| NFR-SEC-4 | Security headers: `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`, and `Strict-Transport-Security` over https |
+| NFR-SEC-5 | Open redirect protection: targets must be `http` / `https`; `javascript:`, `data:`, `file:` and similar schemes are rejected |
+| NFR-SEC-6 | Reserved words: `api`, `app`, `assets`, `health`, `static`, `favicon.ico`, and similar names cannot be used as slugs |
+| NFR-SEC-7 | Error messages never leak internal details; a failed login always responds with "invalid email or password" |
+| NFR-SEC-8 | User enumeration protection: registering a duplicate email returns 409 (an accepted, common trade-off); login uses a uniform error message |
+| NFR-SEC-9 | Rate limiting: login 10 per 5 minutes per (IP,email) **plus** 40 per 5 minutes per IP, registration 5 per hour per IP, unlock 10 per 5 minutes per (slug,IP), link creation 120 per hour per user, password change 10 per hour per user |
+| NFR-SEC-9b | Account lockout: 30 accumulated failures for the same email within 15 minutes temporarily refuse login (429); this is persisted in the `login_attempts` table and survives a restart; in-memory rate limiter keys are stored as SHA-256 and capped at 50,000 entries |
+| NFR-SEC-10 | All SQL is parameterized (sqlx bind) with no string concatenation (no SQL outside `src/db/`) |
+| NFR-SEC-11 | The audit log covers every sensitive operation |
+| NFR-SEC-12 | If `UWURLS_SECRET` is unset at startup, a random key is generated and persisted in the data directory (created with mode 0600; an existing file with overly broad permissions is tightened automatically) |
+| NFR-SEC-13 | Reverse proxy headers: with `UWURLS_TRUST_PROXY=true`, prefer the proxy-rewritten `X-Real-IP`, then the **rightmost** entry of `X-Forwarded-For` (the leftmost can be forged by the client) |
+| NFR-SEC-14 | Password hashing runs in `spawn_blocking` with a semaphore limiting it to 4 concurrent Argon2 computations (about 19 MiB each) |
+| NFR-SEC-15 | Captcha verification fails closed: an HTTPS POST with a 5-second timeout to the configured provider; a timeout, a non-2xx status, or an unparsable body rejects the request. The secret key is never rendered back into the admin UI |
+| NFR-SEC-16 | The language cookie `uwurls_lang` is intentionally not HttpOnly (client code reads it) and holds only a whitelisted language tag; the `next` parameter of the switch endpoint accepts only same-site relative paths to prevent open redirects |
+
+### 5.2 Performance (NFR-PERF)
+
+| ID | Requirement |
+|----|-------------|
+| NFR-PERF-1 | Redirect path: a single indexed `SELECT` plus a queued write; P95 < 10 ms (measured 0.74 ms) |
+| NFR-PERF-2 | SQLite: `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=5000` |
+| NFR-PERF-3 | Connection pool: `max_connections=8`; click writes are serialized through a single background writer (so the WAL cannot grow without bound because concurrent writes prevent checkpointing) |
+| NFR-PERF-4 | List queries are always paginated (default 20, maximum 100) |
+| NFR-PERF-5 | Analytics queries use `url_daily_stats` and indexes to avoid full table scans |
+
+### 5.3 Operations (NFR-OPS)
+
+| ID | Requirement |
+|----|-------------|
+| NFR-OPS-1 | `docker compose up -d` completes the deployment; the first start migrates automatically and creates the admin |
+| NFR-OPS-2 | Health checks: `GET /health` (200 JSON) and the `uwurls healthcheck` subcommand (used by the Docker HEALTHCHECK) |
+| NFR-OPS-3 | Data is persisted in the named volume `uwurls-data` at `/data` |
+| NFR-OPS-4 | Logs go to stdout (`tracing`; JSON or compact controlled by `UWURLS_LOG_FORMAT`) |
+| NFR-OPS-5 | All configuration comes from environment variables (12-factor); `.env.example` documents everything |
+| NFR-OPS-6 | Daily maintenance task: purge expired sessions and optionally prune expired click records |
+| NFR-OPS-7 | Backup = copy `uwurls.db` (after a WAL checkpoint), as described in the README |
+| NFR-OPS-8 | The container runs as a non-root user and works with a read-only root filesystem |
+| NFR-OPS-9 | Locale catalogs are embedded in the binary with `include_str!`, so a deployment is still a single file with no writable asset directory |
+
+### 5.4 Maintainability (NFR-MAINT)
+
+| ID | Requirement |
+|----|-------------|
+| NFR-MAINT-1 | Layering: `routes/` (HTTP) → `services/` (business) → `db/` (SQL); no cross-layer direct queries |
+| NFR-MAINT-2 | A single `AppError` type converted centrally into HTTP responses |
+| NFR-MAINT-3 | All SQL lives in the `src/db/` modules and uses runtime queries (the project compiles without `DATABASE_URL`) |
+| NFR-MAINT-4 | `cargo clippy -- -D warnings` and `cargo fmt --check` pass |
+| NFR-MAINT-5 | Unit tests plus integration tests (including `tower::ServiceExt::oneshot` end-to-end) cover the core flows |
+| NFR-MAINT-6 | Every UI string lives in the three locale catalogs; templates and handlers never hard-code display text |
+
+---
+
+## 6. Data Model
+
+### 6.1 ER Overview
 
 ```
 users ─┬─< sessions
@@ -314,187 +367,205 @@ users ─┬─< sessions
        └─< audit_logs (actor)
 domains ─< urls
 settings (key-value)
-login_attempts (稽核用)
+login_attempts (auditing)
 ```
 
-### 6.2 設計原則
+### 6.2 Design Principles
 
-1. **時間欄位**：全部 `TEXT` 存 ISO-8601 UTC（`YYYY-MM-DDTHH:MM:SS.sssZ`），可直接字串比較與排序。
-2. **主鍵**：`INTEGER PRIMARY KEY AUTOINCREMENT`（SQLite rowid 最佳化）。
-3. **軟刪除**：`users.deleted_at`、`urls.deleted_at`；查詢一律加 `deleted_at IS NULL`。
-4. **枚舉**：以 `TEXT + CHECK` 約束，保留未來擴充彈性（SQLite 無原生 ENUM）。
-5. **布林**：`INTEGER 0/1`。
-6. **彙總表**：`url_daily_stats` 為統計查詢的加速層，寫入時 upsert。
-7. **保留擴充欄位**：`api_tokens.scopes`、`urls.notes`、`domains` 表、`audit_logs.metadata`。
+1. **Time columns**: all are `TEXT` holding ISO-8601 UTC (`YYYY-MM-DDTHH:MM:SS.sssZ`), directly comparable and sortable as strings.
+2. **Primary keys**: `INTEGER PRIMARY KEY AUTOINCREMENT` (SQLite rowid optimization).
+3. **Soft delete**: `users.deleted_at`, `urls.deleted_at`; every query adds `deleted_at IS NULL`.
+4. **Enums**: `TEXT + CHECK` constraints, which leave room to grow (SQLite has no native ENUM).
+5. **Booleans**: `INTEGER 0/1`.
+6. **Rollup table**: `url_daily_stats` is the acceleration layer for analytics queries, upserted on write.
+7. **Reserved extension columns**: `api_tokens.scopes`, `urls.notes`, the `domains` table, `audit_logs.metadata`.
 
-### 6.3 DDL（`migrations/0001_init.sql` 摘要）
+### 6.3 DDL (`migrations/0001_init.sql` summary)
 
-> 完整且唯一真實來源為 `migrations/0001_init.sql`；以下為結構摘要。
+> The complete and only source of truth is `migrations/0001_init.sql`; the table below is a structural summary.
 
-| 表 | 主要欄位 | 用途 |
-|----|----------|------|
-| `users` | id, email, email_normalized(UNIQUE), password_hash, display_name, role, status, email_verified_at, last_login_at, created_at, updated_at, deleted_at | 使用者 |
-| `sessions` | id, user_id, token_hash(UNIQUE), user_agent, ip_hash, created_at, last_seen_at, expires_at, revoked_at | 登入狀態 |
-| `api_tokens` | id, user_id, name, token_prefix, token_hash(UNIQUE), scopes, last_used_at, expires_at, created_at, revoked_at | API 憑證 |
-| `domains` | id, hostname(UNIQUE), is_default, is_verified, created_by, created_at | 多網域預留（v1 僅預設網域） |
-| `urls` | id, user_id, domain_id, slug(UNIQUE), target_url, title, notes, password_hash, expires_at, max_clicks, click_count, unique_click_count, redirect_type, status, is_custom_slug, last_clicked_at, created_at, updated_at, deleted_at | 短網址 |
-| `tags` | id, user_id, name, color, created_at, UNIQUE(user_id,name) | 標籤 |
-| `url_tags` | url_id, tag_id (PK) | 標籤關聯 |
-| `clicks` | id, url_id, clicked_at, ip_hash, visitor_hash, user_agent, referrer, referrer_host, country_code, device_type, browser, os, is_bot, is_unique, password_protected | 點擊明細 |
-| `url_daily_stats` | url_id, day, clicks, unique_clicks, bot_clicks (PK: url_id+day) | 每日彙總 |
-| `audit_logs` | id, actor_user_id, actor_role, action, target_type, target_id, metadata, ip_hash, created_at | 稽核 |
-| `settings` | key(PK), value, updated_at, updated_by | 全站設定 |
-| `invite_codes` | id, code_hash(UNIQUE), code_prefix, note, created_by, max_uses, used_count, expires_at, status, created_at | 邀請碼 |
-| `invite_redemptions` | id, invite_id, user_id, redeemed_at, UNIQUE(invite_id,user_id) | 邀請碼使用紀錄 |
-| `login_attempts` | id, identifier_hash, ip_hash, success, created_at | 登入稽核/鎖定 |
+| Table | Main columns | Purpose |
+|-------|--------------|---------|
+| `users` | id, email, email_normalized(UNIQUE), password_hash, display_name, role, status, email_verified_at, last_login_at, created_at, updated_at, deleted_at | Users |
+| `sessions` | id, user_id, token_hash(UNIQUE), user_agent, ip_hash, created_at, last_seen_at, expires_at, revoked_at | Login state |
+| `api_tokens` | id, user_id, name, token_prefix, token_hash(UNIQUE), scopes, last_used_at, expires_at, created_at, revoked_at | API credentials |
+| `domains` | id, hostname(UNIQUE), is_default, is_verified, created_by, created_at | Reserved for multi-domain (v1 uses only the default domain) |
+| `urls` | id, user_id, domain_id, slug(UNIQUE), target_url, title, notes, password_hash, expires_at, max_clicks, click_count, unique_click_count, redirect_type, status, is_custom_slug, last_clicked_at, created_at, updated_at, deleted_at | Short links |
+| `tags` | id, user_id, name, color, created_at, UNIQUE(user_id,name) | Tags |
+| `url_tags` | url_id, tag_id (PK) | Tag associations |
+| `clicks` | id, url_id, clicked_at, ip_hash, visitor_hash, user_agent, referrer, referrer_host, country_code, device_type, browser, os, is_bot, is_unique, password_protected | Click details |
+| `url_daily_stats` | url_id, day, clicks, unique_clicks, bot_clicks (PK: url_id+day) | Daily rollups |
+| `audit_logs` | id, actor_user_id, actor_role, action, target_type, target_id, metadata, ip_hash, created_at | Auditing |
+| `settings` | key(PK), value, updated_at, updated_by | Site settings |
+| `invite_codes` | id, code_hash(UNIQUE), code_prefix, note, created_by, max_uses, used_count, expires_at, status, created_at | Invite codes |
+| `invite_redemptions` | id, invite_id, user_id, redeemed_at, UNIQUE(invite_id,user_id) | Invite redemption records |
+| `login_attempts` | id, identifier_hash, ip_hash, success, created_at | Login auditing/lockout |
 
-### 6.4 索引策略
+### 6.4 Index Strategy
 
-| 索引 | 目的 |
-|------|------|
-| `urls(slug)` UNIQUE | 轉址查詢（最熱路徑） |
-| `urls(user_id, created_at DESC)` | 我的網址列表 |
-| `urls(expires_at) WHERE expires_at IS NOT NULL` | 過期清理/篩選 |
-| `clicks(url_id, clicked_at DESC)` | 單一網址統計 |
-| `clicks(clicked_at)` | 保留期清理 |
-| `sessions(user_id, expires_at)`、`sessions(expires_at)` | Session 驗證與清理 |
-| `api_tokens(token_hash)` UNIQUE | Token 認證 |
-| `url_daily_stats(day)` | 全站趨勢 |
-| `audit_logs(created_at DESC)`、`audit_logs(actor_user_id, created_at DESC)`、`audit_logs(target_type,target_id)` | 稽核查詢 |
-| `login_attempts(identifier_hash, created_at DESC)` | 暴力破解偵測 |
+| Index | Purpose |
+|-------|---------|
+| `urls(slug)` UNIQUE | Redirect lookup (hottest path) |
+| `urls(user_id, created_at DESC)` | "My links" listing |
+| `urls(expires_at) WHERE expires_at IS NOT NULL` | Expiry pruning/filtering |
+| `clicks(url_id, clicked_at DESC)` | Per-link analytics |
+| `clicks(clicked_at)` | Retention pruning |
+| `sessions(user_id, expires_at)`, `sessions(expires_at)` | Session validation and cleanup |
+| `api_tokens(token_hash)` UNIQUE | Token authentication |
+| `url_daily_stats(day)` | Site-wide trends |
+| `audit_logs(created_at DESC)`, `audit_logs(actor_user_id, created_at DESC)`, `audit_logs(target_type,target_id)` | Audit queries |
+| `login_attempts(identifier_hash, created_at DESC)` | Brute-force detection |
 
-### 6.5 預設資料 (seed)
+The v1.1 changes add settings **keys** only; because `settings` is a key-value table, the schema
+still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 
-- `settings`：`site_name=uwurls`、`registration_mode=open`、`default_slug_length=7`、
-  `max_urls_per_user=1000`、`default_redirect_type=302`、`analytics_enabled=true`、`click_retention_days=0`。
-- `domains`：啟動時依 `UWURLS_BASE_URL` 的 host 插入/更新預設網域（`is_default=1`）。
+### 6.5 Seed Data
+
+- `settings`: `site_name=uwurls`, `registration_mode=open`, `default_slug_length=7`,
+  `max_urls_per_user=1000`, `default_redirect_type=302`, `analytics_enabled=true`, `click_retention_days=0`.
+- `settings` (v1.1 captcha keys): `captcha_provider=none`, `captcha_site_key=` (empty),
+  `captcha_secret_key=` (empty), `captcha_on_register=false`, `captcha_on_create=false`.
+  A non-empty environment variable overrides the stored value (FR-BOT-2).
+- `domains`: at startup the default domain is inserted/updated from the host of `UWURLS_BASE_URL` (`is_default=1`).
 
 ---
 
-## 7. API 規格
+## 7. API Specification
 
-### 7.1 認證
+### 7.1 Authentication
 
-| 方法 | 路徑 | 說明 |
-|------|------|------|
-| POST | `/api/v1/auth/register` | `{email, password, invite_code?}` → 201 `{user}` |
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/auth/register` | `{email, password, invite_code?, captcha_token?}` → 201 `{user}`; 400 `captcha_failed` when captcha verification fails |
 | POST | `/api/v1/auth/login` | `{email, password}` → 200 `{user}` + Set-Cookie |
-| POST | `/api/v1/auth/logout` | 撤銷當前 Session → 204 |
-| GET | `/api/v1/auth/me` | 當前使用者 → 200 `{user}` |
+| POST | `/api/v1/auth/logout` | Revoke the current session → 204 |
+| GET | `/api/v1/auth/me` | Current user → 200 `{user}` |
 | PATCH | `/api/v1/auth/me` | `{display_name}` → 200 `{user}` |
 | POST | `/api/v1/auth/password` | `{current_password, new_password}` → 204 |
-| GET | `/api/v1/auth/sessions` | 我的 Session 清單 |
-| DELETE | `/api/v1/auth/sessions/{id}` | 撤銷指定 Session → 204 |
+| GET | `/api/v1/auth/sessions` | List my sessions |
+| DELETE | `/api/v1/auth/sessions/{id}` | Revoke the given session → 204 |
 
-### 7.2 短網址
+### 7.2 Short Links
 
-| 方法 | 路徑 | 說明 |
-|------|------|------|
-| GET | `/api/v1/urls` | 查詢參數：`q, tag, status, page, per_page, sort(created_at\|clicks)` |
-| POST | `/api/v1/urls` | `{target_url, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?}` |
-| GET | `/api/v1/urls/{id}` | 單筆（含 `short_url`、`is_expired`、`has_password`） |
-| PATCH | `/api/v1/urls/{id}` | 部分更新；`password: null` 清除密碼；`expires_at: null` 清除過期 |
-| DELETE | `/api/v1/urls/{id}` | 軟刪除 → 204 |
-| GET | `/api/v1/urls/{id}/stats?days=30` | 每日趨勢 + 維度分佈 + 摘要 |
-| GET | `/api/v1/urls/{id}/clicks?page=1` | 點擊明細（分頁） |
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/urls` | Query parameters: `q, tag, status, page, per_page, sort(created_at\|clicks)` |
+| POST | `/api/v1/urls` | `{target_url, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?}`; API token authentication, captcha not applied |
+| GET | `/api/v1/urls/{id}` | Single link (with `short_url`, `is_expired`, `has_password`) |
+| PATCH | `/api/v1/urls/{id}` | Partial update; `password: null` clears the password; `expires_at: null` clears the expiry |
+| DELETE | `/api/v1/urls/{id}` | Soft delete → 204 |
+| GET | `/api/v1/urls/{id}/stats?days=30` | Daily trend + dimension breakdown + summary |
+| GET | `/api/v1/urls/{id}/clicks?page=1` | Click details (paginated) |
 
-### 7.3 標籤 / Token
+### 7.3 Tags / Tokens
 
-| 方法 | 路徑 | 說明 |
-|------|------|------|
-| GET | `/api/v1/tags` | 我的標籤（含使用次數） |
-| DELETE | `/api/v1/tags/{id}` | 刪除標籤（僅解除關聯） |
-| GET | `/api/v1/tokens` | 我的 API Token 清單（不含明文） |
-| POST | `/api/v1/tokens` | `{name, expires_at?}` → 201 `{token: "uw_...", api_token}` **僅此一次** |
-| DELETE | `/api/v1/tokens/{id}` | 撤銷 → 204 |
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/tags` | My tags (with usage counts) |
+| DELETE | `/api/v1/tags/{id}` | Delete a tag (only removes the association) |
+| GET | `/api/v1/tokens` | My API tokens (never includes plaintext) |
+| POST | `/api/v1/tokens` | `{name, expires_at?}` → 201 `{token: "uw_...", api_token}` **shown only once** |
+| DELETE | `/api/v1/tokens/{id}` | Revoke → 204 |
 
-### 7.4 管理（需 admin）
+### 7.4 Admin (requires admin)
 
-| 方法 | 路徑 | 說明 |
-|------|------|------|
-| GET | `/api/v1/admin/users` | 使用者列表（`q, role, status, page`） |
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/admin/users` | User list (`q, role, status, page`) |
 | PATCH | `/api/v1/admin/users/{id}` | `{role?, status?, display_name?}` |
-| POST | `/api/v1/admin/users/{id}/password` | `{new_password}` 重設 |
-| DELETE | `/api/v1/admin/users/{id}` | 軟刪除（其網址一併軟刪除） |
-| GET | `/api/v1/admin/urls` | 全站網址列表 |
-| PATCH | `/api/v1/admin/urls/{id}` | 強制停用/啟用/刪除 |
-| GET | `/api/v1/admin/invites` | 邀請碼列表 |
+| POST | `/api/v1/admin/users/{id}/password` | `{new_password}` reset |
+| DELETE | `/api/v1/admin/users/{id}` | Soft delete (their links are soft-deleted too) |
+| GET | `/api/v1/admin/urls` | Site-wide link list |
+| PATCH | `/api/v1/admin/urls/{id}` | Force disable/enable/delete |
+| GET | `/api/v1/admin/invites` | Invite code list |
 | POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?}` → 201 `{code: "inv_...", invite}` |
-| DELETE | `/api/v1/admin/invites/{id}` | 撤銷 → 204 |
-| GET | `/api/v1/admin/settings` | 全站設定 |
-| PUT | `/api/v1/admin/settings` | 更新設定（白名單鍵） |
-| GET | `/api/v1/admin/audit` | 稽核日誌（`action, target_type, actor, page`） |
-| GET | `/api/v1/admin/stats` | 系統資訊與總量 |
+| DELETE | `/api/v1/admin/invites/{id}` | Revoke → 204 |
+| GET | `/api/v1/admin/settings` | Site settings |
+| PUT | `/api/v1/admin/settings` | Update settings (whitelisted keys) |
+| GET | `/api/v1/admin/audit` | Audit log (`action, target_type, actor, page`) |
+| GET | `/api/v1/admin/stats` | System info and totals |
 
-### 7.5 公開
+### 7.5 Public
 
-| 方法 | 路徑 | 說明 |
-|------|------|------|
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | Landing / navigation page (HTML) |
 | GET | `/health` | `{status, version, database, uptime_seconds}` |
-| GET | `/{slug}` | 轉址（302 等）或密碼頁（HTML）或 410/404 頁 |
-| POST | `/{slug}/unlock` | 表單或 JSON `{password}`；成功 303 → `/{slug}` |
-| GET | `/api/v1/public/urls/{slug}` | 公開中介資料：`{slug, has_password, is_expired, title?}`（**不含 target**） |
+| GET | `/app/lang/{code}` | Set the `uwurls_lang` cookie and 302 to `next` (same-site relative paths only) |
+| GET | `/{slug}` | Redirect (302 and friends), password page (HTML), or a 410/404 page |
+| POST | `/{slug}/unlock` | Form or JSON `{password}`; on success 303 → `/{slug}` |
+| GET | `/api/v1/public/urls/{slug}` | Public metadata: `{slug, has_password, is_expired, title?}` (**never includes the target**) |
 
 ---
 
-## 8. 設定（環境變數）
+## 8. Configuration (Environment Variables)
 
-| 變數 | 預設 | 說明 |
-|------|------|------|
-| `UWURLS_BIND` | `0.0.0.0:8080` | 監聽位址 |
-| `UWURLS_BASE_URL` | `http://localhost:8080` | 對外網址（用於產生短網址、CSRF 同源檢查、Cookie Secure 判斷） |
-| `UWURLS_DATABASE_URL` | `sqlite:///data/uwurls.db?mode=rwc` | SQLite 連線字串 |
-| `UWURLS_DATA_DIR` | 資料庫所在目錄 | 自動產生密鑰的存放位置 |
-| `UWURLS_HEALTHCHECK_URL` | 由 `UWURLS_BIND` 推導 | `uwurls healthcheck` 的目標 URL |
-| `UWURLS_SECRET` | 自動產生並存檔 | Session/解鎖 Cookie/IP 雜湊的 HMAC 密鑰（至少 16 字元；自動產生的為 44 字元 base64） |
-| `UWURLS_SECRET_FILE` | `<資料目錄>/secret.key` | 自動產生密鑰的存放位置 |
-| `UWURLS_ADMIN_EMAIL` | — | 啟動時建立/升級的管理員 Email |
-| `UWURLS_ADMIN_PASSWORD` | — | 上述管理員密碼（僅首次建立時使用） |
-| `UWURLS_REGISTRATION` | 讀取設定表 | 覆寫註冊模式 `open\|invite\|closed` |
-| `UWURLS_SECURE_COOKIES` | 依 `BASE_URL` 判斷 | 強制 Cookie `Secure` |
-| `UWURLS_TRUST_PROXY` | `false` | 信任 `X-Forwarded-For` / `X-Forwarded-Proto` |
-| `UWURLS_SESSION_TTL_HOURS` | `168` | Session 有效期（小時） |
-| `UWURLS_UNLOCK_TTL_MINUTES` | `30` | 短網址解鎖 Cookie 有效期（分鐘） |
-| `UWURLS_LOG` | `info` | `tracing` 過濾器 |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `UWURLS_BIND` | `0.0.0.0:8080` | Listen address |
+| `UWURLS_BASE_URL` | `http://localhost:8080` | Public base URL (used to build short links, check CSRF same-origin, and decide cookie `Secure`) |
+| `UWURLS_DATABASE_URL` | `sqlite:///data/uwurls.db?mode=rwc` | SQLite connection string |
+| `UWURLS_DATA_DIR` | Directory containing the database | Where an auto-generated secret is stored |
+| `UWURLS_HEALTHCHECK_URL` | Derived from `UWURLS_BIND` | Target URL for `uwurls healthcheck` |
+| `UWURLS_SECRET` | Auto-generated and persisted | HMAC key for sessions/unlock cookies/IP hashing (at least 16 characters; auto-generated keys are 44-character base64) |
+| `UWURLS_SECRET_FILE` | `<data dir>/secret.key` | Where an auto-generated secret is stored |
+| `UWURLS_ADMIN_EMAIL` | — | Admin email to create/upgrade at startup |
+| `UWURLS_ADMIN_PASSWORD` | — | Password for that admin (used only on first creation) |
+| `UWURLS_REGISTRATION` | Read from the settings table | Override the registration mode `open\|invite\|closed` |
+| `UWURLS_SECURE_COOKIES` | Derived from `BASE_URL` | Force the cookie `Secure` flag |
+| `UWURLS_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` / `X-Forwarded-Proto` |
+| `UWURLS_SESSION_TTL_HOURS` | `168` | Session lifetime (hours) |
+| `UWURLS_UNLOCK_TTL_MINUTES` | `30` | Short-link unlock cookie lifetime (minutes) |
+| `UWURLS_LOG` | `info` | `tracing` filter |
 | `UWURLS_LOG_FORMAT` | `compact` | `compact` \| `json` |
-| `UWURLS_DEFAULT_SLUG_LENGTH` | 讀取設定表 | 覆寫自動 Slug 長度（4–16） |
+| `UWURLS_DEFAULT_SLUG_LENGTH` | Read from the settings table | Override the automatic slug length (4–16) |
+| `UWURLS_CAPTCHA_PROVIDER` | `none` | Bot protection provider: `none` \| `turnstile` \| `recaptcha`; overrides `captcha_provider` when non-empty |
+| `UWURLS_CAPTCHA_SITE_KEY` | — | Provider site key; overrides `captcha_site_key` when non-empty |
+| `UWURLS_CAPTCHA_SECRET_KEY` | — | Provider secret key; overrides `captcha_secret_key` when non-empty |
+| `UWURLS_CAPTCHA_ON_REGISTER` | `false` | Require captcha on the registration forms; overrides `captcha_on_register` when non-empty |
+| `UWURLS_CAPTCHA_ON_CREATE` | `false` | Require captcha on the web create-short-link form; overrides `captcha_on_create` when non-empty |
+
+The captcha variables follow the same override rule as `UWURLS_REGISTRATION` and
+`UWURLS_DEFAULT_SLUG_LENGTH`: a non-empty environment variable wins over the value stored in the
+`settings` table (FR-BOT-2).
 
 ---
 
-## 9. 部署
+## 9. Deployment
 
-### 9.1 目錄結構
+### 9.1 Directory Structure
 
 ```
 uwurls/
 ├── Cargo.toml  Cargo.lock  rustfmt.toml
 ├── Dockerfile  .dockerignore
-├── docker-compose.yml            # 單一容器 + named volume
-├── docker-compose.tls.yml        # 可選：Caddy 自動 HTTPS
+├── docker-compose.yml            # single container + named volume
+├── docker-compose.tls.yml        # optional: Caddy automatic HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
 ├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql
-├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/}
+├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
-├── templates/                    # Askama 模板（base/app_base + 各頁面 + admin/）
+├── templates/                    # Askama templates (base/app_base + pages + admin/)
 ├── src/
 │   ├── main.rs  lib.rs  config.rs  state.rs  error.rs  server.rs  assets.rs
 │   ├── assets/{app.css,app.js,favicon.svg}
+│   ├── i18n/{en,zh-Hant,zh-Hans}.json
 │   ├── db/{mod,migrate,users,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
-│   ├── services/{auth,urls,admin,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens}.rs
-│   ├── middleware/{mod,auth,csrf,security}.rs
-│   └── routes/{mod,api,api_auth,api_urls,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract}.rs
-│       └── pages/{mod,auth,dashboard,urls,account,admin}.rs
-└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs}
+│   ├── services/{auth,urls,admin,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,i18n,captcha}.rs
+│   ├── middleware/{mod,auth,csrf,security,lang}.rs
+│   └── routes/{mod,api,api_auth,api_urls,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract,home}.rs
+│       └── pages/{mod,auth,dashboard,urls,account,admin,home}.rs
+└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs,i18n.rs,captcha.rs}
 ```
 
-### 9.2 Dockerfile 策略
+### 9.2 Dockerfile Strategy
 
-多階段建置：
-1. `rust:1-alpine` + `build-base` → `cargo build --release --target x86_64-unknown-linux-musl`（LTO、`strip`、`opt-level=z`）
-2. `alpine:3.21` → 複製二進位 + `ca-certificates` + `tzdata`，建立非 root 使用者，`HEALTHCHECK CMD ["/usr/local/bin/uwurls","healthcheck"]`
+Multi-stage build:
+1. `rust:1-alpine` + `build-base` → `cargo build --release --target x86_64-unknown-linux-musl` (LTO, `strip`, `opt-level=z`)
+2. `alpine:3.21` → copy the binary plus `ca-certificates` and `tzdata`, create a non-root user, `HEALTHCHECK CMD ["/usr/local/bin/uwurls","healthcheck"]`
 
-### 9.3 Compose 服務
+### 9.3 Compose Services
 
 ```yaml
 services:
@@ -510,47 +581,62 @@ volumes:
   uwurls-data:
 ```
 
-`docker-compose.tls.yml`：額外加入 Caddy（80/443、自動 Let's Encrypt），
-uwurls 不對外暴露連接埠，由 Caddy 反向代理。
+`docker-compose.tls.yml`: adds Caddy (80/443, automatic Let's Encrypt) and stops exposing the
+uwurls port, so Caddy reverse-proxies it.
 
 ---
 
-## 10. 測試策略
+## 10. Test Strategy
 
-| 層級 | 範圍 | 工具 |
-|------|------|------|
-| 單元測試 | slug 產生/驗證/保留字、UA 解析、過期判定、設定解析、密碼雜湊、IP 雜湊、CSRF 同源判斷 | `#[cfg(test)]` 模組 |
-| 整合測試 | 註冊→登入→建立→轉址→統計；密碼保護流程；過期與點擊上限；所有權隔離；admin 授權；API Token；CSRF 拒絕 | `tests/integration.rs` + `tower::ServiceExt::oneshot` + 臨時 SQLite |
-| 端對端煙霧測試 | 以真實二進位 + curl 走完主要流程 | `scripts/smoke.sh` |
-| 靜態檢查 | `cargo fmt --check`、`cargo clippy -D warnings` | CI 指令（README 說明） |
-
----
-
-## 11. 驗收標準 (Definition of Done)
-
-- [x] `cargo build --release` 成功，二進位 **4.2 MB** ≤ 15 MB
-- [x] `cargo test` 全綠：**178** 項（單元 93 + 整合 84 + 二進位 1）
-- [x] `cargo clippy --all-targets -- -D warnings` 與 `cargo fmt --check` 無警告
-- [x] `scripts/smoke.sh` 對真實二進位 **81** 項全數通過（含密碼保護、過期、所有權隔離、CSRF、邀請碼、重啟持久化）
-- [x] `docker compose config` 通過（base 與 TLS overlay 皆以 Docker Compose 27.4 驗證）
-- [x] `docker build` 成功，映像 **13.2 MB**；`docker compose up -d` 後容器狀態 `healthy`
-- [x] 容器內以 uid 10001 執行、根檔案系統唯讀、`cap_drop: ALL`；資料僅寫入 `/data` volume
-- [x] 容器實測：health、管理員登入、建立含密碼/過期/點擊上限的短網址、解鎖轉址、全部管理頁面 200、重啟後 Session 與解鎖 Cookie 仍有效
-- [x] 14 張表 + 索引依 §6 建立，啟動自動遷移（`schema_migrations` 有 checksum 保護）
-- [x] 所有 FR/NFR 條目皆有對應實作或測試
-- [x] README 可讓新使用者在 5 分鐘內完成部署
-- [x] 每個階段皆有對應的本地 commit（見 `docs/PLAN.md`）
+| Layer | Scope | Tooling |
+|-------|-------|---------|
+| Unit tests | Slug generation/validation/reserved words, UA parsing, expiry decisions, settings parsing, password hashing, IP hashing, CSRF same-origin checks, `Accept-Language` negotiation (`q=` weights, fallback to English), locale fallback, the captcha enablement matrix, and captcha fail-closed classification | `#[cfg(test)]` modules |
+| Integration tests | Register → login → create → redirect → analytics; the password protection flow; expiry and click caps; ownership isolation; admin authorization; API tokens; CSRF rejection; language negotiation and cookie switching; API JSON staying English; captcha rejection on register/create; the landing page | `tests/integration.rs` + `tower::ServiceExt::oneshot` + a temporary SQLite database |
+| End-to-end smoke test | Runs the main flows against the real binary with curl | `scripts/smoke.sh` |
+| Static checks | `cargo fmt --check`, `cargo clippy -D warnings` | CI commands (documented in the README) |
 
 ---
 
-## 12. 未來擴充路徑（本版僅保留 schema/架構空間）
+## 11. Definition of Done
 
-| 功能 | 已預留 |
-|------|--------|
-| 多網域 / 自訂網域 | `domains` 表 + `urls.domain_id` |
-| 使用者群組與細緻權限 | `api_tokens.scopes`、`users.role` 可擴充為 `groups` 表 |
-| 密碼重設 / Email 驗證 | `users.email_verified_at`、可新增 `password_resets` |
-| GeoIP 國家統計 | `clicks.country_code` 已存在，只需加入解析器 |
-| 點擊明細匯出 / CSV | `clicks` 完整欄位 + 索引 |
-| 團隊協作 | 可新增 `url_members`，`urls.user_id` 為 owner |
-| 稽核合規 | `audit_logs.metadata` JSON 保留完整上下文 |
+v1.0:
+
+- [x] `cargo build --release` succeeds and the binary is **4.2 MB** ≤ 15 MB
+- [x] `cargo test` is all green: **178** items (93 unit + 84 integration + 1 binary)
+- [x] `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` report no warnings
+- [x] `scripts/smoke.sh` passes all **81** checks against the real binary (including password protection, expiry, ownership isolation, CSRF, invite codes, and restart persistence)
+- [x] `docker compose config` passes (both the base file and the TLS overlay verified with Docker Compose 27.4)
+- [x] `docker build` succeeds, the image is **13.2 MB**, and the container reports `healthy` after `docker compose up -d`
+- [x] The container runs as uid 10001 with a read-only root filesystem and `cap_drop: ALL`; data is written only to the `/data` volume
+- [x] Container verification: health, admin login, creating a link with password/expiry/click cap, unlock-and-redirect, all admin pages returning 200, and sessions plus unlock cookies still valid after a restart
+- [x] 14 tables + indexes created per §6, migrated automatically at startup (`schema_migrations` is checksum-protected)
+- [x] Every FR/NFR item has a corresponding implementation or test
+- [x] The README lets a new user deploy within 5 minutes
+- [x] Every phase has a corresponding local commit (see `docs/PLAN.md`)
+
+v1.1 additions (this batch):
+
+- [ ] Three locale catalogs (`en`, `zh-Hant`, `zh-Hans`) are embedded in the binary and cover every UI string, with a missing key falling back to English
+- [ ] `Accept-Language` negotiation honors `q=` weights and defaults to English for an unrecognized or absent header
+- [ ] `GET /app/lang/{code}?next=<path>` sets `uwurls_lang` (Path=/, SameSite=Lax, Max-Age one year, not HttpOnly) and returns 302, and `next` accepts only same-site relative paths
+- [ ] `<html lang>` reflects the active language and error pages are localized
+- [ ] JSON API responses stay English regardless of the request language
+- [ ] Captcha is enabled only when provider ≠ none, both keys are non-empty, and the matching switch is true; a non-empty environment variable overrides the stored setting
+- [ ] Captcha verification fails closed on timeout, non-2xx status, or an unparsable response, and is enforced on web register, web create, and `POST /api/v1/auth/register` (400 `captcha_failed`)
+- [ ] Captcha is not applied to `POST /api/v1/urls`, and the admin secret-key field is write-only
+- [ ] `GET /` returns 200 as a landing/navigation page for anonymous and signed-in visitors, and no longer redirects to `/app`
+- [ ] `cargo test`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check` are clean
+
+---
+
+## 12. Future Extension Paths (this version only reserves schema/architecture room)
+
+| Feature | Already reserved |
+|---------|------------------|
+| Multiple / custom domains | `domains` table + `urls.domain_id` |
+| User groups and fine-grained permissions | `api_tokens.scopes`; `users.role` can grow into a `groups` table |
+| Password reset / email verification | `users.email_verified_at`; a `password_resets` table can be added |
+| GeoIP country analytics | `clicks.country_code` already exists; only a resolver is missing |
+| Click export / CSV | The full `clicks` column set + indexes |
+| Team collaboration | A `url_members` table can be added, with `urls.user_id` as the owner |
+| Audit compliance | `audit_logs.metadata` keeps the full JSON context |
