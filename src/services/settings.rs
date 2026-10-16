@@ -11,7 +11,7 @@ use sqlx::SqlitePool;
 use crate::config::Config;
 use crate::db;
 use crate::error::{AppError, Result};
-use crate::services::captcha::CaptchaProvider;
+use crate::services::captcha::{self, CaptchaProvider};
 
 /// Who may register.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,6 +55,7 @@ pub const EDITABLE_KEYS: &[&str] = &[
     "captcha_provider",
     "captcha_site_key",
     "captcha_secret_key",
+    "captcha_allowed_hostnames",
     "captcha_on_register",
     "captcha_on_login",
     "captcha_on_create",
@@ -70,6 +71,7 @@ pub struct Settings {
     captcha_provider_override: Option<CaptchaProvider>,
     captcha_site_key_override: Option<String>,
     captcha_secret_key_override: Option<String>,
+    captcha_allowed_hostnames_override: Option<String>,
     captcha_on_register_override: Option<bool>,
     captcha_on_login_override: Option<bool>,
     captcha_on_create_override: Option<bool>,
@@ -98,6 +100,10 @@ impl std::fmt::Debug for Settings {
                     .captcha_secret_key_override
                     .as_ref()
                     .map(|_| crate::services::secret::REDACTED),
+            )
+            .field(
+                "captcha_allowed_hostnames_override",
+                &self.captcha_allowed_hostnames_override,
             )
             .field(
                 "captcha_on_register_override",
@@ -134,6 +140,21 @@ impl Settings {
                 .map(CaptchaProvider::parse),
             captcha_site_key_override: config.captcha_site_key_override.clone(),
             captcha_secret_key_override: config.captcha_secret_key_override.clone(),
+            // An unusable value is reported once, here, and then ignored: a typo
+            // in the environment must not reject every verification.
+            captcha_allowed_hostnames_override: config
+                .captcha_allowed_hostnames_override
+                .as_deref()
+                .and_then(|value| match captcha::validate_allowed_hostnames(value) {
+                    Ok(canonical) => Some(canonical),
+                    Err(message) => {
+                        tracing::warn!(
+                            message = %message,
+                            "ignoring UWURLS_CAPTCHA_ALLOWED_HOSTNAMES"
+                        );
+                        None
+                    }
+                }),
             captcha_on_register_override: config.captcha_on_register_override,
             captcha_on_login_override: config.captcha_on_login_override,
             captcha_on_create_override: config.captcha_on_create_override,
@@ -239,6 +260,25 @@ impl Settings {
     /// True when a secret is stored, without revealing it.
     pub fn captcha_secret_configured(&self) -> bool {
         !self.captcha_secret_key().is_empty()
+    }
+
+    /// Extra hostnames a provider may report, canonicalised and comma separated.
+    pub fn captcha_allowed_hostnames(&self) -> String {
+        match &self.captcha_allowed_hostnames_override {
+            Some(value) => value.clone(),
+            None => self
+                .raw("captcha_allowed_hostnames")
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+        }
+    }
+
+    /// [`captcha_allowed_hostnames`] as a list.
+    ///
+    /// [`captcha_allowed_hostnames`]: Settings::captcha_allowed_hostnames
+    pub fn captcha_allowed_hostname_list(&self) -> Vec<String> {
+        captcha::parse_allowed_hostnames(&self.captcha_allowed_hostnames())
     }
 
     pub fn captcha_on_register(&self) -> bool {
@@ -396,6 +436,9 @@ fn validate_value(key: &str, value: &str) -> Result<String> {
             }
             Ok(value.to_string())
         }
+        "captcha_allowed_hostnames" => {
+            captcha::validate_allowed_hostnames(value).map_err(|message| invalid(&message))
+        }
         "captcha_on_register" | "captcha_on_login" | "captcha_on_create" => Ok(matches!(
             value.to_ascii_lowercase().as_str(),
             "1" | "true" | "yes" | "on"
@@ -475,6 +518,41 @@ mod tests {
         assert!(validate_value("captcha_secret_key", &"x".repeat(201)).is_err());
         assert!(validate_value("captcha_secret_key", "bad\u{7}key").is_err());
         assert!(validate_value("captcha_secret_key", "fine").is_ok());
+
+        // Hostname allowlist: canonicalised, bare names only, bounded in size.
+        assert_eq!(
+            validate_value(
+                "captcha_allowed_hostnames",
+                " a.example.com , B.example.com "
+            )
+            .expect("ok"),
+            "a.example.com,b.example.com"
+        );
+        assert_eq!(
+            validate_value("captcha_allowed_hostnames", "").expect("ok"),
+            ""
+        );
+        assert_eq!(
+            validate_value("captcha_allowed_hostnames", " , ").expect("ok"),
+            ""
+        );
+        for bad in [
+            "https://a.example.com",
+            "a.example.com/path",
+            "a.example.com:443",
+            "user@a.example.com",
+            "a b.example.com",
+        ] {
+            assert!(
+                validate_value("captcha_allowed_hostnames", bad).is_err(),
+                "{bad:?} must be refused"
+            );
+        }
+        let eleven = (0..11)
+            .map(|index| format!("h{index}.example.com"))
+            .collect::<Vec<_>>()
+            .join(",");
+        assert!(validate_value("captcha_allowed_hostnames", &eleven).is_err());
     }
 
     #[test]

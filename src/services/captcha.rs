@@ -18,6 +18,23 @@
 //! `ureq`'s own documentation notes that DNS resolution cannot be interrupted
 //! with the APIs it uses, so a stalled resolver can exceed it. The concurrency
 //! limit keeps such a call from blocking the rest of the process.
+//!
+//! # Which hostnames are accepted
+//!
+//! A site key is public, so when a provider relaxes its domain restriction
+//! (Cloudflare "Any Hostname", a wildcard, reCAPTCHA with domain validation off)
+//! anybody could mint tokens with our key on their own domain. Every answer that
+//! carries a `hostname` is therefore checked against an explicit allowlist:
+//! `Config::base_host` plus whatever the administrator listed in
+//! `captcha_allowed_hostnames`. The `Host` header of the request is deliberately
+//! *not* a candidate — a client controls it, which is exactly the value an
+//! attacker would forge to match the token it just obtained.
+//!
+//! Upgrade note: an instance that also serves a second hostname (a short domain
+//! next to the application domain, or a staging alias) must add that hostname to
+//! the allowlist, or verifications performed through it will be rejected. The
+//! warning logged on a mismatch lists the hostname to add and the candidates
+//! currently accepted.
 
 use std::net::IpAddr;
 use std::sync::OnceLock;
@@ -34,6 +51,11 @@ pub const RECAPTCHA_VERIFY_URL: &str = "https://www.google.com/recaptcha/api/sit
 
 /// Longest accepted site/secret key.
 pub const MAX_KEY_LEN: usize = 200;
+
+/// Most hostnames an administrator may add to the allowlist.
+pub const MAX_ALLOWED_HOSTNAMES: usize = 10;
+/// Longest accepted hostname (the DNS limit).
+pub const MAX_HOSTNAME_LEN: usize = 253;
 
 /// How long a `siteverify` call may take before it counts as a failure.
 pub const VERIFY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -215,6 +237,8 @@ pub struct CaptchaGuard {
     verify_url: String,
     /// Hostname the instance is served under, from `Config::base_host`.
     base_host: String,
+    /// Extra hostnames the provider may report, from the settings table.
+    allowed_hostnames: Vec<String>,
     /// Whether the endpoint may be plain HTTP. Only ever true for the test
     /// override: `Config::captcha_verify_url` has no environment variable, so a
     /// deployment always talks HTTPS to the provider.
@@ -230,6 +254,7 @@ impl std::fmt::Debug for CaptchaGuard {
             .field("secret_key", &REDACTED)
             .field("verify_url", &self.verify_url)
             .field("base_host", &self.base_host)
+            .field("allowed_hostnames", &self.allowed_hostnames)
             .field("allow_plaintext", &self.allow_plaintext)
             .finish()
     }
@@ -276,6 +301,7 @@ impl CaptchaGuard {
             secret_key,
             verify_url,
             base_host: base_host.to_string(),
+            allowed_hostnames: settings.captcha_allowed_hostname_list(),
             allow_plaintext,
         }
     }
@@ -288,6 +314,7 @@ impl CaptchaGuard {
         secret_key: &str,
         verify_url: &str,
         base_host: &str,
+        allowed_hostnames: &[&str],
     ) -> Self {
         Self {
             provider,
@@ -295,6 +322,10 @@ impl CaptchaGuard {
             secret_key: secret_key.to_string(),
             verify_url: verify_url.to_string(),
             base_host: base_host.to_string(),
+            allowed_hostnames: allowed_hostnames
+                .iter()
+                .map(|host| (*host).to_string())
+                .collect(),
             // `new` is the test/advanced entry point: it may point anywhere.
             allow_plaintext: true,
         }
@@ -308,6 +339,7 @@ impl CaptchaGuard {
             secret_key: String::new(),
             verify_url: String::new(),
             base_host: String::new(),
+            allowed_hostnames: Vec::new(),
             allow_plaintext: true,
         }
     }
@@ -352,14 +384,18 @@ impl CaptchaGuard {
     /// Verify a submitted token. A disabled guard always succeeds.
     ///
     /// `client_ip` is forwarded as `remoteip` when known; the provider API
-    /// accepts requests without it. `request_host` is the `Host` header of the
-    /// request being checked, compared against the `hostname` the provider
-    /// reports.
+    /// accepts requests without it.
+    ///
+    /// The `hostname` of the answer is checked against [`accepted_hostnames`],
+    /// never against the request `Host`: a client controls that header, so
+    /// trusting it would defeat the check. See the module documentation for the
+    /// upgrade note about instances served under more than one name.
+    ///
+    /// [`accepted_hostnames`]: CaptchaGuard::accepted_hostnames
     pub async fn verify(
         &self,
         token: Option<&str>,
         client_ip: Option<IpAddr>,
-        request_host: Option<&str>,
     ) -> Result<(), CaptchaError> {
         if !self.enabled() {
             return Ok(());
@@ -393,7 +429,7 @@ impl CaptchaGuard {
         // `ureq` is blocking: keep it off the async runtime.
         match tokio::task::spawn_blocking(move || request.send()).await {
             Ok(Ok(outcome)) if outcome.success => {
-                if self.hostname_allowed(outcome.hostname.as_deref(), request_host) {
+                if self.hostname_allowed(outcome.hostname.as_deref()) {
                     Ok(())
                 } else {
                     Err(CaptchaError::Rejected)
@@ -415,49 +451,96 @@ impl CaptchaGuard {
         }
     }
 
-    /// Check the `hostname` a provider reports against the request and the
-    /// instance hostname.
+    /// Every hostname a provider may report: `base_host` plus the allowlist,
+    /// normalised, sorted and de-duplicated.
+    fn accepted_hostnames(&self) -> Vec<String> {
+        let mut hosts: Vec<String> = std::iter::once(normalize_host(&self.base_host))
+            .chain(
+                self.allowed_hostnames
+                    .iter()
+                    .map(|host| normalize_host(host)),
+            )
+            .filter(|host| !host.is_empty())
+            .collect();
+        hosts.sort();
+        hosts.dedup();
+        hosts
+    }
+
+    /// Check the `hostname` a provider reports against the configured set.
     ///
     /// A missing or empty field passes: not every provider always returns it.
-    /// A present value must match either the `Host` of this request or
-    /// `base_host` — an instance may legitimately be reachable under several
-    /// names (the short domain and the application domain), so `base_host`
-    /// alone would reject valid traffic. When neither candidate is available the
-    /// check is skipped with a warning rather than locking everyone out.
-    fn hostname_allowed(&self, hostname: Option<&str>, request_host: Option<&str>) -> bool {
+    /// A present value must equal one of [`accepted_hostnames`]. When that set is
+    /// empty — only possible if `base_host` were empty, which cannot happen for a
+    /// validated base URL — the check is skipped with a warning rather than
+    /// locking every visitor out.
+    ///
+    /// [`accepted_hostnames`]: CaptchaGuard::accepted_hostnames
+    fn hostname_allowed(&self, hostname: Option<&str>) -> bool {
         let provider = self.provider.as_str();
-        let Some(reported) = hostname.map(normalize_host).filter(|h| !h.is_empty()) else {
+        let Some(reported) = hostname.map(normalize_host).filter(|host| !host.is_empty()) else {
             return true;
         };
 
-        let candidates: Vec<String> = [
-            request_host.map(normalize_host),
-            Some(normalize_host(&self.base_host)),
-        ]
-        .into_iter()
-        .flatten()
-        .filter(|host| !host.is_empty())
-        .collect();
-        if candidates.is_empty() {
+        let accepted = self.accepted_hostnames();
+        if accepted.is_empty() {
             tracing::warn!(
                 provider,
                 hostname = %reported,
-                "cannot check the reported hostname: neither the request Host nor base_host is known"
+                "cannot check the reported hostname: no hostname is configured"
             );
             return true;
         }
-
-        if candidates.iter().any(|host| host == &reported) {
+        if accepted.iter().any(|host| host == &reported) {
             return true;
         }
         tracing::warn!(
             provider,
             hostname = %reported,
-            host = request_host.unwrap_or_default(),
-            "captcha token was issued for a different hostname"
+            accepted = ?accepted,
+            "captcha token was issued for a hostname that is not configured; add it to captcha_allowed_hostnames to accept it"
         );
         false
     }
+}
+
+/// Split a stored allowlist into normalised hostnames.
+///
+/// Comma separated, trimmed, lower case, empty entries dropped. No validation:
+/// see [`validate_allowed_hostnames`] for the rules the settings form enforces.
+pub fn parse_allowed_hostnames(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(|host| host.trim().to_ascii_lowercase())
+        .filter(|host| !host.is_empty())
+        .collect()
+}
+
+/// Validate and canonicalise the `captcha_allowed_hostnames` setting.
+///
+/// Returns the normalised, comma separated list, or an English message suitable
+/// for [`AppError::validation`](crate::error::AppError::validation).
+pub fn validate_allowed_hostnames(value: &str) -> Result<String, String> {
+    let hostnames = parse_allowed_hostnames(value);
+    if hostnames.len() > MAX_ALLOWED_HOSTNAMES {
+        return Err(format!(
+            "at most {MAX_ALLOWED_HOSTNAMES} hostnames may be listed"
+        ));
+    }
+    for hostname in &hostnames {
+        if hostname.chars().count() > MAX_HOSTNAME_LEN {
+            return Err(format!(
+                "each hostname must be at most {MAX_HOSTNAME_LEN} characters"
+            ));
+        }
+        if hostname
+            .chars()
+            .any(|c| c.is_whitespace() || matches!(c, '/' | ':' | '@'))
+        {
+            return Err("hostnames must be bare names without spaces, '/', ':' or '@'".to_string());
+        }
+    }
+    Ok(hostnames.join(","))
 }
 
 /// Normalise a hostname for comparison: trimmed, lower case, no port and no
@@ -684,6 +767,7 @@ mod tests {
             "secret",
             TURNSTILE_VERIFY_URL,
             "s.example.com",
+            &["other.example.com"],
         );
         assert!(complete.enabled());
 
@@ -694,6 +778,7 @@ mod tests {
                 "secret",
                 TURNSTILE_VERIFY_URL,
                 "s.example.com",
+                &[],
             ),
             CaptchaGuard::new(
                 CaptchaProvider::Turnstile,
@@ -701,6 +786,7 @@ mod tests {
                 "secret",
                 TURNSTILE_VERIFY_URL,
                 "s.example.com",
+                &[],
             ),
             CaptchaGuard::new(
                 CaptchaProvider::Turnstile,
@@ -708,6 +794,7 @@ mod tests {
                 "",
                 TURNSTILE_VERIFY_URL,
                 "s.example.com",
+                &[],
             ),
             CaptchaGuard::new(
                 CaptchaProvider::Turnstile,
@@ -715,6 +802,7 @@ mod tests {
                 "secret",
                 "",
                 "s.example.com",
+                &[],
             ),
         ] {
             assert!(!incomplete.enabled());
@@ -731,6 +819,7 @@ mod tests {
             "super-secret-value",
             TURNSTILE_VERIFY_URL,
             "s.example.com",
+            &[],
         );
         let printed = format!("{guard:?}");
         assert!(!printed.contains("super-secret-value"), "{printed}");
@@ -746,6 +835,7 @@ mod tests {
             "secret",
             TURNSTILE_VERIFY_URL,
             "s.example.com",
+            &[],
         );
         assert_eq!(
             turnstile.submitted_token(Some("cf"), Some("g")),
@@ -762,6 +852,7 @@ mod tests {
             "secret",
             RECAPTCHA_VERIFY_URL,
             "s.example.com",
+            &[],
         );
         assert_eq!(recaptcha.submitted_token(Some("cf"), Some("g")), Some("g"));
         assert_eq!(recaptcha.submitted_token(Some("cf"), None), Some("cf"));
@@ -786,24 +877,31 @@ mod tests {
             "secret",
             TURNSTILE_VERIFY_URL,
             "app.example.com",
+            &["s.example.com", "S.EXAMPLE.COM."],
         );
 
         // A provider that does not report one is not rejected.
-        assert!(guard.hostname_allowed(None, Some("s.example.com")));
-        assert!(guard.hostname_allowed(Some(""), Some("s.example.com")));
-        assert!(guard.hostname_allowed(Some("   "), Some("s.example.com")));
+        assert!(guard.hostname_allowed(None));
+        assert!(guard.hostname_allowed(Some("")));
+        assert!(guard.hostname_allowed(Some("   ")));
 
-        // Either the host of this request or the configured base host is
-        // accepted, so an instance served under two names keeps working.
-        assert!(guard.hostname_allowed(Some("s.example.com"), Some("s.example.com")));
-        assert!(guard.hostname_allowed(Some("app.example.com"), Some("s.example.com")));
+        // `base_host` and every allowlisted name are accepted, normalised on
+        // both sides (case, port, trailing dot).
+        assert!(guard.hostname_allowed(Some("app.example.com")));
+        assert!(guard.hostname_allowed(Some("APP.Example.com.")));
+        assert!(guard.hostname_allowed(Some("app.example.com:8443")));
+        assert!(guard.hostname_allowed(Some("s.example.com")));
 
-        // Case, port and a trailing dot are normalised away on both sides.
-        assert!(guard.hostname_allowed(Some("S.Example.COM."), Some("s.example.com:8443")));
+        // Anything else is refused, including a lookalike suffix.
+        assert!(!guard.hostname_allowed(Some("evil.example")));
+        assert!(!guard.hostname_allowed(Some("s.example.com.evil.example")));
+        assert!(!guard.hostname_allowed(Some("other.example.com")));
 
-        // Somebody else's hostname is refused.
-        assert!(!guard.hostname_allowed(Some("evil.example"), Some("s.example.com")));
-        assert!(!guard.hostname_allowed(Some("s.example.com.evil.example"), Some("s.example.com")));
+        // The candidate set is `base_host` plus the allowlist, de-duplicated.
+        assert_eq!(
+            guard.accepted_hostnames(),
+            vec!["app.example.com".to_string(), "s.example.com".to_string()]
+        );
 
         // With no candidate at all the check is skipped rather than locking
         // every visitor out.
@@ -813,18 +911,55 @@ mod tests {
             "secret",
             TURNSTILE_VERIFY_URL,
             "",
+            &[],
         );
-        assert!(homeless.hostname_allowed(Some("evil.example"), None));
+        assert!(homeless.hostname_allowed(Some("evil.example")));
     }
 
-    #[tokio::test]
-    async fn a_disabled_guard_accepts_anything() {
-        let guard = CaptchaGuard::disabled();
-        assert!(guard.verify(None, None, None).await.is_ok());
-        assert!(guard
-            .verify(Some("garbage"), None, Some("s.example.com"))
-            .await
-            .is_ok());
+    #[test]
+    fn validates_the_hostname_allowlist() {
+        // Empty, or a list of separators, means "no extra hostnames".
+        assert_eq!(validate_allowed_hostnames("").expect("ok"), "");
+        assert_eq!(validate_allowed_hostnames(" , ,").expect("ok"), "");
+        assert_eq!(
+            validate_allowed_hostnames(" S.Example.COM , app.example.com ").expect("ok"),
+            "s.example.com,app.example.com"
+        );
+        assert_eq!(
+            parse_allowed_hostnames("a.example.com,,B.EXAMPLE.COM"),
+            vec!["a.example.com", "b.example.com"]
+        );
+
+        // At most ten entries.
+        let ten = (0..MAX_ALLOWED_HOSTNAMES)
+            .map(|index| format!("h{index}.example.com"))
+            .collect::<Vec<_>>()
+            .join(",");
+        assert_eq!(
+            parse_allowed_hostnames(&validate_allowed_hostnames(&ten).expect("ok")).len(),
+            MAX_ALLOWED_HOSTNAMES
+        );
+        let eleven = format!("{ten},extra.example.com");
+        assert!(validate_allowed_hostnames(&eleven).is_err());
+
+        // Each entry must be a bare hostname.
+        for bad in [
+            "https://s.example.com",
+            "s.example.com/path",
+            "s.example.com:8443",
+            "user@s.example.com",
+            "s example.com",
+            "s\texample.com",
+        ] {
+            assert!(
+                validate_allowed_hostnames(bad).is_err(),
+                "{bad:?} must be refused"
+            );
+        }
+
+        // Length is bounded by the DNS limit.
+        assert!(validate_allowed_hostnames(&"x".repeat(MAX_HOSTNAME_LEN)).is_ok());
+        assert!(validate_allowed_hostnames(&"x".repeat(MAX_HOSTNAME_LEN + 1)).is_err());
     }
 
     /// The queue is bounded, but it does wait: a slot is preferred over an
@@ -844,11 +979,12 @@ mod tests {
             "secret",
             "http://127.0.0.1:1/siteverify",
             "s.example.com",
+            &[],
         );
 
         let started = std::time::Instant::now();
         assert_eq!(
-            guard.verify(Some("token"), None, None).await,
+            guard.verify(Some("token"), None).await,
             Err(CaptchaError::Unavailable)
         );
         let waited = started.elapsed();
@@ -871,13 +1007,11 @@ mod tests {
             "secret",
             "http://127.0.0.1:1/siteverify",
             "s.example.com",
+            &[],
         );
+        assert_eq!(guard.verify(None, None).await, Err(CaptchaError::Missing));
         assert_eq!(
-            guard.verify(None, None, None).await,
-            Err(CaptchaError::Missing)
-        );
-        assert_eq!(
-            guard.verify(Some("   "), None, None).await,
+            guard.verify(Some("   "), None).await,
             Err(CaptchaError::Missing)
         );
     }

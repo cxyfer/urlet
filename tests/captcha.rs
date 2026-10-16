@@ -618,42 +618,51 @@ async fn the_client_address_is_forwarded_when_it_is_known() {
 
 // ----------------------------------------------------------------- hostname
 
-/// A token is only accepted when the provider says it was minted for a host we
-/// answer on: the site key is public, so a third party could otherwise obtain
-/// valid tokens for its own domain.
+/// App served under `app.example.com` whose provider points at `url`.
+async fn hostname_app(url: &str, allowed_hostnames: Option<&str>) -> TestApp {
+    let url = url.to_string();
+    let allowed = allowed_hostnames.map(str::to_string);
+    TestApp::spawn_with(move |config| {
+        config.captcha_provider_override = Some("turnstile".to_string());
+        config.captcha_site_key_override = Some("site-key".to_string());
+        config.captcha_secret_key_override = Some("secret-key".to_string());
+        config.captcha_on_register_override = Some(true);
+        config.captcha_verify_url = Some(url);
+        config.base_host = "app.example.com".to_string();
+        config.captcha_allowed_hostnames_override = allowed;
+    })
+    .await
+}
+
+/// Registration request with an explicit `Host` header.
+fn register_with_host(token: &str, host: &str) -> axum::http::Request<axum::body::Body> {
+    let mut request = post_json(
+        "/api/v1/auth/register",
+        api_register_body(&format!("host-{host}@example.com"), Some(token)),
+    );
+    request.headers_mut().insert(
+        axum::http::header::HOST,
+        axum::http::HeaderValue::from_str(host).expect("host header"),
+    );
+    request
+}
+
+/// The `hostname` a provider reports must be one we are configured to answer
+/// on: `base_host` or an allowlisted name. The request `Host` is deliberately
+/// **not** a candidate — a client controls it, so trusting it would let anyone
+/// present a token minted for their own domain with our public site key.
 #[tokio::test]
-async fn the_reported_hostname_must_match_the_instance() {
-    // The request `Host` and `base_host` are both accepted, so an instance
-    // reachable under two names (short domain and app domain) keeps working.
+async fn the_reported_hostname_must_be_a_configured_name() {
+    // `base_host` and the allowlist are accepted, normalised on both sides.
     for accepted in [
-        "s.example.com",
         "app.example.com",
-        "S.Example.COM.",
-        "s.example.com:8443",
+        "APP.Example.com.",
+        "app.example.com:8443",
+        "s.example.com",
     ] {
         let mock = MockSiteverify::start(Reply::SuccessWithHostname(accepted.to_string())).await;
-        let app = TestApp::spawn_with({
-            let url = mock.url.clone();
-            move |config| {
-                config.captcha_provider_override = Some("turnstile".to_string());
-                config.captcha_site_key_override = Some("site-key".to_string());
-                config.captcha_secret_key_override = Some("secret-key".to_string());
-                config.captcha_on_register_override = Some(true);
-                config.captcha_verify_url = Some(url);
-                config.base_host = "app.example.com".to_string();
-            }
-        })
-        .await;
-
-        let mut request = post_json(
-            "/api/v1/auth/register",
-            api_register_body("host@example.com", Some("token")),
-        );
-        request.headers_mut().insert(
-            axum::http::header::HOST,
-            axum::http::HeaderValue::from_static("s.example.com"),
-        );
-        let response = app.send(request).await;
+        let app = hostname_app(&mock.url, Some("s.example.com")).await;
+        let response = app.send(register_with_host("token", "s.example.com")).await;
         assert_eq!(
             response.status,
             AxumStatus::CREATED,
@@ -662,29 +671,96 @@ async fn the_reported_hostname_must_match_the_instance() {
         );
     }
 
-    // Somebody else's hostname is refused, even though the token itself is valid.
-    let mock = MockSiteverify::start(Reply::SuccessWithHostname("evil.example".to_string())).await;
+    // The request `Host` matches the reported hostname, but neither is
+    // configured: refused.
+    let mock =
+        MockSiteverify::start(Reply::SuccessWithHostname("other.example.com".to_string())).await;
+    let app = hostname_app(&mock.url, Some("s.example.com")).await;
+    assert_captcha_error(
+        &app.send(register_with_host("token", "other.example.com"))
+            .await,
+    );
+
+    // Same without any allowlist: `base_host` is the only trusted name.
+    let mock = MockSiteverify::start(Reply::SuccessWithHostname("s.example.com".to_string())).await;
+    let app = hostname_app(&mock.url, None).await;
+    assert_captcha_error(&app.send(register_with_host("token", "s.example.com")).await);
+
+    // A foreign hostname and a lookalike suffix are refused.
+    for foreign in ["evil.example", "s.example.com.evil.example"] {
+        let mock = MockSiteverify::start(Reply::SuccessWithHostname(foreign.to_string())).await;
+        let app = hostname_app(&mock.url, Some("s.example.com")).await;
+        assert_captcha_error(&app.send(register_with_host("token", "s.example.com")).await);
+    }
+
+    // A provider that reports nothing at all keeps working.
+    let mock = MockSiteverify::start(Reply::Success).await;
+    let app = hostname_app(&mock.url, Some("s.example.com")).await;
+    let response = app.send(register_with_host("token", "s.example.com")).await;
+    assert_eq!(response.status, AxumStatus::CREATED, "{}", response.body);
+}
+
+/// The allowlist is a setting, so it can be changed without a restart.
+#[tokio::test]
+async fn the_hostname_allowlist_can_be_configured_at_runtime() {
+    let mock = MockSiteverify::start(Reply::SuccessWithHostname("s.example.com".to_string())).await;
     let app = TestApp::spawn_with({
         let url = mock.url.clone();
         move |config| {
-            config.captcha_provider_override = Some("turnstile".to_string());
-            config.captcha_site_key_override = Some("site-key".to_string());
-            config.captcha_secret_key_override = Some("secret-key".to_string());
-            config.captcha_on_register_override = Some(true);
             config.captcha_verify_url = Some(url);
             config.base_host = "app.example.com".to_string();
         }
     })
     .await;
-    let mut request = post_json(
-        "/api/v1/auth/register",
-        api_register_body("foreign@example.com", Some("token")),
+    let (cookie, _) = app.register("allowlist@example.com", "supersecret").await;
+
+    let enabled = app
+        .send(put_json_as(
+            "/api/v1/admin/settings",
+            json!({
+                "captcha_provider": "turnstile",
+                "captcha_site_key": "site",
+                "captcha_secret_key": "secret",
+                "captcha_on_register": "true",
+            }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(enabled.status, AxumStatus::OK, "{}", enabled.body);
+
+    // Without an allowlist the second hostname is refused.
+    assert_captcha_error(&app.send(register_with_host("token", "s.example.com")).await);
+
+    // Adding it makes the very same token acceptable.
+    let updated = app
+        .send(put_json_as(
+            "/api/v1/admin/settings",
+            json!({ "captcha_allowed_hostnames": " S.Example.com , extra.example.com " }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(updated.status, AxumStatus::OK, "{}", updated.body);
+    assert_eq!(
+        app.state.settings.captcha_allowed_hostnames(),
+        "s.example.com,extra.example.com",
+        "the stored value is canonicalised"
     );
-    request.headers_mut().insert(
-        axum::http::header::HOST,
-        axum::http::HeaderValue::from_static("s.example.com"),
+    let response = app.send(register_with_host("token", "s.example.com")).await;
+    assert_eq!(response.status, AxumStatus::CREATED, "{}", response.body);
+
+    // An unusable value is refused, and never reaches the settings.
+    let invalid = app
+        .send(put_json_as(
+            "/api/v1/admin/settings",
+            json!({ "captcha_allowed_hostnames": "https://s.example.com" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(invalid.status, AxumStatus::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        app.state.settings.captcha_allowed_hostnames(),
+        "s.example.com,extra.example.com"
     );
-    assert_captcha_error(&app.send(request).await);
 }
 
 // -------------------------------------------------------------- fail closed
@@ -1268,10 +1344,9 @@ async fn live_turnstile_endpoint_answers_over_tls() {
         "2x0000000000000000000000000000000AA",
         TURNSTILE_VERIFY_URL,
         "example.com",
+        &[],
     );
-    let outcome = guard
-        .verify(Some("dummy-token"), None, Some("example.com"))
-        .await;
+    let outcome = guard.verify(Some("dummy-token"), None).await;
     assert_eq!(
         outcome,
         Err(CaptchaError::Rejected),

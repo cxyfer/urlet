@@ -165,7 +165,7 @@ pub async fn captcha_rejected(
         return false;
     }
     let token = guard.submitted_token(turnstile_token, recaptcha_token);
-    match guard.verify(token, client.ip, client.host.as_deref()).await {
+    match guard.verify(token, client.ip).await {
         Ok(()) => false,
         Err(err) => {
             // Only the reason code is logged; the token never is.

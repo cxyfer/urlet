@@ -51,9 +51,6 @@ pub struct ClientInfo {
     /// Best effort client address, resolved exactly like the rate limiter key.
     /// Forwarded to the captcha provider as `remoteip` when present.
     pub ip: Option<std::net::IpAddr>,
-    /// `Host` header of the request, checked against the `hostname` a captcha
-    /// provider reports for the token it just validated.
-    pub host: Option<String>,
     pub ip_hash: Option<String>,
     pub user_agent: Option<String>,
     pub referrer: Option<String>,
@@ -187,7 +184,6 @@ impl FromRequestParts<AppState> for ClientInfo {
                 &parts.extensions,
                 &state.config,
             ),
-            host: header_value(axum::http::header::HOST),
             ip_hash: crate::middleware::hashed_client_ip_parts(
                 &parts.headers,
                 &parts.extensions,

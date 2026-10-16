@@ -58,6 +58,8 @@ pub struct Config {
     pub captcha_provider_override: Option<String>,
     pub captcha_site_key_override: Option<String>,
     pub captcha_secret_key_override: Option<String>,
+    /// Extra hostnames a captcha provider may report, comma separated.
+    pub captcha_allowed_hostnames_override: Option<String>,
     pub captcha_on_register_override: Option<bool>,
     pub captcha_on_login_override: Option<bool>,
     pub captcha_on_create_override: Option<bool>,
@@ -99,6 +101,10 @@ impl std::fmt::Debug for Config {
             .field(
                 "captcha_secret_key_override",
                 &hidden(self.captcha_secret_key_override.is_some()),
+            )
+            .field(
+                "captcha_allowed_hostnames_override",
+                &self.captcha_allowed_hostnames_override,
             )
             .field(
                 "captcha_on_register_override",
@@ -183,6 +189,8 @@ impl Config {
                 .filter(|v| !v.trim().is_empty()),
             captcha_secret_key_override: env_str("UWURLS_CAPTCHA_SECRET_KEY")
                 .filter(|v| !v.trim().is_empty()),
+            captcha_allowed_hostnames_override: env_str("UWURLS_CAPTCHA_ALLOWED_HOSTNAMES")
+                .filter(|v| !v.trim().is_empty()),
             captcha_on_register_override: env_bool("UWURLS_CAPTCHA_ON_REGISTER"),
             captcha_on_login_override: env_bool("UWURLS_CAPTCHA_ON_LOGIN"),
             captcha_on_create_override: env_bool("UWURLS_CAPTCHA_ON_CREATE"),
@@ -216,6 +224,7 @@ impl Config {
             captcha_provider_override: None,
             captcha_site_key_override: None,
             captcha_secret_key_override: None,
+            captcha_allowed_hostnames_override: None,
             captcha_on_register_override: None,
             captcha_on_login_override: None,
             captcha_on_create_override: None,

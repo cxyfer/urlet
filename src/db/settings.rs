@@ -20,6 +20,7 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("captcha_provider", "none"),
     ("captcha_site_key", ""),
     ("captcha_secret_key", ""),
+    ("captcha_allowed_hostnames", ""),
     ("captcha_on_register", "false"),
     ("captcha_on_login", "false"),
     ("captcha_on_create", "false"),

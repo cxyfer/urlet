@@ -48,7 +48,7 @@ pub async fn verify_captcha(
     if !guard.enabled() {
         return Ok(());
     }
-    match guard.verify(token, client.ip, client.host.as_deref()).await {
+    match guard.verify(token, client.ip).await {
         Ok(()) => Ok(()),
         Err(err) => {
             // The token itself is never logged.
