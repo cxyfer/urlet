@@ -291,7 +291,7 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 | FR-BOT-6 | Coverage | Enforced on the web registration form, the web sign-in form, the web create-short-link form, `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (JSON field `captcha_token`; a failure returns 400 `captcha_failed`). The session-cookie form of `POST /api/v1/urls` is covered by FR-BOT-7 |
 | FR-BOT-7 | API token routes | `POST /api/v1/urls` is exempt from captcha **only** when it carries an API token (`Authorization: Bearer uw_...`). A session-cookie call is a browser session and is subject to `on_create`; it accepts an optional `captcha_token` |
 | FR-BOT-8 | Admin UI | The secret key field is write-only: the stored value is never rendered back, and submitting the field empty keeps the current value |
-| FR-BOT-9 | Token hostname | The `hostname` reported in the provider's siteverify response must equal the host of `UWURLS_BASE_URL` or one of `captcha_allowed_hostnames` (comma-separated bare hostnames, trimmed and lowercased, empty items dropped, at most 10 items of 1–253 characters with no whitespace, `/`, `:` or `@`). A response without a `hostname` is accepted; a mismatch is rejected and logged at `WARN` with the reported hostname and the accepted candidates |
+| FR-BOT-9 | Token hostname | The `hostname` reported in the provider's siteverify response must equal the host of `UWURLS_BASE_URL` or one of `captcha_allowed_hostnames` (comma-separated bare hostnames, trimmed and lowercased, empty items dropped, at most 10 items of 1–253 characters with no whitespace, `/`, `:` or `@`). A response without a `hostname`, or with an empty one, is accepted; a mismatch is rejected and logged at `WARN` with the reported hostname and the accepted candidates |
 
 ---
 
@@ -630,7 +630,7 @@ v1.1 additions (this batch):
 - [ ] JSON API responses stay English regardless of the request language
 - [ ] Captcha is enabled only when provider ≠ none, both keys are non-empty, and the matching switch (`on_register`, `on_login` or `on_create`) is true; a non-empty environment variable overrides the stored setting
 - [ ] Captcha verification fails closed on timeout, non-2xx status, or an unparsable response, and is enforced on web register, web sign-in, web create, `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (400 `captcha_failed`)
-- [ ] A reported `hostname` is accepted only when it matches the `UWURLS_BASE_URL` host or `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES`, a missing `hostname` is accepted, and a mismatch is rejected with a `WARN` log line
+- [ ] A reported `hostname` is accepted only when it matches the `UWURLS_BASE_URL` host or `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES`; a missing or empty `hostname` is accepted, and a mismatch is rejected with a `WARN` log line
 - [ ] The siteverify call is the only outbound HTTP request, goes through `ureq` 2 over rustls + webpki-roots (no OpenSSL), and is off by default
 - [ ] `POST /api/v1/urls` is captcha-exempt only for API-token calls (a session-cookie call honours `on_create`), and the admin secret-key field is write-only
 - [ ] `GET /` returns 200 as a landing/navigation page for anonymous and signed-in visitors, and no longer redirects to `/app`

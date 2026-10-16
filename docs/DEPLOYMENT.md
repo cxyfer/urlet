@@ -157,7 +157,7 @@ matching switch is enabled.
 Both providers report the hostname the token was solved on in the `siteverify` response, and
 uwurls verifies it: the token must have been solved **on this instance**. The reported hostname
 must therefore equal the host of `UWURLS_BASE_URL`, or one of the extra hostnames listed in
-`UWURLS_CAPTCHA_ALLOWED_HOSTNAMES`. A response that carries no `hostname` at all is accepted —
+`UWURLS_CAPTCHA_ALLOWED_HOSTNAMES`. A response whose `hostname` is missing or empty is accepted —
 not every provider or widget configuration returns the field.
 
 `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` takes a comma-separated list of bare hostnames: each item is

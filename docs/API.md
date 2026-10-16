@@ -361,7 +361,8 @@ or any non-2xx response from the provider — rejects the submission.
 
 The `hostname` reported by the provider is also checked: it must equal the host of the instance's
 base URL or one of the extra hostnames in `captcha_allowed_hostnames` (comma-separated, up to 10).
-A response without a `hostname` is accepted, and a mismatch is rejected and logged at `WARN`.
+A response whose `hostname` is missing or empty is accepted, and a mismatch is rejected and logged
+at `WARN`.
 
 | Surface | Verification |
 |---------|--------------|

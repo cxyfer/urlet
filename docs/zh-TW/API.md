@@ -344,7 +344,7 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 
 供應商回報的 `hostname` 也會一併檢查：必須等於實例 base URL 的主機名稱，或
 `captcha_allowed_hostnames` 中的其中一個（以逗號分隔，最多 10 項）。回應未帶 `hostname`
-時予以接受；不符時拒絕並記一筆 `WARN`。
+或該欄位為空字串時予以接受；不符時拒絕並記一筆 `WARN`。
 
 | 套用位置 | 是否驗證 |
 |----------|----------|

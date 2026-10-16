@@ -149,8 +149,8 @@ Session Cookie 的 `POST /api/v1/urls`，都會回 `400` 且 `error.code = "capt
 
 兩家供應商都會在 `siteverify` 回應中回報 token 是在哪個主機名稱解出的，uwurls 會加以驗證：
 token 必須是在**本站**解出的。因此回報的 hostname 必須等於 `UWURLS_BASE_URL` 的主機名稱，
-或是 `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` 中列出的其中一個。回應完全沒有帶 `hostname` 時會予以
-接受 —— 並非每個供應商或元件設定都會回傳這個欄位。
+或是 `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` 中列出的其中一個。回應未帶 `hostname` 或該欄位為空字串
+時會予以接受 —— 並非每個供應商或元件設定都會回傳這個欄位。
 
 `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` 接受以逗號分隔的裸主機名稱清單：每一項會 trim、轉小寫、
 丟棄空項，最多保留 **10** 項，每項 1–253 字元；內容不得含空白、`/`、`:` 或 `@`。
