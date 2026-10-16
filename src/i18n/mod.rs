@@ -891,4 +891,44 @@ mod tests {
             Lang::ZhHans.t("error.captcha")
         );
     }
+
+    #[test]
+    fn every_captcha_entry_is_translated() {
+        // Provider names are proper nouns and deliberately stay in English.
+        const PROPER_NOUNS: [&str; 2] = [
+            "admin.settings.captcha_provider.turnstile",
+            "admin.settings.captcha_provider.recaptcha",
+        ];
+        // English terms that must not survive in the Chinese copy.
+        const ENGLISH_TERMS: [&str; 2] = ["site key", "secret key"];
+
+        let keys: Vec<&str> = Lang::En
+            .keys()
+            .into_iter()
+            .filter(|key| key.contains("captcha"))
+            .collect();
+        assert!(keys.len() >= 20, "the captcha entries exist: {keys:?}");
+
+        for lang in [Lang::ZhHant, Lang::ZhHans] {
+            for key in &keys {
+                if PROPER_NOUNS.contains(key) {
+                    continue;
+                }
+                assert_ne!(
+                    lang.t(key),
+                    Lang::En.t(key),
+                    "{} still shows the English text for {key}",
+                    lang.code()
+                );
+                for term in ENGLISH_TERMS {
+                    assert!(
+                        !lang.t(key).contains(term),
+                        "{} leaks {term:?} in {key}: {}",
+                        lang.code(),
+                        lang.t(key)
+                    );
+                }
+            }
+        }
+    }
 }

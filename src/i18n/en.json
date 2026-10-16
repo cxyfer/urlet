@@ -459,5 +459,10 @@
   "admin.settings.captcha_secret_hint": "Leave blank to keep the stored secret. It is never shown again.",
   "admin.settings.captcha_on_register": "Protect registration",
   "admin.settings.captcha_on_login": "Protect sign in",
-  "admin.settings.captcha_on_create": "Protect link creation"
+  "admin.settings.captcha_on_create": "Protect link creation (browser sessions)",
+  "admin.settings.captcha_state.active": "Active: the guarded flows show a challenge.",
+  "admin.settings.captcha_state.missing_keys": "Not applied: both the site key and the secret key are missing.",
+  "admin.settings.captcha_state.missing_site_key": "Not applied: the site key is missing.",
+  "admin.settings.captcha_state.missing_secret_key": "Not applied: the secret key is missing.",
+  "admin.settings.captcha_state.no_flow": "Not applied: no flow is protected yet."
 }

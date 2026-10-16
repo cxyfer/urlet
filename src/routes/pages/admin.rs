@@ -23,6 +23,7 @@ use crate::routes::pages::{
     UrlRow,
 };
 use crate::services::admin::{self, AdminContext};
+use crate::services::captcha::CaptchaProvider;
 use crate::services::settings::Settings;
 use crate::services::time;
 use crate::state::AppState;
@@ -180,6 +181,9 @@ pub struct SettingsValues {
     pub captcha_on_register: bool,
     pub captcha_on_login: bool,
     pub captcha_on_create: bool,
+    /// Localised note telling the administrator whether the configuration is
+    /// actually in effect: a ticked box with a missing key does nothing.
+    pub captcha_state: Option<String>,
 }
 
 /// Audit page.
@@ -1019,17 +1023,44 @@ fn render_settings(
     user: &User,
     flash: Option<crate::routes::pages::Flash>,
 ) -> Result<Response, AppError> {
-    let values = settings_values(&state.settings);
+    let lang = i18n::current();
+    let mut values = settings_values(&state.settings);
+    values.captcha_state = captcha_state(&state.settings, lang);
     render(
         SettingsPage {
             section: "settings",
             site_name: state.settings.site_name(),
             chrome: Chrome::new(state, user, "admin", flash),
             values,
-            lang: i18n::current(),
+            lang,
         },
         StatusCode::OK,
     )
+}
+
+/// Localised note describing whether bot protection is really applied.
+///
+/// The enable conditions are the same four `CaptchaGuard` uses, so a ticked box
+/// with a missing key is reported as "not applied" instead of silently doing
+/// nothing.
+fn captcha_state(settings: &Settings, lang: Lang) -> Option<String> {
+    if settings.captcha_provider() == CaptchaProvider::None {
+        return None;
+    }
+    let has_site_key = !settings.captcha_site_key().trim().is_empty();
+    let has_secret = settings.captcha_secret_configured();
+    let any_flow = settings.captcha_on_register()
+        || settings.captcha_on_login()
+        || settings.captcha_on_create();
+
+    let key = match (has_site_key, has_secret) {
+        (false, false) => "admin.settings.captcha_state.missing_keys",
+        (false, true) => "admin.settings.captcha_state.missing_site_key",
+        (true, false) => "admin.settings.captcha_state.missing_secret_key",
+        (true, true) if !any_flow => "admin.settings.captcha_state.no_flow",
+        (true, true) => "admin.settings.captcha_state.active",
+    };
+    Some(lang.t(key).to_string())
 }
 
 /// Read the typed settings used by the settings form.
@@ -1048,6 +1079,8 @@ pub fn settings_values(settings: &Settings) -> SettingsValues {
         captcha_on_register: settings.captcha_on_register(),
         captcha_on_login: settings.captcha_on_login(),
         captcha_on_create: settings.captcha_on_create(),
+        // Filled in by `render_settings`, which knows the language.
+        captcha_state: None,
     }
 }
 

@@ -60,6 +60,11 @@
 
         <h2 class="mt">{{ lang.t("admin.settings.bot_protection") }}</h2>
         <p class="hint">{{ lang.t("admin.settings.bot_protection_hint") }}</p>
+        {% match values.captcha_state %}
+        {% when Some with (note) %}
+        <p class="hint" data-captcha-state>{{ note }}</p>
+        {% when None %}
+        {% endmatch %}
 
         <div class="grid grid-2 mt">
             <div class="field">
