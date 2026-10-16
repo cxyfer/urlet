@@ -151,6 +151,24 @@ async fn language_route_honours_a_safe_next_target() {
         .get("/app/lang/zh-Hant?next=https%3A%2F%2Fevil.example")
         .await;
     assert_eq!(response.header("location").as_deref(), Some("/app"));
+
+    // `//host` is protocol-relative, and so is `/\host` once a browser applies
+    // the WHATWG backslash normalisation. Control characters must not reach the
+    // `Location` header either.
+    for target in [
+        "%2F%2Fevil.example",
+        "%2F%5Cevil.example",
+        "%5C%2Fevil.example",
+        "%2Fapp%0D%0ASet-Cookie%3A+x%3D1",
+    ] {
+        let response = app.get(&format!("/app/lang/zh-Hant?next={target}")).await;
+        assert_eq!(response.status, StatusCode::FOUND, "{target}");
+        assert_eq!(
+            response.header("location").as_deref(),
+            Some("/app"),
+            "off-site target {target} must be ignored"
+        );
+    }
 }
 
 #[tokio::test]

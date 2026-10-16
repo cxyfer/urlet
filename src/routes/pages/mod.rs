@@ -138,12 +138,21 @@ pub fn redirect_to_login(next: Option<&str>) -> Redirect {
 /// Only same-site relative paths are accepted as a post-login destination.
 pub fn safe_next(next: Option<&str>) -> Option<String> {
     let next = next?.trim();
-    if next.starts_with('/') && !next.starts_with("//") && !next.contains("://") && next.len() < 512
+    // `//host` is a protocol-relative URL, but browsers treat a backslash as a
+    // path separator for http(s) too, so `/\host` resolves to `//host` as well
+    // (WHATWG URL). Both have to be rejected, and a backslash has no legitimate
+    // place in any of our paths. Control characters are rejected because the
+    // value is written straight into a `Location` header.
+    if !next.starts_with('/')
+        || next.starts_with("//")
+        || next.contains('\\')
+        || next.contains("://")
+        || next.chars().any(char::is_control)
+        || next.len() >= 512
     {
-        Some(next.to_string())
-    } else {
-        None
+        return None;
     }
+    Some(next.to_string())
 }
 
 /// Append a query parameter to a path, preserving existing ones.
@@ -398,6 +407,19 @@ mod tests {
         assert_eq!(safe_next(Some("javascript:alert(1)")), None);
         assert_eq!(safe_next(None), None);
         assert_eq!(safe_next(Some(&"a".repeat(600))), None);
+        // Browsers normalise a backslash to a slash for http(s), so `/\host`
+        // and `\/host` are protocol-relative URLs in disguise.
+        assert_eq!(safe_next(Some("/\\evil.example")), None);
+        assert_eq!(safe_next(Some("\\/evil.example")), None);
+        assert_eq!(safe_next(Some("/app\\..\\evil")), None);
+        // Control characters would corrupt the `Location` header.
+        assert_eq!(safe_next(Some("/app\r\nSet-Cookie: x=1")), None);
+        assert_eq!(safe_next(Some("/app\u{0}")), None);
+        // Ordinary deep links still work.
+        assert_eq!(
+            safe_next(Some("/app/admin/users?page=2")).as_deref(),
+            Some("/app/admin/users?page=2")
+        );
     }
 
     #[test]
