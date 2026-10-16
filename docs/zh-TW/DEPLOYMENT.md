@@ -91,6 +91,7 @@ UWURLS_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-
 | `UWURLS_CAPTCHA_ON_REGISTER` | `false` | 註冊表單是否套用防機器人驗證 |
 | `UWURLS_CAPTCHA_ON_LOGIN` | `false` | 登入表單是否套用防機器人驗證 |
 | `UWURLS_CAPTCHA_ON_CREATE` | `false` | 建立短網址表單是否套用防機器人驗證 |
+| `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` | 空 | 供應商 `hostname` 回應中額外接受的主機名稱，以逗號分隔（最多 10 項）；`UWURLS_BASE_URL` 的主機名稱一律接受 |
 | `UWURLS_LOG` | `info` | tracing 過濾器，例如 `uwurls=debug,tower=warn` |
 | `UWURLS_LOG_FORMAT` | `compact` | `compact` 或 `json` |
 | `UWURLS_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | `uwurls healthcheck` 的目標 |
@@ -132,6 +133,7 @@ uwurls 可以要求三個會產生資料的公開表單通過防機器人驗證�
 | `UWURLS_CAPTCHA_ON_REGISTER` | `false` | 驗證註冊表單 |
 | `UWURLS_CAPTCHA_ON_LOGIN` | `false` | 驗證登入表單 |
 | `UWURLS_CAPTCHA_ON_CREATE` | `false` | 驗證建立短網址表單 |
+| `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` | 空 | 額外接受其 token 的主機名稱，以逗號分隔（最多 10 項） |
 
 四個條件**全部**成立時，該表單才會啟用驗證：provider 不是 `none`、site key 非空、
 secret key 非空，以及對應的 `ON_*` 開關（`UWURLS_CAPTCHA_ON_REGISTER`、
@@ -142,6 +144,23 @@ secret key 非空，以及對應的 `ON_*` 開關（`UWURLS_CAPTCHA_ON_REGISTER`
 以及逾時或供應商回應非 2xx，都會拒絕該次提交。網頁表單會顯示驗證錯誤訊息；
 對應開關啟用時，`POST /api/v1/auth/register`、`POST /api/v1/auth/login`，以及使用
 Session Cookie 的 `POST /api/v1/urls`，都會回 `400` 且 `error.code = "captcha_failed"`。
+
+### Token 的主機名稱（多主機名稱部署）
+
+兩家供應商都會在 `siteverify` 回應中回報 token 是在哪個主機名稱解出的，uwurls 會加以驗證：
+token 必須是在**本站**解出的。因此回報的 hostname 必須等於 `UWURLS_BASE_URL` 的主機名稱，
+或是 `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` 中列出的其中一個。回應完全沒有帶 `hostname` 時會予以
+接受 —— 並非每個供應商或元件設定都會回傳這個欄位。
+
+`UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` 接受以逗號分隔的裸主機名稱清單：每一項會 trim、轉小寫、
+丟棄空項，最多保留 **10** 項，每項 1–253 字元；內容不得含空白、`/`、`:` 或 `@`。
+留空代表「只接受 `UWURLS_BASE_URL` 的主機名稱」，這也是常見單一網域部署的正確設定。
+
+> **若你的實例以多個主機名稱提供表單**（例如短網址網域與應用網域不同，或另有別名），
+> 就必須把那些主機名稱全部列在這裡。若 token 解出的主機名稱既不是 `UWURLS_BASE_URL` 的主機
+> 名稱、也不在清單中，就會被拒絕，症狀是「使用者填完驗證碼仍無法註冊或登入」。
+> 發生不符時 uwurls 會記一筆 `WARN`，內容包含回報的 hostname 與目前接受的候選清單，
+> 是找出漏填項目最快的方法。
 
 ### 取得金鑰
 
@@ -171,9 +190,11 @@ UWURLS_CAPTCHA_SECRET_KEY=0x4AAAAAAA...
 UWURLS_CAPTCHA_ON_REGISTER=true
 UWURLS_CAPTCHA_ON_LOGIN=true
 UWURLS_CAPTCHA_ON_CREATE=true
+# 可選：額外接受其 token 的主機名稱（以逗號分隔）
+# UWURLS_CAPTCHA_ALLOWED_HOSTNAMES=www.example.com,alt.example.com
 ```
 
-隨附的 `docker-compose.yml` 會把六個 `UWURLS_CAPTCHA_*` 變數直接傳進容器，
+隨附的 `docker-compose.yml` 會把七個 `UWURLS_CAPTCHA_*` 變數直接傳進容器，
 因此只要在 `.env` 設定即可，不需要修改 compose 檔。接著執行
 `docker compose up -d` 重建容器。
 
@@ -295,6 +316,7 @@ docker compose up -d --build      # 啟動時自動套用遷移
 | 登入回 429 但密碼正確 | 帳號被暫時鎖定（15 分鐘內 30 次失敗）。等待視窗滑過，或 `sqlite3 /data/uwurls.db "DELETE FROM login_attempts"` 立即解除 |
 | 驗證元件完全沒出現 | 四個條件都要成立：provider 不是 `none`、兩把金鑰都非空、對應的 `ON_*` 為 `true` |
 | 每次提交都回 `captcha_failed` | 密鑰不屬於目前設定的供應商、元件的網域清單沒有包含使用者實際連到的網域，或 API 用戶端忘了以 `captcha_token` 帶上驗證元件的權杖 |
+| 使用者填完驗證碼仍無法註冊或登入 | token 解出的主機名稱不被 uwurls 接受：請把它加入 `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES`（`WARN` 日誌會列出回報的 hostname 與目前接受的候選清單） |
 | 忘記管理員密碼後想用 Token 存取 | 重設密碼會撤銷該帳號所有 API Token（安全性設計），請重新建立 |
 | 忘記管理員密碼 | 啟動時的 bootstrap 必須 `UWURLS_ADMIN_EMAIL` 與 `UWURLS_ADMIN_PASSWORD` **兩者皆非空**才會執行；對已存在的帳號只會提權，**不會**變更密碼（密碼僅在帳號不存在時使用）。救援方式：把 `UWURLS_ADMIN_EMAIL` 指向另一個你仍登得入的帳號（`UWURLS_ADMIN_PASSWORD` 隨便填一個非空值即可讓 bootstrap 執行），重啟後以該帳號登入；或直接用 `sqlite3` 覆寫密碼雜湊 |
 | 短網址已過期想復原 | 到 `/app/urls/{id}` 清除或延長到期時間；資料未被刪除 |

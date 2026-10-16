@@ -93,6 +93,7 @@ UWURLS_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-For
 | `UWURLS_CAPTCHA_ON_REGISTER` | `false` | Apply bot verification to the registration form |
 | `UWURLS_CAPTCHA_ON_LOGIN` | `false` | Apply bot verification to the sign-in form |
 | `UWURLS_CAPTCHA_ON_CREATE` | `false` | Apply bot verification to the create-short-link form |
+| `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` | Empty | Extra hostnames accepted in the provider's `hostname` response, comma-separated (up to 10); the host of `UWURLS_BASE_URL` is always accepted |
 | `UWURLS_LOG` | `info` | tracing filter, for example `uwurls=debug,tower=warn` |
 | `UWURLS_LOG_FORMAT` | `compact` | `compact` or `json` |
 | `UWURLS_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | Target of `uwurls healthcheck` |
@@ -137,6 +138,7 @@ by default.
 | `UWURLS_CAPTCHA_ON_REGISTER` | `false` | Verify the registration form |
 | `UWURLS_CAPTCHA_ON_LOGIN` | `false` | Verify the sign-in form |
 | `UWURLS_CAPTCHA_ON_CREATE` | `false` | Verify the create-short-link form |
+| `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` | Empty | Extra hostnames whose tokens are accepted, comma-separated (up to 10) |
 
 Verification becomes active for a form only when **all four** conditions hold: the provider is
 not `none`, the site key is non-empty, the secret key is non-empty, and the matching `ON_*`
@@ -149,6 +151,26 @@ or any non-2xx response from the provider — rejects the submission. On the web
 sees a validation error; `POST /api/v1/auth/register`, `POST /api/v1/auth/login` and a
 session-cookie `POST /api/v1/urls` return `400` with `error.code = "captcha_failed"` when the
 matching switch is enabled.
+
+### Token hostname (deployments with several hostnames)
+
+Both providers report the hostname the token was solved on in the `siteverify` response, and
+uwurls verifies it: the token must have been solved **on this instance**. The reported hostname
+must therefore equal the host of `UWURLS_BASE_URL`, or one of the extra hostnames listed in
+`UWURLS_CAPTCHA_ALLOWED_HOSTNAMES`. A response that carries no `hostname` at all is accepted —
+not every provider or widget configuration returns the field.
+
+`UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` takes a comma-separated list of bare hostnames: each item is
+trimmed and lowercased, empty items are dropped, and at most **10** items of 1–253 characters are
+kept. Entries must not contain whitespace, `/`, `:` or `@`. Leaving it empty means "only the host
+of `UWURLS_BASE_URL`", which is the right setting for the common single-domain deployment.
+
+> **If your instance serves the forms on more than one hostname** (for example a short-link domain
+> and a separate application domain, or an extra alias), list every one of those hostnames here.
+> Tokens solved on a hostname that is neither the `UWURLS_BASE_URL` host nor on the list are
+> rejected, which shows up as "the visitor solves the CAPTCHA but still cannot register or sign
+> in". On a mismatch uwurls logs a `WARN` line containing the reported hostname and the list of
+> accepted candidates, which is the fastest way to find the missing entry.
 
 ### Getting the keys
 
@@ -178,9 +200,11 @@ UWURLS_CAPTCHA_SECRET_KEY=0x4AAAAAAA...
 UWURLS_CAPTCHA_ON_REGISTER=true
 UWURLS_CAPTCHA_ON_LOGIN=true
 UWURLS_CAPTCHA_ON_CREATE=true
+# Optional: extra hostnames whose tokens are accepted (comma-separated)
+# UWURLS_CAPTCHA_ALLOWED_HOSTNAMES=www.example.com,alt.example.com
 ```
 
-The shipped `docker-compose.yml` passes all six `UWURLS_CAPTCHA_*` variables through to the
+The shipped `docker-compose.yml` passes all seven `UWURLS_CAPTCHA_*` variables through to the
 container, so setting them in `.env` is enough — no compose edit is needed. Then
 `docker compose up -d` to recreate the container.
 
@@ -312,6 +336,7 @@ upgrading.
 | Login returns 429 even with the correct password | The account is temporarily locked (30 failures within 15 minutes). Wait for the window to slide past, or run `sqlite3 /data/uwurls.db "DELETE FROM login_attempts"` to clear it immediately |
 | The CAPTCHA widget never appears | All four conditions must hold: a provider other than `none`, both keys, and the matching `ON_*` switch set to `true` |
 | Every submission fails with `captcha_failed` | The secret key does not belong to the configured provider, the widget's hostname list does not include the domain users visit, or an API client forgot to send the widget token as `captcha_token` |
+| The visitor solves the CAPTCHA but registration or sign-in still fails | The token was solved on a hostname that uwurls does not accept: add it to `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` (the `WARN` log line names the reported hostname and the accepted candidates) |
 | Want token access after forgetting the admin password | Resetting a password revokes every API token for that account (by design); create a new token afterwards |
 | Forgot the admin password | The startup bootstrap runs only when **both** `UWURLS_ADMIN_EMAIL` and `UWURLS_ADMIN_PASSWORD` are non-empty, and for an account that already exists it merely promotes it to administrator — it does **not** change the password (the password is used only when the account does not exist yet). To recover, point `UWURLS_ADMIN_EMAIL` at another account you can still sign in to (any non-empty `UWURLS_ADMIN_PASSWORD` makes the bootstrap run), restart, and use that account; or overwrite the password hash directly with `sqlite3` |
 | A short link expired and you want it back | Open `/app/urls/{id}` and clear or extend the expiry; the data was never deleted |
