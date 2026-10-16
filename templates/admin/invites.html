@@ -8,13 +8,13 @@
 <div class="row between">
     <h1>{{ lang.t("admin.invites.heading") }}</h1>
     <span class="badge {% if registration_mode == "invite" %}badge-accent{% endif %}">
-        {{ lang.t("admin.invites.registration") }} {{ registration_mode }}
+        {{ lang.t("admin.invites.registration") }} {{ registration_mode_label }}
     </span>
 </div>
 
 {% if registration_mode != "invite" %}
 <div class="alert alert-info">
-    {{ lang.t("admin.invites.mode_prefix") }} <strong>{{ registration_mode }}</strong>{{ lang.t("admin.invites.mode_suffix")|safe }}
+    {{ lang.t("admin.invites.mode_prefix") }} <strong>{{ registration_mode_label }}</strong>{{ lang.t("admin.invites.mode_suffix")|safe }}
 </div>
 {% endif %}
 

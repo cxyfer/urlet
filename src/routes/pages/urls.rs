@@ -71,18 +71,24 @@ impl ClickRow {
         };
         Self {
             when: time::humanize_lang(lang, &dto.clicked_at),
-            referrer: dto
-                .referrer_host
-                .unwrap_or_else(|| lang.t("common.direct").to_string()),
-            device: dto
-                .device_type
-                .unwrap_or_else(|| lang.t("common.unknown").to_string()),
-            browser: dto
-                .browser
-                .unwrap_or_else(|| lang.t("common.other").to_string()),
-            os: dto
-                .os
-                .unwrap_or_else(|| lang.t("common.unknown").to_string()),
+            // The same mapper as the breakdown charts, so a missing referrer or
+            // an unparsable user agent reads the same in both places.
+            referrer: dimension_label(
+                Dimension::Referrer,
+                dto.referrer_host.as_deref().unwrap_or("direct"),
+                lang,
+            ),
+            device: dimension_label(
+                Dimension::Device,
+                dto.device_type.as_deref().unwrap_or("Unknown"),
+                lang,
+            ),
+            browser: dimension_label(
+                Dimension::Browser,
+                dto.browser.as_deref().unwrap_or("Other"),
+                lang,
+            ),
+            os: dimension_label(Dimension::Os, dto.os.as_deref().unwrap_or("Unknown"), lang),
             kind,
             kind_class,
         }
@@ -303,10 +309,10 @@ pub async fn detail(
         summary: summary_dto(&summary),
         chart: chart::svg_bars(&daily),
         daily_total,
-        referrers: bar_rows(dimension_dtos(referrers)),
-        devices: bar_rows(dimension_dtos(devices)),
-        browsers: bar_rows(dimension_dtos(browsers)),
-        operating_systems: bar_rows(dimension_dtos(operating_systems)),
+        referrers: bar_rows(dimension_dtos(referrers, Dimension::Referrer, lang)),
+        devices: bar_rows(dimension_dtos(devices, Dimension::Device, lang)),
+        browsers: bar_rows(dimension_dtos(browsers, Dimension::Browser, lang)),
+        operating_systems: bar_rows(dimension_dtos(operating_systems, Dimension::Os, lang)),
         clicks: recent
             .iter()
             .map(|click| ClickRow::new(click, lang))
@@ -491,13 +497,47 @@ pub async fn extend(
     })
 }
 
-fn dimension_dtos(rows: Vec<clicks::DimensionCount>) -> Vec<crate::routes::dto::DimensionDto> {
+/// Convert one breakdown into template rows, with localised labels.
+///
+/// The SQL rollup fills missing values with English literals (`direct`,
+/// `Unknown`, `Other`) and the user agent parser stores device classes in
+/// English (`Desktop`, `Mobile`, `Tablet`, `Bot`). They are translated here, on
+/// the page path only: `/api/v1` keeps the raw labels so its payload stays
+/// stable and machine readable. The English labels are returned unchanged, so
+/// the English UI does not shift.
+fn dimension_dtos(
+    rows: Vec<clicks::DimensionCount>,
+    dimension: Dimension,
+    lang: Lang,
+) -> Vec<crate::routes::dto::DimensionDto> {
     rows.into_iter()
         .map(|row| crate::routes::dto::DimensionDto {
-            label: row.label,
+            label: dimension_label(dimension, &row.label, lang),
             count: row.count,
         })
         .collect()
+}
+
+/// Localise one breakdown label.
+///
+/// Proper nouns (`Chrome`, `Windows`, `news.example.com`) pass through.
+fn dimension_label(dimension: Dimension, label: &str, lang: Lang) -> String {
+    match dimension {
+        Dimension::Referrer => match label {
+            "direct" => lang.t("common.direct").to_string(),
+            _ => label.to_string(),
+        },
+        // Covers `Desktop`/`Mobile`/`Tablet`/`Bot` and the `Unknown` fallback.
+        Dimension::Device => i18n::device_label(lang, label),
+        Dimension::Browser => match label {
+            "Other" => lang.t("common.other").to_string(),
+            _ => label.to_string(),
+        },
+        Dimension::Os => match label {
+            "Unknown" => lang.t("common.unknown").to_string(),
+            _ => label.to_string(),
+        },
+    }
 }
 
 /// Map a service error onto a flash code the page understands.

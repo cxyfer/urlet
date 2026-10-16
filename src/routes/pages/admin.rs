@@ -132,7 +132,10 @@ pub struct InvitesPage {
     pub chrome: Chrome,
     pub invites: Vec<InviteRow>,
     pub new_code: Option<String>,
+    /// Raw token (`open` / `invite` / `closed`), used for the conditional class.
     pub registration_mode: String,
+    /// Localised label of the same mode, used for display.
+    pub registration_mode_label: String,
     pub lang: Lang,
 }
 
@@ -313,7 +316,8 @@ pub async fn overview(
                     .database_bytes
                     .map(human_bytes)
                     .unwrap_or_else(|| lang.t("admin.overview.unknown").to_string()),
-                registration_mode: stats.registration_mode,
+                // The raw token still drives `/api/v1`; the page shows a label.
+                registration_mode: i18n::registration_mode_label(lang, &stats.registration_mode),
             },
             lang,
         },
@@ -712,9 +716,13 @@ pub async fn audit_page(
                 .iter()
                 .map(|row| AuditRow {
                     when: time::humanize_lang(lang, &row.created_at),
+                    // The action and the metadata stay raw: they are the values
+                    // the filter above searches by.
                     action: row.action.clone(),
                     actor: match (row.actor_user_id, row.actor_role.as_deref()) {
-                        (Some(id), Some(role)) => format!("#{id} ({role})"),
+                        (Some(id), Some(role)) => {
+                            format!("#{id} ({})", i18n::role_label(lang, role))
+                        }
                         (Some(id), None) => format!("#{id}"),
                         _ => lang.t("admin.audit.system").to_string(),
                     },
@@ -944,6 +952,10 @@ async fn render_invites(
                 .collect(),
             new_code,
             registration_mode: state.settings.registration_mode().as_str().to_string(),
+            registration_mode_label: i18n::registration_mode_label(
+                lang,
+                state.settings.registration_mode().as_str(),
+            ),
             lang,
         },
         StatusCode::OK,
