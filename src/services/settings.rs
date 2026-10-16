@@ -63,7 +63,6 @@ pub const EDITABLE_KEYS: &[&str] = &[
 /// Settings that are write only: stored, used, but never handed back out.
 pub const SECRET_KEYS: &[&str] = &["captcha_secret_key"];
 
-#[derive(Debug)]
 pub struct Settings {
     values: RwLock<HashMap<String, String>>,
     registration_override: Option<RegistrationMode>,
@@ -74,6 +73,43 @@ pub struct Settings {
     captcha_on_register_override: Option<bool>,
     captcha_on_login_override: Option<bool>,
     captcha_on_create_override: Option<bool>,
+}
+
+/// Only the *names* of the stored settings are printed, never their values: the
+/// map holds the captcha secret. An override that carries a secret is redacted.
+impl std::fmt::Debug for Settings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut keys: Vec<String> = self
+            .values
+            .read()
+            .map(|values| values.keys().cloned().collect())
+            .unwrap_or_default();
+        keys.sort_unstable();
+
+        f.debug_struct("Settings")
+            .field("keys", &keys)
+            .field("registration_override", &self.registration_override)
+            .field("slug_length_override", &self.slug_length_override)
+            .field("captcha_provider_override", &self.captcha_provider_override)
+            .field("captcha_site_key_override", &self.captcha_site_key_override)
+            .field(
+                "captcha_secret_key_override",
+                &self
+                    .captcha_secret_key_override
+                    .as_ref()
+                    .map(|_| crate::services::secret::REDACTED),
+            )
+            .field(
+                "captcha_on_register_override",
+                &self.captcha_on_register_override,
+            )
+            .field("captcha_on_login_override", &self.captcha_on_login_override)
+            .field(
+                "captcha_on_create_override",
+                &self.captcha_on_create_override,
+            )
+            .finish()
+    }
 }
 
 impl Settings {

@@ -37,7 +37,7 @@ impl LogFormat {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Config {
     pub bind: SocketAddr,
     /// Public base URL without a trailing slash, e.g. `https://s.example.com`.
@@ -73,6 +73,51 @@ pub struct Config {
     pub default_slug_length: usize,
     /// Fallback per-user URL quota when the settings table is unavailable.
     pub max_urls_per_user: i64,
+}
+
+/// The HMAC secret, the bootstrap password and the captcha secret are printed as
+/// [`secret::REDACTED`]: a stray `tracing::debug!(?config)` must never leak them.
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let hidden = |present: bool| present.then_some(secret::REDACTED);
+        f.debug_struct("Config")
+            .field("bind", &self.bind)
+            .field("base_url", &self.base_url)
+            .field("base_scheme", &self.base_scheme)
+            .field("base_host", &self.base_host)
+            .field("secure_cookies", &self.secure_cookies)
+            .field("database_url", &self.database_url)
+            .field("data_dir", &self.data_dir)
+            .field("secret", &secret::REDACTED)
+            .field("session_ttl_hours", &self.session_ttl_hours)
+            .field("unlock_ttl_minutes", &self.unlock_ttl_minutes)
+            .field("trust_proxy", &self.trust_proxy)
+            .field("registration_override", &self.registration_override)
+            .field("slug_length_override", &self.slug_length_override)
+            .field("captcha_provider_override", &self.captcha_provider_override)
+            .field("captcha_site_key_override", &self.captcha_site_key_override)
+            .field(
+                "captcha_secret_key_override",
+                &hidden(self.captcha_secret_key_override.is_some()),
+            )
+            .field(
+                "captcha_on_register_override",
+                &self.captcha_on_register_override,
+            )
+            .field("captcha_on_login_override", &self.captcha_on_login_override)
+            .field(
+                "captcha_on_create_override",
+                &self.captcha_on_create_override,
+            )
+            .field("captcha_verify_url", &self.captcha_verify_url)
+            .field("admin_email", &self.admin_email)
+            .field("admin_password", &hidden(self.admin_password.is_some()))
+            .field("log_filter", &self.log_filter)
+            .field("log_format", &self.log_format)
+            .field("default_slug_length", &self.default_slug_length)
+            .field("max_urls_per_user", &self.max_urls_per_user)
+            .finish()
+    }
 }
 
 impl Config {
@@ -309,5 +354,21 @@ mod tests {
         for falsy in ["0", "false", "no", "off", ""] {
             assert!(!parse_bool(falsy), "{falsy}");
         }
+    }
+
+    #[test]
+    fn debug_output_never_contains_a_secret() {
+        let mut config = Config::for_tests(Path::new("."));
+        config.admin_password = Some("bootstrap-password".into());
+        config.captcha_secret_key_override = Some("captcha-secret".into());
+
+        let printed = format!("{config:?}");
+        assert!(!printed.contains("bootstrap-password"), "{printed}");
+        assert!(!printed.contains("captcha-secret"), "{printed}");
+        // The HMAC secret is never printable either, not even as bytes.
+        assert!(!printed.contains("116"), "no byte dump of the secret");
+        assert!(printed.contains(secret::REDACTED), "{printed}");
+        // Non secret fields stay useful for debugging.
+        assert!(printed.contains("localhost:8080"), "{printed}");
     }
 }
