@@ -19,7 +19,7 @@
 | P7 測試與文件 | ✅ 完成 | 見 `git log`（smoke.sh、README、API.md、DEPLOYMENT.md） |
 | P8 最終驗證 | ✅ 完成 | 見 `git log`（release 建置、映像檔策略、收尾） |
 
-驗收數據：`cargo test` 187 個測試全綠、`cargo clippy --all-targets -- -D warnings` 與
+驗收數據（v1.0）：`cargo test` 187 個測試全綠、`cargo clippy --all-targets -- -D warnings` 與
 `cargo fmt --check` 無警告、`scripts/smoke.sh` 81 項端對端檢查全數通過。
 
 ---
@@ -212,3 +212,6 @@
 | 容器映像 | ≤ 40 MB | **13.2 MB**（Docker Compose 27.4 實機建置並 `up -d` 通過） |
 | 測試 | 全綠 | `cargo test` 187 項、`scripts/smoke.sh` 81 項 |
 | 靜態檢查 | 無警告 | `cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 通過 |
+
+上表為 v1.0 的歷史紀錄；v1.1 的最新數字（二進位 5.7 MB glibc／5.8 MB musl、映像 14.8 MB、
+RSS 8.7 MB、冷啟動約 0.1 秒、245 個測試）請見 `docs/SPEC.md` §3.3，不要直接引用上表。

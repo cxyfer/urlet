@@ -23,7 +23,7 @@
 | 🌐 多語系介面 | 介面提供 English / 繁體中文 / 简体中文 切換；初次訪問依瀏覽器 `Accept-Language` 自動選擇，無法辨識時預設英文 |
 | 🤖 防機器人驗證 | 可透過環境變數或管理後台啟用 Cloudflare Turnstile 或 Google reCAPTCHA v2，套用於註冊、登入與建立短網址表單 |
 | 🐳 部署 | 單一容器 + named volume；附 Caddy 自動 HTTPS overlay |
-| 🪶 輕量 | 二進位檔 5.7 MB、容器映像 14.8 MB、500 次請求後 RSS 8.7 MB、轉址 P95 低於 1 毫秒（說明見下） |
+| 🪶 輕量 | 二進位檔 5.7 MB（glibc）／5.8 MB（musl）、容器映像 14.8 MB、500 次請求後 RSS 8.7 MB、轉址 P95 低於 1 毫秒（說明見下） |
 
 > 二進位檔與映像的數字已包含內嵌語言目錄，以及選用的防機器人驗證所需的 TLS 相依；轉址延遲
 > 為 v1.0 的量測值，預期不變 —— 驗證只在註冊、登入與建立短網址表單執行，轉址路徑完全不受影響。
@@ -134,7 +134,7 @@ uwurls/
 ## 開發
 
 ```bash
-cargo test                 # 單元 + 整合測試（187 個）
+cargo test                 # 單元 + 整合測試（245 個）
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收（81 項）

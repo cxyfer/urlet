@@ -19,7 +19,7 @@
 | P7 Tests and documentation | ✅ Done | See `git log` (smoke.sh, README, API.md, DEPLOYMENT.md) |
 | P8 Final verification | ✅ Done | See `git log` (release build, image strategy, wrap-up) |
 
-Acceptance data: `cargo test` is all green with 187 tests, `cargo clippy --all-targets -- -D warnings`
+Acceptance data (v1.0): `cargo test` is all green with 187 tests, `cargo clippy --all-targets -- -D warnings`
 and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scripts/smoke.sh` pass.
 
 ---
@@ -212,3 +212,7 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 | Container image | ≤ 40 MB | **13.2 MB** (built and `up -d` verified on real hardware with Docker Compose 27.4) |
 | Tests | All green | `cargo test` 187 items, `scripts/smoke.sh` 81 items |
 | Static checks | No warnings | `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` pass |
+
+The table above is the v1.0 record; the current v1.1 numbers (5.7 MB glibc / 5.8 MB musl binary,
+14.8 MB image, 8.7 MB RSS, ~0.1 s cold start, 245 tests) are tracked in `docs/SPEC.md` §3.3 — read
+them there rather than quoting this table.

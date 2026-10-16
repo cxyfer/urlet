@@ -24,7 +24,7 @@ service, no frontend build step.
 | 🌐 Localized UI | English, Traditional Chinese, and Simplified Chinese; the first visit follows the browser's `Accept-Language` header and falls back to English |
 | 🤖 Bot protection | Cloudflare Turnstile or Google reCAPTCHA v2, enabled through environment variables or the admin panel; applies to the registration, sign-in and link creation forms |
 | 🐳 Deployment | Single container plus a named volume; optional Caddy overlay for automatic HTTPS |
-| 🪶 Lightweight | 5.7 MB binary, 14.8 MB container image, 8.7 MB RSS after 500 requests, and sub-millisecond redirect latency at P95 (see the note below) |
+| 🪶 Lightweight | 5.7 MB (glibc) / 5.8 MB (musl) binary, 14.8 MB container image, 8.7 MB RSS after 500 requests, and sub-millisecond redirect latency at P95 (see the note below) |
 
 > The binary and image figures include the embedded locale catalogs and the TLS stack used by the
 > optional bot protection; the redirect latency was measured on v1.0 and is expected to be
@@ -143,7 +143,7 @@ uwurls/
 ## Development
 
 ```bash
-cargo test                 # unit + integration tests (187)
+cargo test                 # unit + integration tests (245)
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 bash scripts/smoke.sh      # end-to-end acceptance run against the real binary (81 checks)
