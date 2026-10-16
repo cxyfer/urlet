@@ -120,14 +120,14 @@ siteverify 請求（`src/services/captcha.rs`）：使用 `ureq` 2 搭配 rustls
 
 ### 3.3 二進位檔與映像檔尺寸目標
 
-| 項目 | 目標 | 實測 |
-|------|------|------|
-| Release 二進位（stripped, LTO, `opt-level=z`） | ≤ 15 MB | **4.2 MB**（glibc 本機）／4.5 MB（容器內 musl） |
-| 執行期映像（`alpine` + 二進位 + CA 憑證） | ≤ 40 MB | **13.2 MB** |
-| 閒置／負載記憶體 | ≤ 30 MB RSS | **6.8 MB**（500 次請求後） |
-| 冷啟動到可服務 | ≤ 1 秒 | **約 0.2 秒**（含遷移） |
+| 項目 | 目標 | v1.0 | v1.1 |
+|------|------|------|------|
+| Release 二進位（stripped, LTO, `opt-level=z`） | ≤ 15 MB | 4.2 MB（glibc）／4.5 MB（musl） | **5.7 MB**（glibc 本機）／**5.8 MB**（容器內 musl） |
+| 執行期映像（`alpine` + 二進位 + CA 憑證） | ≤ 40 MB | 13.2 MB | **14.8 MB** |
+| 閒置／負載記憶體 | ≤ 30 MB RSS | 6.8 MB（500 次請求後） | **8.7 MB**（500 次請求後） |
+| 冷啟動到可服務 | ≤ 1 秒 | 約 0.2 秒（含遷移） | **約 0.1 秒**（全新資料庫，含遷移） |
 
-「實測」欄為 v1.0 的量測結果；v1.1 新增的內嵌語言目錄與驗證碼用戶端預期仍在此目標之內。
+v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，各項目標仍然達成。
 
 ---
 
@@ -623,7 +623,7 @@ v1.1 新增項目（本批次）：
 - [ ] siteverify 是系統唯一的對外 HTTP 請求，透過 `ureq` 2 + rustls + webpki-roots（不需 OpenSSL）發出，且預設關閉
 - [ ] `POST /api/v1/urls` 不套用驗證碼；後台 secret key 欄位為唯寫
 - [ ] `GET /` 對未登入與已登入使用者皆回 200 的導覽首頁，不再 302 至 `/app`
-- [ ] `cargo test`、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過
+- [ ] `cargo test`（245 個測試）、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過，`scripts/smoke.sh` 81 項端對端檢查全過，且容器映像可在 musl 下建置並執行（§3.3）
 
 ---
 

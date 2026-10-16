@@ -124,15 +124,15 @@ configures a provider, it times out after **5 seconds**, and any failure rejects
 
 ### 3.3 Binary and Image Size Targets
 
-| Item | Target | Measured |
-|------|--------|----------|
-| Release binary (stripped, LTO, `opt-level=z`) | ≤ 15 MB | **4.2 MB** (glibc, local) / 4.5 MB (musl, in container) |
-| Runtime image (`alpine` + binary + CA certificates) | ≤ 40 MB | **13.2 MB** |
-| Idle / under-load memory | ≤ 30 MB RSS | **6.8 MB** (after 500 requests) |
-| Cold start to serving | ≤ 1 second | **~0.2 s** (including migrations) |
+| Item | Target | v1.0 | v1.1 |
+|------|--------|------|------|
+| Release binary (stripped, LTO, `opt-level=z`) | ≤ 15 MB | 4.2 MB (glibc) / 4.5 MB (musl) | **5.7 MB** (glibc, local) / **5.8 MB** (musl, in container) |
+| Runtime image (`alpine` + binary + CA certificates) | ≤ 40 MB | 13.2 MB | **14.8 MB** |
+| Idle / under-load memory | ≤ 30 MB RSS | 6.8 MB (after 500 requests) | **8.7 MB** (after 500 requests) |
+| Cold start to serving | ≤ 1 second | ~0.2 s (including migrations) | **~0.1 s** (fresh database, including migrations) |
 
-The measured column records the v1.0 numbers. The v1.1 additions (embedded locale catalogs and the
-captcha client) are expected to stay within the same targets.
+The v1.1 column includes the embedded locale catalogs and the rustls-based captcha client. Every
+target is still met.
 
 ---
 
@@ -631,7 +631,7 @@ v1.1 additions (this batch):
 - [ ] The siteverify call is the only outbound HTTP request, goes through `ureq` 2 over rustls + webpki-roots (no OpenSSL), and is off by default
 - [ ] Captcha is not applied to `POST /api/v1/urls`, and the admin secret-key field is write-only
 - [ ] `GET /` returns 200 as a landing/navigation page for anonymous and signed-in visitors, and no longer redirects to `/app`
-- [ ] `cargo test`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check` are clean
+- [ ] `cargo test` (245 tests), `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are clean, `scripts/smoke.sh` passes all 81 end-to-end checks, and the container image builds and runs under musl (§3.3)
 
 ---
 

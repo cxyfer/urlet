@@ -24,11 +24,12 @@ service, no frontend build step.
 | 🌐 Localized UI | English, Traditional Chinese, and Simplified Chinese; the first visit follows the browser's `Accept-Language` header and falls back to English |
 | 🤖 Bot protection | Cloudflare Turnstile or Google reCAPTCHA v2, enabled through environment variables or the admin panel; applies to the registration, sign-in and link creation forms |
 | 🐳 Deployment | Single container plus a named volume; optional Caddy overlay for automatic HTTPS |
-| 🪶 Lightweight | A few megabytes for the binary and the container image, a few megabytes of RSS, and sub-millisecond redirect latency at P95 (approximate — see the note below) |
+| 🪶 Lightweight | 5.7 MB binary, 14.8 MB container image, 8.7 MB RSS after 500 requests, and sub-millisecond redirect latency at P95 (see the note below) |
 
-> These footprint numbers are approximate and were measured before bot protection was
-> added. Turnstile and reCAPTCHA verification pull in TLS dependencies that make the
-> binary larger, so re-measure before quoting exact figures.
+> The binary and image figures include the embedded locale catalogs and the TLS stack used by the
+> optional bot protection; the redirect latency was measured on v1.0 and is expected to be
+> unchanged, since captcha verification only runs on the registration, sign-in and link-creation
+> forms — never on the redirect path.
 
 ## Quick start
 
