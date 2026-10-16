@@ -37,7 +37,7 @@
 | P6 | 管理後台與 API | 使用者管理、邀請碼、設定、稽核、API Token、`/api/v1` 完整化 | 整合測試涵蓋 admin 授權與 Token | `✨ feat(admin): ...` |
 | P7 | 測試與文件 | 整合測試補齊、`scripts/smoke.sh`、README、API.md、DEPLOYMENT.md | `cargo test` 全綠、smoke 全通過 | `🧪 test: ...` / `📝 docs: ...` |
 | P8 | 最終驗證與收尾 | clippy/fmt 清零、release 建置、compose 設定驗證、映像檔策略確認 | 驗收清單全數勾選 | `🔖 chore: finalize v1.0.0` |
-| P9 | 多語系、防機器人驗證與導覽首頁 | 三份內嵌語言目錄、語言協商與切換、可選 Turnstile／reCAPTCHA、`/` 導覽首頁 | 語言協商、cookie 切換與驗證碼失敗關閉皆有測試涵蓋；`/` 回 200 | `📝 docs: ...` / `✨ feat(i18n): ...` |
+| P9 | 多語系、防機器人驗證與導覽首頁 | 三份內嵌語言目錄、語言協商與切換、註冊／登入／建立流程的 Turnstile／reCAPTCHA 驗證、`/` 導覽首頁 | 語言協商、cookie 切換、驗證碼失敗關閉（含登入）與導覽首頁皆有測試涵蓋；`/` 回 200 | `📝 docs: ...` / `✨ feat(i18n): ...` |
 
 ---
 
@@ -175,17 +175,17 @@
 
 **任務**
 
-1. 語言目錄 `src/i18n/{en,zh-Hant,zh-Hans}.json` 與 `services/i18n.rs`：以 `include_str!` 載入目錄，依 `Accept-Language` 協商（正確處理 `q=` 權重、預設**英文**），缺少 key 時回退英文字串。
-2. `middleware/lang.rs`：由 `uwurls_lang` cookie 或 `Accept-Language` 決定當前語言，透過 task-local context 提供給 handler 與錯誤頁面，並據以輸出 `<html lang>`。
-3. `GET /app/lang/{code}?next=<path>`：設定 cookie（`Path=/`、`SameSite=Lax`、`Max-Age` 一年、非 HttpOnly）後回 302；`next` 只接受同站相對路徑，其餘回退 `/`。
-4. `services/captcha.rs`：Cloudflare Turnstile 與 Google reCAPTCHA v2 的供應商抽象層，支援非空環境變數覆蓋後台設定，以 5 秒逾時對供應商 siteverify 端點發出 HTTPS POST，失敗一律拒絕（逾時／非 2xx／無法解析）。
-5. 於網頁註冊表單、網頁建立短網址表單與 `POST /api/v1/auth/register`（JSON 欄位 `captcha_token`，失敗回 400 `captcha_failed`）套用驗證碼；`POST /api/v1/urls` 走 API Token 認證，不套用。
-6. 管理後台設定：新增 `captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、`captcha_on_create` 五個 key，secret key 欄位為唯寫（留白送出維持原值）。
-7. `GET /` 導覽首頁：hero、功能亮點、登入與註冊入口、語言切換、頁尾，已登入者顯示進入儀表板的入口；移除 302 至 `/app`。
-8. 測試：語言協商（`q=` 權重、回退英文）、cookie 切換與 `next` 驗證、API JSON 維持英文、驗證碼啟用條件矩陣、驗證碼失敗關閉、`GET /` 回 200。
-9. 文件：更新 `docs/SPEC.md` 與中文鏡像 `docs/zh-TW/SPEC.md`（FR 表、路由清單、環境變數、設定 key），以及兩份 `PLAN.md`。
+1. 語言目錄 `src/i18n/{en,zh-Hant,zh-Hans}.json`（由 `src/i18n/mod.rs` 載入）：以 `include_str!` 載入目錄，依 `Accept-Language` 協商（正確處理 `q=` 權重、預設**英文**），缺少 key 時回退英文字串。
+2. `src/middleware/locale.rs`：由 `uwurls_lang` cookie 或 `Accept-Language` 決定當前語言（cookie 優先），透過 task-local context 提供給 handler 與錯誤頁面，並據以輸出 `<html lang>`，同時為 HTML 回應加上 `Content-Language` 與 `Vary: Accept-Language, Cookie`。
+3. `GET /app/lang/{code}?next=<path>`：設定 cookie（`Path=/`、`SameSite=Lax`、`Max-Age` 一年、非 HttpOnly、`UWURLS_SECURE_COOKIES=true` 時加 `Secure`）後回 302；`next` 只接受同站相對路徑，其餘（含未帶 `next`）回退 `/app`；無法辨識的 `code` 視為 `en`。
+4. `src/services/captcha.rs`：Cloudflare Turnstile 與 Google reCAPTCHA v2 的供應商抽象層，支援非空環境變數覆蓋後台設定，以表單編碼搭配 5 秒逾時、透過 `ureq` 2（rustls + webpki-roots，不需 OpenSSL）對供應商 siteverify 端點發出 HTTPS POST，失敗一律拒絕（逾時／非 2xx／無法解析）。測試位於 `tests/captcha.rs`。
+5. 於網頁註冊、登入與建立短網址表單，以及 `POST /api/v1/auth/register`、`POST /api/v1/auth/login`（JSON 欄位 `captcha_token`，失敗回 400 `captcha_failed`）套用驗證碼；`POST /api/v1/urls` 走 API Token 認證，不套用。
+6. 管理後台設定：新增 `captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、`captcha_on_login`、`captcha_on_create` 六個 key，各有一個對應的 `UWURLS_CAPTCHA_*` 環境變數（含 `UWURLS_CAPTCHA_ON_LOGIN`），非空時覆蓋表中值；secret key 欄位為唯寫（留白送出維持原值）。
+7. `GET /` 導覽首頁（`src/routes/pages/home.rs` + `templates/landing.html`）：hero、功能亮點、登入與註冊入口、語言切換、頁尾，已登入者顯示進入儀表板的入口；移除 302 至 `/app`。
+8. 測試：語言協商（`q=` 權重、回退英文）、cookie 切換與 `next` 驗證、API JSON 維持英文、驗證碼啟用條件矩陣、註冊／登入／建立時的驗證碼失敗關閉、`GET /` 回 200。
+9. 文件：更新 `docs/SPEC.md` 與中文鏡像 `docs/zh-TW/SPEC.md`（FR 表、路由清單、環境變數、設定 key）、兩份 `PLAN.md`、兩份 README、`docs/API.md`、`docs/DEPLOYMENT.md`、其 `docs/zh-TW/` 鏡像與 `.env.example`。
 
-**驗收**：`GET /` 對未登入與已登入使用者皆回 200 且不再轉址；`Accept-Language` 協商與語言 cookie 可切換介面，而 JSON API 回應維持英文；驗證碼僅在 provider ≠ `none`、兩把 key 非空、對應開關為 true 時啟用，且逾時／非 2xx／解析失敗一律拒絕；API Token 認證的端點不套用驗證碼；後台 secret key 永不回顯；`cargo test`、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過。
+**驗收**：`GET /` 對未登入與已登入使用者皆回 200 且不再轉址；`Accept-Language` 協商與語言 cookie 可切換介面，而 JSON API 回應維持英文；驗證碼僅在 provider ≠ `none`、兩把 key 非空、對應開關（`on_register`、`on_login` 或 `on_create`）為 true 時啟用，且逾時／非 2xx／解析失敗時在註冊、登入與建立流程一律拒絕；API Token 認證的端點不套用驗證碼；後台 secret key 永不回顯；`cargo test`、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過。
 
 ---
 

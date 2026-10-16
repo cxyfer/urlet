@@ -105,8 +105,8 @@ Browser / curl          │                                                 │
 | 遷移 | `include_str!` 內嵌 SQL + 自製 runner | 編譯期嵌入、啟動自動遷移、`schema_migrations` 記錄 checksum，無需 CLI |
 | 模板 | `askama` 0.12 | 編譯期檢查的 SSR，無 Node/Vite 建置流程 |
 | 靜態資產 | `include_str!` 內嵌 CSS/JS | 二進位自帶資源，映像檔不需檔案系統 |
-| i18n | 以 `include_str!` 內嵌 JSON 語言目錄 | 與二進位一同部署、無外部語言檔；缺少 key 時回退英文 |
-| 防機器人驗證 | 可選 Cloudflare Turnstile 或 Google reCAPTCHA v2（HTTPS 驗證） | 預設關閉、不綁定特定廠商、失敗一律拒絕 |
+| i18n | 以 `include_str!` 內嵌 JSON 語言目錄（`src/i18n/mod.rs` + `src/i18n/{en,zh-Hant,zh-Hans}.json`） | 與二進位一同部署、無外部語言檔；缺少 key 時回退英文 |
+| 防機器人驗證 | 可選 Cloudflare Turnstile 或 Google reCAPTCHA v2（HTTPS 驗證），透過 `ureq` 2 + rustls + webpki-roots | 預設關閉、不綁定特定廠商、不需 OpenSSL、失敗一律拒絕 |
 | 密碼 | `argon2` (Argon2id) | 業界標準，抗 GPU 暴力破解 |
 | Session/Token | 自製 `sha2` 雜湊 + 隨機 `getrandom` | 不引入 JWT 相依；伺服器端可即時撤銷 |
 | 日誌 | `tracing` + `tracing-subscriber` | 結構化日誌、`RUST_LOG` 控制 |
@@ -114,7 +114,9 @@ Browser / curl          │                                                 │
 
 **刻意避免的相依**：Redis、MySQL client、jsonwebtoken、MaxMind/GeoIP、React/Node 工具鏈。
 系統不會對外抓取目標網址（同時消除 SSRF 風險）；唯一的對外 HTTP 呼叫是可選的驗證碼
-siteverify 請求，且除非管理者設定供應商，否則預設關閉。
+siteverify 請求（`src/services/captcha.rs`）：使用 `ureq` 2 搭配 rustls + webpki-roots
+（純 Rust，因此 `rust:1-alpine` musl 建置不需要 OpenSSL），除非管理者設定供應商否則預設關閉，
+**逾時 5 秒**，且任何失敗都一律拒絕（fail closed）。
 
 ### 3.3 二進位檔與映像檔尺寸目標
 
@@ -252,7 +254,7 @@ siteverify 請求，且除非管理者設定供應商，否則預設關閉。
 | `/app/urls/{id}` | 網址詳情 | 編輯表單、QR 免（Non-Goal）、統計圖表、最近點擊、刪除 |
 | `/app/account` | 帳號 | 個人資料、修改密碼、Session 清單、API Token 管理 |
 | `/app/admin` | 管理後台 | 使用者、全站網址、邀請碼、設定、稽核日誌 |
-| `/app/lang/{code}` | 語言切換 | 設定 `uwurls_lang` cookie 並 302 至 `next` |
+| `/app/lang/{code}` | 語言切換 | 設定 `uwurls_lang` cookie 並 302 至 `next`（未帶時轉往 `/app`） |
 | `/{slug}` | 轉址 / 密碼頁 / 410 / 404 | 公開 |
 
 **UI 技術**：Askama 模板 + 手寫 CSS（含 `prefers-color-scheme` 深色模式）+ 約 150 行原生 JS
@@ -262,11 +264,11 @@ siteverify 請求，且除非管理者設定供應商，否則預設關閉。
 
 | ID | 需求 | 說明 |
 |----|------|------|
-| FR-I18N-1 | 支援語言 | 介面提供三種語言：英文（`en`，預設）、繁體中文（`zh-Hant`）、簡體中文（`zh-Hans`）。語言目錄為內嵌於二進位檔的 JSON 檔 `src/i18n/{en,zh-Hant,zh-Hans}.json` |
-| FR-I18N-2 | 語言選擇 | 初次訪問（無 cookie）時依 `Accept-Language` 協商，正確處理 `q=` 權重並由高至低排序；無法辨識或未帶標頭時預設 **英文** |
-| FR-I18N-3 | 保存 | 選擇的語言存於 cookie `uwurls_lang`（`Path=/`、`SameSite=Lax`、`Max-Age` 一年、**非** HttpOnly） |
-| FR-I18N-4 | 切換 | `GET /app/lang/{code}?next=<path>` 設定 cookie 後回 302；`next` 只接受同站相對路徑，其餘一律回退 `/` |
-| FR-I18N-5 | 標記 | `<html lang>` 會反映當前語言；公開頁面與應用外框皆提供語言切換入口 |
+| FR-I18N-1 | 支援語言 | 介面提供三種語言：英文（`en`，預設）、繁體中文（`zh-Hant`）、簡體中文（`zh-Hans`）。語言目錄為內嵌於二進位檔的 JSON 檔 `src/i18n/{en,zh-Hant,zh-Hans}.json`，由 `src/i18n/mod.rs` 載入 |
+| FR-I18N-2 | 語言選擇 | 初次訪問（無 cookie）時依 `Accept-Language` 協商，正確處理 `q=` 權重並由高至低排序；`zh-TW`、`zh-HK`、`zh-MO` 對應 `zh-Hant`，其餘中文標籤（含單獨的 `zh`）對應 `zh-Hans`，無法辨識或未帶標頭時預設 **英文**。`uwurls_lang` cookie 一律優先於標頭 |
+| FR-I18N-3 | 保存 | 選擇的語言存於 cookie `uwurls_lang`（`Path=/`、`SameSite=Lax`、`Max-Age` 一年、**非** HttpOnly；`UWURLS_SECURE_COOKIES=true` 時加上 `Secure`） |
+| FR-I18N-4 | 切換 | `GET /app/lang/{code}?next=<path>` 設定 cookie 後回 302；`next` 只接受同站相對路徑，其餘（含未帶 `next`）一律回退 `/app`。無法辨識的 `code` 一律視為 `en`，不會回錯誤 |
+| FR-I18N-5 | 標記與標頭 | `<html lang>` 會反映當前語言；公開頁面與應用外框皆提供語言切換入口；HTML 回應會帶 `Content-Language` 與 `Vary: Accept-Language, Cookie`（靜態資源不設 `Vary`） |
 | FR-I18N-6 | 回退 | 語言目錄缺少的 key 回退使用英文字串 |
 | FR-I18N-7 | API 回應 | 所有 JSON API 回應一律英文，不受請求語言或 cookie 影響 |
 | FR-I18N-8 | 錯誤頁面 | 錯誤頁面（404/410/500 等）透過 task-local 語言 context 依當前語言呈現 |
@@ -275,12 +277,12 @@ siteverify 請求，且除非管理者設定供應商，否則預設關閉。
 
 | ID | 需求 | 說明 |
 |----|------|------|
-| FR-BOT-1 | 供應商 | 可選 Cloudflare Turnstile 或 Google reCAPTCHA v2 checkbox，預設 `none`（關閉） |
-| FR-BOT-2 | 設定來源 | 同時支援環境變數與管理後台設定（settings 表新增 key：`captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、`captcha_on_create`）。非空環境變數覆蓋後台值，與 `registration_mode` 的覆蓋規則一致 |
-| FR-BOT-3 | 啟用條件 | 四個條件同時成立才啟用：provider ≠ `none`、兩把 key 皆非空、對應表單的開關為 `true` |
-| FR-BOT-4 | 驗證方式 | 伺服器端以 HTTPS POST 呼叫供應商的 siteverify 端點：Cloudflare `https://challenges.cloudflare.com/turnstile/v0/siteverify`、Google `https://www.google.com/recaptcha/api/siteverify`，逾時 5 秒 |
+| FR-BOT-1 | 供應商 | 可選 Cloudflare Turnstile（元件回應欄位 `cf-turnstile-response`）或 Google reCAPTCHA v2 checkbox（`g-recaptcha-response`），預設 `none`（關閉） |
+| FR-BOT-2 | 設定來源 | 同時支援環境變數與管理後台設定（settings 表新增 key：`captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、`captcha_on_login`、`captcha_on_create`）。非空環境變數覆蓋後台值，與 `registration_mode` 的覆蓋規則一致 |
+| FR-BOT-3 | 啟用條件 | 四個條件同時成立才啟用：provider ≠ `none`、兩把 key 皆非空、對應表單的開關（`on_register`、`on_login` 或 `on_create`）為 `true` |
+| FR-BOT-4 | 驗證方式 | 伺服器端以表單編碼（form-encoded）HTTPS POST 呼叫供應商的 siteverify 端點（帶 `secret`、`response`，以及可判定時的 `remoteip`）：Cloudflare `https://challenges.cloudflare.com/turnstile/v0/siteverify`、Google `https://www.google.com/recaptcha/api/siteverify`，逾時 5 秒，並透過 `ureq` 2 + rustls + webpki-roots 發出 |
 | FR-BOT-5 | 失敗關閉 | 任何失敗（逾時、非 2xx、回應無法解析）一律拒絕（fail closed） |
-| FR-BOT-6 | 套用範圍 | 網頁註冊表單、網頁建立短網址表單，以及 `POST /api/v1/auth/register`（JSON 欄位 `captcha_token`，失敗回 400 `captcha_failed`） |
+| FR-BOT-6 | 套用範圍 | 網頁註冊表單、網頁登入表單、網頁建立短網址表單，以及 `POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`（JSON 欄位 `captcha_token`，失敗回 400 `captcha_failed`） |
 | FR-BOT-7 | API Token 路徑 | `POST /api/v1/urls` 走 API Token 認證，不套用驗證碼 |
 | FR-BOT-8 | 後台介面 | secret key 欄位為唯寫：不回顯已存值，留白送出表示維持原值 |
 
@@ -307,7 +309,7 @@ siteverify 請求，且除非管理者設定供應商，否則預設關閉。
 | NFR-SEC-12 | 啟動時若 `UWURLS_SECRET` 未設定，於資料目錄產生並持久化隨機密鑰（建立時即為 0600；既有檔案若權限過寬會自動收緊） |
 | NFR-SEC-13 | 反向代理標頭：`UWURLS_TRUST_PROXY=true` 時優先採用代理自行改寫的 `X-Real-IP`，其次取 `X-Forwarded-For` **最右側**（最左側可被客戶端偽造） |
 | NFR-SEC-14 | 密碼雜湊在 `spawn_blocking` 中執行，並以信號量限制同時最多 4 個 Argon2 計算（每個約 19 MiB） |
-| NFR-SEC-15 | 驗證碼驗證失敗一律關閉：以 5 秒逾時對設定的供應商發出 HTTPS POST；逾時、非 2xx 或無法解析的回應一律拒絕請求。secret key 永不回顯於管理後台 |
+| NFR-SEC-15 | 驗證碼驗證失敗一律關閉：以表單編碼 HTTPS POST 搭配 5 秒逾時呼叫設定的供應商，並透過 `ureq` 2 + rustls + webpki-roots 發出（不需 OpenSSL）；逾時、非 2xx 或無法解析的回應一律拒絕請求。secret key 永不回顯於管理後台 |
 | NFR-SEC-16 | 語言 cookie `uwurls_lang` 刻意不設 HttpOnly（由前端程式讀取），內容僅為白名單語言標籤；切換端點的 `next` 只接受同站相對路徑，以防開放轉址 |
 
 ### 5.2 效能 (NFR-PERF)
@@ -418,8 +420,8 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 - `settings`：`site_name=uwurls`、`registration_mode=open`、`default_slug_length=7`、
   `max_urls_per_user=1000`、`default_redirect_type=302`、`analytics_enabled=true`、`click_retention_days=0`。
 - `settings`（v1.1 驗證碼 key）：`captcha_provider=none`、`captcha_site_key=`（空）、
-  `captcha_secret_key=`（空）、`captcha_on_register=false`、`captcha_on_create=false`。
-  非空的環境變數會覆蓋表中值（FR-BOT-2）。
+  `captcha_secret_key=`（空）、`captcha_on_register=false`、`captcha_on_login=false`、
+  `captcha_on_create=false`。非空的環境變數會覆蓋表中值（FR-BOT-2）。
 - `domains`：啟動時依 `UWURLS_BASE_URL` 的 host 插入/更新預設網域（`is_default=1`）。
 
 ---
@@ -431,7 +433,7 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 | 方法 | 路徑 | 說明 |
 |------|------|------|
 | POST | `/api/v1/auth/register` | `{email, password, invite_code?, captcha_token?}` → 201 `{user}`；驗證碼驗證失敗回 400 `captcha_failed` |
-| POST | `/api/v1/auth/login` | `{email, password}` → 200 `{user}` + Set-Cookie |
+| POST | `/api/v1/auth/login` | `{email, password, captcha_token?}` → 200 `{user}` + Set-Cookie；驗證碼驗證失敗回 400 `captcha_failed` |
 | POST | `/api/v1/auth/logout` | 撤銷當前 Session → 204 |
 | GET | `/api/v1/auth/me` | 當前使用者 → 200 `{user}` |
 | PATCH | `/api/v1/auth/me` | `{display_name}` → 200 `{user}` |
@@ -485,7 +487,7 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 |------|------|------|
 | GET | `/` | 導覽首頁（HTML） |
 | GET | `/health` | `{status, version, database, uptime_seconds}` |
-| GET | `/app/lang/{code}` | 設定 `uwurls_lang` cookie 並 302 至 `next`（僅接受同站相對路徑） |
+| GET | `/app/lang/{code}` | 設定 `uwurls_lang` cookie 並 302 至 `next`；`next` 未帶或不是同站相對路徑時轉往 `/app` |
 | GET | `/{slug}` | 轉址（302 等）或密碼頁（HTML）或 410/404 頁 |
 | POST | `/{slug}/unlock` | 表單或 JSON `{password}`；成功 303 → `/{slug}` |
 | GET | `/api/v1/public/urls/{slug}` | 公開中介資料：`{slug, has_password, is_expired, title?}`（**不含 target**） |
@@ -517,6 +519,7 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 | `UWURLS_CAPTCHA_SITE_KEY` | — | 供應商 site key；非空時覆蓋 `captcha_site_key` |
 | `UWURLS_CAPTCHA_SECRET_KEY` | — | 供應商 secret key；非空時覆蓋 `captcha_secret_key` |
 | `UWURLS_CAPTCHA_ON_REGISTER` | `false` | 註冊表單是否要求驗證碼；非空時覆蓋 `captcha_on_register` |
+| `UWURLS_CAPTCHA_ON_LOGIN` | `false` | 網頁登入表單與 `POST /api/v1/auth/login` 是否要求驗證碼；非空時覆蓋 `captcha_on_login` |
 | `UWURLS_CAPTCHA_ON_CREATE` | `false` | 網頁建立短網址表單是否要求驗證碼；非空時覆蓋 `captcha_on_create` |
 
 驗證碼相關變數的覆蓋規則與 `UWURLS_REGISTRATION`、`UWURLS_DEFAULT_SLUG_LENGTH` 相同：
@@ -537,17 +540,17 @@ uwurls/
 ├── deploy/Caddyfile
 ├── .env.example
 ├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql
-├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md}}
+├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
-├── templates/                    # Askama 模板（base/app_base + 各頁面 + admin/）
+├── templates/                    # Askama 模板（base、app_base、landing.html + 各頁面 + admin/）
 ├── src/
 │   ├── main.rs  lib.rs  config.rs  state.rs  error.rs  server.rs  assets.rs
 │   ├── assets/{app.css,app.js,favicon.svg}
-│   ├── i18n/{en,zh-Hant,zh-Hans}.json
+│   ├── i18n/{mod.rs,en.json,zh-Hant.json,zh-Hans.json}
 │   ├── db/{mod,migrate,users,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
-│   ├── services/{auth,urls,admin,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,i18n,captcha}.rs
-│   ├── middleware/{mod,auth,csrf,security,lang}.rs
-│   └── routes/{mod,api,api_auth,api_urls,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract,home}.rs
+│   ├── services/{auth,urls,admin,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
+│   ├── middleware/{mod,auth,csrf,security,locale}.rs
+│   └── routes/{mod,api,api_auth,api_urls,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract}.rs
 │       └── pages/{mod,auth,dashboard,urls,account,admin,home}.rs
 └── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs,i18n.rs,captcha.rs}
 ```
@@ -584,7 +587,7 @@ uwurls 不對外暴露連接埠，由 Caddy 反向代理。
 | 層級 | 範圍 | 工具 |
 |------|------|------|
 | 單元測試 | slug 產生/驗證/保留字、UA 解析、過期判定、設定解析、密碼雜湊、IP 雜湊、CSRF 同源判斷、`Accept-Language` 協商（`q=` 權重、回退英文）、語言目錄回退、驗證碼啟用條件矩陣、驗證碼失敗關閉判定 | `#[cfg(test)]` 模組 |
-| 整合測試 | 註冊→登入→建立→轉址→統計；密碼保護流程；過期與點擊上限；所有權隔離；admin 授權；API Token；CSRF 拒絕；語言協商與 cookie 切換；API JSON 維持英文；註冊/建立時的驗證碼拒絕；導覽首頁 | `tests/integration.rs` + `tower::ServiceExt::oneshot` + 臨時 SQLite |
+| 整合測試 | 註冊→登入→建立→轉址→統計；密碼保護流程；過期與點擊上限；所有權隔離；admin 授權；API Token；CSRF 拒絕；語言協商與 cookie 切換；API JSON 維持英文；註冊、登入與建立時的驗證碼拒絕（網頁與 JSON API）；導覽首頁 | `tests/integration.rs` + `tower::ServiceExt::oneshot` + 臨時 SQLite |
 | 端對端煙霧測試 | 以真實二進位 + curl 走完主要流程 | `scripts/smoke.sh` |
 | 靜態檢查 | `cargo fmt --check`、`cargo clippy -D warnings` | CI 指令（README 說明） |
 
@@ -611,11 +614,13 @@ v1.1 新增項目（本批次）：
 
 - [ ] 三份語言目錄（`en`、`zh-Hant`、`zh-Hans`）內嵌於二進位檔並涵蓋所有介面字串，缺少 key 時回退英文
 - [ ] `Accept-Language` 協商正確處理 `q=` 權重，無法辨識或未帶標頭時預設英文
-- [ ] `GET /app/lang/{code}?next=<path>` 設定 `uwurls_lang`（Path=/、SameSite=Lax、Max-Age 一年、非 HttpOnly）並回 302，且 `next` 只接受同站相對路徑
+- [ ] `GET /app/lang/{code}?next=<path>` 設定 `uwurls_lang`（Path=/、SameSite=Lax、Max-Age 一年、非 HttpOnly）並回 302 轉往 `next` 或 `/app`，且 `next` 只接受同站相對路徑
 - [ ] `<html lang>` 反映當前語言，錯誤頁面亦依語言呈現
+- [ ] HTML 回應帶 `Content-Language` 與 `Vary: Accept-Language, Cookie`；靜態資源不設 `Vary`
 - [ ] JSON API 回應不受請求語言影響，一律英文
-- [ ] 驗證碼僅在 provider ≠ none、兩把 key 非空、對應開關為 true 時啟用；非空環境變數覆蓋後台設定
-- [ ] 驗證碼逾時、非 2xx 或無法解析時一律拒絕，並套用於網頁註冊、網頁建立與 `POST /api/v1/auth/register`（400 `captcha_failed`）
+- [ ] 驗證碼僅在 provider ≠ none、兩把 key 非空、對應開關（`on_register`、`on_login` 或 `on_create`）為 true 時啟用；非空環境變數覆蓋後台設定
+- [ ] 驗證碼逾時、非 2xx 或無法解析時一律拒絕，並套用於網頁註冊、網頁登入、網頁建立、`POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`（400 `captcha_failed`）
+- [ ] siteverify 是系統唯一的對外 HTTP 請求，透過 `ureq` 2 + rustls + webpki-roots（不需 OpenSSL）發出，且預設關閉
 - [ ] `POST /api/v1/urls` 不套用驗證碼；後台 secret key 欄位為唯寫
 - [ ] `GET /` 對未登入與已登入使用者皆回 200 的導覽首頁，不再 302 至 `/app`
 - [ ] `cargo test`、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過

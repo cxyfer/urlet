@@ -107,17 +107,20 @@ Browser / curl          │                                                 │
 | Migrations | SQL embedded with `include_str!` + a small custom runner | Embedded at compile time, applied automatically on startup, checksums recorded in `schema_migrations`, no CLI needed |
 | Templates | `askama` 0.12 | Compile-time-checked SSR, no Node/Vite build pipeline |
 | Static assets | CSS/JS embedded with `include_str!` | The binary carries its own assets, so the image needs no writable filesystem |
-| i18n | JSON catalogs embedded with `include_str!` | Ships with the binary, no external locale files; a missing key falls back to English |
+| i18n | JSON catalogs embedded with `include_str!` (`src/i18n/mod.rs` + `src/i18n/{en,zh-Hant,zh-Hans}.json`) | Ships with the binary, no external locale files; a missing key falls back to English |
 | Passwords | `argon2` (Argon2id) | Industry standard, resistant to GPU brute force |
 | Sessions/tokens | Custom `sha2` hashing + random `getrandom` | No JWT dependency; server-side revocation is immediate |
-| Bot protection | Optional Cloudflare Turnstile or Google reCAPTCHA v2 over HTTPS | Off by default, no vendor lock-in, fail-closed verification |
+| Bot protection | Optional Cloudflare Turnstile or Google reCAPTCHA v2 over HTTPS, through `ureq` 2 on rustls + webpki-roots | Off by default, no vendor lock-in, no OpenSSL dependency, fail-closed verification |
 | Logging | `tracing` + `tracing-subscriber` | Structured logs controlled by `RUST_LOG` |
 | Time | `time` 0.3 | Lighter than `chrono`; ISO-8601 formatting is all that is needed |
 
 **Dependencies deliberately avoided**: Redis, a MySQL client, jsonwebtoken, MaxMind/GeoIP, and the
 React/Node toolchain. No outbound request ever fetches the target URL, which also removes the SSRF
-risk. The only outbound HTTP call in the system is the optional captcha siteverify request, and it
-is disabled unless an administrator configures a provider.
+risk. The only outbound HTTP call in the system is the optional captcha siteverify request
+(`src/services/captcha.rs`): it goes through `ureq` 2 with the rustls + webpki-roots stack (pure
+Rust, so the `rust:1-alpine` musl image needs no OpenSSL), it is disabled unless an administrator
+configures a provider, it times out after **5 seconds**, and any failure rejects the request
+(fail closed).
 
 ### 3.3 Binary and Image Size Targets
 
@@ -256,7 +259,7 @@ captcha client) are expected to stay within the same targets.
 | `/app/urls/{id}` | Link detail | Edit form, analytics charts, recent clicks, delete (QR codes are a non-goal) |
 | `/app/account` | Account | Profile, change password, session list, API token management |
 | `/app/admin` | Admin panel | Users, all links, invite codes, settings, audit log |
-| `/app/lang/{code}` | Language switch | Sets the `uwurls_lang` cookie and 302-redirects to `next` |
+| `/app/lang/{code}` | Language switch | Sets the `uwurls_lang` cookie and 302-redirects to `next` (or to `/app`) |
 | `/{slug}` | Redirect / password page / 410 / 404 | Public |
 
 **UI technology**: Askama templates + hand-written CSS (including `prefers-color-scheme` dark mode) +
@@ -267,11 +270,11 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 
 | ID | Requirement | Description |
 |----|-------------|-------------|
-| FR-I18N-1 | Supported languages | Three interface languages: English (`en`, the default), Traditional Chinese (`zh-Hant`), and Simplified Chinese (`zh-Hans`). Catalogs are JSON files embedded in the binary at `src/i18n/{en,zh-Hant,zh-Hans}.json` |
-| FR-I18N-2 | Language selection | On the first visit (no cookie) the language is negotiated from `Accept-Language`, honoring `q=` weights in descending order; an unrecognized or absent header falls back to **English** |
-| FR-I18N-3 | Persistence | The chosen language is stored in the cookie `uwurls_lang` (`Path=/`, `SameSite=Lax`, `Max-Age` one year, **not** HttpOnly) |
-| FR-I18N-4 | Switching | `GET /app/lang/{code}?next=<path>` sets the cookie and returns 302; `next` accepts only same-site relative paths, and anything else falls back to `/` |
-| FR-I18N-5 | Markup | `<html lang>` reflects the active language, and a language switcher is available on the public pages and in the app shell |
+| FR-I18N-1 | Supported languages | Three interface languages: English (`en`, the default), Traditional Chinese (`zh-Hant`), and Simplified Chinese (`zh-Hans`). Catalogs are JSON files embedded in the binary at `src/i18n/{en,zh-Hant,zh-Hans}.json` and loaded by `src/i18n/mod.rs` |
+| FR-I18N-2 | Language selection | On the first visit (no cookie) the language is negotiated from `Accept-Language`, honoring `q=` weights in descending order; `zh-TW`, `zh-HK` and `zh-MO` map to `zh-Hant`, every other Chinese tag (including a bare `zh`) maps to `zh-Hans`, and an unrecognized or absent header falls back to **English**. The `uwurls_lang` cookie always wins over the header |
+| FR-I18N-3 | Persistence | The chosen language is stored in the cookie `uwurls_lang` (`Path=/`, `SameSite=Lax`, `Max-Age` one year, **not** HttpOnly; `Secure` when `UWURLS_SECURE_COOKIES=true`) |
+| FR-I18N-4 | Switching | `GET /app/lang/{code}?next=<path>` sets the cookie and returns 302; `next` accepts only same-site relative paths, and anything else — including a missing `next` — falls back to `/app`. An unknown `code` is treated as `en` and never fails |
+| FR-I18N-5 | Markup and headers | `<html lang>` reflects the active language, a language switcher is available on the public pages and in the app shell, and HTML responses carry `Content-Language` plus `Vary: Accept-Language, Cookie` (static assets set no `Vary`) |
 | FR-I18N-6 | Fallback | A key missing from a catalog falls back to the English string |
 | FR-I18N-7 | API responses | All JSON API responses are English regardless of the request language or cookie |
 | FR-I18N-8 | Error pages | Error pages (404/410/500 and friends) are rendered in the active language through a task-local language context |
@@ -280,12 +283,12 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 
 | ID | Requirement | Description |
 |----|-------------|-------------|
-| FR-BOT-1 | Providers | Optional Cloudflare Turnstile or Google reCAPTCHA v2 checkbox; the default is `none` (disabled) |
-| FR-BOT-2 | Configuration | Configurable through both environment variables and the admin settings table (new keys `captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`, `captcha_on_create`). A non-empty environment variable overrides the stored value, consistent with the `registration_mode` override rule |
-| FR-BOT-3 | Enablement | All four conditions must hold at once: provider ≠ `none`, both keys non-empty, and the switch for the relevant form is `true` |
-| FR-BOT-4 | Verification | The server issues an HTTPS POST to the provider's siteverify endpoint — Cloudflare `https://challenges.cloudflare.com/turnstile/v0/siteverify`, Google `https://www.google.com/recaptcha/api/siteverify` — with a 5-second timeout |
+| FR-BOT-1 | Providers | Optional Cloudflare Turnstile (widget response field `cf-turnstile-response`) or Google reCAPTCHA v2 checkbox (`g-recaptcha-response`); the default is `none` (disabled) |
+| FR-BOT-2 | Configuration | Configurable through both environment variables and the admin settings table (new keys `captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`, `captcha_on_login`, `captcha_on_create`). A non-empty environment variable overrides the stored value, consistent with the `registration_mode` override rule |
+| FR-BOT-3 | Enablement | All four conditions must hold at once: provider ≠ `none`, both keys non-empty, and the switch for the relevant form (`on_register`, `on_login` or `on_create`) is `true` |
+| FR-BOT-4 | Verification | The server issues a form-encoded HTTPS POST (`secret`, `response`, plus `remoteip` when the client address can be determined) to the provider's siteverify endpoint — Cloudflare `https://challenges.cloudflare.com/turnstile/v0/siteverify`, Google `https://www.google.com/recaptcha/api/siteverify` — with a 5-second timeout, through `ureq` 2 over rustls with webpki-roots |
 | FR-BOT-5 | Fail closed | Any failure (timeout, non-2xx status, unparsable response) rejects the request |
-| FR-BOT-6 | Coverage | Enforced on the web registration form, the web create-short-link form, and `POST /api/v1/auth/register` (JSON field `captcha_token`; a failure returns 400 `captcha_failed`) |
+| FR-BOT-6 | Coverage | Enforced on the web registration form, the web sign-in form, the web create-short-link form, `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (JSON field `captcha_token`; a failure returns 400 `captcha_failed`) |
 | FR-BOT-7 | API token routes | `POST /api/v1/urls` authenticates with an API token and is not subject to captcha |
 | FR-BOT-8 | Admin UI | The secret key field is write-only: the stored value is never rendered back, and submitting the field empty keeps the current value |
 
@@ -312,7 +315,7 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 | NFR-SEC-12 | If `UWURLS_SECRET` is unset at startup, a random key is generated and persisted in the data directory (created with mode 0600; an existing file with overly broad permissions is tightened automatically) |
 | NFR-SEC-13 | Reverse proxy headers: with `UWURLS_TRUST_PROXY=true`, prefer the proxy-rewritten `X-Real-IP`, then the **rightmost** entry of `X-Forwarded-For` (the leftmost can be forged by the client) |
 | NFR-SEC-14 | Password hashing runs in `spawn_blocking` with a semaphore limiting it to 4 concurrent Argon2 computations (about 19 MiB each) |
-| NFR-SEC-15 | Captcha verification fails closed: an HTTPS POST with a 5-second timeout to the configured provider; a timeout, a non-2xx status, or an unparsable body rejects the request. The secret key is never rendered back into the admin UI |
+| NFR-SEC-15 | Captcha verification fails closed: a form-encoded HTTPS POST with a 5-second timeout to the configured provider, sent through `ureq` 2 over rustls + webpki-roots (no OpenSSL); a timeout, a non-2xx status, or an unparsable body rejects the request. The secret key is never rendered back into the admin UI |
 | NFR-SEC-16 | The language cookie `uwurls_lang` is intentionally not HttpOnly (client code reads it) and holds only a whitelisted language tag; the `next` parameter of the switch endpoint accepts only same-site relative paths to prevent open redirects |
 
 ### 5.2 Performance (NFR-PERF)
@@ -424,8 +427,8 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 - `settings`: `site_name=uwurls`, `registration_mode=open`, `default_slug_length=7`,
   `max_urls_per_user=1000`, `default_redirect_type=302`, `analytics_enabled=true`, `click_retention_days=0`.
 - `settings` (v1.1 captcha keys): `captcha_provider=none`, `captcha_site_key=` (empty),
-  `captcha_secret_key=` (empty), `captcha_on_register=false`, `captcha_on_create=false`.
-  A non-empty environment variable overrides the stored value (FR-BOT-2).
+  `captcha_secret_key=` (empty), `captcha_on_register=false`, `captcha_on_login=false`,
+  `captcha_on_create=false`. A non-empty environment variable overrides the stored value (FR-BOT-2).
 - `domains`: at startup the default domain is inserted/updated from the host of `UWURLS_BASE_URL` (`is_default=1`).
 
 ---
@@ -437,7 +440,7 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/v1/auth/register` | `{email, password, invite_code?, captcha_token?}` → 201 `{user}`; 400 `captcha_failed` when captcha verification fails |
-| POST | `/api/v1/auth/login` | `{email, password}` → 200 `{user}` + Set-Cookie |
+| POST | `/api/v1/auth/login` | `{email, password, captcha_token?}` → 200 `{user}` + Set-Cookie; 400 `captcha_failed` when captcha verification fails |
 | POST | `/api/v1/auth/logout` | Revoke the current session → 204 |
 | GET | `/api/v1/auth/me` | Current user → 200 `{user}` |
 | PATCH | `/api/v1/auth/me` | `{display_name}` → 200 `{user}` |
@@ -491,7 +494,7 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 |--------|------|-------------|
 | GET | `/` | Landing / navigation page (HTML) |
 | GET | `/health` | `{status, version, database, uptime_seconds}` |
-| GET | `/app/lang/{code}` | Set the `uwurls_lang` cookie and 302 to `next` (same-site relative paths only) |
+| GET | `/app/lang/{code}` | Set the `uwurls_lang` cookie and 302 to `next`, or to `/app` when `next` is missing or not a same-site relative path |
 | GET | `/{slug}` | Redirect (302 and friends), password page (HTML), or a 410/404 page |
 | POST | `/{slug}/unlock` | Form or JSON `{password}`; on success 303 → `/{slug}` |
 | GET | `/api/v1/public/urls/{slug}` | Public metadata: `{slug, has_password, is_expired, title?}` (**never includes the target**) |
@@ -523,6 +526,7 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 | `UWURLS_CAPTCHA_SITE_KEY` | — | Provider site key; overrides `captcha_site_key` when non-empty |
 | `UWURLS_CAPTCHA_SECRET_KEY` | — | Provider secret key; overrides `captcha_secret_key` when non-empty |
 | `UWURLS_CAPTCHA_ON_REGISTER` | `false` | Require captcha on the registration forms; overrides `captcha_on_register` when non-empty |
+| `UWURLS_CAPTCHA_ON_LOGIN` | `false` | Require captcha on the web sign-in form and on `POST /api/v1/auth/login`; overrides `captcha_on_login` when non-empty |
 | `UWURLS_CAPTCHA_ON_CREATE` | `false` | Require captcha on the web create-short-link form; overrides `captcha_on_create` when non-empty |
 
 The captcha variables follow the same override rule as `UWURLS_REGISTRATION` and
@@ -544,17 +548,17 @@ uwurls/
 ├── deploy/Caddyfile
 ├── .env.example
 ├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql
-├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md}}
+├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
-├── templates/                    # Askama templates (base/app_base + pages + admin/)
+├── templates/                    # Askama templates (base, app_base, landing.html + pages + admin/)
 ├── src/
 │   ├── main.rs  lib.rs  config.rs  state.rs  error.rs  server.rs  assets.rs
 │   ├── assets/{app.css,app.js,favicon.svg}
-│   ├── i18n/{en,zh-Hant,zh-Hans}.json
+│   ├── i18n/{mod.rs,en.json,zh-Hant.json,zh-Hans.json}
 │   ├── db/{mod,migrate,users,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
-│   ├── services/{auth,urls,admin,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,i18n,captcha}.rs
-│   ├── middleware/{mod,auth,csrf,security,lang}.rs
-│   └── routes/{mod,api,api_auth,api_urls,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract,home}.rs
+│   ├── services/{auth,urls,admin,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
+│   ├── middleware/{mod,auth,csrf,security,locale}.rs
+│   └── routes/{mod,api,api_auth,api_urls,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract}.rs
 │       └── pages/{mod,auth,dashboard,urls,account,admin,home}.rs
 └── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs,i18n.rs,captcha.rs}
 ```
@@ -591,7 +595,7 @@ uwurls port, so Caddy reverse-proxies it.
 | Layer | Scope | Tooling |
 |-------|-------|---------|
 | Unit tests | Slug generation/validation/reserved words, UA parsing, expiry decisions, settings parsing, password hashing, IP hashing, CSRF same-origin checks, `Accept-Language` negotiation (`q=` weights, fallback to English), locale fallback, the captcha enablement matrix, and captcha fail-closed classification | `#[cfg(test)]` modules |
-| Integration tests | Register → login → create → redirect → analytics; the password protection flow; expiry and click caps; ownership isolation; admin authorization; API tokens; CSRF rejection; language negotiation and cookie switching; API JSON staying English; captcha rejection on register/create; the landing page | `tests/integration.rs` + `tower::ServiceExt::oneshot` + a temporary SQLite database |
+| Integration tests | Register → login → create → redirect → analytics; the password protection flow; expiry and click caps; ownership isolation; admin authorization; API tokens; CSRF rejection; language negotiation and cookie switching; API JSON staying English; captcha rejection on register, sign-in and create (web forms and JSON API); the landing page | `tests/integration.rs` + `tower::ServiceExt::oneshot` + a temporary SQLite database |
 | End-to-end smoke test | Runs the main flows against the real binary with curl | `scripts/smoke.sh` |
 | Static checks | `cargo fmt --check`, `cargo clippy -D warnings` | CI commands (documented in the README) |
 
@@ -618,11 +622,13 @@ v1.1 additions (this batch):
 
 - [ ] Three locale catalogs (`en`, `zh-Hant`, `zh-Hans`) are embedded in the binary and cover every UI string, with a missing key falling back to English
 - [ ] `Accept-Language` negotiation honors `q=` weights and defaults to English for an unrecognized or absent header
-- [ ] `GET /app/lang/{code}?next=<path>` sets `uwurls_lang` (Path=/, SameSite=Lax, Max-Age one year, not HttpOnly) and returns 302, and `next` accepts only same-site relative paths
+- [ ] `GET /app/lang/{code}?next=<path>` sets `uwurls_lang` (Path=/, SameSite=Lax, Max-Age one year, not HttpOnly) and returns 302 to `next` or to `/app`, and `next` accepts only same-site relative paths
 - [ ] `<html lang>` reflects the active language and error pages are localized
+- [ ] HTML responses carry `Content-Language` and `Vary: Accept-Language, Cookie`, while static assets set no `Vary`
 - [ ] JSON API responses stay English regardless of the request language
-- [ ] Captcha is enabled only when provider ≠ none, both keys are non-empty, and the matching switch is true; a non-empty environment variable overrides the stored setting
-- [ ] Captcha verification fails closed on timeout, non-2xx status, or an unparsable response, and is enforced on web register, web create, and `POST /api/v1/auth/register` (400 `captcha_failed`)
+- [ ] Captcha is enabled only when provider ≠ none, both keys are non-empty, and the matching switch (`on_register`, `on_login` or `on_create`) is true; a non-empty environment variable overrides the stored setting
+- [ ] Captcha verification fails closed on timeout, non-2xx status, or an unparsable response, and is enforced on web register, web sign-in, web create, `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (400 `captcha_failed`)
+- [ ] The siteverify call is the only outbound HTTP request, goes through `ureq` 2 over rustls + webpki-roots (no OpenSSL), and is off by default
 - [ ] Captcha is not applied to `POST /api/v1/urls`, and the admin secret-key field is write-only
 - [ ] `GET /` returns 200 as a landing/navigation page for anonymous and signed-in visitors, and no longer redirects to `/app`
 - [ ] `cargo test`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check` are clean
