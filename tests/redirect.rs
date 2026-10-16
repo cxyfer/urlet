@@ -403,6 +403,39 @@ async fn statistics_endpoint_reports_series_and_breakdowns() {
 }
 
 #[tokio::test]
+async fn public_metadata_never_exposes_the_target() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    create_url(
+        &app,
+        &cookie,
+        json!({ "target_url": "https://secret.example.com/board", "slug": "meta", "title": "Board deck", "password": "linkpass" }),
+    )
+    .await;
+
+    let response = app.get("/api/v1/public/urls/meta").await;
+    assert_eq!(response.status, StatusCode::OK);
+    let body = response.json();
+    assert_eq!(body["slug"], "meta");
+    assert_eq!(body["title"], "Board deck");
+    assert_eq!(body["has_password"], true);
+    assert_eq!(body["state"], "active");
+    assert!(!response.body.contains("secret.example.com"), "the target must not leak");
+
+    assert_eq!(app.get("/api/v1/public/urls/unknown").await.status, StatusCode::NOT_FOUND);
+
+    // A disabled link disappears from the public endpoint too.
+    let created = create_url(&app, &cookie, json!({ "target_url": "https://example.com", "slug": "hidden" })).await;
+    app.send(common::patch_json_as(
+        &format!("/api/v1/urls/{}", created["id"].as_i64().expect("id")),
+        json!({ "status": "disabled" }),
+        &cookie,
+    ))
+    .await;
+    assert_eq!(app.get("/api/v1/public/urls/hidden").await.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn reserved_paths_still_work_next_to_the_slug_route() {
     let app = TestApp::spawn().await;
     assert_eq!(app.get("/health").await.status, StatusCode::OK);

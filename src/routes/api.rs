@@ -4,7 +4,7 @@ use axum::routing::{delete, get, patch, post};
 use axum::Router;
 
 use crate::routes::{
-    api_admin, api_auth, api_not_found, api_stats, api_tags, api_tokens, api_urls,
+    api_admin, api_auth, api_not_found, api_public, api_stats, api_tags, api_tokens, api_urls,
 };
 use crate::state::AppState;
 
@@ -27,6 +27,8 @@ pub fn router() -> Router<AppState> {
         // tags
         .route("/tags", get(api_tags::list))
         .route("/tags/{id}", delete(api_tags::delete))
+        // public metadata
+        .route("/public/urls/{slug}", get(api_public::show))
         // api tokens
         .route("/tokens", get(api_tokens::list).post(api_tokens::create))
         .route("/tokens/{id}", delete(api_tokens::revoke))

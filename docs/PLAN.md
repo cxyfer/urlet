@@ -3,6 +3,23 @@
 > 對應規格：`docs/SPEC.md` v1.0
 > 原則：每個階段結束時程式碼必須**可編譯、可測試、可提交**；每個階段一個（或數個）本地 commit。
 
+## 執行結果（已完成）
+
+| 階段 | 狀態 | Commit |
+|------|------|--------|
+| P0 Spec 與計畫 | ✅ 完成 | `4109fc8 📝 docs: add spec and phased implementation plan` |
+| P1 專案骨架與資料層 | ✅ 完成 | `06f91a7 🎉 init: bootstrap uwurls project skeleton` |
+| P2 認證與 Session | ✅ 完成 | `e0d8902 ✨ feat(auth): add sessions, registration, login and CSRF protection` |
+| P3 短網址核心 | ✅ 完成 | `e1db4fc ✨ feat(urls): add short link CRUD, slugs, tags and expiry rules` |
+| P4 轉址與解鎖 | ✅ 完成 | `2a8ca77 ✨ feat(redirect): add redirects, password unlock and click analytics` |
+| P5 Web UI | ✅ 完成 | `eae0e0b ✨ feat(ui): add server rendered dashboard, detail and account pages` |
+| P6 管理後台與 API | ✅ 完成 | `c74302a ✨ feat(admin): add admin panel, invites, settings and maintenance` |
+| P7 測試與文件 | ✅ 完成 | 見 `git log`（smoke.sh、README、API.md、DEPLOYMENT.md） |
+| P8 最終驗證 | ✅ 完成 | 見 `git log`（release 建置、映像檔策略、收尾） |
+
+驗收數據：`cargo test` 178 個測試全綠、`cargo clippy --all-targets -- -D warnings` 無警告、
+`scripts/smoke.sh` 81 項端對端檢查全數通過。
+
 ---
 
 ## 里程碑總覽
