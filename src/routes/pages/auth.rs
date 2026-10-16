@@ -15,7 +15,7 @@ use crate::routes::pages::{
     captcha_rejected, captcha_widget, redirect_err, redirect_ok, safe_next,
 };
 use crate::services::auth::{self, AuthContext};
-use crate::services::captcha::{self, CaptchaFlow, CaptchaWidget};
+use crate::services::captcha::{CaptchaFlow, CaptchaWidget};
 use crate::services::ratelimit::limits;
 use crate::services::settings::RegistrationMode;
 use crate::state::AppState;
@@ -74,16 +74,6 @@ pub struct LoginForm {
     pub recaptcha_token: Option<String>,
 }
 
-impl LoginForm {
-    /// Token of whichever provider is configured.
-    fn captcha_token(&self) -> Option<&str> {
-        captcha::submitted_token(
-            self.turnstile_token.as_deref(),
-            self.recaptcha_token.as_deref(),
-        )
-    }
-}
-
 #[derive(Debug, Deserialize)]
 pub struct RegisterForm {
     pub email: String,
@@ -100,16 +90,6 @@ pub struct RegisterForm {
     /// Google reCAPTCHA token.
     #[serde(default, rename = "g-recaptcha-response")]
     pub recaptcha_token: Option<String>,
-}
-
-impl RegisterForm {
-    /// Token of whichever provider is configured.
-    fn captcha_token(&self) -> Option<&str> {
-        captcha::submitted_token(
-            self.turnstile_token.as_deref(),
-            self.recaptcha_token.as_deref(),
-        )
-    }
 }
 
 /// `GET /app/login`
@@ -192,7 +172,15 @@ pub async fn login_submit(
     }
 
     // Bot protection runs before any password hashing work.
-    if captcha_rejected(&state, &client, CaptchaFlow::Login, payload.captcha_token()).await {
+    if captcha_rejected(
+        &state,
+        &client,
+        CaptchaFlow::Login,
+        payload.turnstile_token.as_deref(),
+        payload.recaptcha_token.as_deref(),
+    )
+    .await
+    {
         return Ok(redirect_err("/app/login", "captcha").into_response());
     }
 
@@ -295,7 +283,8 @@ pub async fn register_submit(
         &state,
         &client,
         CaptchaFlow::Register,
-        payload.captcha_token(),
+        payload.turnstile_token.as_deref(),
+        payload.recaptcha_token.as_deref(),
     )
     .await
     {

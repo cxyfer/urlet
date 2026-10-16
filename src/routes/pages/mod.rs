@@ -134,33 +134,38 @@ pub fn redirect_err(path: &str, code: &str) -> Redirect {
 /// protected. The guard is inert unless a provider, a site key, a secret key and
 /// the per-flow switch are all set.
 pub fn captcha_widget(state: &AppState, flow: CaptchaFlow) -> Option<CaptchaWidget> {
+    captcha_guard(state, flow).widget(i18n::current())
+}
+
+/// Guard for a browser flow, built from the effective settings.
+pub fn captcha_guard(state: &AppState, flow: CaptchaFlow) -> CaptchaGuard {
     CaptchaGuard::from_settings(
         &state.settings,
         flow,
         state.config.captcha_verify_url.as_deref(),
+        &state.config.base_host,
     )
-    .widget(i18n::current())
 }
 
 /// Verify the bot protection token of a browser flow.
 ///
 /// Returns `true` when the submission must be rejected with `?err=captcha`; an
-/// unguarded flow always returns `false`, so it behaves as before.
+/// unguarded flow always returns `false`, so it behaves as before. The field of
+/// the configured provider wins; a stale value in the other field is only a
+/// fallback.
 pub async fn captcha_rejected(
     state: &AppState,
     client: &ClientInfo,
     flow: CaptchaFlow,
-    token: Option<&str>,
+    turnstile_token: Option<&str>,
+    recaptcha_token: Option<&str>,
 ) -> bool {
-    let guard = CaptchaGuard::from_settings(
-        &state.settings,
-        flow,
-        state.config.captcha_verify_url.as_deref(),
-    );
+    let guard = captcha_guard(state, flow);
     if !guard.enabled() {
         return false;
     }
-    match guard.verify(token, client.ip).await {
+    let token = guard.submitted_token(turnstile_token, recaptcha_token);
+    match guard.verify(token, client.ip, client.host.as_deref()).await {
         Ok(()) => false,
         Err(err) => {
             // Only the reason code is logged; the token never is.

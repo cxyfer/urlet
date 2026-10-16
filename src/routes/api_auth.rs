@@ -10,10 +10,11 @@ use crate::db::{sessions, users};
 use crate::error::{ApiError, AppError};
 use crate::middleware::auth::{ClientInfo, CurrentUser, MaybeUser};
 use crate::routes::dto::{SessionDto, UserDto};
+use crate::routes::verify_captcha;
 use crate::services::audit::{action, target, Audit};
 use crate::services::auth;
 use crate::services::auth::{AuthContext, SessionToken};
-use crate::services::captcha::{CaptchaFlow, CaptchaGuard};
+use crate::services::captcha::CaptchaFlow;
 use crate::services::cookies;
 use crate::services::ratelimit::limits;
 use crate::services::time;
@@ -291,36 +292,6 @@ fn enforce(state: &AppState, key: &str, capacity: f64, refill: f64) -> Result<()
         .check(key, capacity, refill)
         .map_err(AppError::rate_limited)
         .map_err(ApiError)
-}
-
-/// Reject the request when `flow` is guarded and the token does not verify.
-///
-/// An unguarded flow never contacts the provider, so the JSON contract is
-/// unchanged on instances that do not use bot protection.
-async fn verify_captcha(
-    state: &AppState,
-    client: &ClientInfo,
-    flow: CaptchaFlow,
-    token: Option<&str>,
-) -> Result<(), ApiError> {
-    let guard = CaptchaGuard::from_settings(
-        &state.settings,
-        flow,
-        state.config.captcha_verify_url.as_deref(),
-    );
-    if !guard.enabled() {
-        return Ok(());
-    }
-    match guard.verify(token, client.ip).await {
-        Ok(()) => Ok(()),
-        Err(err) => {
-            // The token itself is never logged.
-            tracing::debug!(reason = err.code(), "api captcha check rejected a request");
-            Err(ApiError(AppError::captcha_failed(
-                crate::services::captcha::FAILURE_MESSAGE,
-            )))
-        }
-    }
 }
 
 /// Append the session cookie to a response.

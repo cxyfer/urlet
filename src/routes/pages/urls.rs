@@ -132,16 +132,6 @@ pub struct CreateForm {
     pub recaptcha_token: Option<String>,
 }
 
-impl CreateForm {
-    /// Token of whichever provider is configured.
-    fn captcha_token(&self) -> Option<&str> {
-        crate::services::captcha::submitted_token(
-            self.turnstile_token.as_deref(),
-            self.recaptcha_token.as_deref(),
-        )
-    }
-}
-
 /// Quick actions offered next to an expired or capped link (spec FR-EXP-3).
 #[derive(Debug, Deserialize)]
 pub struct ExtendForm {
@@ -237,7 +227,8 @@ pub async fn create(
         &state,
         &client,
         CaptchaFlow::Create,
-        payload.captcha_token(),
+        payload.turnstile_token.as_deref(),
+        payload.recaptcha_token.as_deref(),
     )
     .await
     {

@@ -5,18 +5,26 @@
 //! [`CaptchaGuard`] for it and calling [`CaptchaGuard::verify`].
 //!
 //! Failure policy is *fail closed*: a missing token, a provider that says
-//! `success != true`, a non 2xx response, a connection error, a timeout and an
-//! unparsable body all reject the request. A disabled guard is a no-op.
+//! `success != true`, a `hostname` that belongs to somebody else, a non 2xx
+//! response, a connection error, a timeout and an unparsable body all reject the
+//! request. A disabled guard is a no-op.
 //!
 //! The provider call is blocking and therefore runs on
-//! [`tokio::task::spawn_blocking`]; it uses `ureq` with the pure Rust `rustls`
-//! backend and the `webpki-roots` trust store so the musl container needs no
-//! OpenSSL.
+//! [`tokio::task::spawn_blocking`], bounded by [`MAX_CONCURRENT_VERIFICATIONS`];
+//! it uses `ureq` with the pure Rust `rustls` backend and the `webpki-roots`
+//! trust store so the musl container needs no OpenSSL.
+//!
+//! Known limitation: [`VERIFY_TIMEOUT`] is the deadline of the HTTP call, and
+//! `ureq`'s own documentation notes that DNS resolution cannot be interrupted
+//! with the APIs it uses, so a stalled resolver can exceed it. The concurrency
+//! limit keeps such a call from blocking the rest of the process.
 
 use std::net::IpAddr;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use crate::i18n::Lang;
+use crate::services::secret::REDACTED;
 use crate::services::settings::Settings;
 
 /// `siteverify` endpoint of Cloudflare Turnstile.
@@ -199,12 +207,32 @@ impl std::fmt::Display for CaptchaError {
 ///
 /// [`verify`]: CaptchaGuard::verify
 /// [`widget`]: CaptchaGuard::widget
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CaptchaGuard {
     provider: CaptchaProvider,
     site_key: String,
     secret_key: String,
     verify_url: String,
+    /// Hostname the instance is served under, from `Config::base_host`.
+    base_host: String,
+    /// Whether the endpoint may be plain HTTP. Only ever true for the test
+    /// override: `Config::captcha_verify_url` has no environment variable, so a
+    /// deployment always talks HTTPS to the provider.
+    allow_plaintext: bool,
+}
+
+/// Never print the secret, even through a stray `tracing::debug!(?guard)`.
+impl std::fmt::Debug for CaptchaGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CaptchaGuard")
+            .field("provider", &self.provider)
+            .field("site_key", &self.site_key)
+            .field("secret_key", &REDACTED)
+            .field("verify_url", &self.verify_url)
+            .field("base_host", &self.base_host)
+            .field("allow_plaintext", &self.allow_plaintext)
+            .finish()
+    }
 }
 
 impl CaptchaGuard {
@@ -212,11 +240,14 @@ impl CaptchaGuard {
     /// than `none`, a site key, a secret key and the per-flow switch.
     ///
     /// `verify_url_override` replaces the provider endpoint; production passes
-    /// `None` and tests point it at a local mock.
+    /// `None` and tests point it at a local mock. `base_host` is the hostname
+    /// the instance is served under, used to check the `hostname` a provider
+    /// reports back.
     pub fn from_settings(
         settings: &Settings,
         flow: CaptchaFlow,
         verify_url_override: Option<&str>,
+        base_host: &str,
     ) -> Self {
         let enabled_for_flow = match flow {
             CaptchaFlow::Register => settings.captcha_on_register(),
@@ -235,15 +266,17 @@ impl CaptchaGuard {
             return Self::disabled();
         }
 
-        let verify_url = match verify_url_override {
-            Some(url) => url.to_string(),
-            None => provider.verify_url().to_string(),
+        let (verify_url, allow_plaintext) = match verify_url_override {
+            Some(url) => (url.to_string(), true),
+            None => (provider.verify_url().to_string(), false),
         };
         Self {
             provider,
             site_key,
             secret_key,
             verify_url,
+            base_host: base_host.to_string(),
+            allow_plaintext,
         }
     }
 
@@ -254,12 +287,16 @@ impl CaptchaGuard {
         site_key: &str,
         secret_key: &str,
         verify_url: &str,
+        base_host: &str,
     ) -> Self {
         Self {
             provider,
             site_key: site_key.to_string(),
             secret_key: secret_key.to_string(),
             verify_url: verify_url.to_string(),
+            base_host: base_host.to_string(),
+            // `new` is the test/advanced entry point: it may point anywhere.
+            allow_plaintext: true,
         }
     }
 
@@ -270,6 +307,8 @@ impl CaptchaGuard {
             site_key: String::new(),
             secret_key: String::new(),
             verify_url: String::new(),
+            base_host: String::new(),
+            allow_plaintext: true,
         }
     }
 
@@ -289,6 +328,19 @@ impl CaptchaGuard {
         &self.site_key
     }
 
+    /// Token of the configured provider, falling back to the other field so a
+    /// stale value in the form cannot cause a needless rejection.
+    pub fn submitted_token<'a>(
+        &self,
+        turnstile: Option<&'a str>,
+        recaptcha: Option<&'a str>,
+    ) -> Option<&'a str> {
+        match self.provider {
+            CaptchaProvider::Recaptcha => recaptcha.or(turnstile),
+            _ => turnstile.or(recaptcha),
+        }
+    }
+
     /// Widget markup data, or `None` when the flow is not protected.
     pub fn widget(&self, lang: Lang) -> Option<CaptchaWidget> {
         if !self.enabled() {
@@ -300,11 +352,14 @@ impl CaptchaGuard {
     /// Verify a submitted token. A disabled guard always succeeds.
     ///
     /// `client_ip` is forwarded as `remoteip` when known; the provider API
-    /// accepts requests without it.
+    /// accepts requests without it. `request_host` is the `Host` header of the
+    /// request being checked, compared against the `hostname` the provider
+    /// reports.
     pub async fn verify(
         &self,
         token: Option<&str>,
         client_ip: Option<IpAddr>,
+        request_host: Option<&str>,
     ) -> Result<(), CaptchaError> {
         if !self.enabled() {
             return Ok(());
@@ -319,13 +374,31 @@ impl CaptchaGuard {
             secret: self.secret_key.clone(),
             response: token.to_string(),
             remote_ip: client_ip.map(|ip| ip.to_string()),
+            allow_plaintext: self.allow_plaintext,
         };
         let provider = self.provider.as_str();
 
+        // Each verification occupies a blocking thread, so the number in flight
+        // is bounded. A saturated limiter fails closed instead of queueing: the
+        // alternative is an unbounded pile of waiting requests.
+        let _permit = match VERIFY_PERMITS.try_acquire() {
+            Ok(permit) => permit,
+            Err(_) => {
+                tracing::warn!(provider, "captcha verification is saturated");
+                return Err(CaptchaError::Unavailable);
+            }
+        };
+
         // `ureq` is blocking: keep it off the async runtime.
         match tokio::task::spawn_blocking(move || request.send()).await {
-            Ok(Ok(true)) => Ok(()),
-            Ok(Ok(false)) => {
+            Ok(Ok(outcome)) if outcome.success => {
+                if self.hostname_allowed(outcome.hostname.as_deref(), request_host) {
+                    Ok(())
+                } else {
+                    Err(CaptchaError::Rejected)
+                }
+            }
+            Ok(Ok(_)) => {
                 tracing::warn!(provider, "captcha token rejected by the provider");
                 Err(CaptchaError::Rejected)
             }
@@ -340,33 +413,126 @@ impl CaptchaGuard {
             }
         }
     }
+
+    /// Check the `hostname` a provider reports against the request and the
+    /// instance hostname.
+    ///
+    /// A missing or empty field passes: not every provider always returns it.
+    /// A present value must match either the `Host` of this request or
+    /// `base_host` — an instance may legitimately be reachable under several
+    /// names (the short domain and the application domain), so `base_host`
+    /// alone would reject valid traffic. When neither candidate is available the
+    /// check is skipped with a warning rather than locking everyone out.
+    fn hostname_allowed(&self, hostname: Option<&str>, request_host: Option<&str>) -> bool {
+        let provider = self.provider.as_str();
+        let Some(reported) = hostname.map(normalize_host).filter(|h| !h.is_empty()) else {
+            return true;
+        };
+
+        let candidates: Vec<String> = [
+            request_host.map(normalize_host),
+            Some(normalize_host(&self.base_host)),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|host| !host.is_empty())
+        .collect();
+        if candidates.is_empty() {
+            tracing::warn!(
+                provider,
+                hostname = %reported,
+                "cannot check the reported hostname: neither the request Host nor base_host is known"
+            );
+            return true;
+        }
+
+        if candidates.iter().any(|host| host == &reported) {
+            return true;
+        }
+        tracing::warn!(
+            provider,
+            hostname = %reported,
+            host = request_host.unwrap_or_default(),
+            "captcha token was issued for a different hostname"
+        );
+        false
+    }
 }
 
-/// Pick the token out of a submitted form, whichever provider field carries it.
-pub fn submitted_token<'a>(
-    turnstile: Option<&'a str>,
-    recaptcha: Option<&'a str>,
-) -> Option<&'a str> {
-    turnstile.or(recaptcha)
+/// Normalise a hostname for comparison: trimmed, lower case, no port and no
+/// trailing dot. IPv6 literals keep their address without the brackets.
+pub fn normalize_host(value: &str) -> String {
+    let value = value.trim().to_ascii_lowercase();
+    // `Host: [::1]:8080`
+    let value = match value.strip_prefix('[') {
+        Some(rest) => match rest.split_once(']') {
+            Some((address, _)) => address.to_string(),
+            None => value,
+        },
+        None => value,
+    };
+    // `Host: s.example.com:8443` — a bare IPv6 address keeps its colons.
+    let value = match value.rsplit_once(':') {
+        Some((host, port))
+            if !host.contains(':')
+                && !port.is_empty()
+                && port.chars().all(|c| c.is_ascii_digit()) =>
+        {
+            host.to_string()
+        }
+        _ => value,
+    };
+    value.trim_end_matches('.').to_string()
+}
+
+/// What a `siteverify` answer told us.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct SiteverifyOutcome {
+    /// Value of the `success` field. Anything but a JSON `true` is a rejection,
+    /// including the string `"true"` some mocks like to send.
+    success: bool,
+    /// Value of the `hostname` field, when the provider reported one.
+    hostname: Option<String>,
+}
+
+impl SiteverifyOutcome {
+    fn parse(body: &str) -> Result<Self, String> {
+        let parsed: serde_json::Value =
+            serde_json::from_str(body).map_err(|err| format!("invalid siteverify JSON: {err}"))?;
+        Ok(Self {
+            success: parsed
+                .get("success")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            hostname: parsed
+                .get("hostname")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+        })
+    }
 }
 
 /// One blocking `siteverify` call.
-#[derive(Debug)]
 struct SiteverifyRequest {
     url: String,
     secret: String,
     response: String,
     remote_ip: Option<String>,
+    /// Test endpoints may be plain HTTP; see [`CaptchaGuard::allow_plaintext`].
+    allow_plaintext: bool,
 }
 
 impl SiteverifyRequest {
-    /// `Ok(true)` when the provider confirmed the token, `Ok(false)` when it
-    /// explicitly rejected it, `Err(reason)` when the answer is unusable.
-    fn send(&self) -> Result<bool, String> {
-        let agent = ureq::builder()
-            .timeout(VERIFY_TIMEOUT)
-            .timeout_connect(VERIFY_TIMEOUT)
-            .build();
+    /// `Ok(outcome)` when the provider answered, `Err(reason)` when the answer
+    /// is unusable.
+    fn send(&self) -> Result<SiteverifyOutcome, String> {
+        // One shared agent keeps the connection pool (and therefore TLS
+        // handshakes) warm; see `agent`.
+        let agent = if self.allow_plaintext {
+            plaintext_agent()
+        } else {
+            agent()
+        };
 
         let mut form: Vec<(&str, &str)> = vec![
             ("secret", self.secret.as_str()),
@@ -386,8 +552,8 @@ impl SiteverifyRequest {
             }
         };
 
-        // `ureq` only reports `>= 400` as an error, so a redirect that could not
-        // be followed would otherwise slip through as a success.
+        // `redirects(0)` on the agent turns a 3xx into `Error::Status`, but a
+        // 1xx/3xx without a body could still arrive here, so check the code.
         let status = response.status();
         if !(200..300).contains(&status) {
             return Err(format!("siteverify returned HTTP {status}"));
@@ -396,14 +562,48 @@ impl SiteverifyRequest {
         let body = response
             .into_string()
             .map_err(|err| format!("cannot read the siteverify response: {err}"))?;
-        let parsed: serde_json::Value =
-            serde_json::from_str(&body).map_err(|err| format!("invalid siteverify JSON: {err}"))?;
-        Ok(parsed
-            .get("success")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false))
+        SiteverifyOutcome::parse(&body)
     }
 }
+
+/// Shared agent for the provider endpoints.
+///
+/// Reusing one agent keeps the connection pool — and therefore the TLS
+/// handshake — warm between verifications.
+fn agent() -> &'static ureq::Agent {
+    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    AGENT.get_or_init(|| build_agent(false))
+}
+
+/// Test only: an agent that also accepts plain HTTP, so the suite can point the
+/// guard at a local mock. `Config::captcha_verify_url` is never read from the
+/// environment, so production always uses [`agent`].
+fn plaintext_agent() -> &'static ureq::Agent {
+    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    AGENT.get_or_init(|| build_agent(true))
+}
+
+fn build_agent(allow_plaintext: bool) -> ureq::Agent {
+    ureq::builder()
+        // Overall deadline; note that DNS resolution is not interruptible, see
+        // the module documentation.
+        .timeout(VERIFY_TIMEOUT)
+        .timeout_connect(VERIFY_TIMEOUT)
+        // Following a redirect would hand the secret to another host.
+        .redirects(0)
+        .https_only(!allow_plaintext)
+        .build()
+}
+
+/// Maximum number of `siteverify` calls in flight at once.
+///
+/// Each one occupies a blocking thread, so the ceiling keeps a burst of
+/// submissions from exhausting the blocking pool. The per-flow rate limiters
+/// bound how quickly the queue can fill.
+const MAX_CONCURRENT_VERIFICATIONS: usize = 8;
+
+static VERIFY_PERMITS: tokio::sync::Semaphore =
+    tokio::sync::Semaphore::const_new(MAX_CONCURRENT_VERIFICATIONS);
 
 #[cfg(test)]
 mod tests {
@@ -479,6 +679,7 @@ mod tests {
             "site",
             "secret",
             TURNSTILE_VERIFY_URL,
+            "s.example.com",
         );
         assert!(complete.enabled());
 
@@ -488,15 +689,29 @@ mod tests {
                 "site",
                 "secret",
                 TURNSTILE_VERIFY_URL,
+                "s.example.com",
             ),
             CaptchaGuard::new(
                 CaptchaProvider::Turnstile,
                 "",
                 "secret",
                 TURNSTILE_VERIFY_URL,
+                "s.example.com",
             ),
-            CaptchaGuard::new(CaptchaProvider::Turnstile, "site", "", TURNSTILE_VERIFY_URL),
-            CaptchaGuard::new(CaptchaProvider::Turnstile, "site", "secret", ""),
+            CaptchaGuard::new(
+                CaptchaProvider::Turnstile,
+                "site",
+                "",
+                TURNSTILE_VERIFY_URL,
+                "s.example.com",
+            ),
+            CaptchaGuard::new(
+                CaptchaProvider::Turnstile,
+                "site",
+                "secret",
+                "",
+                "s.example.com",
+            ),
         ] {
             assert!(!incomplete.enabled());
         }
@@ -504,11 +719,108 @@ mod tests {
         assert!(CaptchaGuard::disabled().widget(Lang::En).is_none());
     }
 
+    #[test]
+    fn the_debug_output_never_contains_the_secret() {
+        let guard = CaptchaGuard::new(
+            CaptchaProvider::Turnstile,
+            "public-site-key",
+            "super-secret-value",
+            TURNSTILE_VERIFY_URL,
+            "s.example.com",
+        );
+        let printed = format!("{guard:?}");
+        assert!(!printed.contains("super-secret-value"), "{printed}");
+        assert!(printed.contains(REDACTED), "{printed}");
+        assert!(printed.contains("public-site-key"), "{printed}");
+    }
+
+    #[test]
+    fn the_token_field_of_the_configured_provider_wins() {
+        let turnstile = CaptchaGuard::new(
+            CaptchaProvider::Turnstile,
+            "site",
+            "secret",
+            TURNSTILE_VERIFY_URL,
+            "s.example.com",
+        );
+        assert_eq!(
+            turnstile.submitted_token(Some("cf"), Some("g")),
+            Some("cf"),
+            "the configured provider is tried first"
+        );
+        assert_eq!(turnstile.submitted_token(None, Some("g")), Some("g"));
+        assert_eq!(turnstile.submitted_token(Some("cf"), None), Some("cf"));
+        assert_eq!(turnstile.submitted_token(None, None), None);
+
+        let recaptcha = CaptchaGuard::new(
+            CaptchaProvider::Recaptcha,
+            "site",
+            "secret",
+            RECAPTCHA_VERIFY_URL,
+            "s.example.com",
+        );
+        assert_eq!(recaptcha.submitted_token(Some("cf"), Some("g")), Some("g"));
+        assert_eq!(recaptcha.submitted_token(Some("cf"), None), Some("cf"));
+        assert_eq!(recaptcha.submitted_token(None, None), None);
+    }
+
+    #[test]
+    fn normalises_hostnames() {
+        assert_eq!(normalize_host(" S.Example.COM. "), "s.example.com");
+        assert_eq!(normalize_host("s.example.com:8443"), "s.example.com");
+        assert_eq!(normalize_host("[::1]:8080"), "::1");
+        assert_eq!(normalize_host("::1"), "::1");
+        assert_eq!(normalize_host("localhost:8080"), "localhost");
+        assert_eq!(normalize_host(""), "");
+    }
+
+    #[test]
+    fn checks_the_hostname_reported_by_the_provider() {
+        let guard = CaptchaGuard::new(
+            CaptchaProvider::Turnstile,
+            "site",
+            "secret",
+            TURNSTILE_VERIFY_URL,
+            "app.example.com",
+        );
+
+        // A provider that does not report one is not rejected.
+        assert!(guard.hostname_allowed(None, Some("s.example.com")));
+        assert!(guard.hostname_allowed(Some(""), Some("s.example.com")));
+        assert!(guard.hostname_allowed(Some("   "), Some("s.example.com")));
+
+        // Either the host of this request or the configured base host is
+        // accepted, so an instance served under two names keeps working.
+        assert!(guard.hostname_allowed(Some("s.example.com"), Some("s.example.com")));
+        assert!(guard.hostname_allowed(Some("app.example.com"), Some("s.example.com")));
+
+        // Case, port and a trailing dot are normalised away on both sides.
+        assert!(guard.hostname_allowed(Some("S.Example.COM."), Some("s.example.com:8443")));
+
+        // Somebody else's hostname is refused.
+        assert!(!guard.hostname_allowed(Some("evil.example"), Some("s.example.com")));
+        assert!(!guard.hostname_allowed(Some("s.example.com.evil.example"), Some("s.example.com")));
+
+        // With no candidate at all the check is skipped rather than locking
+        // every visitor out.
+        let homeless = CaptchaGuard::new(
+            CaptchaProvider::Turnstile,
+            "site",
+            "secret",
+            TURNSTILE_VERIFY_URL,
+            "",
+        );
+        assert!(homeless.hostname_allowed(Some("evil.example"), None));
+    }
+
     #[tokio::test]
     async fn a_disabled_guard_accepts_anything() {
         let guard = CaptchaGuard::disabled();
-        assert!(guard.verify(None, None).await.is_ok());
-        assert!(guard.verify(Some("garbage"), None).await.is_ok());
+        assert!(guard.verify(None, None, None).await.is_ok());
+        assert!(guard
+            .verify(Some("garbage"), None, Some("s.example.com"))
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -518,10 +830,14 @@ mod tests {
             "site",
             "secret",
             "http://127.0.0.1:1/siteverify",
+            "s.example.com",
         );
-        assert_eq!(guard.verify(None, None).await, Err(CaptchaError::Missing));
         assert_eq!(
-            guard.verify(Some("   "), None).await,
+            guard.verify(None, None, None).await,
+            Err(CaptchaError::Missing)
+        );
+        assert_eq!(
+            guard.verify(Some("   "), None, None).await,
             Err(CaptchaError::Missing)
         );
     }
@@ -579,13 +895,17 @@ mod tests {
             secret: "the-secret".into(),
             response: "the-token".into(),
             remote_ip: Some("203.0.113.9".into()),
+            // The mock speaks plain HTTP on loopback.
+            allow_plaintext: true,
         }
     }
 
     #[test]
     fn posts_the_token_and_reads_success() {
         let (url, server) = raw_server("200 OK", "{\"success\":true}");
-        assert!(request(url).send().expect("verified"));
+        let outcome = request(url).send().expect("verified");
+        assert!(outcome.success);
+        assert_eq!(outcome.hostname, None);
 
         let raw = server.join().expect("server thread");
         assert!(raw.contains("POST /siteverify"));
@@ -595,25 +915,49 @@ mod tests {
     }
 
     #[test]
+    fn reads_the_reported_hostname() {
+        let (url, server) = raw_server(
+            "200 OK",
+            "{\"success\":true,\"hostname\":\"s.example.com\"}",
+        );
+        let outcome = request(url).send().expect("verified");
+        assert!(outcome.success);
+        assert_eq!(outcome.hostname.as_deref(), Some("s.example.com"));
+        server.join().expect("server thread");
+    }
+
+    #[test]
     fn omits_remoteip_when_the_client_is_unknown() {
         let (url, server) = raw_server("200 OK", "{\"success\":true}");
         let mut request = request(url);
         request.remote_ip = None;
-        assert!(request.send().expect("verified"));
+        assert!(request.send().expect("verified").success);
         assert!(!server.join().expect("server thread").contains("remoteip"));
     }
 
     #[test]
     fn a_false_success_is_not_verified() {
         let (url, server) = raw_server("200 OK", "{\"success\":false}");
-        assert!(!request(url).send().expect("answered"));
+        assert!(!request(url).send().expect("answered").success);
         server.join().expect("server thread");
     }
 
     #[test]
     fn a_missing_success_field_is_not_verified() {
         let (url, server) = raw_server("200 OK", "{\"error-codes\":[\"nope\"]}");
-        assert!(!request(url).send().expect("answered"));
+        assert!(!request(url).send().expect("answered").success);
+        server.join().expect("server thread");
+    }
+
+    #[test]
+    fn a_non_boolean_success_is_not_verified() {
+        // `"true"` is a string, not a boolean: only a JSON `true` counts.
+        let (url, server) = raw_server("200 OK", "{\"success\":\"true\"}");
+        assert!(!request(url).send().expect("answered").success);
+        server.join().expect("server thread");
+
+        let (url, server) = raw_server("200 OK", "{\"success\":1}");
+        assert!(!request(url).send().expect("answered").success);
         server.join().expect("server thread");
     }
 
@@ -629,6 +973,37 @@ mod tests {
     }
 
     #[test]
+    fn a_redirect_is_not_followed() {
+        // A redirect could send the secret to another host, so `redirects(0)`
+        // turns it into a hard failure.
+        let (url, server) = raw_server("302 Found", "");
+        assert!(request(url).send().is_err());
+        server.join().expect("server thread");
+    }
+
+    #[test]
+    fn an_empty_body_fails() {
+        let (url, server) = raw_server("204 No Content", "");
+        assert!(request(url).send().is_err());
+        server.join().expect("server thread");
+
+        let (url, server) = raw_server("200 OK", "");
+        assert!(request(url).send().is_err());
+        server.join().expect("server thread");
+    }
+
+    #[test]
+    fn the_production_agent_refuses_plain_http() {
+        // `https_only` rejects the scheme before a connection is made, so the
+        // accept thread is deliberately left detached instead of joined.
+        let (url, _server) = raw_server("200 OK", "{\"success\":true}");
+        let mut request = request(url);
+        request.allow_plaintext = false;
+        let error = request.send().expect_err("plain http must be refused");
+        assert!(error.contains("siteverify request failed"), "{error}");
+    }
+
+    #[test]
     fn an_unreachable_provider_fails() {
         // Port 1 is not listening; the connection is refused immediately.
         let request = SiteverifyRequest {
@@ -636,6 +1011,7 @@ mod tests {
             secret: "s".into(),
             response: "t".into(),
             remote_ip: None,
+            allow_plaintext: true,
         };
         assert!(request.send().is_err());
     }
