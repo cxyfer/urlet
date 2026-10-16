@@ -28,6 +28,24 @@ pub fn get(headers: &HeaderMap, name: &str) -> Option<String> {
     None
 }
 
+/// Read every cookie pair from the request headers.
+pub fn get_all(headers: &HeaderMap) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    for header in headers.get_all(axum::http::header::COOKIE) {
+        let Ok(raw) = header.to_str() else { continue };
+        for pair in raw.split(';') {
+            let pair = pair.trim();
+            if let Some((key, value)) = pair.split_once('=') {
+                let key = key.trim();
+                if !key.is_empty() {
+                    pairs.push((key.to_string(), value.trim().to_string()));
+                }
+            }
+        }
+    }
+    pairs
+}
+
 /// Name of the unlock cookie for a slug.
 pub fn unlock_cookie_name(slug: &str) -> String {
     format!("{UNLOCK_PREFIX}{slug}")
@@ -93,6 +111,16 @@ mod tests {
         let cleared = clear(SESSION_COOKIE, false);
         assert!(cleared.contains("Max-Age=0"));
         assert!(!cleared.contains("Secure"));
+    }
+
+    #[test]
+    fn lists_every_cookie_pair() {
+        let headers = headers("theme=dark; uwurls_session=xyz; broken");
+        let pairs = get_all(&headers);
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs[0], ("theme".to_string(), "dark".to_string()));
+        assert_eq!(pairs[1], ("uwurls_session".to_string(), "xyz".to_string()));
+        assert!(get_all(&HeaderMap::new()).is_empty());
     }
 
     #[test]

@@ -2,6 +2,8 @@
 
 pub mod audit;
 pub mod auth;
+pub mod chart;
+pub mod click;
 pub mod cookies;
 pub mod password;
 pub mod ratelimit;
@@ -10,4 +12,6 @@ pub mod settings;
 pub mod slug;
 pub mod target;
 pub mod time;
+pub mod ua;
+pub mod unlock;
 pub mod urls;

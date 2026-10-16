@@ -4,6 +4,7 @@
 //! inline. Queries use the runtime API (no compile time `DATABASE_URL` needed).
 
 pub mod audit;
+pub mod clicks;
 pub mod domains;
 pub mod invites;
 pub mod login_attempts;

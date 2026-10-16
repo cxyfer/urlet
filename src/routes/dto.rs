@@ -196,6 +196,90 @@ impl From<&TagWithCount> for TagDto {
     }
 }
 
+/// Summary numbers for one link or one account.
+#[derive(Debug, Clone, Serialize)]
+pub struct StatsSummaryDto {
+    pub total_clicks: i64,
+    /// Clicks that were not classified as automated traffic.
+    pub human_clicks: i64,
+    pub unique_clicks: i64,
+    pub bot_clicks: i64,
+    pub first_click_at: Option<String>,
+    pub last_click_at: Option<String>,
+}
+
+/// One day of the trend chart.
+#[derive(Debug, Clone, Serialize)]
+pub struct DailyPointDto {
+    pub day: String,
+    pub clicks: i64,
+    pub unique_clicks: i64,
+    pub bot_clicks: i64,
+}
+
+impl DailyPointDto {
+    pub fn human_clicks(&self) -> i64 {
+        (self.clicks - self.bot_clicks).max(0)
+    }
+}
+
+/// A label/count pair (referrer, device, browser, OS).
+#[derive(Debug, Clone, Serialize)]
+pub struct DimensionDto {
+    pub label: String,
+    pub count: i64,
+}
+
+/// One recorded click. Deliberately free of IP and visitor hashes.
+#[derive(Debug, Clone, Serialize)]
+pub struct ClickDto {
+    pub clicked_at: String,
+    pub referrer_host: Option<String>,
+    pub country_code: Option<String>,
+    pub device_type: Option<String>,
+    pub browser: Option<String>,
+    pub os: Option<String>,
+    pub is_bot: bool,
+    pub is_unique: bool,
+    pub password_protected: bool,
+}
+
+/// Full statistics payload for one link.
+#[derive(Debug, Clone, Serialize)]
+pub struct UrlStatsDto {
+    pub url: UrlDto,
+    pub summary: StatsSummaryDto,
+    pub daily: Vec<DailyPointDto>,
+    pub referrers: Vec<DimensionDto>,
+    pub devices: Vec<DimensionDto>,
+    pub browsers: Vec<DimensionDto>,
+    pub operating_systems: Vec<DimensionDto>,
+}
+
+/// Account level overview used by the dashboard.
+#[derive(Debug, Clone, Serialize)]
+pub struct OverviewDto {
+    pub links: i64,
+    pub active_links: i64,
+    pub expired_links: i64,
+    pub total_clicks: i64,
+    pub unique_clicks: i64,
+    pub bot_clicks: i64,
+    pub clicks_7d: i64,
+    pub clicks_30d: i64,
+    pub daily: Vec<DailyPointDto>,
+    pub top_links: Vec<TopLinkDto>,
+}
+
+/// Best performing link.
+#[derive(Debug, Clone, Serialize)]
+pub struct TopLinkDto {
+    pub id: i64,
+    pub slug: String,
+    pub target_url: String,
+    pub click_count: i64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

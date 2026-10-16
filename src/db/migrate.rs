@@ -11,8 +11,10 @@ use crate::error::{AppError, Result};
 use crate::services::time::now_iso;
 
 /// Ordered list of migrations. Append only — never edit an applied file.
-pub const MIGRATIONS: &[(&str, &str)] =
-    &[("0001_init", include_str!("../../migrations/0001_init.sql"))];
+pub const MIGRATIONS: &[(&str, &str)] = &[
+    ("0001_init", include_str!("../../migrations/0001_init.sql")),
+    ("0002_clicks_indexes", include_str!("../../migrations/0002_clicks_indexes.sql")),
+];
 
 /// Apply all pending migrations.
 pub async fn run(pool: &SqlitePool) -> Result<()> {

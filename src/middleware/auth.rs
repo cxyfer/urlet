@@ -45,18 +45,34 @@ impl CurrentUser {
 #[derive(Debug, Clone)]
 pub struct MaybeUser(pub Option<CurrentUser>);
 
-/// Client metadata useful for rate limiting and audit trails.
+/// Client metadata useful for rate limiting, audit trails and analytics.
 #[derive(Debug, Clone, Default)]
 pub struct ClientInfo {
     pub ip_hash: Option<String>,
     pub user_agent: Option<String>,
+    pub referrer: Option<String>,
+    pub cookies: Vec<(String, String)>,
     pub secure: bool,
+    /// `true` when the request body is JSON (drives JSON vs HTML responses).
+    pub json_body: bool,
+    /// `true` when the client explicitly prefers JSON.
+    pub accepts_json: bool,
 }
 
 impl ClientInfo {
     /// Key fragment identifying the caller for rate limiting.
     pub fn limiter_key(&self) -> String {
         self.ip_hash.clone().unwrap_or_else(|| "unknown".to_string())
+    }
+
+    /// Value of a request cookie.
+    pub fn cookie(&self, name: &str) -> Option<&str> {
+        self.cookies.iter().find(|(key, _)| key == name).map(|(_, value)| value.as_str())
+    }
+
+    /// Should the response be JSON rather than HTML?
+    pub fn wants_json(&self) -> bool {
+        self.json_body || self.accepts_json
     }
 }
 
@@ -144,18 +160,38 @@ impl FromRequestParts<AppState> for ClientInfo {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
+        let header_value = |name: axum::http::HeaderName| {
+            parts
+                .headers
+                .get(name)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string)
+        };
+
         Ok(ClientInfo {
             ip_hash: crate::middleware::hashed_client_ip_parts(
                 &parts.headers,
                 &parts.extensions,
                 &state.config,
             ),
-            user_agent: parts
-                .headers
-                .get(axum::http::header::USER_AGENT)
-                .and_then(|value| value.to_str().ok())
-                .map(|value| value.chars().take(255).collect()),
+            user_agent: header_value(axum::http::header::USER_AGENT)
+                .map(|value| value.chars().take(512).collect()),
+            referrer: header_value(axum::http::header::REFERER)
+                .map(|value| value.chars().take(512).collect()),
+            cookies: cookies::get_all(&parts.headers),
             secure: crate::middleware::is_secure_request(&parts.headers, &state.config),
+            json_body: parts
+                .headers
+                .get(axum::http::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .map(|value| value.to_ascii_lowercase().contains("json"))
+                .unwrap_or(false),
+            accepts_json: parts
+                .headers
+                .get(axum::http::header::ACCEPT)
+                .and_then(|value| value.to_str().ok())
+                .map(|value| value.contains("application/json"))
+                .unwrap_or(false),
         })
     }
 }
