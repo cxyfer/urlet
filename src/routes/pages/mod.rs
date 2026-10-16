@@ -185,6 +185,24 @@ pub fn encode(value: &str) -> String {
     out
 }
 
+/// Percent encode a `Location` target.
+///
+/// `Location` is defined as a URI reference, so anything outside printable
+/// ASCII is encoded: browsers cope with raw UTF-8, intermediaries need not.
+/// The ASCII range — including the path and query separators — is left alone so
+/// ordinary redirects stay readable (`/app/account`, not `%2Fapp%2Faccount`).
+pub fn encode_location(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.as_bytes() {
+        if (0x21..=0x7e).contains(byte) {
+            out.push(*byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
 /// Build the pagination control for a listing.
 pub fn page_links(
     base: &str,
@@ -366,9 +384,11 @@ pub async fn lang_switch(
     let target = safe_next(query.next.as_deref()).unwrap_or_else(|| "/app".to_string());
 
     let mut response = StatusCode::FOUND.into_response();
-    if let Ok(value) = HeaderValue::from_str(&target) {
-        response.headers_mut().insert(header::LOCATION, value);
-    }
+    // The fallback keeps the response a usable redirect even if encoding ever
+    // produced a value the header rejects.
+    let location = HeaderValue::from_str(&encode_location(&target))
+        .unwrap_or_else(|_| HeaderValue::from_static("/app"));
+    response.headers_mut().insert(header::LOCATION, location);
 
     // Deliberately not `HttpOnly`: the value is read by CSS/JS if a theme ever
     // needs it, and it carries no secret.
@@ -435,6 +455,24 @@ mod tests {
             with_param("/app?q=x", "ok", "created"),
             "/app?q=x&ok=created"
         );
+    }
+
+    #[test]
+    fn location_targets_are_ascii_only() {
+        // Ordinary paths and queries stay readable.
+        assert_eq!(encode_location("/app/account"), "/app/account");
+        assert_eq!(
+            encode_location("/app/admin/users?page=2&q=a%20b"),
+            "/app/admin/users?page=2&q=a%20b"
+        );
+        // Non-ASCII and spaces are encoded: `Location` is a URI reference.
+        assert_eq!(encode_location("/日本"), "/%E6%97%A5%E6%9C%AC");
+        assert_eq!(
+            encode_location("/app/日本語"),
+            "/app/%E6%97%A5%E6%9C%AC%E8%AA%9E"
+        );
+        assert_eq!(encode_location("/a b"), "/a%20b");
+        assert!(encode_location("/日本").is_ascii());
     }
 
     #[test]
