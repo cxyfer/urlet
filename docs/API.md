@@ -70,12 +70,18 @@ ignored. See [Bot verification](#bot-verification).
 ### `POST /api/v1/auth/login`
 
 ```json
-{ "email": "user@example.com", "password": "..." }
+{ "email": "user@example.com", "password": "...", "captcha_token": "optional" }
 ```
 
 `200` → `{ "user": { ... } }` + `Set-Cookie`.
 Errors: `401` wrong credentials (the message is fixed and does not reveal whether the account
-exists), `403` account suspended, `429` rate limited.
+exists), `403` account suspended, `400` `captcha_failed` when bot verification is enabled for
+sign-in and rejects the request, `429` rate limited.
+
+`captcha_token` carries the token produced by the CAPTCHA widget on the web sign-in form. It is
+only checked when bot verification is enabled for sign-in (`captcha_on_login` /
+`UWURLS_CAPTCHA_ON_LOGIN`); otherwise the field is ignored. See
+[Bot verification](#bot-verification).
 
 ### `POST /api/v1/auth/logout`
 
@@ -314,10 +320,11 @@ cookie.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/app/lang/{code}?next=<path>` | Switch the UI language, then redirect back to `next` (or `/` when `next` is missing) |
+| GET | `/app/lang/{code}?next=<path>` | Switch the UI language, set the `uwurls_lang` cookie, then return `302` to `next` (or to `/app` when `next` is missing or not a same-site relative path) |
 
 `code` is one of `en`, `zh-Hant`, `zh-Hans`; `next` must be a same-site relative path.
-An unrecognized `code` falls back to English.
+An unrecognized `code` falls back to English (it is never an error), and a visitor without a
+cookie is negotiated from `Accept-Language` instead — a present cookie always wins.
 
 The language setting only affects rendered HTML. **JSON responses are always English** and
 never change with the selected language.
@@ -326,11 +333,12 @@ never change with the selected language.
 
 ## Bot verification
 
-uwurls can require a CAPTCHA on the two public forms that create state: the web registration
-form and the web create-short-link form. It is off by default and configured either through
-environment variables or in the admin UI under **Admin → Settings**; a non-empty environment
-variable overrides the admin setting. See the deployment guide for the variables and for how to
-obtain provider keys.
+uwurls can require a CAPTCHA on the three public forms that create state: the web registration
+form, the web sign-in form, and the web create-short-link form. The JSON API endpoints
+`POST /api/v1/auth/register` and `POST /api/v1/auth/login` accept the widget token in the optional
+`captcha_token` field. It is off by default and configured either through environment variables or
+in the admin UI under **Admin → Settings**; a non-empty environment variable overrides the admin
+setting. See the deployment guide for the variables and for how to obtain provider keys.
 
 | Provider | `provider` value | Widget |
 |----------|------------------|--------|
@@ -339,8 +347,8 @@ obtain provider keys.
 | Google reCAPTCHA v2 | `recaptcha` | "I'm not a robot" checkbox |
 
 Verification applies to a form only when all four conditions hold: the provider is not `none`,
-the site key is non-empty, the secret key is non-empty, and the matching per-form switch is
-`true`.
+the site key is non-empty, the secret key is non-empty, and the matching per-form switch
+(`captcha_on_register`, `captcha_on_login` or `captcha_on_create`) is `true`.
 
 Failure is **closed**: a missing, malformed, expired or already-used token — including a timeout
 or any non-2xx response from the provider — rejects the submission.
@@ -348,8 +356,10 @@ or any non-2xx response from the provider — rejects the submission.
 | Surface | Verification |
 |---------|--------------|
 | Web registration form (`POST /app/register`) | Applies when enabled for registration |
+| Web sign-in form (`POST /app/login`) | Applies when enabled for sign-in |
 | Web create-short-link form (`POST /app/urls`) | Applies when enabled for link creation |
 | `POST /api/v1/auth/register` | Applies when enabled for registration; send the widget token in `captcha_token`; failure returns `400` with `error.code = "captcha_failed"` |
+| `POST /api/v1/auth/login` | Applies when enabled for sign-in; send the widget token in `captcha_token`; failure returns `400` with `error.code = "captcha_failed"` |
 | `POST /api/v1/urls` | **Not applied** — it authenticates with an API token or session cookie |
 
 ---
@@ -382,7 +392,10 @@ request fails with `409`).
 Editable setting keys: `site_name`, `registration_mode` (`open`/`invite`/`closed`),
 `default_slug_length` (4–16), `max_urls_per_user` (0 = unlimited),
 `default_redirect_type` (301/302/307/308), `analytics_enabled`,
-`click_retention_days` (0 = keep forever).
+`click_retention_days` (0 = keep forever), plus the bot verification keys
+`captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`,
+`captcha_on_login` and `captcha_on_create`. The secret key is write-only: it is never returned in
+plaintext, and submitting it empty keeps the stored value.
 
 ---
 

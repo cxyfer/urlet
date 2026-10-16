@@ -68,11 +68,16 @@
 ### `POST /api/v1/auth/login`
 
 ```json
-{ "email": "user@example.com", "password": "..." }
+{ "email": "user@example.com", "password": "...", "captcha_token": "可選" }
 ```
 
 `200` → `{ "user": { ... } }` + `Set-Cookie`。
-錯誤：`401` 帳密錯誤（訊息固定，不洩漏帳號是否存在）、`403` 帳號停權、`429` 速率限制。
+錯誤：`401` 帳密錯誤（訊息固定，不洩漏帳號是否存在）、`403` 帳號停權、
+`400` `captcha_failed`（已為登入流程啟用防機器人驗證且驗證未通過時）、`429` 速率限制。
+
+`captcha_token` 是網頁登入表單上驗證元件的 token，只在登入流程啟用防機器人驗證時檢查
+（`captcha_on_login` / `UWURLS_CAPTCHA_ON_LOGIN`），否則會忽略此欄位。
+詳見[防機器人驗證](#防機器人驗證)。
 
 ### `POST /api/v1/auth/logout`
 
@@ -302,10 +307,11 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 | 方法 | 路徑 | 說明 |
 |------|------|------|
-| GET | `/app/lang/{code}?next=<path>` | 切換介面語言，之後轉回 `next`（未帶 `next` 時回到 `/`） |
+| GET | `/app/lang/{code}?next=<path>` | 切換介面語言、設定 `uwurls_lang` cookie，接著回 `302` 轉往 `next`（未帶 `next` 或不是同站相對路徑時轉往 `/app`） |
 
 `code` 為 `en`、`zh-Hant`、`zh-Hans` 之一；`next` 必須是同站的相對路徑。
-無法辨識的 `code` 會退回英文。
+無法辨識的 `code` 會退回英文（不會回錯誤）；未帶 cookie 的訪客則依 `Accept-Language`
+協商，只要帶了 cookie 一律以 cookie 為準。
 
 語言設定只影響渲染出的 HTML。**API 的 JSON 回應一律英文**，不受語言設定影響。
 
@@ -313,9 +319,11 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 ## 防機器人驗證
 
-uwurls 可以要求兩個會產生資料的公開表單通過防機器人驗證：網頁註冊表單與網頁建立短網址表單。
-預設關閉，可透過環境變數設定，也可在管理後台 **Admin → Settings** 設定；
-非空的環境變數會覆蓋後台設定。變數與金鑰申請方式請見部署指南。
+uwurls 可以要求三個會產生資料的公開表單通過防機器人驗證：網頁註冊表單、網頁登入表單與
+網頁建立短網址表單。JSON API 的 `POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`
+則以選填欄位 `captcha_token` 接收驗證元件的權杖。預設關閉，可透過環境變數設定，
+也可在管理後台 **Admin → Settings** 設定；非空的環境變數會覆蓋後台設定。
+變數與金鑰申請方式請見部署指南。
 
 | 供應商 | `provider` 值 | 驗證元件 |
 |--------|---------------|----------|
@@ -324,7 +332,8 @@ uwurls 可以要求兩個會產生資料的公開表單通過防機器人驗證�
 | Google reCAPTCHA v2 | `recaptcha` | 「我不是機器人」核取方塊 |
 
 四個條件都成立才會對某個表單啟用驗證：provider 不是 `none`、site key 非空、
-secret key 非空，以及該表單對應的開關為 `true`。
+secret key 非空，以及該表單對應的開關（`captcha_on_register`、`captcha_on_login`
+或 `captcha_on_create`）為 `true`。
 
 驗證失敗一律**拒絕**（fail closed）：token 缺少、格式錯誤、逾期或已使用過，
 以及逾時或供應商回應非 2xx，都會拒絕該次提交。
@@ -332,8 +341,10 @@ secret key 非空，以及該表單對應的開關為 `true`。
 | 套用位置 | 是否驗證 |
 |----------|----------|
 | 網頁註冊表單（`POST /app/register`） | 註冊流程啟用時套用 |
+| 網頁登入表單（`POST /app/login`） | 登入流程啟用時套用 |
 | 網頁建立短網址表單（`POST /app/urls`） | 建立流程啟用時套用 |
 | `POST /api/v1/auth/register` | 註冊流程啟用時套用；以 `captcha_token` 傳入驗證元件的 token；失敗回 `400` 且 `error.code = "captcha_failed"` |
+| `POST /api/v1/auth/login` | 登入流程啟用時套用；以 `captcha_token` 傳入驗證元件的 token；失敗回 `400` 且 `error.code = "captcha_failed"` |
 | `POST /api/v1/urls` | **不套用**，以 API Token 或 Session Cookie 認證 |
 
 ---
@@ -365,7 +376,10 @@ secret key 非空，以及該表單對應的開關為 `true`。
 可編輯的設定鍵：`site_name`、`registration_mode`（`open`/`invite`/`closed`）、
 `default_slug_length`（4–16）、`max_urls_per_user`（0 = 無限）、
 `default_redirect_type`（301/302/307/308）、`analytics_enabled`、
-`click_retention_days`（0 = 永久保留）。
+`click_retention_days`（0 = 永久保留），以及防機器人驗證的
+`captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、
+`captcha_on_login`、`captcha_on_create`。secret key 為唯寫：永不回傳明文，
+留白送出表示維持已儲存的值。
 
 ---
 
