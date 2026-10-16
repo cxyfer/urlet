@@ -96,7 +96,7 @@ check "GET /health returns 200" "200" "$(curl -s -o /dev/null -w '%{http_code}' 
 contains "health reports the database" '"database":"ok"' "$(curl -s "$BASE/health")"
 check "GET /assets/app.css returns 200" "200" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/assets/app.css")"
 check "GET /favicon.ico returns 200" "200" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/favicon.ico")"
-check "GET / renders the landing page" "200" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/")"
+check "GET / renders the landing page" "200 1" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/") $(curl -s "$BASE/" | grep -c 'landing-hero')"
 check "security headers are present" "nosniff" \
     "$(curl -sI "$BASE/health" | tr -d '\r' | awk -F': ' '/^x-content-type-options/{print $2}')"
 check "the healthcheck subcommand works" "0" \

@@ -68,13 +68,13 @@
     });
 
     /* Carry the current path into the language switcher so the visitor stays on
-       the page they were reading. Without JS the links still work and land on
-       the dashboard. */
+       the page they were reading — including the landing page at `/`. Without
+       JS the links still work and land on the dashboard. */
     document.querySelectorAll("[data-lang-switcher] a").forEach(function (link) {
         var href = link.getAttribute("href");
         if (!href || href.indexOf("next=") !== -1) { return; }
         var next = window.location.pathname + window.location.search;
-        if (!next || next === "/") { return; }
+        if (!next) { return; }
         link.setAttribute("href", href + "?next=" + encodeURIComponent(next));
     });
 

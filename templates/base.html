@@ -6,6 +6,7 @@
     <title>{% block title %}{{ site_name }}{% endblock %}</title>
     <link rel="stylesheet" href="/assets/app.css">
     <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+    {% block head %}{% endblock %}
 </head>
 <body>
 {% block topbar %}{% endblock %}

@@ -489,5 +489,6 @@
   "landing.feature.operations.title": "Admin console and API",
   "landing.feature.operations.body": "Manage users, links, invites and instance settings, issue API tokens for scripts and review the audit log.",
   "landing.feature.platform.title": "Multilingual and lightweight",
-  "landing.feature.platform.body": "English, Traditional and Simplified Chinese out of the box, shipped as one small container with no frontend build step."
+  "landing.feature.platform.body": "English, Traditional and Simplified Chinese out of the box, shipped as one small container with no frontend build step.",
+  "landing.meta.description": "A lightweight, self-hosted, multi-user URL shortener with custom slugs, password protection, expiry and click limits, tags, analytics and an admin console."
 }

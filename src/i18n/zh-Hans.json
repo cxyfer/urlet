@@ -489,5 +489,6 @@
   "landing.feature.operations.title": "管理后台与 API",
   "landing.feature.operations.body": "管理用户、链接、邀请码和实例设置，签发 API Token 供脚本使用，并查看审计记录。",
   "landing.feature.platform.title": "多语言且轻量",
-  "landing.feature.platform.body": "内置英文、繁体中文和简体中文界面，以单一轻量容器部署，无需前端构建流程。"
+  "landing.feature.platform.body": "内置英文、繁体中文和简体中文界面，以单一轻量容器部署，无需前端构建流程。",
+  "landing.meta.description": "轻量、可自建的多用户短链接服务，支持自定义 Slug、密码保护、到期与点击上限、标签、点击分析和管理后台。"
 }
