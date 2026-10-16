@@ -372,15 +372,16 @@ impl AdminContext<'_> {
     }
 
     /// Update several settings at once.
+    ///
+    /// The batch is validated as a whole and stored in one transaction: an
+    /// invalid value must not leave the instance half reconfigured.
     pub async fn update_settings(&self, values: &[(String, String)]) -> Result<()> {
         if values.is_empty() {
             return Err(AppError::bad_request("no settings were submitted"));
         }
-        for (key, value) in values {
-            self.settings
-                .update(self.pool, key, value, Some(self.actor.id))
-                .await?;
-        }
+        self.settings
+            .update_many(self.pool, values, Some(self.actor.id))
+            .await?;
         let keys: Vec<&str> = values.iter().map(|(key, _)| key.as_str()).collect();
         Audit::new(action::ADMIN_SETTINGS_UPDATED)
             .actor(self.actor.id, &self.actor.role)

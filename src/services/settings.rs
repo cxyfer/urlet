@@ -280,18 +280,46 @@ impl Settings {
         value: &str,
         actor: Option<i64>,
     ) -> Result<()> {
-        if !EDITABLE_KEYS.contains(&key) {
-            return Err(AppError::validation(
-                "key",
-                format!("unknown setting: {key}"),
-            ));
-        }
-        let normalized = validate_value(key, value)?;
-        db::settings::set(pool, key, &normalized, actor)
+        self.update_many(pool, &[(key.to_string(), value.to_string())], actor)
             .await
-            .map_err(|err| AppError::internal(format!("cannot save setting: {err}")))?;
-        if let Ok(mut values) = self.values.write() {
-            values.insert(key.to_string(), normalized);
+    }
+
+    /// Validate and persist a batch of settings, then refresh the cache.
+    ///
+    /// Every value is validated *before* anything is written, and the writes run
+    /// in one transaction: a rejected value must never leave the instance half
+    /// reconfigured. That matters most for bot protection, where a new provider
+    /// saved without its keys would lock every visitor out.
+    pub async fn update_many(
+        &self,
+        pool: &SqlitePool,
+        values: &[(String, String)],
+        actor: Option<i64>,
+    ) -> Result<()> {
+        if values.is_empty() {
+            return Err(AppError::bad_request("no settings were submitted"));
+        }
+
+        // Phase 1: nothing is stored until every pair is known to be valid.
+        let mut normalized: Vec<(String, String)> = Vec::with_capacity(values.len());
+        for (key, value) in values {
+            if !EDITABLE_KEYS.contains(&key.as_str()) {
+                return Err(AppError::validation(
+                    "key",
+                    format!("unknown setting: {key}"),
+                ));
+            }
+            normalized.push((key.clone(), validate_value(key, value)?));
+        }
+
+        // Phase 2: all or nothing.
+        db::settings::set_many(pool, &normalized, actor)
+            .await
+            .map_err(|err| AppError::internal(format!("cannot save settings: {err}")))?;
+        if let Ok(mut cache) = self.values.write() {
+            for (key, value) in normalized {
+                cache.insert(key, value);
+            }
         }
         Ok(())
     }
