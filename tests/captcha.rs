@@ -1382,3 +1382,42 @@ async fn live_turnstile_endpoint_answers_over_tls() {
         "the provider must answer over TLS; Unavailable means the TLS stack is broken"
     );
 }
+
+/// The browser has to be allowed to load the widget, otherwise it can never
+/// produce a token and the fail-closed server rejects every sign-in.
+#[tokio::test]
+async fn the_content_security_policy_allows_the_provider_widget() {
+    // Without bot protection the policy stays closed: no external origin.
+    let app = TestApp::spawn().await;
+    let page = app.get("/app/login").await;
+    let csp = page
+        .header("content-security-policy")
+        .expect("every response carries a CSP")
+        .to_string();
+    assert!(csp.contains("script-src 'self';"), "{csp}");
+    assert!(!csp.contains("https://"), "{csp}");
+
+    // With Turnstile, the script, the iframe and the challenge API all live on
+    // the provider origin and must be named explicitly.
+    let (app, mock) = app_with(Reply::Success, Flows::ALL).await;
+    let page = app.get("/app/register").await;
+    let csp = page
+        .header("content-security-policy")
+        .expect("every response carries a CSP")
+        .to_string();
+    assert!(
+        csp.contains("script-src 'self' https://challenges.cloudflare.com;"),
+        "the widget script would be blocked: {csp}"
+    );
+    assert!(
+        csp.contains("frame-src 'self' https://challenges.cloudflare.com;"),
+        "the widget iframe would be blocked: {csp}"
+    );
+    assert!(
+        csp.contains("connect-src 'self' https://challenges.cloudflare.com;"),
+        "the challenge request would be blocked: {csp}"
+    );
+    // The widget is actually rendered, so the policy is not moot.
+    assert!(page.body.contains("cf-turnstile"));
+    drop(mock);
+}
