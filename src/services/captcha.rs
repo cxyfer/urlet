@@ -962,6 +962,16 @@ mod tests {
         assert!(validate_allowed_hostnames(&"x".repeat(MAX_HOSTNAME_LEN + 1)).is_err());
     }
 
+    #[tokio::test]
+    async fn a_disabled_guard_accepts_anything() {
+        let guard = CaptchaGuard::disabled();
+        assert!(guard.verify(None, None).await.is_ok());
+        assert!(guard.verify(Some("garbage"), None).await.is_ok());
+        // Nothing is rendered either, and no hostname is ever checked.
+        assert!(guard.widget(Lang::En).is_none());
+        assert!(guard.hostname_allowed(Some("evil.example")));
+    }
+
     /// The queue is bounded, but it does wait: a slot is preferred over an
     /// instant rejection, and the deadline keeps the wait finite.
     ///
