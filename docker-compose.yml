@@ -41,6 +41,10 @@ services:
       UWURLS_CAPTCHA_ON_REGISTER: ${UWURLS_CAPTCHA_ON_REGISTER:-}
       UWURLS_CAPTCHA_ON_LOGIN: ${UWURLS_CAPTCHA_ON_LOGIN:-}
       UWURLS_CAPTCHA_ON_CREATE: ${UWURLS_CAPTCHA_ON_CREATE:-}
+      # Extra hostnames the provider may report back; the host of UWURLS_BASE_URL
+      # is always accepted, so leave this empty unless the instance is served
+      # under more than one name.
+      UWURLS_CAPTCHA_ALLOWED_HOSTNAMES: ${UWURLS_CAPTCHA_ALLOWED_HOSTNAMES:-}
       UWURLS_SECURE_COOKIES: ${UWURLS_SECURE_COOKIES:-false}
       UWURLS_TRUST_PROXY: ${UWURLS_TRUST_PROXY:-false}
       UWURLS_SESSION_TTL_HOURS: ${UWURLS_SESSION_TTL_HOURS:-168}
