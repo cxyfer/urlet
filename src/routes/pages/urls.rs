@@ -413,7 +413,15 @@ pub fn error_code(err: &AppError) -> &'static str {
         AppError::Forbidden(message) if message.contains("limit") => "quota",
         AppError::Forbidden(_) => "denied",
         AppError::RateLimited { .. } => "rate_limited",
-        AppError::Validation { .. } | AppError::BadRequest(_) => "invalid",
+        AppError::Validation { field, .. } => match *field {
+            "expires_at" => "expiry",
+            "slug" => "slug",
+            "target_url" => "target",
+            "password" => "password_rules",
+            "tags" => "tags",
+            _ => "invalid",
+        },
+        AppError::BadRequest(_) => "invalid",
         AppError::Unauthorized(_) => "password",
         AppError::Gone(_) | AppError::Internal(_) => "invalid",
     }

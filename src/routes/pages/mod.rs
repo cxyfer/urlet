@@ -96,6 +96,11 @@ pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
             "registration" => "Registration is not available.",
             "invite" => "That invite code is not valid.",
             "csrf" => "The form expired. Please try again.",
+            "expiry" => "The expiry must be a future date and time, for example 2030-01-31 12:00.",
+            "slug" => "That slug is not allowed: use letters, digits, - and _ only (and avoid reserved paths).",
+            "target" => "The destination must be a valid http or https URL.",
+            "password_rules" => "The link password must be between 4 and 128 characters.",
+            "tags" => "Tags must be comma separated, at most 10 per link and 32 characters each.",
             _ => return None,
         };
         return Some(Flash {
@@ -382,6 +387,14 @@ mod tests {
             "error"
         );
         assert!(flash_from_query(Some("<script>"), None).is_none());
+        assert_eq!(
+            flash_from_query(None, Some("expiry")).expect("flash").kind,
+            "error"
+        );
+        assert!(flash_from_query(None, Some("expiry"))
+            .expect("flash")
+            .message
+            .contains("future"));
         assert!(flash_from_query(None, None).is_none());
     }
 }

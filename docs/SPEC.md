@@ -163,7 +163,7 @@ MaxMind/GeoIP、React/Node 工具鏈。
 | ID | 需求 | 說明 |
 |----|------|------|
 | FR-EXP-1 | 時間過期 | `expires_at`（ISO-8601 UTC）。到達後短網址失效，回 **410 Gone** 頁面 |
-| FR-EXP-2 | 點擊上限 | `max_clicks` 非空且 `click_count >= max_clicks` 時失效，回 410 |
+| FR-EXP-2 | 點擊上限 | `max_clicks` 非空且 `click_count >= max_clicks` 時失效，回 410。計數器由背景 writer 非同步累加，因此並發請求可能略微超出上限（已知取捨：換取轉址路徑零寫入阻塞） |
 | FR-EXP-3 | 統計可見性 | 使用者介面以「已過期 / 已達上限」徽章標示，並可一鍵延長或提高上限 |
 | FR-EXP-4 | 過期不刪除 | 過期僅影響轉址，資料與統計保留 |
 | FR-EXP-5 | 已刪除 | `deleted_at` 非空 → 404（與不存在無法區分） |
