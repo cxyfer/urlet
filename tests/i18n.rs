@@ -364,8 +364,10 @@ async fn only_html_carries_the_language_marker() {
         );
     }
 
-    // A redirect is not language dependent either.
-    let redirect = app.send(get_with("/", Some("zh-TW"), None)).await;
+    // A redirect is not language dependent either. `/app` without a session is
+    // used rather than `/`: the landing-page branch turns the root into a real
+    // page (200), and this assertion is about redirects.
+    let redirect = app.send(get_with("/app", Some("zh-TW"), None)).await;
     assert_eq!(redirect.status, StatusCode::SEE_OTHER);
     assert!(redirect.header("content-language").is_none());
 }
