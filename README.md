@@ -75,9 +75,11 @@ uwurls version | help
 |---|---|
 | ![URL detail](docs/screenshots/url-detail.png) | ![Admin](docs/screenshots/admin-overview.png) |
 
-| 密碼保護頁 | 深色模式 |
+| 密碼保護頁 | 已過期連結（可一鍵延長） |
 |---|---|
-| ![Password page](docs/screenshots/password-page.png) | ![Dark](docs/screenshots/dark.png) |
+| ![Password page](docs/screenshots/password-page.png) | ![Expired link](docs/screenshots/expired-link.png) |
+
+深色模式：![Dark mode](docs/screenshots/dark.png)
 
 ## 技術選擇
 

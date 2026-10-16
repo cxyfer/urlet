@@ -40,6 +40,11 @@ with sync_playwright() as playwright:
     page.wait_for_timeout(300)
     page.screenshot(path=f"{OUT}/05-url-detail.png", full_page=True)
 
+    # The expired link shows the one-click extend actions.
+    page.goto(f"{BASE}/app/urls/5")
+    page.wait_for_timeout(300)
+    page.screenshot(path=f"{OUT}/18-expired-detail.png", full_page=True)
+
     page.goto(f"{BASE}/app/account")
     page.wait_for_timeout(250)
     page.screenshot(path=f"{OUT}/06-account.png", full_page=True)
