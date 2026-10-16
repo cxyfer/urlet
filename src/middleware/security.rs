@@ -24,10 +24,12 @@ fn captcha_origins(
             &["https://challenges.cloudflare.com"],
         ),
         // `api.js` comes from google.com and pulls its assets from gstatic.com;
-        // the checkbox itself lives in a google.com iframe.
+        // the checkbox is normally a google.com iframe, but reCAPTCHA may serve
+        // the challenge from recaptcha.google.com instead — Google's CSP
+        // guidance names both frame origins.
         CaptchaProvider::Recaptcha => (
             &["https://www.google.com", "https://www.gstatic.com"],
-            &["https://www.google.com"],
+            &["https://www.google.com", "https://recaptcha.google.com"],
         ),
         CaptchaProvider::None => (&[], &[]),
     }
@@ -151,9 +153,10 @@ mod tests {
             csp.contains("connect-src 'self' https://www.google.com https://www.gstatic.com;"),
             "{csp}"
         );
-        // The checkbox iframe is on google.com only.
+        // The checkbox iframe may come from either google.com origin, as
+        // Google's CSP guidance requires.
         assert!(
-            csp.contains("frame-src 'self' https://www.google.com;"),
+            csp.contains("frame-src 'self' https://www.google.com https://recaptcha.google.com;"),
             "{csp}"
         );
         assert!(!csp.contains("cloudflare"), "{csp}");
