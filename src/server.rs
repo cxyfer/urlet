@@ -25,6 +25,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/assets/app.js", get(routes::assets::js))
         .route("/assets/favicon.svg", get(routes::assets::favicon))
         .route("/favicon.ico", get(routes::assets::favicon_ico))
+        .route("/", get(routes::pages::home))
+        .nest("/app", routes::pages::router())
         .route("/{slug}", get(routes::redirect::redirect))
         .route("/{slug}/unlock", axum::routing::post(routes::redirect::unlock_link))
         .nest("/api/v1", routes::api::router())

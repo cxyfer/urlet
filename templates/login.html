@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Sign in — {{ site_name }}{% endblock %}
+
+{% block body %}
+<div class="wrap-narrow">
+    <h1 class="center">{{ site_name }}</h1>
+    <p class="center muted">Sign in to manage your short links.</p>
+
+    <div class="card">
+        {% match notice %}
+        {% when Some with (message) %}
+        <div class="alert alert-ok">{{ message }}</div>
+        {% when None %}
+        {% endmatch %}
+
+        {% match error %}
+        {% when Some with (message) %}
+        <div class="alert alert-error">{{ message }}</div>
+        {% when None %}
+        {% endmatch %}
+
+        <form method="post" action="/app/login">
+            <input type="hidden" name="next" value="{{ next }}">
+            <div class="field">
+                <label class="label" for="email">Email</label>
+                <input class="input" type="email" id="email" name="email" value="{{ email }}"
+                       autocomplete="username" required autofocus>
+            </div>
+            <div class="field">
+                <label class="label" for="password">Password</label>
+                <input class="input" type="password" id="password" name="password"
+                       autocomplete="current-password" required>
+            </div>
+            <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+        </form>
+
+        <hr>
+        <p class="center small muted">
+            No account yet? <a href="/app/register">Create one</a>
+        </p>
+    </div>
+</div>
+{% endblock %}

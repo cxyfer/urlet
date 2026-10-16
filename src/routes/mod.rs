@@ -4,11 +4,13 @@ pub mod api;
 pub mod api_auth;
 pub mod api_stats;
 pub mod api_tags;
+pub mod api_tokens;
 pub mod api_urls;
 pub mod assets;
 pub mod dto;
 pub mod extract;
 pub mod health;
+pub mod pages;
 pub mod redirect;
 
 use crate::error::{ApiError, AppError};

@@ -3,7 +3,7 @@
 use axum::routing::{delete, get, post};
 use axum::Router;
 
-use crate::routes::{api_auth, api_not_found, api_stats, api_tags, api_urls};
+use crate::routes::{api_auth, api_not_found, api_stats, api_tags, api_tokens, api_urls};
 use crate::state::AppState;
 
 /// JSON API, version 1.
@@ -25,5 +25,8 @@ pub fn router() -> Router<AppState> {
         // tags
         .route("/tags", get(api_tags::list))
         .route("/tags/{id}", delete(api_tags::delete))
+        // api tokens
+        .route("/tokens", get(api_tokens::list).post(api_tokens::create))
+        .route("/tokens/{id}", delete(api_tokens::revoke))
         .fallback(api_not_found)
 }

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block body %}
+<div class="topbar">
+    <div class="topbar-inner">
+        <a class="brand" href="/app">{{ chrome.site_name }}<span>.</span></a>
+        <nav class="nav">
+            <a href="/app" {% if chrome.active == "dashboard" %}class="active"{% endif %}>Links</a>
+            <a href="/app/account" {% if chrome.active == "account" %}class="active"{% endif %}>Account</a>
+            {% if chrome.is_admin %}
+            <a href="/app/admin" {% if chrome.active == "admin" %}class="active"{% endif %}>Admin</a>
+            {% endif %}
+            <span class="muted small">{{ chrome.email }}</span>
+            <form method="post" action="/app/logout">
+                <button class="btn btn-ghost btn-sm" type="submit">Sign out</button>
+            </form>
+        </nav>
+    </div>
+</div>
+
+<main class="wrap">
+    {% match chrome.flash %}
+    {% when Some with (flash) %}
+    <div class="alert alert-{{ flash.kind }}" {% if flash.kind == "ok" %}data-auto-dismiss{% endif %}>
+        {{ flash.message }}
+    </div>
+    {% when None %}
+    {% endmatch %}
+
+    {% block content %}{% endblock %}
+</main>
+{% endblock %}

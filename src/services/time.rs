@@ -47,6 +47,14 @@ pub fn parse_flexible(input: &str) -> Option<OffsetDateTime> {
     if input.is_empty() {
         return None;
     }
+    // Accept "2030-01-02 03:04" as well as the canonical "2030-01-02T03:04:05Z".
+    let owned;
+    let input = if input.contains(' ') && !input.contains('T') {
+        owned = input.split_whitespace().collect::<Vec<_>>().join("T");
+        owned.as_str()
+    } else {
+        input
+    };
     if let Some(parsed) = parse_iso(input) {
         return Some(parsed);
     }
@@ -54,6 +62,12 @@ pub fn parse_flexible(input: &str) -> Option<OffsetDateTime> {
     const SECONDS: &[FormatItem<'static>] =
         format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]Z");
     if let Ok(parsed) = PrimitiveDateTime::parse(input, SECONDS) {
+        return Some(parsed.assume_utc());
+    }
+
+    const MINUTES: &[FormatItem<'static>] =
+        format_description!("[year]-[month]-[day]T[hour]:[minute]");
+    if let Ok(parsed) = PrimitiveDateTime::parse(input, MINUTES) {
         return Some(parsed.assume_utc());
     }
 
@@ -195,6 +209,8 @@ mod tests {
         assert!(parse_flexible("2030-01-02T03:04:05+08:00").is_some());
         assert!(parse_flexible("2030-01-02").is_some());
         assert!(parse_flexible(" 2030-01-02T03:04:05Z ").is_some());
+        assert!(parse_flexible("2030-01-02 03:04").is_some());
+        assert!(parse_flexible("2030-01-02T03:04").is_some());
         assert!(parse_flexible("tomorrow").is_none());
         assert!(parse_flexible("").is_none());
     }

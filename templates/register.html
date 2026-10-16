@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Create account — {{ site_name }}{% endblock %}
+
+{% block body %}
+<div class="wrap-narrow">
+    <h1 class="center">{{ site_name }}</h1>
+
+    <div class="card">
+        {% if !registration_open %}
+        <div class="alert alert-warn">
+            Registration is currently closed on this instance.
+        </div>
+        {% endif %}
+
+        {% match error %}
+        {% when Some with (message) %}
+        <div class="alert alert-error">{{ message }}</div>
+        {% when None %}
+        {% endmatch %}
+
+        {% if registration_open %}
+        <form method="post" action="/app/register">
+            <input type="hidden" name="next" value="{{ next }}">
+            <div class="field">
+                <label class="label" for="email">Email</label>
+                <input class="input" type="email" id="email" name="email" value="{{ email }}"
+                       autocomplete="username" required autofocus>
+            </div>
+            <div class="field">
+                <label class="label" for="display_name">Display name <span class="muted">(optional)</span></label>
+                <input class="input" type="text" id="display_name" name="display_name"
+                       value="{{ display_name }}" maxlength="60">
+            </div>
+            <div class="field">
+                <label class="label" for="password">Password</label>
+                <input class="input" type="password" id="password" name="password"
+                       autocomplete="new-password" minlength="8" required>
+                <span class="hint">At least 8 characters.</span>
+            </div>
+            {% if invite_required %}
+            <div class="field">
+                <label class="label" for="invite_code">Invite code</label>
+                <input class="input" type="text" id="invite_code" name="invite_code"
+                       value="{{ invite_code }}" required>
+                <span class="hint">This instance is invite only.</span>
+            </div>
+            {% endif %}
+            <button class="btn btn-primary btn-block" type="submit">Create account</button>
+        </form>
+        {% endif %}
+
+        <hr>
+        <p class="center small muted">
+            Already registered? <a href="/app/login">Sign in</a>
+        </p>
+    </div>
+</div>
+{% endblock %}

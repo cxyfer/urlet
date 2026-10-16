@@ -326,6 +326,24 @@ pub async fn count_for_user(pool: &SqlitePool, user_id: i64) -> Result<i64, sqlx
         .await
 }
 
+/// Live links of a user that are expired or have reached their click limit.
+pub async fn count_expired_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    now: &str,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM urls
+         WHERE user_id = ? AND deleted_at IS NULL
+           AND ((expires_at IS NOT NULL AND expires_at <= ?)
+                OR (max_clicks IS NOT NULL AND click_count >= max_clicks))",
+    )
+    .bind(user_id)
+    .bind(now)
+    .fetch_one(pool)
+    .await
+}
+
 /// Sort orders accepted by the listing endpoints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UrlSort {

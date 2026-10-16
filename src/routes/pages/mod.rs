@@ -1,0 +1,334 @@
+//! Server rendered HTML pages.
+//!
+//! Every page is rendered by Askama at request time; there is no frontend build
+//! step and no client side framework. Forms post to `POST` routes that redirect
+//! back with a short status code in the query string (`?ok=created`), which the
+//! page turns into a banner.
+
+pub mod account;
+pub mod auth;
+pub mod dashboard;
+pub mod urls;
+
+use axum::response::Redirect;
+use axum::routing::{get, post};
+use axum::Router;
+
+use crate::db::users::User;
+use crate::state::AppState;
+
+/// A banner shown at the top of a page.
+#[derive(Debug, Clone)]
+pub struct Flash {
+    pub kind: &'static str,
+    pub message: String,
+}
+
+/// Shared chrome (navigation, identity, flash) for authenticated pages.
+#[derive(Debug, Clone)]
+pub struct Chrome {
+    pub site_name: String,
+    pub email: String,
+    pub role: String,
+    pub is_admin: bool,
+    pub active: &'static str,
+    pub flash: Option<Flash>,
+}
+
+impl Chrome {
+    pub fn new(
+        state: &AppState,
+        user: &User,
+        active: &'static str,
+        flash: Option<Flash>,
+    ) -> Self {
+        Self {
+            site_name: state.settings.site_name(),
+            email: user.label().to_string(),
+            role: user.role.clone(),
+            is_admin: user.is_admin(),
+            active,
+            flash,
+        }
+    }
+}
+
+/// One entry of the pagination control.
+#[derive(Debug, Clone)]
+pub struct PageLink {
+    pub url: String,
+    pub label: String,
+    pub current: bool,
+}
+
+/// Translate `?ok=` / `?err=` codes into a banner. Unknown codes are ignored so
+/// the query string can never inject arbitrary text into a page.
+pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
+    if let Some(code) = ok {
+        let message = match code {
+            "created" => "Short link created.",
+            "updated" => "Changes saved.",
+            "deleted" => "Short link deleted.",
+            "profile" => "Profile updated.",
+            "password" => "Password changed. Other sessions were signed out.",
+            "session" => "Session signed out.",
+            "token_created" => "API token created.",
+            "token_revoked" => "API token revoked.",
+            "saved" => "Settings saved.",
+            "invite" => "Invite code created.",
+            "invite_revoked" => "Invite code revoked.",
+            "user" => "User updated.",
+            "user_deleted" => "User deleted.",
+            _ => return None,
+        };
+        return Some(Flash { kind: "ok", message: message.to_string() });
+    }
+
+    if let Some(code) = err {
+        let message = match code {
+            "invalid" => "Please check the highlighted values and try again.",
+            "conflict" => "That value is already taken.",
+            "not_found" => "That item no longer exists.",
+            "rate_limited" => "Too many attempts. Please wait a moment.",
+            "denied" => "You are not allowed to do that.",
+            "quota" => "You have reached your link limit.",
+            "password" => "The current password was incorrect.",
+            "login" => "Invalid email or password.",
+            "registration" => "Registration is not available.",
+            "invite" => "That invite code is not valid.",
+            "csrf" => "The form expired. Please try again.",
+            _ => return None,
+        };
+        return Some(Flash { kind: "error", message: message.to_string() });
+    }
+
+    None
+}
+
+/// Redirect back to a page with a success code.
+pub fn redirect_ok(path: &str, code: &str) -> Redirect {
+    Redirect::to(&with_param(path, "ok", code))
+}
+
+/// Redirect back to a page with an error code.
+pub fn redirect_err(path: &str, code: &str) -> Redirect {
+    Redirect::to(&with_param(path, "err", code))
+}
+
+/// Redirect to the login screen, remembering where the visitor wanted to go.
+pub fn redirect_to_login(next: Option<&str>) -> Redirect {
+    match safe_next(next) {
+        Some(next) => Redirect::to(&format!("/app/login?next={}", encode(&next))),
+        None => Redirect::to("/app/login"),
+    }
+}
+
+/// Only same-site relative paths are accepted as a post-login destination.
+pub fn safe_next(next: Option<&str>) -> Option<String> {
+    let next = next?.trim();
+    if next.starts_with('/') && !next.starts_with("//") && !next.contains("://") && next.len() < 512 {
+        Some(next.to_string())
+    } else {
+        None
+    }
+}
+
+/// Append a query parameter to a path, preserving existing ones.
+pub fn with_param(path: &str, key: &str, value: &str) -> String {
+    let separator = if path.contains('?') { '&' } else { '?' };
+    format!("{path}{separator}{key}={}", encode(value))
+}
+
+/// Build a query string from key/value pairs (values are percent encoded).
+pub fn query_string(params: &[(&str, String)]) -> String {
+    params
+        .iter()
+        .filter(|(_, value)| !value.is_empty())
+        .map(|(key, value)| format!("{}={}", encode(key), encode(value)))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+/// Percent encode everything that is unsafe inside a query value.
+pub fn encode(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+/// Build the pagination control for a listing.
+pub fn page_links(
+    base: &str,
+    params: &[(&str, String)],
+    page: i64,
+    total_pages: i64,
+) -> Vec<PageLink> {
+    let mut links = Vec::new();
+    let first = (page - 2).max(1);
+    let last = (page + 2).min(total_pages.max(1));
+
+    let build = |target: i64| {
+        let mut all = params.to_vec();
+        all.push(("page", target.to_string()));
+        let query = query_string(&all);
+        if query.is_empty() {
+            base.to_string()
+        } else {
+            format!("{base}?{query}")
+        }
+    };
+
+    if page > 1 {
+        links.push(PageLink { url: build(page - 1), label: "‹".to_string(), current: false });
+    }
+    for target in first..=last {
+        links.push(PageLink {
+            url: build(target),
+            label: target.to_string(),
+            current: target == page,
+        });
+    }
+    if page < total_pages {
+        links.push(PageLink { url: build(page + 1), label: "›".to_string(), current: false });
+    }
+    links
+}
+
+/// A short link prepared for rendering in a table or detail page.
+#[derive(Debug, Clone)]
+pub struct UrlRow {
+    pub id: i64,
+    pub slug: String,
+    pub short_url: String,
+    pub target_url: String,
+    pub target_display: String,
+    pub title: Option<String>,
+    pub tags: Vec<String>,
+    pub has_password: bool,
+    pub click_count: i64,
+    pub unique_click_count: i64,
+    pub max_clicks: Option<i64>,
+    pub expires_at: Option<String>,
+    pub expires_human: Option<String>,
+    pub created_human: String,
+    pub redirect_type: i64,
+    pub state: String,
+    pub state_class: &'static str,
+    pub state_label: &'static str,
+}
+
+impl UrlRow {
+    pub fn new(dto: &crate::routes::dto::UrlDto) -> Self {
+        let (state_class, state_label) = match dto.state.as_str() {
+            "active" => ("badge-ok", "Active"),
+            "expired" => ("badge-warn", "Expired"),
+            "limit_reached" => ("badge-warn", "Limit reached"),
+            "disabled" => ("badge-muted", "Disabled"),
+            _ => ("badge-muted", "Deleted"),
+        };
+        Self {
+            id: dto.id,
+            slug: dto.slug.clone(),
+            short_url: dto.short_url.clone(),
+            target_url: dto.target_url.clone(),
+            target_display: truncate(&dto.target_url, 72),
+            title: dto.title.clone(),
+            tags: dto.tags.clone(),
+            has_password: dto.has_password,
+            click_count: dto.click_count,
+            unique_click_count: dto.unique_click_count,
+            max_clicks: dto.max_clicks,
+            expires_at: dto.expires_at.clone(),
+            expires_human: dto.expires_in.clone(),
+            created_human: crate::services::time::humanize(&dto.created_at),
+            redirect_type: dto.redirect_type,
+            state: dto.state.clone(),
+            state_class,
+            state_label,
+        }
+    }
+}
+
+/// Truncate a string for display, appending an ellipsis when shortened.
+pub fn truncate(value: &str, max: usize) -> String {
+    if value.chars().count() <= max {
+        return value.to_string();
+    }
+    let mut out: String = value.chars().take(max.saturating_sub(1)).collect();
+    out.push('…');
+    out
+}
+
+/// `/app` router.
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route("/", get(dashboard::dashboard))
+        .route("/login", get(auth::login_page).post(auth::login_submit))
+        .route("/register", get(auth::register_page).post(auth::register_submit))
+        .route("/logout", post(auth::logout))
+        .route("/urls", post(urls::create))
+        .route("/urls/{id}", get(urls::detail).post(urls::update))
+        .route("/urls/{id}/delete", post(urls::delete))
+        .route("/account", get(account::page).post(account::update_profile))
+        .route("/account/password", post(account::change_password))
+        .route("/account/sessions/{id}/delete", post(account::revoke_session))
+        .route("/account/tokens", post(account::create_token))
+        .route("/account/tokens/{id}/delete", post(account::revoke_token))
+}
+
+/// `GET /` — send visitors to the dashboard (or the login screen).
+pub async fn home() -> Redirect {
+    Redirect::to("/app")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_relative_next_targets_are_allowed() {
+        assert_eq!(safe_next(Some("/app/urls/1")).as_deref(), Some("/app/urls/1"));
+        assert_eq!(safe_next(Some("//evil.example")), None);
+        assert_eq!(safe_next(Some("https://evil.example")), None);
+        assert_eq!(safe_next(Some("javascript:alert(1)")), None);
+        assert_eq!(safe_next(None), None);
+        assert_eq!(safe_next(Some(&"a".repeat(600))), None);
+    }
+
+    #[test]
+    fn encodes_query_values() {
+        assert_eq!(encode("promo & more"), "promo%20%26%20more");
+        assert_eq!(encode("safe-._~"), "safe-._~");
+        assert_eq!(query_string(&[("q", "a b".into()), ("empty", String::new())]), "q=a%20b");
+        assert_eq!(with_param("/app", "ok", "created"), "/app?ok=created");
+        assert_eq!(with_param("/app?q=x", "ok", "created"), "/app?q=x&ok=created");
+    }
+
+    #[test]
+    fn builds_pagination_links() {
+        let links = page_links("/app", &[("q", "term".to_string())], 2, 4);
+        assert_eq!(links.first().expect("prev").label, "‹");
+        assert_eq!(links.last().expect("next").label, "›");
+        assert_eq!(links.first().expect("prev").url, "/app?q=term&page=1");
+        assert!(links.iter().any(|link| link.current && link.label == "2"));
+        // A single page listing shows no navigation.
+        let single = page_links("/app", &[], 1, 1);
+        assert_eq!(single.len(), 1);
+        assert!(single[0].current);
+    }
+
+    #[test]
+    fn maps_known_flash_codes_only() {
+        assert_eq!(flash_from_query(Some("created"), None).expect("flash").kind, "ok");
+        assert_eq!(flash_from_query(None, Some("conflict")).expect("flash").kind, "error");
+        assert!(flash_from_query(Some("<script>"), None).is_none());
+        assert!(flash_from_query(None, None).is_none());
+    }
+}

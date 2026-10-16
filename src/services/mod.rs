@@ -12,6 +12,7 @@ pub mod settings;
 pub mod slug;
 pub mod target;
 pub mod time;
+pub mod tokens;
 pub mod ua;
 pub mod unlock;
 pub mod urls;

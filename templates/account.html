@@ -1,0 +1,153 @@
+{% extends "app_base.html" %}
+
+{% block title %}Account — {{ chrome.site_name }}{% endblock %}
+
+{% block content %}
+<h1 class="mt">Account</h1>
+
+<div class="grid grid-2 mt">
+    <div class="card">
+        <h2>Profile</h2>
+        <form method="post" action="/app/account">
+            <div class="field">
+                <label class="label" for="display_name">Display name</label>
+                <input class="input" type="text" id="display_name" name="display_name" maxlength="60"
+                       value="{% match user.display_name %}{% when Some with (name) %}{{ name }}{% when None %}{% endmatch %}">
+                <span class="hint">Shown in the navigation bar instead of your email.</span>
+            </div>
+            <button class="btn btn-primary" type="submit">Save profile</button>
+        </form>
+
+        <dl class="meta mt">
+            <dt>Email</dt><dd>{{ user.email }}</dd>
+            <dt>Role</dt><dd>{{ user.role }}</dd>
+            <dt>Status</dt><dd>{{ user.status }}</dd>
+            <dt>Created</dt><dd>{{ user.created_at }}</dd>
+        </dl>
+    </div>
+
+    <div class="card">
+        <h2>Change password</h2>
+        <form method="post" action="/app/account/password">
+            <div class="field">
+                <label class="label" for="current_password">Current password</label>
+                <input class="input" type="password" id="current_password" name="current_password"
+                       autocomplete="current-password" required>
+            </div>
+            <div class="field">
+                <label class="label" for="new_password">New password</label>
+                <input class="input" type="password" id="new_password" name="new_password"
+                       autocomplete="new-password" minlength="8" required>
+                <span class="hint">At least 8 characters. Other sessions are signed out.</span>
+            </div>
+            <button class="btn btn-primary" type="submit">Change password</button>
+        </form>
+    </div>
+</div>
+
+<div class="card card-flush mt">
+    <h2 style="padding: 1rem 1rem 0;">Active sessions</h2>
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr><th>Client</th><th>Signed in</th><th>Last seen</th><th>Expires</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for session in sessions %}
+                <tr>
+                    <td class="truncate">
+                        {{ session.agent }}
+                        {% if session.current %}<span class="badge badge-accent">this device</span>{% endif %}
+                    </td>
+                    <td class="small">{{ session.created }}</td>
+                    <td class="small">{{ session.last_seen }}</td>
+                    <td class="small">{{ session.expires }}</td>
+                    <td>
+                        <form method="post" action="/app/account/sessions/{{ session.id }}/delete">
+                            <button class="btn btn-sm btn-danger" type="submit"
+                                    data-confirm="Sign this session out?">Revoke</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card mt">
+    <h2>API tokens</h2>
+    <p class="muted small">
+        Use a token as <code>Authorization: Bearer &lt;token&gt;</code> against <code>/api/v1</code>.
+    </p>
+
+    {% match new_token %}
+    {% when Some with (token) %}
+    <div class="alert alert-info">
+        <strong>Copy this token now.</strong> It is shown only once.
+        <div class="copy-row mt">
+            <input class="input" id="new-token" type="text" value="{{ token }}" readonly>
+            <button class="btn" type="button" data-copy="#new-token">Copy</button>
+        </div>
+    </div>
+    {% when None %}
+    {% endmatch %}
+
+    <form method="post" action="/app/account/tokens" class="row">
+        <div class="field" style="flex: 1 1 220px; margin-bottom: 0;">
+            <label class="label" for="name">Token name</label>
+            <input class="input" type="text" id="name" name="name" maxlength="{{ max_name_len }}"
+                   placeholder="ci pipeline" required>
+        </div>
+        <div class="field" style="flex: 1 1 200px; margin-bottom: 0;">
+            <label class="label" for="expires_at">Expires at (UTC) <span class="muted">(optional)</span></label>
+            <input class="input" type="text" id="expires_at" name="expires_at" placeholder="2030-01-31 12:00">
+        </div>
+        <button class="btn btn-primary" type="submit">Create token</button>
+    </form>
+
+    {% if tokens.len() > 0 %}
+    <div class="table-wrap mt">
+        <table class="table">
+            <thead>
+                <tr><th>Name</th><th>Prefix</th><th>Created</th><th>Last used</th><th>Expires</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for token in tokens %}
+                <tr>
+                    <td>
+                        {{ token.name }}
+                        {% if !token.active %}<span class="badge badge-muted">inactive</span>{% endif %}
+                    </td>
+                    <td class="mono">{{ token.prefix }}…</td>
+                    <td class="small">{{ token.created }}</td>
+                    <td class="small">
+                        {% match token.last_used %}
+                        {% when Some with (value) %}{{ value }}
+                        {% when None %}<span class="muted">never</span>{% endmatch %}
+                    </td>
+                    <td class="small">
+                        {% match token.expires %}
+                        {% when Some with (value) %}{{ value }}
+                        {% when None %}<span class="muted">never</span>{% endmatch %}
+                    </td>
+                    <td>
+                        {% if token.active %}
+                        <form method="post" action="/app/account/tokens/{{ token.id }}/delete">
+                            <button class="btn btn-sm btn-danger" type="submit"
+                                    data-confirm="Revoke this token? Scripts using it will stop working.">
+                                Revoke
+                            </button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="muted small mt">No API tokens yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

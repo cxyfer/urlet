@@ -220,13 +220,31 @@ table.table tbody tr:hover { background: var(--surface-2); }
 .empty { padding: 2rem 1rem; text-align: center; color: var(--muted); }
 .pagination { display: flex; gap: .35rem; align-items: center; justify-content: center; padding: .75rem; flex-wrap: wrap; }
 .pagination .current { font-weight: 700; padding: .25rem .5rem; }
-.chart { width: 100%; height: 140px; display: block; }
+.chart {
+    width: 100%;
+    height: 140px;
+    display: block;
+    border-bottom: 1px solid var(--border);
+}
+.chart-axis {
+    display: flex;
+    justify-content: space-between;
+    gap: .75rem;
+    color: var(--muted);
+    font-size: .78rem;
+}
 .chart rect { fill: var(--accent); }
 .chart rect.alt { fill: var(--muted); opacity: .45; }
 .bar-list { display: flex; flex-direction: column; gap: .45rem; }
 .bar-row { display: grid; grid-template-columns: minmax(80px, 34%) 1fr auto; gap: .5rem; align-items: center; font-size: .88rem; }
-.bar-track { background: var(--surface-2); border-radius: 999px; height: .55rem; overflow: hidden; }
-.bar-fill { background: var(--accent); height: 100%; }
+.bar-track {
+    display: block;
+    background: var(--surface-2);
+    border-radius: 999px;
+    height: .55rem;
+    overflow: hidden;
+}
+.bar-fill { display: block; background: var(--accent); height: 100%; min-width: 2px; }
 details.advanced { border-top: 1px solid var(--border); margin-top: .5rem; padding-top: .5rem; }
 details.advanced summary { cursor: pointer; font-size: .88rem; color: var(--accent); }
 dl.meta { display: grid; grid-template-columns: max-content 1fr; gap: .3rem .9rem; margin: 0; font-size: .9rem; }
@@ -247,4 +265,6 @@ footer.site { max-width: 1080px; margin: 2rem auto 1rem; padding: 0 1rem; color:
     .nav { width: 100%; margin-left: 0; }
     .stat .stat-value { font-size: 1.35rem; }
     table.table th, table.table td { padding: .5rem; }
+    /* The middle legend would collide with the day labels on small screens. */
+    .chart-axis .hint { display: none; }
 }
