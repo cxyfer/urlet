@@ -31,13 +31,16 @@ services:
       UWURLS_ADMIN_EMAIL: ${UWURLS_ADMIN_EMAIL:-}
       UWURLS_ADMIN_PASSWORD: ${UWURLS_ADMIN_PASSWORD:-}
       UWURLS_REGISTRATION: ${UWURLS_REGISTRATION:-}
-      # Bot protection (Cloudflare Turnstile / Google reCAPTCHA).
-      UWURLS_CAPTCHA_PROVIDER: ${UWURLS_CAPTCHA_PROVIDER:-none}
+      # Bot protection (Cloudflare Turnstile / Google reCAPTCHA). The defaults
+      # are empty on purpose: a non-empty value overrides the settings table, so
+      # hard-coding `none`/`false` here would stop the admin panel from ever
+      # configuring the feature. Empty means "use the value stored in settings".
+      UWURLS_CAPTCHA_PROVIDER: ${UWURLS_CAPTCHA_PROVIDER:-}
       UWURLS_CAPTCHA_SITE_KEY: ${UWURLS_CAPTCHA_SITE_KEY:-}
       UWURLS_CAPTCHA_SECRET_KEY: ${UWURLS_CAPTCHA_SECRET_KEY:-}
-      UWURLS_CAPTCHA_ON_REGISTER: ${UWURLS_CAPTCHA_ON_REGISTER:-false}
-      UWURLS_CAPTCHA_ON_LOGIN: ${UWURLS_CAPTCHA_ON_LOGIN:-false}
-      UWURLS_CAPTCHA_ON_CREATE: ${UWURLS_CAPTCHA_ON_CREATE:-false}
+      UWURLS_CAPTCHA_ON_REGISTER: ${UWURLS_CAPTCHA_ON_REGISTER:-}
+      UWURLS_CAPTCHA_ON_LOGIN: ${UWURLS_CAPTCHA_ON_LOGIN:-}
+      UWURLS_CAPTCHA_ON_CREATE: ${UWURLS_CAPTCHA_ON_CREATE:-}
       UWURLS_SECURE_COOKIES: ${UWURLS_SECURE_COOKIES:-false}
       UWURLS_TRUST_PROXY: ${UWURLS_TRUST_PROXY:-false}
       UWURLS_SESSION_TTL_HOURS: ${UWURLS_SESSION_TTL_HOURS:-168}
