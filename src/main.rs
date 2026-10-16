@@ -197,7 +197,7 @@ ENVIRONMENT:
     UWURLS_CAPTCHA_ON_LOGIN
                           Protect the sign-in form (true | false)
     UWURLS_CAPTCHA_ON_CREATE
-                          Protect the link creation form (true | false)
+                          Protect link creation (browser sessions; true | false)
     UWURLS_SECURE_COOKIES Force the Secure cookie flag
     UWURLS_TRUST_PROXY    Honour X-Forwarded-For / X-Forwarded-Proto
     UWURLS_LOG            tracing filter (default info)
