@@ -44,6 +44,16 @@ with sync_playwright() as playwright:
     page.wait_for_timeout(250)
     page.screenshot(path=f"{OUT}/06-account.png", full_page=True)
 
+    for path, name in [
+        ("/app/admin", "12-admin-overview"),
+        ("/app/admin/users", "13-admin-users"),
+        ("/app/admin/urls", "14-admin-urls"),
+        ("/app/admin/invites", "15-admin-invites"),
+        ("/app/admin/settings", "16-admin-settings"),
+        ("/app/admin/audit", "17-admin-audit"),
+    ]:
+        shoot(page, path, name)
+
     shoot(page, "/deck", "07-password-page", full=False)
     shoot(page, "/archived", "08-expired-410", full=False)
     shoot(page, "/does-not-exist", "09-not-found-404", full=False)

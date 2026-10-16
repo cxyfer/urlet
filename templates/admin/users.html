@@ -1,0 +1,112 @@
+{% extends "app_base.html" %}
+
+{% block title %}Users — {{ site_name }}{% endblock %}
+
+{% block content %}
+{% include "admin/tabs.html" %}
+
+<div class="row between">
+    <h1>Users</h1>
+    <span class="muted small">{{ total }} accounts</span>
+</div>
+
+<form method="get" action="/app/admin/users" class="row mt">
+    <input class="input" type="search" name="q" value="{{ q }}" placeholder="Search email or name"
+           style="max-width: 240px;">
+    <select class="select" name="role" style="max-width: 140px;">
+        <option value="">Any role</option>
+        <option value="user" {% if role == "user" %}selected{% endif %}>User</option>
+        <option value="admin" {% if role == "admin" %}selected{% endif %}>Admin</option>
+    </select>
+    <select class="select" name="status" style="max-width: 160px;">
+        <option value="">Any status</option>
+        <option value="active" {% if status == "active" %}selected{% endif %}>Active</option>
+        <option value="suspended" {% if status == "suspended" %}selected{% endif %}>Suspended</option>
+    </select>
+    <button class="btn" type="submit">Filter</button>
+    <a class="btn btn-ghost" href="/app/admin/users">Reset</a>
+</form>
+
+<div class="card card-flush mt">
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Account</th><th>Role</th><th>Status</th><th>Links</th>
+                    <th>Created</th><th>Last login</th><th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td>
+                        <div>{{ user.email }}</div>
+                        {% match user.display_name %}
+                        {% when Some with (name) %}<div class="small muted">{{ name }}</div>
+                        {% when None %}{% endmatch %}
+                        {% if user.is_self %}<span class="badge badge-accent">you</span>{% endif %}
+                    </td>
+                    <td><span class="badge {% if user.role == "admin" %}badge-accent{% endif %}">{{ user.role }}</span></td>
+                    <td>
+                        <span class="badge {% if user.status == "active" %}badge-ok{% else %}badge-danger{% endif %}">
+                            {{ user.status }}
+                        </span>
+                    </td>
+                    <td>{{ user.link_count }}</td>
+                    <td class="small">{{ user.created }}</td>
+                    <td class="small">{{ user.last_login }}</td>
+                    <td>
+                        <details>
+                            <summary class="small">Manage</summary>
+                            <div class="stack mt" style="min-width: 240px;">
+                                <form method="post" action="/app/admin/users/{{ user.id }}" class="stack">
+                                    <div class="field" style="margin-bottom: .25rem;">
+                                        <label class="label">Role</label>
+                                        <select class="select" name="role">
+                                            <option value="user" {% if user.role == "user" %}selected{% endif %}>user</option>
+                                            <option value="admin" {% if user.role == "admin" %}selected{% endif %}>admin</option>
+                                        </select>
+                                    </div>
+                                    <div class="field" style="margin-bottom: .25rem;">
+                                        <label class="label">Status</label>
+                                        <select class="select" name="status">
+                                            <option value="active" {% if user.status == "active" %}selected{% endif %}>active</option>
+                                            <option value="suspended" {% if user.status == "suspended" %}selected{% endif %}>suspended</option>
+                                        </select>
+                                    </div>
+                                    <button class="btn btn-sm btn-primary" type="submit">Save</button>
+                                </form>
+                                <form method="post" action="/app/admin/users/{{ user.id }}/password" class="stack">
+                                    <div class="field" style="margin-bottom: .25rem;">
+                                        <label class="label">Reset password</label>
+                                        <input class="input" type="password" name="new_password" minlength="8"
+                                               placeholder="new password" required>
+                                    </div>
+                                    <button class="btn btn-sm" type="submit">Reset</button>
+                                </form>
+                                <form method="post" action="/app/admin/users/{{ user.id }}/delete">
+                                    <button class="btn btn-sm btn-danger" type="submit"
+                                            data-confirm="Delete this account and all of its links?">
+                                        Delete account
+                                    </button>
+                                </form>
+                            </div>
+                        </details>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        <span class="muted small">Page {{ page }} of {{ total_pages }}</span>
+        {% for link in links %}
+        {% if link.current %}<span class="current">{{ link.label }}</span>
+        {% else %}<a class="btn btn-sm" href="{{ link.url }}">{{ link.label }}</a>{% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

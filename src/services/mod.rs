@@ -1,5 +1,6 @@
 //! Shared services: crypto, slugs, analytics, rate limiting, formatting.
 
+pub mod admin;
 pub mod audit;
 pub mod auth;
 pub mod chart;

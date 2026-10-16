@@ -1,6 +1,7 @@
 //! HTTP routes.
 
 pub mod api;
+pub mod api_admin;
 pub mod api_auth;
 pub mod api_stats;
 pub mod api_tags;

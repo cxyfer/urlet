@@ -90,6 +90,83 @@ pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE deleted_at IS NULL").fetch_one(pool).await
 }
 
+/// Filters for the administrative user listing.
+#[derive(Debug, Clone, Default)]
+pub struct UserFilter {
+    pub search: Option<String>,
+    pub role: Option<String>,
+    pub status: Option<String>,
+}
+
+/// List users for the admin panel.
+pub async fn list(
+    pool: &SqlitePool,
+    filter: &UserFilter,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<User>, sqlx::Error> {
+    let search = filter.search.as_deref().map(crate::db::urls::like_pattern);
+    sqlx::query_as::<_, User>(&format!(
+        "{SELECT}
+         WHERE deleted_at IS NULL
+           AND (?1 IS NULL OR role = ?1)
+           AND (?2 IS NULL OR status = ?2)
+           AND (?3 IS NULL OR email LIKE ?3 ESCAPE '\\'
+                          OR IFNULL(display_name, '') LIKE ?3 ESCAPE '\\')
+         ORDER BY created_at DESC, id DESC
+         LIMIT ?4 OFFSET ?5"
+    ))
+    .bind(filter.role.as_deref())
+    .bind(filter.status.as_deref())
+    .bind(search.as_deref())
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+}
+
+/// Count users matching a filter.
+pub async fn count_filtered(pool: &SqlitePool, filter: &UserFilter) -> Result<i64, sqlx::Error> {
+    let search = filter.search.as_deref().map(crate::db::urls::like_pattern);
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM users
+         WHERE deleted_at IS NULL
+           AND (?1 IS NULL OR role = ?1)
+           AND (?2 IS NULL OR status = ?2)
+           AND (?3 IS NULL OR email LIKE ?3 ESCAPE '\\'
+                          OR IFNULL(display_name, '') LIKE ?3 ESCAPE '\\')",
+    )
+    .bind(filter.role.as_deref())
+    .bind(filter.status.as_deref())
+    .bind(search.as_deref())
+    .fetch_one(pool)
+    .await
+}
+
+/// Number of active administrators, optionally ignoring one account.
+pub async fn count_active_admins(
+    pool: &SqlitePool,
+    excluding: Option<i64>,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM users
+         WHERE role = 'admin' AND status = 'active' AND deleted_at IS NULL
+           AND (?1 IS NULL OR id <> ?1)",
+    )
+    .bind(excluding)
+    .fetch_one(pool)
+    .await
+}
+
+/// Total links per user, for the admin user table.
+pub async fn link_counts(pool: &SqlitePool) -> Result<Vec<(i64, i64)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT user_id, COUNT(*) FROM urls WHERE deleted_at IS NULL GROUP BY user_id",
+    )
+    .fetch_all(pool)
+    .await
+}
+
 /// Update the last successful login timestamp.
 pub async fn set_last_login(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?")

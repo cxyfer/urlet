@@ -231,6 +231,16 @@ pub fn patch_json_as(uri: &str, body: Value, cookie: &str) -> Request<Body> {
         .expect("request")
 }
 
+/// `PUT` with a JSON body, session cookie and same-origin header.
+pub fn put_json_as(uri: &str, body: Value, cookie: &str) -> Request<Body> {
+    base_request("PUT", uri)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, cookie)
+        .header(header::ORIGIN, "http://localhost:8080")
+        .body(Body::from(body.to_string()))
+        .expect("request")
+}
+
 /// `DELETE` with a session cookie and same-origin header.
 pub fn delete_as(uri: &str, cookie: &str) -> Request<Body> {
     base_request("DELETE", uri)

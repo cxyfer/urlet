@@ -56,6 +56,16 @@ for _ in $(seq 1 11); do curl -s -o /dev/null -A "$UA_MAC" "$BASE/webinar"; done
 curl -s -o /dev/null -A "Googlebot/2.1 (+http://www.google.com/bot.html)" "$BASE/docs"
 curl -s -o /dev/null -A "Mozilla/5.0 (compatible; Bingbot/2.0)" "$BASE/launch-2026"
 
+# A second account plus an invite code, so the admin pages have content.
+curl -s -o /dev/null -b "$DATA/cookies.txt" -X POST "$BASE/api/v1/urls" \
+    -H 'content-type: application/json' -H "origin: $BASE" \
+    -d '{"target_url":"https://partner.example.com/landing","slug":"partner","title":"Partner landing","tags":["partner"]}'
+curl -s -o /dev/null -X POST "$BASE/api/v1/auth/register" -H 'content-type: application/json' \
+    -d '{"email":"member@example.com","password":"password123","display_name":"Team Member"}'
+curl -s -o /dev/null -b "$DATA/cookies.txt" -X POST "$BASE/api/v1/admin/invites" \
+    -H 'content-type: application/json' -H "origin: $BASE" \
+    -d '{"note":"design team","max_uses":3,"expires_at":"2030-01-01"}'
+
 sleep 1
 
 python3 "$ROOT/scripts/screenshot.py" "$BASE" "$SHOTS"

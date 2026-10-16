@@ -1,0 +1,90 @@
+{% extends "app_base.html" %}
+
+{% block title %}Invites — {{ site_name }}{% endblock %}
+
+{% block content %}
+{% include "admin/tabs.html" %}
+
+<div class="row between">
+    <h1>Invite codes</h1>
+    <span class="badge {% if registration_mode == "invite" %}badge-accent{% endif %}">
+        registration: {{ registration_mode }}
+    </span>
+</div>
+
+{% if registration_mode != "invite" %}
+<div class="alert alert-info">
+    Registration is currently <strong>{{ registration_mode }}</strong>. Invite codes are only
+    required when the registration mode is set to <code>invite</code>.
+</div>
+{% endif %}
+
+{% match new_code %}
+{% when Some with (code) %}
+<div class="alert alert-info">
+    <strong>Copy this invite code now.</strong> It is shown only once.
+    <div class="copy-row mt">
+        <input class="input" id="new-invite" type="text" value="{{ code }}" readonly>
+        <button class="btn" type="button" data-copy="#new-invite">Copy</button>
+    </div>
+</div>
+{% when None %}
+{% endmatch %}
+
+<div class="card mt">
+    <h2>Create invite</h2>
+    <form method="post" action="/app/admin/invites" class="row">
+        <div class="field" style="flex: 2 1 220px; margin-bottom: 0;">
+            <label class="label" for="note">Note</label>
+            <input class="input" type="text" id="note" name="note" placeholder="for the design team">
+        </div>
+        <div class="field" style="flex: 0 1 130px; margin-bottom: 0;">
+            <label class="label" for="max_uses">Max uses</label>
+            <input class="input" type="number" id="max_uses" name="max_uses" min="1" value="1">
+        </div>
+        <div class="field" style="flex: 1 1 190px; margin-bottom: 0;">
+            <label class="label" for="expires_at">Expires at (UTC)</label>
+            <input class="input" type="text" id="expires_at" name="expires_at" placeholder="2030-01-31 12:00">
+        </div>
+        <button class="btn btn-primary" type="submit">Create</button>
+    </form>
+</div>
+
+<div class="card card-flush mt">
+    {% if invites.len() > 0 %}
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr><th>Prefix</th><th>Note</th><th>Uses</th><th>Expires</th><th>Status</th><th>Created</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for invite in invites %}
+                <tr>
+                    <td class="mono">{{ invite.prefix }}…</td>
+                    <td class="truncate">{{ invite.note }}</td>
+                    <td>{{ invite.uses }}</td>
+                    <td class="small">{{ invite.expires }}</td>
+                    <td>
+                        <span class="badge {% if invite.usable %}badge-ok{% else %}badge-muted{% endif %}">
+                            {{ invite.status }}
+                        </span>
+                    </td>
+                    <td class="small">{{ invite.created }}</td>
+                    <td>
+                        {% if invite.usable %}
+                        <form method="post" action="/app/admin/invites/{{ invite.id }}/delete">
+                            <button class="btn btn-sm btn-danger" type="submit"
+                                    data-confirm="Revoke this invite code?">Revoke</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty">No invite codes yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

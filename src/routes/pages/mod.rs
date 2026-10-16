@@ -6,6 +6,7 @@
 //! page turns into a banner.
 
 pub mod account;
+pub mod admin;
 pub mod auth;
 pub mod dashboard;
 pub mod urls;
@@ -281,6 +282,19 @@ pub fn router() -> Router<AppState> {
         .route("/account/sessions/{id}/delete", post(account::revoke_session))
         .route("/account/tokens", post(account::create_token))
         .route("/account/tokens/{id}/delete", post(account::revoke_token))
+        // administration
+        .route("/admin", get(admin::overview))
+        .route("/admin/users", get(admin::users_page))
+        .route("/admin/users/{id}", post(admin::update_user))
+        .route("/admin/users/{id}/password", post(admin::reset_password))
+        .route("/admin/users/{id}/delete", post(admin::delete_user))
+        .route("/admin/urls", get(admin::urls_page))
+        .route("/admin/urls/{id}", post(admin::update_url))
+        .route("/admin/urls/{id}/delete", post(admin::delete_url))
+        .route("/admin/invites", get(admin::invites_page).post(admin::create_invite))
+        .route("/admin/invites/{id}/delete", post(admin::revoke_invite))
+        .route("/admin/settings", get(admin::settings_page).post(admin::update_settings))
+        .route("/admin/audit", get(admin::audit_page))
 }
 
 /// `GET /` — send visitors to the dashboard (or the login screen).

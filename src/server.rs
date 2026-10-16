@@ -113,6 +113,22 @@ async fn warn_about_first_user(state: &AppState) -> Result<()> {
     Ok(())
 }
 
+/// Periodic housekeeping: stale sessions, expired attempts and retention.
+fn spawn_maintenance(state: AppState) {
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(std::time::Duration::from_secs(6 * 3600));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            ticker.tick().await;
+            if let Err(err) =
+                crate::services::admin::run_maintenance(&state.db, &state.settings).await
+            {
+                tracing::warn!(error = %err, "maintenance pass failed");
+            }
+        }
+    });
+}
+
 /// Run migrations, bootstrap and serve until SIGINT/SIGTERM.
 pub async fn serve(config: Config) -> Result<()> {
     let pool = db::init(&config).await?;
@@ -121,6 +137,7 @@ pub async fn serve(config: Config) -> Result<()> {
     let base_url = config.base_url.clone();
     let state = AppState::new(config, pool, settings);
     bootstrap(&state).await?;
+    spawn_maintenance(state.clone());
 
     let listener = TcpListener::bind(bind)
         .await

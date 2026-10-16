@@ -1,0 +1,57 @@
+{% extends "app_base.html" %}
+
+{% block title %}Audit log — {{ site_name }}{% endblock %}
+
+{% block content %}
+{% include "admin/tabs.html" %}
+
+<div class="row between">
+    <h1>Audit log</h1>
+    <span class="muted small">{{ total }} entries</span>
+</div>
+
+<form method="get" action="/app/admin/audit" class="row mt">
+    <input class="input" type="search" name="action" value="{{ action }}" placeholder="Action, e.g. auth.login"
+           style="max-width: 240px;">
+    <input class="input" type="search" name="target_type" value="{{ target_type }}"
+           placeholder="Target type, e.g. url" style="max-width: 220px;">
+    <button class="btn" type="submit">Filter</button>
+    <a class="btn btn-ghost" href="/app/admin/audit">Reset</a>
+</form>
+
+<div class="card card-flush mt">
+    {% if entries.len() > 0 %}
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr><th>When</th><th>Action</th><th>Actor</th><th>Target</th><th>Details</th></tr>
+            </thead>
+            <tbody>
+                {% for entry in entries %}
+                <tr>
+                    <td class="small nowrap">{{ entry.when }}</td>
+                    <td class="mono small">{{ entry.action }}</td>
+                    <td class="small">{{ entry.actor }}</td>
+                    <td class="small">{{ entry.target }}</td>
+                    <td class="small mono truncate" title="{{ entry.metadata }}">{{ entry.metadata }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        <span class="muted small">Page {{ page }} of {{ total_pages }}</span>
+        {% for link in links %}
+        {% if link.current %}<span class="current">{{ link.label }}</span>
+        {% else %}<a class="btn btn-sm" href="{{ link.url }}">{{ link.label }}</a>{% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <p class="empty">No audit entries match this filter.</p>
+    {% endif %}
+</div>
+{% endblock %}

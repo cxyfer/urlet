@@ -158,6 +158,11 @@ impl Config {
     pub fn is_https(&self) -> bool {
         self.base_scheme == "https"
     }
+
+    /// Filesystem path of the SQLite database, when the URL points at a file.
+    pub fn sqlite_path(&self) -> Option<PathBuf> {
+        sqlite_path(&self.database_url)
+    }
 }
 
 fn env_str(name: &str) -> Option<String> {
@@ -189,13 +194,21 @@ fn split_base_url(base_url: &str) -> Result<(String, String), ConfigError> {
     Ok((scheme.to_ascii_lowercase(), host))
 }
 
-/// Directory that contains the SQLite file, used for the generated secret.
-fn sqlite_dir(database_url: &str) -> Option<PathBuf> {
+/// Filesystem path of the SQLite database file.
+fn sqlite_path(database_url: &str) -> Option<PathBuf> {
     let path = database_url
         .strip_prefix("sqlite://")
         .or_else(|| database_url.strip_prefix("sqlite:"))?;
     let path = path.split('?').next().unwrap_or(path);
-    let path = PathBuf::from(path);
+    if path.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(path))
+}
+
+/// Directory that contains the SQLite file, used for the generated secret.
+fn sqlite_dir(database_url: &str) -> Option<PathBuf> {
+    let path = sqlite_path(database_url)?;
     path.parent().filter(|p| !p.as_os_str().is_empty()).map(Path::to_path_buf)
 }
 
@@ -218,6 +231,15 @@ mod tests {
     fn rejects_base_url_without_scheme() {
         assert!(split_base_url("localhost:8080").is_err());
         assert!(split_base_url("https://").is_err());
+    }
+
+    #[test]
+    fn derives_sqlite_paths() {
+        assert_eq!(
+            sqlite_path("sqlite:///data/uwurls.db?mode=rwc"),
+            Some(PathBuf::from("/data/uwurls.db"))
+        );
+        assert_eq!(sqlite_path("sqlite:"), None);
     }
 
     #[test]
