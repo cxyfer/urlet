@@ -58,6 +58,62 @@
             {{ lang.t("admin.settings.analytics") }}
         </label>
 
+        <h2 class="mt">{{ lang.t("admin.settings.bot_protection") }}</h2>
+        <p class="hint">{{ lang.t("admin.settings.bot_protection_hint") }}</p>
+        {% match values.captcha_state %}
+        {% when Some with (note) %}
+        <p class="hint" data-captcha-state>{{ note }}</p>
+        {% when None %}
+        {% endmatch %}
+
+        <div class="grid grid-2 mt">
+            <div class="field">
+                <label class="label" for="captcha_provider">{{ lang.t("admin.settings.captcha_provider") }}</label>
+                <select class="select" id="captcha_provider" name="captcha_provider">
+                    <option value="none" {% if values.captcha_provider == "none" %}selected{% endif %}>{{ lang.t("admin.settings.captcha_provider.none") }}</option>
+                    <option value="turnstile" {% if values.captcha_provider == "turnstile" %}selected{% endif %}>{{ lang.t("admin.settings.captcha_provider.turnstile") }}</option>
+                    <option value="recaptcha" {% if values.captcha_provider == "recaptcha" %}selected{% endif %}>{{ lang.t("admin.settings.captcha_provider.recaptcha") }}</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="label" for="captcha_site_key">{{ lang.t("admin.settings.captcha_site_key") }}</label>
+                <input class="input" type="text" id="captcha_site_key" name="captcha_site_key"
+                       value="{{ values.captcha_site_key }}" maxlength="200" autocomplete="off">
+            </div>
+            <div class="field">
+                <label class="label" for="captcha_secret_key">{{ lang.t("admin.settings.captcha_secret_key") }}</label>
+                <input class="input" type="password" id="captcha_secret_key" name="captcha_secret_key"
+                       value="" maxlength="200" autocomplete="new-password">
+                <span class="hint">
+                    {% if values.captcha_secret_configured %}{{ lang.t("admin.settings.captcha_secret_set") }}{% else %}{{ lang.t("admin.settings.captcha_secret_unset") }}{% endif %}.
+                    {{ lang.t("admin.settings.captcha_secret_hint") }}
+                </span>
+            </div>
+            <div class="field">
+                <label class="label" for="captcha_allowed_hostnames">{{ lang.t("admin.settings.captcha_allowed_hostnames") }}</label>
+                <input class="input" type="text" id="captcha_allowed_hostnames" name="captcha_allowed_hostnames"
+                       value="{{ values.captcha_allowed_hostnames }}" autocomplete="off"
+                       placeholder="links.example.com, go.example.com">
+                <span class="hint">{{ lang.t("admin.settings.captcha_allowed_hostnames_hint") }}</span>
+            </div>
+        </div>
+
+        <label class="checkbox">
+            <input type="checkbox" name="captcha_on_register" value="on"
+                   {% if values.captcha_on_register %}checked{% endif %}>
+            {{ lang.t("admin.settings.captcha_on_register") }}
+        </label>
+        <label class="checkbox">
+            <input type="checkbox" name="captcha_on_login" value="on"
+                   {% if values.captcha_on_login %}checked{% endif %}>
+            {{ lang.t("admin.settings.captcha_on_login") }}
+        </label>
+        <label class="checkbox">
+            <input type="checkbox" name="captcha_on_create" value="on"
+                   {% if values.captcha_on_create %}checked{% endif %}>
+            {{ lang.t("admin.settings.captcha_on_create") }}
+        </label>
+
         <div class="row row-end mt">
             <button class="btn btn-primary" type="submit">{{ lang.t("admin.settings.save") }}</button>
         </div>

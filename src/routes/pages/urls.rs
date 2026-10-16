@@ -17,8 +17,10 @@ use crate::routes::api_stats::{click_dto, summary_dto};
 use crate::routes::dto::{StatsSummaryDto, UrlDto};
 use crate::routes::pages::dashboard::{bar_rows, BarRow};
 use crate::routes::pages::{
-    flash_from_query, redirect_err, redirect_ok, redirect_to_login, Chrome, UrlRow,
+    captcha_rejected, flash_from_query, redirect_err, redirect_ok, redirect_to_login, Chrome,
+    UrlRow,
 };
+use crate::services::captcha::CaptchaFlow;
 use crate::services::ratelimit::limits;
 use crate::services::urls::{CreateInput, UpdateInput, UrlContext};
 use crate::services::{chart, time};
@@ -122,6 +124,12 @@ pub struct CreateForm {
     pub max_clicks: Option<String>,
     #[serde(default)]
     pub redirect_type: Option<String>,
+    /// Cloudflare Turnstile token, submitted by the rendered widget.
+    #[serde(default, rename = "cf-turnstile-response")]
+    pub turnstile_token: Option<String>,
+    /// Google reCAPTCHA token.
+    #[serde(default, rename = "g-recaptcha-response")]
+    pub recaptcha_token: Option<String>,
 }
 
 /// Quick actions offered next to an expired or capped link (spec FR-EXP-3).
@@ -212,6 +220,19 @@ pub async fn create(
         .is_err()
     {
         return Ok(redirect_err("/app", "rate_limited").into_response());
+    }
+
+    // Bot protection runs before the link is created.
+    if captcha_rejected(
+        &state,
+        &client,
+        CaptchaFlow::Create,
+        payload.turnstile_token.as_deref(),
+        payload.recaptcha_token.as_deref(),
+    )
+    .await
+    {
+        return Ok(redirect_err("/app", "captcha").into_response());
     }
 
     let context = UrlContext {
@@ -557,6 +578,7 @@ pub fn error_code(err: &AppError) -> &'static str {
             _ => "invalid",
         },
         AppError::BadRequest(_) => "invalid",
+        AppError::CaptchaFailed(_) => "captcha",
         AppError::Unauthorized(_) => "password",
         AppError::Gone(_) | AppError::Internal(_) => "invalid",
     }

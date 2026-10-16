@@ -15,6 +15,9 @@ use crate::config::ConfigError;
 
 const SECRET_FILE: &str = "secret.key";
 
+/// Placeholder printed instead of a secret in `Debug` output.
+pub const REDACTED: &str = "[redacted]";
+
 /// Load the HMAC secret from an explicit value or from the data directory,
 /// generating (and persisting) a fresh one when neither is available.
 pub fn load_or_create(data_dir: &Path, explicit: Option<&str>) -> Result<Vec<u8>, ConfigError> {

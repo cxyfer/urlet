@@ -20,6 +20,11 @@ path = "src/main.rs"
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "form", "query", "tokio", "matched-path", "original-uri"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "sync"] }
 tower = { version = "0.5", features = ["util"] }
+# Bot protection: the provider `siteverify` call is blocking and must stay on
+# rustls + webpki-roots so the musl build needs no OpenSSL. The `tls` feature is
+# ureq's rustls backend; `json` is not enabled because the response is parsed
+# with serde_json directly.
+ureq = { version = "2", default-features = false, features = ["tls"] }
 
 # Database
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "macros"] }

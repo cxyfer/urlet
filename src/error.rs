@@ -15,6 +15,9 @@ pub type Result<T> = std::result::Result<T, AppError>;
 #[derive(Debug)]
 pub enum AppError {
     BadRequest(String),
+    /// Bot protection rejected the request. Kept separate from `BadRequest` so
+    /// the JSON API can answer with its own `captcha_failed` code.
+    CaptchaFailed(String),
     Validation {
         field: &'static str,
         message: String,
@@ -33,6 +36,12 @@ pub enum AppError {
 impl AppError {
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self::BadRequest(message.into())
+    }
+
+    /// The bot protection check failed. The message stays English and generic:
+    /// it is shared by the JSON API and by the HTML error page.
+    pub fn captcha_failed(message: impl Into<String>) -> Self {
+        Self::CaptchaFailed(message.into())
     }
 
     pub fn validation(field: &'static str, message: impl Into<String>) -> Self {
@@ -76,6 +85,7 @@ impl AppError {
     pub fn status(&self) -> StatusCode {
         match self {
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
+            Self::CaptchaFailed(_) => StatusCode::BAD_REQUEST,
             Self::Validation { .. } => StatusCode::UNPROCESSABLE_ENTITY,
             Self::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             Self::Forbidden(_) => StatusCode::FORBIDDEN,
@@ -90,6 +100,7 @@ impl AppError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::BadRequest(_) => "bad_request",
+            Self::CaptchaFailed(_) => "captcha_failed",
             Self::Validation { .. } => "validation_error",
             Self::Unauthorized(_) => "unauthorized",
             Self::Forbidden(_) => "forbidden",
@@ -105,6 +116,7 @@ impl AppError {
     pub fn message(&self) -> String {
         match self {
             Self::BadRequest(m) | Self::Unauthorized(m) | Self::Forbidden(m) => m.clone(),
+            Self::CaptchaFailed(m) => m.clone(),
             Self::Conflict(m) | Self::Gone(m) => m.clone(),
             Self::Validation { message, .. } => message.clone(),
             Self::NotFound => "The requested resource does not exist.".to_string(),
@@ -117,6 +129,10 @@ impl AppError {
 
     /// Catalogue key of the heading shown on the HTML error page.
     fn title_key(&self) -> &'static str {
+        // A captcha failure is a 400, but "Bad request" would be misleading.
+        if matches!(self, Self::CaptchaFailed(_)) {
+            return "error.captcha.title";
+        }
         match self.status() {
             StatusCode::BAD_REQUEST => "error.bad_request.title",
             StatusCode::UNPROCESSABLE_ENTITY => "error.validation.title",
@@ -326,6 +342,16 @@ mod tests {
         let err = AppError::internal("connection refused to /var/run/db");
         assert_eq!(err.message(), "Something went wrong on our side.");
         assert_eq!(err.code(), "internal_error");
+    }
+
+    #[test]
+    fn captcha_failures_carry_their_own_code_and_title() {
+        let err = AppError::captcha_failed("captcha verification failed");
+        assert_eq!(err.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(err.code(), "captcha_failed");
+        assert_eq!(err.title_key(), "error.captcha.title");
+        assert_eq!(err.message(), "captcha verification failed");
+        assert!(err.details().is_none());
     }
 
     #[test]

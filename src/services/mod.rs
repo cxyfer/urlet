@@ -3,6 +3,7 @@
 pub mod admin;
 pub mod audit;
 pub mod auth;
+pub mod captcha;
 pub mod chart;
 pub mod click;
 pub mod cookies;

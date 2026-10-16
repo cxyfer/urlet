@@ -15,6 +15,15 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("default_redirect_type", "302"),
     ("analytics_enabled", "true"),
     ("click_retention_days", "0"),
+    // Bot protection. Disabled until a provider, a site key and a secret key are
+    // all set; see `services::captcha`.
+    ("captcha_provider", "none"),
+    ("captcha_site_key", ""),
+    ("captcha_secret_key", ""),
+    ("captcha_allowed_hostnames", ""),
+    ("captcha_on_register", "false"),
+    ("captcha_on_login", "false"),
+    ("captcha_on_create", "false"),
 ];
 
 /// Load all settings.
@@ -53,6 +62,37 @@ pub async fn set(
     .bind(updated_by)
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+/// Insert or update several settings inside one transaction.
+///
+/// Either every pair is stored or none is: a batch that fails halfway must not
+/// leave the instance reconfigured with, say, a new captcha provider but the old
+/// keys.
+pub async fn set_many(
+    pool: &SqlitePool,
+    values: &[(String, String)],
+    updated_by: Option<i64>,
+) -> Result<(), sqlx::Error> {
+    let now = now_iso();
+    let mut tx = pool.begin().await?;
+    for (key, value) in values {
+        sqlx::query(
+            "INSERT INTO settings (key, value, updated_at, updated_by)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value,
+                                            updated_at = excluded.updated_at,
+                                            updated_by = excluded.updated_by",
+        )
+        .bind(key)
+        .bind(value)
+        .bind(&now)
+        .bind(updated_by)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
     Ok(())
 }
 

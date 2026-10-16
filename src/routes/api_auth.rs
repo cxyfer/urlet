@@ -10,9 +10,11 @@ use crate::db::{sessions, users};
 use crate::error::{ApiError, AppError};
 use crate::middleware::auth::{ClientInfo, CurrentUser, MaybeUser};
 use crate::routes::dto::{SessionDto, UserDto};
+use crate::routes::verify_captcha;
 use crate::services::audit::{action, target, Audit};
 use crate::services::auth;
 use crate::services::auth::{AuthContext, SessionToken};
+use crate::services::captcha::CaptchaFlow;
 use crate::services::cookies;
 use crate::services::ratelimit::limits;
 use crate::services::time;
@@ -26,12 +28,20 @@ pub struct RegisterPayload {
     pub invite_code: Option<String>,
     #[serde(default)]
     pub display_name: Option<String>,
+    /// Bot protection token. Optional in the schema: it is only required when
+    /// the instance has Turnstile or reCAPTCHA enabled for registration.
+    #[serde(default)]
+    pub captcha_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct LoginPayload {
     pub email: String,
     pub password: String,
+    /// Bot protection token. Optional in the schema: it is only required when
+    /// the instance has Turnstile or reCAPTCHA enabled for sign in.
+    #[serde(default)]
+    pub captcha_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,6 +79,13 @@ pub async fn register(
         limits::REGISTER_CAPACITY,
         limits::REGISTER_REFILL_PER_SEC,
     )?;
+    verify_captcha(
+        &state,
+        &client,
+        CaptchaFlow::Register,
+        payload.captcha_token.as_deref(),
+    )
+    .await?;
 
     let context = context(&state, &client);
     let user = context
@@ -115,6 +132,15 @@ pub async fn login(
         limits::LOGIN_CAPACITY,
         limits::LOGIN_REFILL_PER_SEC,
     )?;
+
+    // Bot protection runs before any password hashing work.
+    verify_captcha(
+        &state,
+        &client,
+        CaptchaFlow::Login,
+        payload.captcha_token.as_deref(),
+    )
+    .await?;
 
     let context = context(&state, &client);
     let (user, token) = context.login(&payload.email, &payload.password).await?;

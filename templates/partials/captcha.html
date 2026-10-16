@@ -1,0 +1,10 @@
+{# Bot protection widget. Renders nothing at all when the flow is unguarded. #}
+{% match captcha %}
+{% when Some with (widget) %}
+<div class="field">
+    <span class="label">{{ lang.t("captcha.label") }}</span>
+    <script src="{{ widget.script_url }}" async defer></script>
+    <div class="{{ widget.widget_class }}" data-sitekey="{{ widget.site_key }}"></div>
+</div>
+{% when None %}
+{% endmatch %}

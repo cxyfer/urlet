@@ -37,7 +37,7 @@ impl LogFormat {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Config {
     pub bind: SocketAddr,
     /// Public base URL without a trailing slash, e.g. `https://s.example.com`.
@@ -53,6 +53,20 @@ pub struct Config {
     pub trust_proxy: bool,
     pub registration_override: Option<String>,
     pub slug_length_override: Option<usize>,
+    /// Bot protection overrides. A non empty variable wins over the settings
+    /// table, exactly like `registration_override`.
+    pub captcha_provider_override: Option<String>,
+    pub captcha_site_key_override: Option<String>,
+    pub captcha_secret_key_override: Option<String>,
+    /// Extra hostnames a captcha provider may report, comma separated.
+    pub captcha_allowed_hostnames_override: Option<String>,
+    pub captcha_on_register_override: Option<bool>,
+    pub captcha_on_login_override: Option<bool>,
+    pub captcha_on_create_override: Option<bool>,
+    /// Test only: replace the provider `siteverify` endpoint. There is
+    /// deliberately no environment variable for it, so a deployment can never be
+    /// pointed at a host that would learn the secret key.
+    pub captcha_verify_url: Option<String>,
     pub admin_email: Option<String>,
     pub admin_password: Option<String>,
     pub log_filter: String,
@@ -61,6 +75,55 @@ pub struct Config {
     pub default_slug_length: usize,
     /// Fallback per-user URL quota when the settings table is unavailable.
     pub max_urls_per_user: i64,
+}
+
+/// The HMAC secret, the bootstrap password and the captcha secret are printed as
+/// [`secret::REDACTED`]: a stray `tracing::debug!(?config)` must never leak them.
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let hidden = |present: bool| present.then_some(secret::REDACTED);
+        f.debug_struct("Config")
+            .field("bind", &self.bind)
+            .field("base_url", &self.base_url)
+            .field("base_scheme", &self.base_scheme)
+            .field("base_host", &self.base_host)
+            .field("secure_cookies", &self.secure_cookies)
+            .field("database_url", &self.database_url)
+            .field("data_dir", &self.data_dir)
+            .field("secret", &secret::REDACTED)
+            .field("session_ttl_hours", &self.session_ttl_hours)
+            .field("unlock_ttl_minutes", &self.unlock_ttl_minutes)
+            .field("trust_proxy", &self.trust_proxy)
+            .field("registration_override", &self.registration_override)
+            .field("slug_length_override", &self.slug_length_override)
+            .field("captcha_provider_override", &self.captcha_provider_override)
+            .field("captcha_site_key_override", &self.captcha_site_key_override)
+            .field(
+                "captcha_secret_key_override",
+                &hidden(self.captcha_secret_key_override.is_some()),
+            )
+            .field(
+                "captcha_allowed_hostnames_override",
+                &self.captcha_allowed_hostnames_override,
+            )
+            .field(
+                "captcha_on_register_override",
+                &self.captcha_on_register_override,
+            )
+            .field("captcha_on_login_override", &self.captcha_on_login_override)
+            .field(
+                "captcha_on_create_override",
+                &self.captcha_on_create_override,
+            )
+            .field("captcha_verify_url", &self.captcha_verify_url)
+            .field("admin_email", &self.admin_email)
+            .field("admin_password", &hidden(self.admin_password.is_some()))
+            .field("log_filter", &self.log_filter)
+            .field("log_format", &self.log_format)
+            .field("default_slug_length", &self.default_slug_length)
+            .field("max_urls_per_user", &self.max_urls_per_user)
+            .finish()
+    }
 }
 
 impl Config {
@@ -119,6 +182,19 @@ impl Config {
             slug_length_override: env_str("UWURLS_DEFAULT_SLUG_LENGTH")
                 .and_then(|v| v.trim().parse::<usize>().ok())
                 .filter(|v| (4..=16).contains(v)),
+            captcha_provider_override: env_str("UWURLS_CAPTCHA_PROVIDER")
+                .filter(|v| !v.trim().is_empty())
+                .map(|v| v.trim().to_ascii_lowercase()),
+            captcha_site_key_override: env_str("UWURLS_CAPTCHA_SITE_KEY")
+                .filter(|v| !v.trim().is_empty()),
+            captcha_secret_key_override: env_str("UWURLS_CAPTCHA_SECRET_KEY")
+                .filter(|v| !v.trim().is_empty()),
+            captcha_allowed_hostnames_override: env_str("UWURLS_CAPTCHA_ALLOWED_HOSTNAMES")
+                .filter(|v| !v.trim().is_empty()),
+            captcha_on_register_override: env_bool("UWURLS_CAPTCHA_ON_REGISTER"),
+            captcha_on_login_override: env_bool("UWURLS_CAPTCHA_ON_LOGIN"),
+            captcha_on_create_override: env_bool("UWURLS_CAPTCHA_ON_CREATE"),
+            captcha_verify_url: None,
             admin_email: env_str("UWURLS_ADMIN_EMAIL").filter(|v| !v.trim().is_empty()),
             admin_password: env_str("UWURLS_ADMIN_PASSWORD").filter(|v| !v.is_empty()),
             log_filter: env_str("UWURLS_LOG").unwrap_or_else(|| "info".into()),
@@ -145,6 +221,14 @@ impl Config {
             trust_proxy: false,
             registration_override: None,
             slug_length_override: None,
+            captcha_provider_override: None,
+            captcha_site_key_override: None,
+            captcha_secret_key_override: None,
+            captcha_allowed_hostnames_override: None,
+            captcha_on_register_override: None,
+            captcha_on_login_override: None,
+            captcha_on_create_override: None,
+            captcha_verify_url: None,
             admin_email: None,
             admin_password: None,
             log_filter: "warn".into(),
@@ -178,6 +262,14 @@ fn env_i64(name: &str, default: i64) -> i64 {
     env_str(name)
         .and_then(|v| v.trim().parse().ok())
         .unwrap_or(default)
+}
+
+/// Boolean override: `None` when the variable is unset or empty, so the
+/// settings table keeps its value.
+fn env_bool(name: &str) -> Option<bool> {
+    env_str(name)
+        .filter(|v| !v.trim().is_empty())
+        .map(|v| parse_bool(&v))
 }
 
 fn parse_bool(value: &str) -> bool {
@@ -271,5 +363,21 @@ mod tests {
         for falsy in ["0", "false", "no", "off", ""] {
             assert!(!parse_bool(falsy), "{falsy}");
         }
+    }
+
+    #[test]
+    fn debug_output_never_contains_a_secret() {
+        let mut config = Config::for_tests(Path::new("."));
+        config.admin_password = Some("bootstrap-password".into());
+        config.captcha_secret_key_override = Some("captcha-secret".into());
+
+        let printed = format!("{config:?}");
+        assert!(!printed.contains("bootstrap-password"), "{printed}");
+        assert!(!printed.contains("captcha-secret"), "{printed}");
+        // The HMAC secret is never printable either, not even as bytes.
+        assert!(!printed.contains("116"), "no byte dump of the secret");
+        assert!(printed.contains(secret::REDACTED), "{printed}");
+        // Non secret fields stay useful for debugging.
+        assert!(printed.contains("localhost:8080"), "{printed}");
     }
 }

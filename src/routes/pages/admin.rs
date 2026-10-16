@@ -23,6 +23,7 @@ use crate::routes::pages::{
     UrlRow,
 };
 use crate::services::admin::{self, AdminContext};
+use crate::services::captcha::CaptchaProvider;
 use crate::services::settings::Settings;
 use crate::services::time;
 use crate::state::AppState;
@@ -173,6 +174,18 @@ pub struct SettingsValues {
     pub default_redirect_type: i64,
     pub analytics_enabled: bool,
     pub click_retention_days: i64,
+    pub captcha_provider: String,
+    pub captcha_site_key: String,
+    /// Whether a secret is stored. The secret itself is never rendered.
+    pub captcha_secret_configured: bool,
+    /// Comma separated hostnames the provider may report, `base_host` excluded.
+    pub captcha_allowed_hostnames: String,
+    pub captcha_on_register: bool,
+    pub captcha_on_login: bool,
+    pub captcha_on_create: bool,
+    /// Localised note telling the administrator whether the configuration is
+    /// actually in effect: a ticked box with a missing key does nothing.
+    pub captcha_state: Option<String>,
 }
 
 /// Audit page.
@@ -268,6 +281,24 @@ pub struct SettingsForm {
     #[serde(default)]
     pub analytics_enabled: Option<String>,
     pub click_retention_days: String,
+    // Bot protection. All optional so a form from an older page, or a partial
+    // submission, never fails to deserialize.
+    #[serde(default)]
+    pub captcha_provider: Option<String>,
+    #[serde(default)]
+    pub captcha_site_key: Option<String>,
+    /// Write only: an empty field keeps the stored secret.
+    #[serde(default)]
+    pub captcha_secret_key: Option<String>,
+    /// Echoed back, so an empty field clears the allowlist.
+    #[serde(default)]
+    pub captcha_allowed_hostnames: Option<String>,
+    #[serde(default)]
+    pub captcha_on_register: Option<String>,
+    #[serde(default)]
+    pub captcha_on_login: Option<String>,
+    #[serde(default)]
+    pub captcha_on_create: Option<String>,
 }
 
 /// `GET /app/admin`
@@ -629,7 +660,7 @@ pub async fn update_settings(
         return Ok(redirect_err("/app/admin/settings", "invalid").into_response());
     };
 
-    let values = vec![
+    let mut values = vec![
         ("site_name".to_string(), payload.site_name),
         ("registration_mode".to_string(), payload.registration_mode),
         (
@@ -655,6 +686,39 @@ pub async fn update_settings(
             payload.click_retention_days,
         ),
     ];
+
+    // Bot protection. The provider and the public site key are echoed back by
+    // the form, so an empty value there is an explicit clear. The secret is
+    // never echoed, so an empty value means "keep the stored one".
+    if let Some(provider) = payload
+        .captcha_provider
+        .filter(|value| !value.trim().is_empty())
+    {
+        values.push(("captcha_provider".to_string(), provider));
+    }
+    if let Some(site_key) = payload.captcha_site_key {
+        values.push(("captcha_site_key".to_string(), site_key));
+    }
+    if let Some(secret) = payload
+        .captcha_secret_key
+        .filter(|value| !value.trim().is_empty())
+    {
+        values.push(("captcha_secret_key".to_string(), secret));
+    }
+    if let Some(hostnames) = payload.captcha_allowed_hostnames {
+        values.push(("captcha_allowed_hostnames".to_string(), hostnames));
+    }
+    // An unchecked box is simply absent from the body, so absence means "off".
+    for (key, checked) in [
+        ("captcha_on_register", payload.captcha_on_register.is_some()),
+        ("captcha_on_login", payload.captcha_on_login.is_some()),
+        ("captcha_on_create", payload.captcha_on_create.is_some()),
+    ] {
+        values.push((
+            key.to_string(),
+            if checked { "true" } else { "false" }.to_string(),
+        ));
+    }
 
     Ok(
         match context(&state, &client, &current.user)
@@ -967,17 +1031,44 @@ fn render_settings(
     user: &User,
     flash: Option<crate::routes::pages::Flash>,
 ) -> Result<Response, AppError> {
-    let values = settings_values(&state.settings);
+    let lang = i18n::current();
+    let mut values = settings_values(&state.settings);
+    values.captcha_state = captcha_state(&state.settings, lang);
     render(
         SettingsPage {
             section: "settings",
             site_name: state.settings.site_name(),
             chrome: Chrome::new(state, user, "admin", flash),
             values,
-            lang: i18n::current(),
+            lang,
         },
         StatusCode::OK,
     )
+}
+
+/// Localised note describing whether bot protection is really applied.
+///
+/// The enable conditions are the same four `CaptchaGuard` uses, so a ticked box
+/// with a missing key is reported as "not applied" instead of silently doing
+/// nothing.
+fn captcha_state(settings: &Settings, lang: Lang) -> Option<String> {
+    if settings.captcha_provider() == CaptchaProvider::None {
+        return None;
+    }
+    let has_site_key = !settings.captcha_site_key().trim().is_empty();
+    let has_secret = settings.captcha_secret_configured();
+    let any_flow = settings.captcha_on_register()
+        || settings.captcha_on_login()
+        || settings.captcha_on_create();
+
+    let key = match (has_site_key, has_secret) {
+        (false, false) => "admin.settings.captcha_state.missing_keys",
+        (false, true) => "admin.settings.captcha_state.missing_site_key",
+        (true, false) => "admin.settings.captcha_state.missing_secret_key",
+        (true, true) if !any_flow => "admin.settings.captcha_state.no_flow",
+        (true, true) => "admin.settings.captcha_state.active",
+    };
+    Some(lang.t(key).to_string())
 }
 
 /// Read the typed settings used by the settings form.
@@ -990,6 +1081,15 @@ pub fn settings_values(settings: &Settings) -> SettingsValues {
         default_redirect_type: settings.default_redirect_type(),
         analytics_enabled: settings.analytics_enabled(),
         click_retention_days: settings.click_retention_days(),
+        captcha_provider: settings.captcha_provider().as_str().to_string(),
+        captcha_site_key: settings.captcha_site_key(),
+        captcha_secret_configured: settings.captcha_secret_configured(),
+        captcha_allowed_hostnames: settings.captcha_allowed_hostnames(),
+        captcha_on_register: settings.captcha_on_register(),
+        captcha_on_login: settings.captcha_on_login(),
+        captcha_on_create: settings.captcha_on_create(),
+        // Filled in by `render_settings`, which knows the language.
+        captcha_state: None,
     }
 }
 

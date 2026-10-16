@@ -11,6 +11,8 @@ use crate::db::{tags, urls};
 use crate::error::{ApiError, AppError};
 use crate::middleware::auth::{ClientInfo, CurrentUser};
 use crate::routes::dto::{double_option, Page, Pagination, UrlDto};
+use crate::routes::verify_captcha;
+use crate::services::captcha::CaptchaFlow;
 use crate::services::ratelimit::limits;
 use crate::services::urls::{CreateInput, UpdateInput, UrlContext};
 use crate::state::AppState;
@@ -70,6 +72,11 @@ pub struct CreatePayload {
     pub max_clicks: Option<i64>,
     #[serde(default)]
     pub redirect_type: Option<i64>,
+    /// Bot protection token. Only needed when the instance protects link
+    /// creation and the caller authenticates with a session cookie; a Bearer
+    /// API token is exempt. Optional in the schema either way.
+    #[serde(default)]
+    pub captcha_token: Option<String>,
 }
 
 /// Body of `PATCH /api/v1/urls/{id}`. Absent fields stay unchanged; explicit
@@ -140,10 +147,22 @@ pub async fn list(
 }
 
 /// `POST /api/v1/urls`
+///
+/// Bot protection applies to the **browser session** path only. The endpoint
+/// accepts two credentials, and they are not equally trusted:
+///
+/// * an `Authorization: Bearer uw_...` API token — exempt, because a script that
+///   already holds a long lived credential issued from the account page is not
+///   the threat a captcha guards against, and challenging it would break every
+///   existing integration;
+/// * a session cookie — challenged when `captcha_on_create` is on, exactly like
+///   the HTML form. Without this, a signed-in robot could simply call the JSON
+///   API with the cookie it already has and bypass the challenge on
+///   `POST /app/urls`.
 pub async fn create(
     State(state): State<AppState>,
     client: ClientInfo,
-    CurrentUser { user, .. }: CurrentUser,
+    CurrentUser { user, token_id, .. }: CurrentUser,
     Json(payload): Json<CreatePayload>,
 ) -> Result<Response, ApiError> {
     state
@@ -154,6 +173,17 @@ pub async fn create(
             limits::CREATE_URL_REFILL_PER_SEC,
         )
         .map_err(|retry| ApiError(AppError::rate_limited(retry)))?;
+
+    // `token_id` is only set for Bearer authentication.
+    if token_id.is_none() {
+        verify_captcha(
+            &state,
+            &client,
+            CaptchaFlow::Create,
+            payload.captcha_token.as_deref(),
+        )
+        .await?;
+    }
 
     let context = context(&state, &client, &user);
     let url = context
