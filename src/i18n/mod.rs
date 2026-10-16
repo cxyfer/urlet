@@ -191,13 +191,14 @@ fn parse_catalog(raw: &str, code: &str) -> HashMap<String, String> {
 
 /// Parse the `q=` weight of one `Accept-Language` entry.
 ///
-/// Anything that is not a usable positive weight — unparsable text, `NaN`,
-/// `inf`, negatives — becomes `0.0`, so the entry is dropped rather than
-/// outranking a well formed alternative. (A bare `NaN` compares false against
-/// every bound, which is exactly how it used to win.)
+/// A weight is a number in `0..=1` (RFC 7231); anything else — unparsable text,
+/// `NaN`, `inf`, negatives, or a value above one such as `q=2` — becomes `0.0`,
+/// so the entry is dropped rather than outranking a well formed alternative. (A
+/// bare `NaN` compares false against every bound, which is exactly how it used
+/// to win; an out-of-range value used to sort above a legitimate `q=1`.)
 fn parse_quality(raw: &str) -> f32 {
     match raw.parse::<f32>() {
-        Ok(value) if value.is_finite() => value,
+        Ok(value) if value.is_finite() && (0.0..=1.0).contains(&value) => value,
         _ => 0.0,
     }
 }
@@ -519,9 +520,10 @@ mod tests {
     #[test]
     fn malformed_quality_weights_never_outrank_a_valid_one() {
         // `NaN` compares false against every bound, so it used to be kept and
-        // then sort as "equal" — landing ahead of a legitimate `q=1`.
+        // then sort as "equal" — landing ahead of a legitimate `q=1`. A weight
+        // above one is out of range for RFC 7231 and used to win outright.
         for weight in [
-            "NaN", "nan", "inf", "-inf", "Infinity", "abc", "", "0", "-1",
+            "NaN", "nan", "inf", "-inf", "Infinity", "abc", "", "0", "-1", "2", "1.5", "10",
         ] {
             let header = format!("zh;q={weight},en;q=1");
             assert_eq!(
