@@ -25,12 +25,16 @@ cp .env.example .env
 Edit `.env`:
 
 ```env
-UWURLS_BASE_URL=https://s.example.com      # public URL, used to build short links
-UWURLS_PORT=8080                            # host port to publish
+UWURLS_BASE_URL=http://localhost:8080      # public URL; use https:// once TLS is in front (§3)
+UWURLS_PORT=8080                            # host port to publish (read by docker compose only)
 UWURLS_ADMIN_EMAIL=admin@example.com
 UWURLS_ADMIN_PASSWORD=<strong password>
 UWURLS_REGISTRATION=invite                  # optional: open / invite / closed
 ```
+
+> Keep the scheme of `UWURLS_BASE_URL` in step with how visitors actually reach the instance: an
+> `https://` value makes uwurls mark the session cookie `Secure`, so serving plain HTTP while
+> `UWURLS_BASE_URL` says `https://` signs users out again immediately (§4, §10).
 
 Start it:
 
@@ -78,7 +82,7 @@ UWURLS_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-For
 | `UWURLS_SECRET` | Auto-generated | HMAC secret (at least 16 characters, 32+ recommended; the generated one is 44 characters of base64); **changing it invalidates every session and unlock cookie** |
 | `UWURLS_ADMIN_EMAIL` / `UWURLS_ADMIN_PASSWORD` | — | Create or promote the administrator at startup |
 | `UWURLS_REGISTRATION` | Read from the settings table | Override the registration mode: `open` / `invite` / `closed` |
-| `UWURLS_SECURE_COOKIES` | Derived from `BASE_URL` | Force the `Secure` cookie flag |
+| `UWURLS_SECURE_COOKIES` | Derived from `BASE_URL` | Force the `Secure` cookie flag. The compose files always pass a value through (default `false`), so in Docker set it to `true` explicitly when you terminate TLS yourself; the TLS overlay does that for you |
 | `UWURLS_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` / `X-Forwarded-Proto` |
 | `UWURLS_SESSION_TTL_HOURS` | `168` | Session lifetime |
 | `UWURLS_UNLOCK_TTL_MINUTES` | `30` | Lifetime of the short link unlock cookie |
@@ -93,6 +97,13 @@ UWURLS_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-For
 | `UWURLS_LOG_FORMAT` | `compact` | `compact` or `json` |
 | `UWURLS_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | Target of `uwurls healthcheck` |
 
+Two further variables are read by the compose files, not by the uwurls binary:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `UWURLS_PORT` | `8080` | Host port that `docker-compose.yml` publishes (the container itself always listens on 8080) |
+| `UWURLS_DOMAIN` | — | Domain the `docker-compose.tls.yml` overlay requests a certificate for; required by that overlay |
+
 Instance-level settings (site name, registration mode, quota, default redirect type, analytics
 switch, click retention) are edited in **Admin → Settings**; they are stored in the database and
 take effect immediately. A non-empty environment variable always overrides the value stored
@@ -103,7 +114,10 @@ there.
 uwurls can require a CAPTCHA on the three public forms that create state: the web registration
 form, the web sign-in form, and the web create-short-link form. The JSON API endpoints
 `POST /api/v1/auth/register` and `POST /api/v1/auth/login` are covered as well; they take the
-widget token in the optional `captcha_token` field. Verification is disabled by default.
+widget token in the optional `captcha_token` field. `POST /api/v1/urls` is covered too, but only
+for session-cookie calls (the link-creation switch); a call carrying
+`Authorization: Bearer uw_...` stays exempt, so automation keeps working. Verification is disabled
+by default.
 
 ### Supported providers
 
@@ -132,8 +146,9 @@ off.
 
 Failure is **closed**: a missing, malformed, expired or already-used token — including a timeout
 or any non-2xx response from the provider — rejects the submission. On the web forms the visitor
-sees a validation error; `POST /api/v1/auth/register` and `POST /api/v1/auth/login` return `400`
-with `error.code = "captcha_failed"` when the matching switch is enabled.
+sees a validation error; `POST /api/v1/auth/register`, `POST /api/v1/auth/login` and a
+session-cookie `POST /api/v1/urls` return `400` with `error.code = "captcha_failed"` when the
+matching switch is enabled.
 
 ### Getting the keys
 
@@ -298,7 +313,7 @@ upgrading.
 | The CAPTCHA widget never appears | All four conditions must hold: a provider other than `none`, both keys, and the matching `ON_*` switch set to `true` |
 | Every submission fails with `captcha_failed` | The secret key does not belong to the configured provider, the widget's hostname list does not include the domain users visit, or an API client forgot to send the widget token as `captcha_token` |
 | Want token access after forgetting the admin password | Resetting a password revokes every API token for that account (by design); create a new token afterwards |
-| Forgot the admin password | Set `UWURLS_ADMIN_EMAIL` to that account and restart; or update it directly with `sqlite3`, or create a new administrator and disable the old account |
+| Forgot the admin password | The startup bootstrap runs only when **both** `UWURLS_ADMIN_EMAIL` and `UWURLS_ADMIN_PASSWORD` are non-empty, and for an account that already exists it merely promotes it to administrator — it does **not** change the password (the password is used only when the account does not exist yet). To recover, point `UWURLS_ADMIN_EMAIL` at another account you can still sign in to (any non-empty `UWURLS_ADMIN_PASSWORD` makes the bootstrap run), restart, and use that account; or overwrite the password hash directly with `sqlite3` |
 | A short link expired and you want it back | Open `/app/urls/{id}` and clear or extend the expiry; the data was never deleted |
 | Want to reuse a slug after deleting a short link | Deliberately not allowed (so old links cannot be hijacked); pick a new slug |
 

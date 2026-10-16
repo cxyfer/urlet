@@ -24,12 +24,16 @@ cp .env.example .env
 編輯 `.env`：
 
 ```env
-UWURLS_BASE_URL=https://s.example.com      # 對外網址，會用來產生短網址
-UWURLS_PORT=8080                            # 主機對應的連接埠
+UWURLS_BASE_URL=http://localhost:8080      # 對外網址；加上 TLS 後請改為 https://（見 §3）
+UWURLS_PORT=8080                            # 主機對應的連接埠（僅 docker compose 讀取）
 UWURLS_ADMIN_EMAIL=admin@example.com
 UWURLS_ADMIN_PASSWORD=<強密碼>
 UWURLS_REGISTRATION=invite                  # 可選：open / invite / closed
 ```
+
+> `UWURLS_BASE_URL` 的 scheme 必須與使用者實際連線的方式一致：`https://` 會讓 uwurls 把 Session
+> Cookie 標記為 `Secure`，因此一邊用純 HTTP 提供服務、一邊把 `UWURLS_BASE_URL` 設成 `https://`，
+> 會導致登入後立刻被登出（見 §4、§10）。
 
 啟動：
 
@@ -76,7 +80,7 @@ UWURLS_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-
 | `UWURLS_SECRET` | 自動產生 | HMAC 密鑰（至少 16 字元，建議 32+；自動產生的為 44 字元 base64）；**更換會讓所有 Session 與解鎖 Cookie 失效** |
 | `UWURLS_ADMIN_EMAIL` / `UWURLS_ADMIN_PASSWORD` | — | 啟動時建立或升級管理員 |
 | `UWURLS_REGISTRATION` | 讀取設定表 | 覆寫註冊模式：`open` / `invite` / `closed` |
-| `UWURLS_SECURE_COOKIES` | 依 `BASE_URL` 判斷 | 強制 Cookie `Secure` |
+| `UWURLS_SECURE_COOKIES` | 依 `BASE_URL` 判斷 | 強制 Cookie `Secure`。compose 檔一律會帶入值（預設 `false`），因此在 Docker 環境自行終結 TLS 時請明確設為 `true`；TLS overlay 已自動處理 |
 | `UWURLS_TRUST_PROXY` | `false` | 信任 `X-Forwarded-For` / `X-Forwarded-Proto` |
 | `UWURLS_SESSION_TTL_HOURS` | `168` | Session 有效期 |
 | `UWURLS_UNLOCK_TTL_MINUTES` | `30` | 短網址解鎖 Cookie 有效期 |
@@ -91,6 +95,13 @@ UWURLS_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-
 | `UWURLS_LOG_FORMAT` | `compact` | `compact` 或 `json` |
 | `UWURLS_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | `uwurls healthcheck` 的目標 |
 
+另外兩個變數由 compose 檔讀取，uwurls 二進位檔本身不會讀取：
+
+| 變數 | 預設 | 說明 |
+|------|------|------|
+| `UWURLS_PORT` | `8080` | `docker-compose.yml` 對外發布的主機連接埠（容器本身一律監聽 8080） |
+| `UWURLS_DOMAIN` | — | `docker-compose.tls.yml` overlay 申請憑證用的網域；該 overlay 必填 |
+
 站台層級設定（站名、註冊模式、配額、預設轉址類型、統計開關、點擊保留天數）
 在 **Admin → Settings** 調整，會存進資料庫並即時生效。
 非空的環境變數一律覆蓋設定表中的值。
@@ -99,7 +110,9 @@ UWURLS_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-
 
 uwurls 可以要求三個會產生資料的公開表單通過防機器人驗證：網頁註冊表單、網頁登入表單與
 網頁建立短網址表單。JSON API 的 `POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`
-也涵蓋在內，兩者以選填欄位 `captcha_token` 接收驗證元件的權杖。預設關閉。
+也涵蓋在內，兩者以選填欄位 `captcha_token` 接收驗證元件的權杖。`POST /api/v1/urls` 同樣在
+範圍內，但僅限 Session Cookie 呼叫（受建立短網址開關約束）；帶 `Authorization: Bearer uw_...`
+的呼叫維持豁免，自動化流程不受影響。預設關閉。
 
 ### 支援的供應商
 
@@ -127,8 +140,8 @@ secret key 非空，以及對應的 `ON_*` 開關（`UWURLS_CAPTCHA_ON_REGISTER`
 
 驗證失敗一律**拒絕**（fail closed）：token 缺少、格式錯誤、逾期或已使用過，
 以及逾時或供應商回應非 2xx，都會拒絕該次提交。網頁表單會顯示驗證錯誤訊息；
-對應開關啟用時，`POST /api/v1/auth/register` 與 `POST /api/v1/auth/login` 則回 `400`
-且 `error.code = "captcha_failed"`。
+對應開關啟用時，`POST /api/v1/auth/register`、`POST /api/v1/auth/login`，以及使用
+Session Cookie 的 `POST /api/v1/urls`，都會回 `400` 且 `error.code = "captcha_failed"`。
 
 ### 取得金鑰
 
@@ -283,7 +296,7 @@ docker compose up -d --build      # 啟動時自動套用遷移
 | 驗證元件完全沒出現 | 四個條件都要成立：provider 不是 `none`、兩把金鑰都非空、對應的 `ON_*` 為 `true` |
 | 每次提交都回 `captcha_failed` | 密鑰不屬於目前設定的供應商、元件的網域清單沒有包含使用者實際連到的網域，或 API 用戶端忘了以 `captcha_token` 帶上驗證元件的權杖 |
 | 忘記管理員密碼後想用 Token 存取 | 重設密碼會撤銷該帳號所有 API Token（安全性設計），請重新建立 |
-| 忘記管理員密碼 | 設定 `UWURLS_ADMIN_EMAIL` 為該帳號並重啟；或 `sqlite3` 直接更新，或建立新管理員後停用舊帳號 |
+| 忘記管理員密碼 | 啟動時的 bootstrap 必須 `UWURLS_ADMIN_EMAIL` 與 `UWURLS_ADMIN_PASSWORD` **兩者皆非空**才會執行；對已存在的帳號只會提權，**不會**變更密碼（密碼僅在帳號不存在時使用）。救援方式：把 `UWURLS_ADMIN_EMAIL` 指向另一個你仍登得入的帳號（`UWURLS_ADMIN_PASSWORD` 隨便填一個非空值即可讓 bootstrap 執行），重啟後以該帳號登入；或直接用 `sqlite3` 覆寫密碼雜湊 |
 | 短網址已過期想復原 | 到 `/app/urls/{id}` 清除或延長到期時間；資料未被刪除 |
 | 刪除短網址後想重用同一個 slug | 刻意不允許（避免舊連結被劫持）；請改用新 slug |
 
