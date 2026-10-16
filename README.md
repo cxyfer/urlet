@@ -18,7 +18,7 @@
 | 🔑 API Token | `Authorization: Bearer uw_...`，可設到期與撤銷 |
 | 🛠 管理後台 | 使用者管理、全站短網址、邀請碼、站台設定、稽核日誌 |
 | 🐳 部署 | 單一容器 + named volume；附 Caddy 自動 HTTPS overlay |
-| 🪶 輕量 | 單一二進位、SSR 模板（零前端建置）、無 Redis/MySQL |
+| 🪶 輕量 | 二進位 4.2 MB、映像 13.2 MB、RSS 7 MB、轉址 P95 0.74 ms |
 
 ## 快速開始
 

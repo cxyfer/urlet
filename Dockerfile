@@ -15,12 +15,20 @@ WORKDIR /src
 
 # Dependency layer: build with stub sources so `cargo build` only compiles the
 # dependency graph. Rebuilt only when Cargo.toml / Cargo.lock change.
+#
+# Every artifact of the stub crate must be removed afterwards: `COPY` preserves
+# the source mtimes from the build context, so a stale `libuwurls*.rlib` would
+# look newer than the real sources and cargo would happily reuse it.
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir -p src \
     && echo 'fn main() {}' > src/main.rs \
     && echo '' > src/lib.rs \
     && cargo build --release --locked \
-    && rm -rf src target/release/uwurls target/release/deps/uwurls*
+    && rm -rf src \
+              target/release/uwurls \
+              target/release/deps/uwurls* \
+              target/release/deps/libuwurls* \
+              target/release/.fingerprint/uwurls-*
 
 # Application layer.
 COPY migrations ./migrations

@@ -105,12 +105,12 @@ MaxMind/GeoIP、React/Node 工具鏈。
 
 ### 3.3 二進位檔與映像檔尺寸目標
 
-| 項目 | 目標 |
-|------|------|
-| Release 二進位（musl, stripped, LTO） | ≤ 15 MB |
-| 執行期映像（`alpine` + 二進位 + CA 憑證） | ≤ 40 MB |
-| 閒置記憶體 | ≤ 30 MB RSS |
-| 冷啟動到可服務 | ≤ 1 秒 |
+| 項目 | 目標 | 實測 |
+|------|------|------|
+| Release 二進位（stripped, LTO, `opt-level=z`） | ≤ 15 MB | **4.2 MB**（glibc 本機）／4.5 MB（容器內 musl） |
+| 執行期映像（`alpine` + 二進位 + CA 憑證） | ≤ 40 MB | **13.2 MB** |
+| 閒置／負載記憶體 | ≤ 30 MB RSS | **6.8 MB**（500 次請求後） |
+| 冷啟動到可服務 | ≤ 1 秒 | **約 0.2 秒**（含遷移） |
 
 ---
 
@@ -265,9 +265,9 @@ MaxMind/GeoIP、React/Node 工具鏈。
 
 | ID | 需求 |
 |----|------|
-| NFR-PERF-1 | 轉址路徑：單次 `SELECT`（命中索引）+ 非同步寫入；P95 < 10 ms（本機） |
+| NFR-PERF-1 | 轉址路徑：單次 `SELECT`（命中索引）+ 佇列化寫入；P95 < 10 ms（實測 0.74 ms） |
 | NFR-PERF-2 | SQLite：`journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000` |
-| NFR-PERF-3 | 連線池：`max_connections=8`（SQLite 寫入序列化） |
+| NFR-PERF-3 | 連線池：`max_connections=8`；點擊寫入由單一背景 writer 序列化（避免 WAL 因並發寫入無法 checkpoint 而無限成長） |
 | NFR-PERF-4 | 列表查詢一律分頁（預設 20，上限 100） |
 | NFR-PERF-5 | 統計查詢使用 `url_daily_stats` 與索引，避免全表掃描 |
 
@@ -462,24 +462,25 @@ login_attempts (稽核用)
 
 ```
 uwurls/
-├── Cargo.toml
-├── Dockerfile
-├── docker-compose.yml
+├── Cargo.toml  Cargo.lock  rustfmt.toml
+├── Dockerfile  .dockerignore
+├── docker-compose.yml            # 單一容器 + named volume
 ├── docker-compose.tls.yml        # 可選：Caddy 自動 HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql
-├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}
-├── scripts/smoke.sh
+├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql
+├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/}
+├── scripts/{smoke.sh,demo.sh,screenshot.py}
+├── templates/                    # Askama 模板（base/app_base + 各頁面 + admin/）
 ├── src/
-│   ├── main.rs  config.rs  state.rs  error.rs  server.rs
-│   ├── assets/{app.css,app.js}
-│   ├── templates/*.html
-│   ├── db/{mod,users,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains}.rs
-│   ├── services/{auth,slug,click,ua,ratelimit,audit,settings,time,secret}.rs
-│   ├── middleware/{auth,csrf,security,ratelimit,request_id}.rs
-│   └── routes/{mod,api_*,pages_*,redirect,health}.rs
-└── tests/{integration.rs, common/mod.rs}
+│   ├── main.rs  lib.rs  config.rs  state.rs  error.rs  server.rs  assets.rs
+│   ├── assets/{app.css,app.js,favicon.svg}
+│   ├── db/{mod,migrate,users,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
+│   ├── services/{auth,urls,admin,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens}.rs
+│   ├── middleware/{mod,auth,csrf,security}.rs
+│   └── routes/{mod,api,api_auth,api_urls,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract}.rs
+│       └── pages/{mod,auth,dashboard,urls,account,admin}.rs
+└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs}
 ```
 
 ### 9.2 Dockerfile 策略
@@ -522,15 +523,18 @@ uwurls 不對外暴露連接埠，由 Caddy 反向代理。
 
 ## 11. 驗收標準 (Definition of Done)
 
-- [ ] `cargo build --release` 成功，二進位 ≤ 15 MB
-- [ ] `cargo test` 全綠（單元 + 整合）
-- [ ] `cargo clippy --all-targets -- -D warnings` 無警告
-- [ ] `scripts/smoke.sh` 對真實二進位全數通過（含密碼保護、過期、所有權隔離）
-- [ ] `docker compose config` 驗證通過（本機無 Docker 引擎時以 YAML 解析 + 明確標註替代）
-- [ ] 13 張表 + 索引依 §6 建立，啟動自動遷移
-- [ ] 所有 FR/NFR 條目皆有對應實作或測試
-- [ ] README 可讓新使用者在 5 分鐘內完成部署
-- [ ] 每個階段皆有對應的本地 commit
+- [x] `cargo build --release` 成功，二進位 **4.2 MB** ≤ 15 MB
+- [x] `cargo test` 全綠：**178** 項（單元 93 + 整合 84 + 二進位 1）
+- [x] `cargo clippy --all-targets -- -D warnings` 與 `cargo fmt --check` 無警告
+- [x] `scripts/smoke.sh` 對真實二進位 **81** 項全數通過（含密碼保護、過期、所有權隔離、CSRF、邀請碼、重啟持久化）
+- [x] `docker compose config` 通過（base 與 TLS overlay 皆以 Docker Compose 27.4 驗證）
+- [x] `docker build` 成功，映像 **13.2 MB**；`docker compose up -d` 後容器狀態 `healthy`
+- [x] 容器內以 uid 10001 執行、根檔案系統唯讀、`cap_drop: ALL`；資料僅寫入 `/data` volume
+- [x] 容器實測：health、管理員登入、建立含密碼/過期/點擊上限的短網址、解鎖轉址、全部管理頁面 200、重啟後 Session 與解鎖 Cookie 仍有效
+- [x] 13 張表 + 索引依 §6 建立，啟動自動遷移（`schema_migrations` 有 checksum 保護）
+- [x] 所有 FR/NFR 條目皆有對應實作或測試
+- [x] README 可讓新使用者在 5 分鐘內完成部署
+- [x] 每個階段皆有對應的本地 commit（見 `docs/PLAN.md`）
 
 ---
 

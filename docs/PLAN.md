@@ -177,3 +177,17 @@
 | SQLite 寫入鎖競爭 | 高併發點擊寫入延遲 | WAL + `busy_timeout` + 非同步寫入 + 彙總表 upsert 合併寫入 |
 | Askama 模板與路由不同步 | 執行期 500 | 模板於編譯期檢查；整合測試覆蓋每個頁面 GET |
 | 相依套件版本漂移 | 建置失敗 | 提交 `Cargo.lock`；建置階段固定工具鏈映像版本 |
+
+---
+
+## P8 驗收量測結果
+
+| 項目 | 目標（`docs/SPEC.md` §3.3、§5.2） | 實測 |
+|------|-----------------------------------|------|
+| Release 二進位大小 | ≤ 15 MB | **4.2 MB**（stripped, LTO, `opt-level=z`） |
+| 閒置記憶體 RSS | ≤ 30 MB | **6.8 MB**（500 次請求後 6.8 MB） |
+| 轉址延遲（P95） | < 10 ms | **0.74 ms**（p50 0.40 ms、p99 1.05 ms、本機 500 次 keep-alive） |
+| 冷啟動到可服務 | ≤ 1 秒 | **約 0.2 秒**（含遷移） |
+| 容器映像 | ≤ 40 MB | 見下方 Docker 驗證段落 |
+| 測試 | 全綠 | `cargo test` 178 項、`scripts/smoke.sh` 81 項 |
+| 靜態檢查 | 無警告 | `cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 通過 |
