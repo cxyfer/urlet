@@ -43,11 +43,21 @@ impl Flows {
 }
 
 /// What the fake provider answers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Reply {
+    /// `{"success":true}` with no `hostname`, which the guard does not check.
     Success,
+    /// `{"success":true,"hostname":"..."}`.
+    SuccessWithHostname(String),
+    /// `{"success":false,...}`.
     Rejected,
+    /// `{"success":"true"}`: a string is not a boolean.
+    StringSuccess,
     Status(u16),
+    /// A 302 to another host: following it would leak the secret.
+    Redirect,
+    /// `204` with an empty body.
+    NoContent,
     Garbage,
     Slow,
 }
@@ -103,24 +113,45 @@ async fn siteverify(AxumState(state): AxumState<MockState>, body: Bytes) -> Resp
         .lock()
         .expect("mock lock")
         .push(String::from_utf8_lossy(&body).to_string());
-    match state.reply {
-        Reply::Success => (AxumStatus::OK, r#"{"success":true}"#).into_response(),
-        Reply::Rejected => (
-            AxumStatus::OK,
-            r#"{"success":false,"error-codes":["invalid-input-response"]}"#,
-        )
-            .into_response(),
-        Reply::Garbage => (AxumStatus::OK, "<html>not json</html>").into_response(),
+    match &state.reply {
+        Reply::Success => json_body(r#"{"success":true}"#.to_string()),
+        Reply::SuccessWithHostname(host) => {
+            json_body(format!(r#"{{"success":true,"hostname":"{host}"}}"#))
+        }
+        Reply::Rejected => {
+            json_body(r#"{"success":false,"error-codes":["invalid-input-response"]}"#.to_string())
+        }
+        Reply::StringSuccess => json_body(r#"{"success":"true"}"#.to_string()),
         Reply::Status(code) => (
-            AxumStatus::from_u16(code).expect("status"),
-            r#"{"success":true}"#,
+            AxumStatus::from_u16(*code).expect("status"),
+            json_body(r#"{"success":true}"#.to_string()),
         )
             .into_response(),
+        Reply::Redirect => (
+            AxumStatus::FOUND,
+            [(
+                axum::http::header::LOCATION,
+                "https://evil.example/siteverify",
+            )],
+            "{}",
+        )
+            .into_response(),
+        Reply::NoContent => AxumStatus::NO_CONTENT.into_response(),
+        Reply::Garbage => (AxumStatus::OK, "<html>not json</html>").into_response(),
         Reply::Slow => {
             tokio::time::sleep(Duration::from_secs(8)).await;
-            (AxumStatus::OK, r#"{"success":true}"#).into_response()
+            json_body(r#"{"success":true}"#.to_string())
         }
     }
+}
+
+fn json_body(body: String) -> Response {
+    (
+        AxumStatus::OK,
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        body,
+    )
+        .into_response()
 }
 
 /// Instance with bot protection configured through the environment overrides.
@@ -585,12 +616,93 @@ async fn the_client_address_is_forwarded_when_it_is_known() {
     );
 }
 
+// ----------------------------------------------------------------- hostname
+
+/// A token is only accepted when the provider says it was minted for a host we
+/// answer on: the site key is public, so a third party could otherwise obtain
+/// valid tokens for its own domain.
+#[tokio::test]
+async fn the_reported_hostname_must_match_the_instance() {
+    // The request `Host` and `base_host` are both accepted, so an instance
+    // reachable under two names (short domain and app domain) keeps working.
+    for accepted in [
+        "s.example.com",
+        "app.example.com",
+        "S.Example.COM.",
+        "s.example.com:8443",
+    ] {
+        let mock = MockSiteverify::start(Reply::SuccessWithHostname(accepted.to_string())).await;
+        let app = TestApp::spawn_with({
+            let url = mock.url.clone();
+            move |config| {
+                config.captcha_provider_override = Some("turnstile".to_string());
+                config.captcha_site_key_override = Some("site-key".to_string());
+                config.captcha_secret_key_override = Some("secret-key".to_string());
+                config.captcha_on_register_override = Some(true);
+                config.captcha_verify_url = Some(url);
+                config.base_host = "app.example.com".to_string();
+            }
+        })
+        .await;
+
+        let mut request = post_json(
+            "/api/v1/auth/register",
+            api_register_body("host@example.com", Some("token")),
+        );
+        request.headers_mut().insert(
+            axum::http::header::HOST,
+            axum::http::HeaderValue::from_static("s.example.com"),
+        );
+        let response = app.send(request).await;
+        assert_eq!(
+            response.status,
+            AxumStatus::CREATED,
+            "{accepted} must be accepted: {}",
+            response.body
+        );
+    }
+
+    // Somebody else's hostname is refused, even though the token itself is valid.
+    let mock = MockSiteverify::start(Reply::SuccessWithHostname("evil.example".to_string())).await;
+    let app = TestApp::spawn_with({
+        let url = mock.url.clone();
+        move |config| {
+            config.captcha_provider_override = Some("turnstile".to_string());
+            config.captcha_site_key_override = Some("site-key".to_string());
+            config.captcha_secret_key_override = Some("secret-key".to_string());
+            config.captcha_on_register_override = Some(true);
+            config.captcha_verify_url = Some(url);
+            config.base_host = "app.example.com".to_string();
+        }
+    })
+    .await;
+    let mut request = post_json(
+        "/api/v1/auth/register",
+        api_register_body("foreign@example.com", Some("token")),
+    );
+    request.headers_mut().insert(
+        axum::http::header::HOST,
+        axum::http::HeaderValue::from_static("s.example.com"),
+    );
+    assert_captcha_error(&app.send(request).await);
+}
+
 // -------------------------------------------------------------- fail closed
 
 #[tokio::test]
 async fn provider_errors_fail_closed() {
-    for reply in [Reply::Status(500), Reply::Status(429), Reply::Garbage] {
-        let (app, _mock) = app_with(reply, Flows::ALL).await;
+    for reply in [
+        Reply::Status(500),
+        Reply::Status(429),
+        Reply::Garbage,
+        // A string is not the boolean the contract asks for.
+        Reply::StringSuccess,
+        // A redirect would send the secret to another host.
+        Reply::Redirect,
+        // 204 with an empty body parses as nothing at all.
+        Reply::NoContent,
+    ] {
+        let (app, _mock) = app_with(reply.clone(), Flows::ALL).await;
         assert_captcha_error(&api_register(&app, "failing@example.com", Some("token")).await);
     }
 
@@ -725,6 +837,82 @@ async fn a_provider_without_keys_is_inert() {
     );
 }
 
+// ------------------------------------------------- cookie vs bearer creation
+
+/// `POST /api/v1/urls` accepts a session cookie or a Bearer API token. The
+/// cookie is the browser path, so it is challenged; the API token is exempt, or
+/// every existing integration would break.
+#[tokio::test]
+async fn json_creation_is_guarded_for_cookies_and_exempt_for_api_tokens() {
+    let (app, mock) = app_with(
+        Reply::Success,
+        Flows {
+            register: false,
+            login: false,
+            create: true,
+        },
+    )
+    .await;
+
+    let registered = api_register(&app, "creator@example.com", None).await;
+    assert_eq!(
+        registered.status,
+        AxumStatus::CREATED,
+        "{}",
+        registered.body
+    );
+    let cookie = registered.session_cookie().expect("session cookie");
+
+    let target = json!({ "target_url": "https://example.com/guarded" });
+
+    // Cookie without a token: rejected.
+    assert_captcha_error(
+        &app.send(post_json_as("/api/v1/urls", target.clone(), &cookie))
+            .await,
+    );
+    assert_eq!(mock.hits(), 0, "a missing token never reaches the provider");
+
+    // Cookie with a valid token: created.
+    let mut with_token = target.clone();
+    with_token["captcha_token"] = json!("good-token");
+    let created = app
+        .send(post_json_as("/api/v1/urls", with_token, &cookie))
+        .await;
+    assert_eq!(created.status, AxumStatus::CREATED, "{}", created.body);
+    assert_eq!(mock.hits(), 1);
+
+    // An API token is exempt: no captcha token is needed at all.
+    let issued = app
+        .send(post_json_as(
+            "/api/v1/tokens",
+            json!({ "name": "ci" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(issued.status, AxumStatus::CREATED, "{}", issued.body);
+    let token = issued.json()["token"].as_str().expect("token").to_string();
+
+    let mut bearer = post_json("/api/v1/urls", target.clone());
+    bearer = common::with_bearer(bearer, &token);
+    let created = app.send(bearer).await;
+    assert_eq!(created.status, AxumStatus::CREATED, "{}", created.body);
+
+    // Even a bogus token is ignored on the Bearer path: the guard is not
+    // consulted there at all.
+    let mut rejected_mock = target.clone();
+    rejected_mock["captcha_token"] = json!("bad-token");
+    let mut bearer = post_json("/api/v1/urls", rejected_mock);
+    bearer = common::with_bearer(bearer, &token);
+    let created = app.send(bearer).await;
+    assert_eq!(created.status, AxumStatus::CREATED, "{}", created.body);
+
+    assert_eq!(
+        mock.hits(),
+        1,
+        "only the cookie request with a token reached the provider"
+    );
+}
+
 // ------------------------------------------------------------------ widgets
 
 #[tokio::test]
@@ -822,11 +1010,18 @@ async fn an_admin_can_configure_bot_protection() {
     assert!(!settings.captcha_on_register());
     assert!(!settings.captcha_on_create());
 
-    // The secret never reaches a browser or the admin API.
+    // The secret never reaches a browser or the admin API, and the page reports
+    // that the configuration is actually in effect.
     let page = app.get_as("/app/admin/settings", &cookie).await;
     assert!(!page.body.contains("top-secret-value"), "{}", page.body);
     assert!(page.body.contains("A secret key is stored"));
     assert!(page.body.contains("public-site-key"));
+    assert!(
+        page.body
+            .contains("Active: the guarded flows show a challenge."),
+        "{}",
+        page.body
+    );
 
     let snapshot = app.get_as("/api/v1/admin/settings", &cookie).await;
     assert!(
@@ -865,6 +1060,13 @@ async fn an_admin_can_configure_bot_protection() {
     assert_redirect(&cleared, "/app/admin/settings?ok=saved");
     assert_eq!(app.state.settings.captcha_site_key(), "");
     assert_eq!(app.state.settings.captcha_secret_key(), "top-secret-value");
+    // A ticked box with no site key is reported as not applied.
+    let page = app.get_as("/app/admin/settings", &cookie).await;
+    assert!(
+        page.body.contains("Not applied: the site key is missing."),
+        "{}",
+        page.body
+    );
 
     // An unknown provider is refused and changes nothing.
     let refused = app
@@ -876,6 +1078,85 @@ async fn an_admin_can_configure_bot_protection() {
         .await;
     assert_redirect(&refused, "/app/admin/settings?err=invalid");
     assert_eq!(app.state.settings.captcha_provider().as_str(), "recaptcha");
+
+    // A provider with both keys but no ticked flow does nothing either.
+    let idle = app
+        .send(post_form_as(
+            "/app/admin/settings",
+            &settings_form("captcha_provider=turnstile&captcha_site_key=site"),
+            &cookie,
+        ))
+        .await;
+    assert_redirect(&idle, "/app/admin/settings?ok=saved");
+    let page = app.get_as("/app/admin/settings", &cookie).await;
+    assert!(
+        page.body.contains("Not applied: no flow is protected yet."),
+        "{}",
+        page.body
+    );
+
+    // The JSON API can clear the secret; the page then says which key is gone.
+    let wiped = app
+        .send(put_json_as(
+            "/api/v1/admin/settings",
+            json!({ "captcha_secret_key": "" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(wiped.status, AxumStatus::OK, "{}", wiped.body);
+    let page = app.get_as("/app/admin/settings", &cookie).await;
+    assert!(
+        page.body
+            .contains("Not applied: the secret key is missing."),
+        "{}",
+        page.body
+    );
+}
+
+/// A rejected value must not leave the batch half written: a new provider
+/// stored without its keys would lock every visitor out.
+#[tokio::test]
+async fn a_rejected_setting_leaves_the_batch_untouched() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("batch@example.com", "supersecret").await;
+
+    assert_eq!(app.state.settings.captcha_provider().as_str(), "none");
+    assert_eq!(app.state.settings.captcha_site_key(), "");
+
+    // The provider is valid, the key that follows it in the batch is not.
+    let too_long = "x".repeat(201);
+    let rejected = app
+        .send(post_form_as(
+            "/app/admin/settings",
+            &settings_form(&format!(
+                "captcha_provider=turnstile&captcha_site_key={too_long}                 &captcha_secret_key=stored-secret&captcha_on_login=on"
+            )),
+            &cookie,
+        ))
+        .await;
+    assert_redirect(&rejected, "/app/admin/settings?err=invalid");
+
+    // Nothing at all was stored, not even the provider that was valid.
+    assert_eq!(app.state.settings.captcha_provider().as_str(), "none");
+    assert_eq!(app.state.settings.captcha_site_key(), "");
+    assert_eq!(app.state.settings.captcha_secret_key(), "");
+    assert!(!app.state.settings.captcha_on_login());
+
+    // The same batch without the bad value is stored as a whole.
+    let accepted = app
+        .send(post_form_as(
+            "/app/admin/settings",
+            &settings_form(
+                "captcha_provider=turnstile&captcha_site_key=good-key                 &captcha_secret_key=stored-secret&captcha_on_login=on",
+            ),
+            &cookie,
+        ))
+        .await;
+    assert_redirect(&accepted, "/app/admin/settings?ok=saved");
+    assert_eq!(app.state.settings.captcha_provider().as_str(), "turnstile");
+    assert_eq!(app.state.settings.captcha_site_key(), "good-key");
+    assert_eq!(app.state.settings.captcha_secret_key(), "stored-secret");
+    assert!(app.state.settings.captcha_on_login());
 }
 
 #[tokio::test]
@@ -956,4 +1237,44 @@ async fn the_admin_api_accepts_the_captcha_keys_without_echoing_the_secret() {
         ))
         .await;
     assert_eq!(invalid.status, AxumStatus::UNPROCESSABLE_ENTITY);
+}
+
+// ------------------------------------------------------------ live provider
+
+/// Real TLS smoke test against the live provider.
+///
+/// The suite never touches the network by default; this one exists so that a
+/// broken TLS setup (a missing trust store, a stripped `webpki-roots`, a
+/// musl-only linkage problem) cannot hide behind mocks. The published Turnstile
+/// test secret always fails, so a *response* — `Rejected`, not `Unavailable` —
+/// proves the HTTPS stack works end to end.
+///
+/// Run it with:
+///
+/// ```text
+/// cargo test --test captcha -- --ignored
+/// ```
+#[tokio::test]
+#[ignore = "needs outbound HTTPS to challenges.cloudflare.com"]
+async fn live_turnstile_endpoint_answers_over_tls() {
+    use uwurls::services::captcha::{
+        CaptchaError, CaptchaGuard, CaptchaProvider, TURNSTILE_VERIFY_URL,
+    };
+
+    // Cloudflare's documented "always fails" secret.
+    let guard = CaptchaGuard::new(
+        CaptchaProvider::Turnstile,
+        "1x00000000000000000000AA",
+        "2x0000000000000000000000000000000AA",
+        TURNSTILE_VERIFY_URL,
+        "example.com",
+    );
+    let outcome = guard
+        .verify(Some("dummy-token"), None, Some("example.com"))
+        .await;
+    assert_eq!(
+        outcome,
+        Err(CaptchaError::Rejected),
+        "the provider must answer over TLS; Unavailable means the TLS stack is broken"
+    );
 }
