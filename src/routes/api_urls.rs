@@ -6,8 +6,8 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::Deserialize;
 
+use crate::db::urls::{AdminUrlFilter, UrlSort, UserUrlFilter};
 use crate::db::{tags, urls};
-use crate::db::urls::{AdminUrlFilter, UserUrlFilter, UrlSort};
 use crate::error::{ApiError, AppError};
 use crate::middleware::auth::{ClientInfo, CurrentUser};
 use crate::routes::dto::{double_option, Page, Pagination, UrlDto};
@@ -34,7 +34,10 @@ pub struct ListQuery {
 
 impl ListQuery {
     fn pagination(&self) -> Pagination {
-        Pagination { page: self.page, per_page: self.per_page }
+        Pagination {
+            page: self.page,
+            per_page: self.per_page,
+        }
     }
 
     fn filter(&self) -> UserUrlFilter {
@@ -128,7 +131,12 @@ pub async fn list(
         })
         .collect();
 
-    Ok(Json(Page::new(items, pagination.page(), pagination.per_page(), total)))
+    Ok(Json(Page::new(
+        items,
+        pagination.page(),
+        pagination.per_page(),
+        total,
+    )))
 }
 
 /// `POST /api/v1/urls`
@@ -172,7 +180,9 @@ pub async fn get(
     CurrentUser { user, .. }: CurrentUser,
     Path(id): Path<i64>,
 ) -> Result<Json<UrlDto>, ApiError> {
-    let url = urls::find_owned(&state.db, id, user.id).await?.ok_or_else(|| ApiError(AppError::not_found()))?;
+    let url = urls::find_owned(&state.db, id, user.id)
+        .await?
+        .ok_or_else(|| ApiError(AppError::not_found()))?;
     Ok(Json(to_dto(&state, &url).await?))
 }
 
@@ -233,7 +243,11 @@ fn context<'a>(
 }
 
 async fn to_dto(state: &AppState, url: &urls::Url) -> Result<UrlDto, ApiError> {
-    let names = tags::for_url(&state.db, url.id).await?.into_iter().map(|tag| tag.name).collect();
+    let names = tags::for_url(&state.db, url.id)
+        .await?
+        .into_iter()
+        .map(|tag| tag.name)
+        .collect();
     Ok(UrlDto::new(url, &state.config.base_url, names))
 }
 
@@ -272,21 +286,30 @@ mod tests {
         assert!(untouched.password.is_none());
 
         let cleared: UpdatePayload =
-            serde_json::from_value(json!({ "title": null, "password": null })).expect("clear patch");
+            serde_json::from_value(json!({ "title": null, "password": null }))
+                .expect("clear patch");
         assert_eq!(cleared.title, Some(None), "null means clear");
         assert_eq!(cleared.password, Some(None));
 
         let set: UpdatePayload =
-            serde_json::from_value(json!({ "title": "Hello", "max_clicks": 5 })).expect("set patch");
+            serde_json::from_value(json!({ "title": "Hello", "max_clicks": 5 }))
+                .expect("set patch");
         assert_eq!(set.title, Some(Some("Hello".to_string())));
         assert_eq!(set.max_clicks, Some(Some(5)));
     }
 
     #[test]
     fn list_query_cleans_blank_filters() {
-        let query = ListQuery { q: Some("   ".to_string()), tag: None, ..Default::default() };
+        let query = ListQuery {
+            q: Some("   ".to_string()),
+            tag: None,
+            ..Default::default()
+        };
         assert!(query.filter().search.is_none());
-        let query = ListQuery { q: Some(" promo ".to_string()), ..Default::default() };
+        let query = ListQuery {
+            q: Some(" promo ".to_string()),
+            ..Default::default()
+        };
         assert_eq!(query.filter().search.as_deref(), Some("promo"));
     }
 }

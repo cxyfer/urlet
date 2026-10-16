@@ -21,7 +21,12 @@ pub fn router() -> Router<AppState> {
         .route("/auth/sessions/{id}", delete(api_auth::revoke_session))
         // short links
         .route("/urls", get(api_urls::list).post(api_urls::create))
-        .route("/urls/{id}", get(api_urls::get).patch(api_urls::update).delete(api_urls::delete))
+        .route(
+            "/urls/{id}",
+            get(api_urls::get)
+                .patch(api_urls::update)
+                .delete(api_urls::delete),
+        )
         .route("/urls/{id}/stats", get(api_stats::stats))
         .route("/urls/{id}/clicks", get(api_stats::clicks_log))
         // tags
@@ -34,13 +39,28 @@ pub fn router() -> Router<AppState> {
         .route("/tokens/{id}", delete(api_tokens::revoke))
         // administration
         .route("/admin/users", get(api_admin::list_users))
-        .route("/admin/users/{id}", patch(api_admin::update_user).delete(api_admin::delete_user))
-        .route("/admin/users/{id}/password", post(api_admin::reset_password))
+        .route(
+            "/admin/users/{id}",
+            patch(api_admin::update_user).delete(api_admin::delete_user),
+        )
+        .route(
+            "/admin/users/{id}/password",
+            post(api_admin::reset_password),
+        )
         .route("/admin/urls", get(api_admin::list_urls))
-        .route("/admin/urls/{id}", patch(api_admin::update_url).delete(api_admin::delete_url))
-        .route("/admin/invites", get(api_admin::list_invites).post(api_admin::create_invite))
+        .route(
+            "/admin/urls/{id}",
+            patch(api_admin::update_url).delete(api_admin::delete_url),
+        )
+        .route(
+            "/admin/invites",
+            get(api_admin::list_invites).post(api_admin::create_invite),
+        )
         .route("/admin/invites/{id}", delete(api_admin::revoke_invite))
-        .route("/admin/settings", get(api_admin::get_settings).put(api_admin::put_settings))
+        .route(
+            "/admin/settings",
+            get(api_admin::get_settings).put(api_admin::put_settings),
+        )
         .route("/admin/audit", get(api_admin::audit))
         .route("/admin/stats", get(api_admin::stats))
         .fallback(api_not_found)

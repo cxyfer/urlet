@@ -53,9 +53,8 @@ pub fn unlock_cookie_name(slug: &str) -> String {
 
 /// Build a `Set-Cookie` value.
 pub fn build(name: &str, value: &str, max_age_secs: i64, secure: bool) -> String {
-    let mut cookie = format!(
-        "{name}={value}; Path=/; Max-Age={max_age_secs}; HttpOnly; SameSite=Lax"
-    );
+    let mut cookie =
+        format!("{name}={value}; Path=/; Max-Age={max_age_secs}; HttpOnly; SameSite=Lax");
     if secure {
         cookie.push_str("; Secure");
     }
@@ -74,7 +73,10 @@ mod tests {
 
     fn headers(cookie: &str) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        headers.insert(axum::http::header::COOKIE, HeaderValue::from_str(cookie).expect("value"));
+        headers.insert(
+            axum::http::header::COOKIE,
+            HeaderValue::from_str(cookie).expect("value"),
+        );
         headers
     }
 

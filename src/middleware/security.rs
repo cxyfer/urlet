@@ -30,8 +30,14 @@ pub async fn security_headers(
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
 
-    headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(CSP));
-    headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(CSP),
+    );
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
     headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     headers.insert(
         header::REFERRER_POLICY,

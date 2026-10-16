@@ -33,7 +33,10 @@ pub async fn connect(config: &Config) -> Result<SqlitePool> {
         .journal_mode(SqliteJournalMode::Wal)
         .synchronous(SqliteSynchronous::Normal)
         .foreign_keys(true)
-        .busy_timeout(Duration::from_secs(5));
+        .busy_timeout(Duration::from_secs(5))
+        // Reclaim WAL disk space after checkpoints instead of keeping the
+        // high-water mark forever (SQLite default is unlimited).
+        .pragma("journal_size_limit", "8388608");
 
     SqlitePoolOptions::new()
         .max_connections(8)

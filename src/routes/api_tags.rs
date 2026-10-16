@@ -23,7 +23,9 @@ pub async fn list(
     CurrentUser { user, .. }: CurrentUser,
 ) -> Result<Json<TagList>, ApiError> {
     let rows = tags::list_for_user(&state.db, user.id).await?;
-    Ok(Json(TagList { items: rows.iter().map(TagDto::from).collect() }))
+    Ok(Json(TagList {
+        items: rows.iter().map(TagDto::from).collect(),
+    }))
 }
 
 /// `DELETE /api/v1/tags/{id}`

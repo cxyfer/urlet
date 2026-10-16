@@ -6,8 +6,8 @@ use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
 use serde::Deserialize;
 
-use crate::db::{clicks, tags, urls};
 use crate::db::urls::{UrlSort, UserUrlFilter};
+use crate::db::{clicks, tags, urls};
 use crate::error::AppError;
 use crate::middleware::auth::MaybeUser;
 use crate::routes::dto::{DailyPointDto, DimensionDto, OverviewDto, TagDto, TopLinkDto, UrlDto};
@@ -84,14 +84,23 @@ pub async fn dashboard(
     let rows = urls::list_for_user(&state.db, user.id, &filter, per_page, (page - 1) * per_page)
         .await
         .map_err(AppError::from)?;
-    let total = urls::count_for_user_filtered(&state.db, user.id, &filter).await.map_err(AppError::from)?;
+    let total = urls::count_for_user_filtered(&state.db, user.id, &filter)
+        .await
+        .map_err(AppError::from)?;
     let ids: Vec<i64> = rows.iter().map(|row| row.id).collect();
-    let mut tag_map = tags::for_urls(&state.db, &ids).await.map_err(AppError::from)?;
+    let mut tag_map = tags::for_urls(&state.db, &ids)
+        .await
+        .map_err(AppError::from)?;
 
     let url_rows: Vec<UrlRow> = rows
         .iter()
         .map(|row| {
-            let names = tag_map.remove(&row.id).unwrap_or_default().into_iter().map(|tag| tag.name).collect();
+            let names = tag_map
+                .remove(&row.id)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|tag| tag.name)
+                .collect();
             UrlRow::new(&UrlDto::new(row, &state.config.base_url, names))
         })
         .collect();
@@ -114,7 +123,9 @@ pub async fn dashboard(
         params.push(("sort", value));
     }
 
-    let tag_list = tags::list_for_user(&state.db, user.id).await.map_err(AppError::from)?;
+    let tag_list = tags::list_for_user(&state.db, user.id)
+        .await
+        .map_err(AppError::from)?;
 
     let page_render = DashboardPage {
         site_name: state.settings.site_name(),
@@ -133,7 +144,9 @@ pub async fn dashboard(
         status: clean(&query.status).unwrap_or_default(),
         sort: clean(&query.sort).unwrap_or_default(),
         quota: state.settings.max_urls_per_user(),
-        used: urls::count_for_user(&state.db, user.id).await.map_err(AppError::from)?,
+        used: urls::count_for_user(&state.db, user.id)
+            .await
+            .map_err(AppError::from)?,
         default_redirect_type: state.settings.default_redirect_type(),
         public_base: state.config.base_url.clone(),
     };
@@ -146,11 +159,15 @@ pub async fn dashboard(
 
 /// Aggregate the numbers shown on the dashboard cards.
 pub async fn build_overview(state: &AppState, user_id: i64) -> Result<OverviewDto, AppError> {
-    let links = urls::count_for_user(&state.db, user_id).await.map_err(AppError::from)?;
+    let links = urls::count_for_user(&state.db, user_id)
+        .await
+        .map_err(AppError::from)?;
     let expired = urls::count_expired_for_user(&state.db, user_id, &time::now_iso())
         .await
         .map_err(AppError::from)?;
-    let summary = clicks::user_summary(&state.db, user_id).await.map_err(AppError::from)?;
+    let summary = clicks::user_summary(&state.db, user_id)
+        .await
+        .map_err(AppError::from)?;
     let clicks_7d = clicks::user_clicks_since(&state.db, user_id, &time::iso_days_ago(7))
         .await
         .map_err(AppError::from)?;
@@ -160,7 +177,9 @@ pub async fn build_overview(state: &AppState, user_id: i64) -> Result<OverviewDt
     let series = clicks::user_daily_series(&state.db, user_id, &time::day_days_ago(13))
         .await
         .map_err(AppError::from)?;
-    let top = clicks::top_urls_for_user(&state.db, user_id, 5).await.map_err(AppError::from)?;
+    let top = clicks::top_urls_for_user(&state.db, user_id, 5)
+        .await
+        .map_err(AppError::from)?;
 
     Ok(OverviewDto {
         links,
@@ -174,7 +193,12 @@ pub async fn build_overview(state: &AppState, user_id: i64) -> Result<OverviewDt
         daily: chart::fill_days(&series, 14),
         top_links: top
             .into_iter()
-            .map(|(id, slug, target_url, click_count)| TopLinkDto { id, slug, target_url, click_count })
+            .map(|(id, slug, target_url, click_count)| TopLinkDto {
+                id,
+                slug,
+                target_url,
+                click_count,
+            })
             .collect(),
     })
 }
@@ -207,7 +231,11 @@ pub fn total_of(points: &[DailyPointDto]) -> i64 {
 
 /// Trim a query parameter and drop it when empty.
 pub fn clean(value: &Option<String>) -> Option<String> {
-    value.as_deref().map(str::trim).filter(|value| !value.is_empty()).map(str::to_string)
+    value
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 /// Shared flash helper for pages that only need a banner.

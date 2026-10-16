@@ -80,31 +80,47 @@ impl Settings {
     }
 
     fn raw(&self, key: &str) -> Option<String> {
-        self.values.read().ok().and_then(|values| values.get(key).cloned())
+        self.values
+            .read()
+            .ok()
+            .and_then(|values| values.get(key).cloned())
     }
 
     fn raw_i64(&self, key: &str, fallback: i64) -> i64 {
-        self.raw(key).and_then(|value| value.trim().parse().ok()).unwrap_or(fallback)
+        self.raw(key)
+            .and_then(|value| value.trim().parse().ok())
+            .unwrap_or(fallback)
     }
 
     fn raw_bool(&self, key: &str, fallback: bool) -> bool {
         self.raw(key)
-            .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+            .map(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+            })
             .unwrap_or(fallback)
     }
 
     pub fn site_name(&self) -> String {
-        self.raw("site_name").filter(|value| !value.trim().is_empty()).unwrap_or_else(|| "uwurls".into())
+        self.raw("site_name")
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| "uwurls".into())
     }
 
     pub fn registration_mode(&self) -> RegistrationMode {
-        self.registration_override
-            .unwrap_or_else(|| RegistrationMode::parse(&self.raw("registration_mode").unwrap_or_default()))
+        self.registration_override.unwrap_or_else(|| {
+            RegistrationMode::parse(&self.raw("registration_mode").unwrap_or_default())
+        })
     }
 
     pub fn default_slug_length(&self) -> usize {
         self.slug_length_override
-            .or_else(|| self.raw("default_slug_length").and_then(|value| value.trim().parse().ok()))
+            .or_else(|| {
+                self.raw("default_slug_length")
+                    .and_then(|value| value.trim().parse().ok())
+            })
             .filter(|value| (4..=16).contains(value))
             .unwrap_or(7)
     }
@@ -130,7 +146,10 @@ impl Settings {
 
     /// Snapshot of all settings, for the admin API.
     pub fn snapshot(&self) -> HashMap<String, String> {
-        self.values.read().map(|values| values.clone()).unwrap_or_default()
+        self.values
+            .read()
+            .map(|values| values.clone())
+            .unwrap_or_default()
     }
 
     /// Validate and persist one setting, then refresh the cache.
@@ -142,7 +161,10 @@ impl Settings {
         actor: Option<i64>,
     ) -> Result<()> {
         if !EDITABLE_KEYS.contains(&key) {
-            return Err(AppError::validation("key", format!("unknown setting: {key}")));
+            return Err(AppError::validation(
+                "key",
+                format!("unknown setting: {key}"),
+            ));
         }
         let normalized = validate_value(key, value)?;
         db::settings::set(pool, key, &normalized, actor)
@@ -167,21 +189,27 @@ fn validate_value(key: &str, value: &str) -> Result<String> {
             Ok(value.to_string())
         }
         "registration_mode" => match RegistrationMode::parse(value) {
-            mode @ (RegistrationMode::Open | RegistrationMode::Invite | RegistrationMode::Closed) => {
-                Ok(mode.as_str().to_string())
-            }
+            mode @ (RegistrationMode::Open
+            | RegistrationMode::Invite
+            | RegistrationMode::Closed) => Ok(mode.as_str().to_string()),
         },
         "default_slug_length" => {
-            let parsed: usize = value.parse().map_err(|_| invalid("slug length must be a number"))?;
+            let parsed: usize = value
+                .parse()
+                .map_err(|_| invalid("slug length must be a number"))?;
             if !(4..=16).contains(&parsed) {
                 return Err(invalid("slug length must be between 4 and 16"));
             }
             Ok(parsed.to_string())
         }
         "max_urls_per_user" => {
-            let parsed: i64 = value.parse().map_err(|_| invalid("quota must be a number"))?;
+            let parsed: i64 = value
+                .parse()
+                .map_err(|_| invalid("quota must be a number"))?;
             if !(0..=1_000_000).contains(&parsed) {
-                return Err(invalid("quota must be between 0 and 1000000 (0 = unlimited)"));
+                return Err(invalid(
+                    "quota must be between 0 and 1000000 (0 = unlimited)",
+                ));
             }
             Ok(parsed.to_string())
         }
@@ -195,7 +223,9 @@ fn validate_value(key: &str, value: &str) -> Result<String> {
         )
         .to_string()),
         "click_retention_days" => {
-            let parsed: i64 = value.parse().map_err(|_| invalid("retention must be a number of days"))?;
+            let parsed: i64 = value
+                .parse()
+                .map_err(|_| invalid("retention must be a number of days"))?;
             if !(0..=3650).contains(&parsed) {
                 return Err(invalid("retention must be between 0 and 3650 days"));
             }
@@ -212,8 +242,14 @@ mod tests {
     #[test]
     fn parses_registration_modes() {
         assert_eq!(RegistrationMode::parse("open"), RegistrationMode::Open);
-        assert_eq!(RegistrationMode::parse(" INVITE "), RegistrationMode::Invite);
-        assert_eq!(RegistrationMode::parse("invite_only"), RegistrationMode::Invite);
+        assert_eq!(
+            RegistrationMode::parse(" INVITE "),
+            RegistrationMode::Invite
+        );
+        assert_eq!(
+            RegistrationMode::parse("invite_only"),
+            RegistrationMode::Invite
+        );
         assert_eq!(RegistrationMode::parse("closed"), RegistrationMode::Closed);
         assert_eq!(RegistrationMode::parse("nonsense"), RegistrationMode::Open);
     }
@@ -223,8 +259,14 @@ mod tests {
         assert_eq!(validate_value("default_slug_length", "9").expect("ok"), "9");
         assert!(validate_value("default_slug_length", "2").is_err());
         assert!(validate_value("default_redirect_type", "200").is_err());
-        assert_eq!(validate_value("default_redirect_type", "307").expect("ok"), "307");
-        assert_eq!(validate_value("analytics_enabled", "off").expect("ok"), "false");
+        assert_eq!(
+            validate_value("default_redirect_type", "307").expect("ok"),
+            "307"
+        );
+        assert_eq!(
+            validate_value("analytics_enabled", "off").expect("ok"),
+            "false"
+        );
         assert!(validate_value("unknown_key", "x").is_err());
         assert!(validate_value("site_name", "").is_err());
     }

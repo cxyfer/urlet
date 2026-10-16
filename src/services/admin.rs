@@ -82,7 +82,10 @@ impl AdminContext<'_> {
             Some(role) => {
                 let role = role.trim().to_ascii_lowercase();
                 if role != "user" && role != "admin" {
-                    return Err(AppError::validation("role", "role must be 'user' or 'admin'"));
+                    return Err(AppError::validation(
+                        "role",
+                        "role must be 'user' or 'admin'",
+                    ));
                 }
                 role
             }
@@ -92,7 +95,10 @@ impl AdminContext<'_> {
             Some(status) => {
                 let status = status.trim().to_ascii_lowercase();
                 if status != "active" && status != "suspended" {
-                    return Err(AppError::validation("status", "status must be 'active' or 'suspended'"));
+                    return Err(AppError::validation(
+                        "status",
+                        "status must be 'active' or 'suspended'",
+                    ));
                 }
                 status
             }
@@ -107,14 +113,17 @@ impl AdminContext<'_> {
                 "you cannot change your own role or status",
             ));
         }
-        let losing_an_admin =
-            user.role == "admin" && user.status == "active" && (role != "admin" || status != "active");
+        let losing_an_admin = user.role == "admin"
+            && user.status == "active"
+            && (role != "admin" || status != "active");
         if losing_an_admin {
             let others = users::count_active_admins(self.pool, Some(user.id))
                 .await
                 .map_err(AppError::from)?;
             if others == 0 {
-                return Err(AppError::conflict("at least one active administrator is required"));
+                return Err(AppError::conflict(
+                    "at least one active administrator is required",
+                ));
             }
         }
 
@@ -128,7 +137,9 @@ impl AdminContext<'_> {
             if let Some(name) = name {
                 crate::services::auth::validate_display_name(name)?;
             }
-            users::set_display_name(self.pool, user.id, name).await.map_err(AppError::from)?;
+            users::set_display_name(self.pool, user.id, name)
+                .await
+                .map_err(AppError::from)?;
         }
 
         // A suspended account loses its sessions immediately.
@@ -156,12 +167,16 @@ impl AdminContext<'_> {
             .map_err(AppError::from)?
             .ok_or_else(AppError::not_found)?;
         let hash = password::hash(new_password)?;
-        users::set_password(self.pool, user.id, &hash).await.map_err(AppError::from)?;
+        users::set_password(self.pool, user.id, &hash)
+            .await
+            .map_err(AppError::from)?;
         sessions::revoke_for_user(self.pool, user.id, &time::now_iso(), None)
             .await
             .map_err(AppError::from)?;
 
-        self.audit(action::ADMIN_PASSWORD_RESET, target::USER, user.id).record(self.pool).await;
+        self.audit(action::ADMIN_PASSWORD_RESET, target::USER, user.id)
+            .record(self.pool)
+            .await;
         Ok(())
     }
 
@@ -172,18 +187,25 @@ impl AdminContext<'_> {
             .map_err(AppError::from)?
             .ok_or_else(AppError::not_found)?;
         if user.id == self.actor.id {
-            return Err(AppError::validation("id", "you cannot delete your own account"));
+            return Err(AppError::validation(
+                "id",
+                "you cannot delete your own account",
+            ));
         }
         if user.role == "admin" && user.status == "active" {
             let others = users::count_active_admins(self.pool, Some(user.id))
                 .await
                 .map_err(AppError::from)?;
             if others == 0 {
-                return Err(AppError::conflict("at least one active administrator is required"));
+                return Err(AppError::conflict(
+                    "at least one active administrator is required",
+                ));
             }
         }
 
-        users::soft_delete(self.pool, user.id).await.map_err(AppError::from)?;
+        users::soft_delete(self.pool, user.id)
+            .await
+            .map_err(AppError::from)?;
         self.audit(action::ADMIN_USER_DELETED, target::USER, user.id)
             .metadata(serde_json::json!({ "email": user.email }))
             .record(self.pool)
@@ -192,7 +214,12 @@ impl AdminContext<'_> {
     }
 
     /// Force a status change on someone else's link.
-    pub async fn update_url(&self, url_id: i64, status: Option<&str>, redirect_type: Option<i64>) -> Result<()> {
+    pub async fn update_url(
+        &self,
+        url_id: i64,
+        status: Option<&str>,
+        redirect_type: Option<i64>,
+    ) -> Result<()> {
         let url = urls::find_by_id(self.pool, url_id)
             .await
             .map_err(AppError::from)?
@@ -202,7 +229,10 @@ impl AdminContext<'_> {
         if let Some(status) = status {
             let status = status.trim().to_ascii_lowercase();
             if status != "active" && status != "disabled" {
-                return Err(AppError::validation("status", "status must be 'active' or 'disabled'"));
+                return Err(AppError::validation(
+                    "status",
+                    "status must be 'active' or 'disabled'",
+                ));
             }
             changes.status = Some(status);
         }
@@ -213,7 +243,9 @@ impl AdminContext<'_> {
             return Err(AppError::bad_request("no changes were submitted"));
         }
 
-        let affected = urls::update(self.pool, url.id, None, &changes).await.map_err(AppError::from)?;
+        let affected = urls::update(self.pool, url.id, None, &changes)
+            .await
+            .map_err(AppError::from)?;
         if affected == 0 {
             return Err(AppError::not_found());
         }
@@ -235,7 +267,9 @@ impl AdminContext<'_> {
             .await
             .map_err(AppError::from)?
             .ok_or_else(AppError::not_found)?;
-        urls::soft_delete(self.pool, url.id, None).await.map_err(AppError::from)?;
+        urls::soft_delete(self.pool, url.id, None)
+            .await
+            .map_err(AppError::from)?;
         self.audit(action::URL_DELETED, target::URL, url.id)
             .metadata(serde_json::json!({ "slug": url.slug, "by_admin": true }))
             .record(self.pool)
@@ -252,7 +286,10 @@ impl AdminContext<'_> {
     ) -> Result<CreatedInvite> {
         let max_uses = match max_uses {
             Some(value) if !(1..=10_000).contains(&value) => {
-                return Err(AppError::validation("max_uses", "uses must be between 1 and 10000"))
+                return Err(AppError::validation(
+                    "max_uses",
+                    "uses must be between 1 and 10000",
+                ))
             }
             Some(value) => value,
             None => 1,
@@ -275,7 +312,10 @@ impl AdminContext<'_> {
                     AppError::validation("expires_at", "expiry must look like 2030-01-31T12:00:00Z")
                 })?;
                 if parsed <= time::now() {
-                    return Err(AppError::validation("expires_at", "expiry must be in the future"));
+                    return Err(AppError::validation(
+                        "expires_at",
+                        "expiry must be in the future",
+                    ));
                 }
                 Some(time::to_iso(parsed))
             }
@@ -314,11 +354,15 @@ impl AdminContext<'_> {
 
     /// Revoke an invite code.
     pub async fn revoke_invite(&self, invite_id: i64) -> Result<()> {
-        let revoked = invites::revoke(self.pool, invite_id).await.map_err(AppError::from)?;
+        let revoked = invites::revoke(self.pool, invite_id)
+            .await
+            .map_err(AppError::from)?;
         if !revoked {
             return Err(AppError::not_found());
         }
-        self.audit(action::INVITE_REVOKED, target::INVITE, invite_id).record(self.pool).await;
+        self.audit(action::INVITE_REVOKED, target::INVITE, invite_id)
+            .record(self.pool)
+            .await;
         Ok(())
     }
 
@@ -346,11 +390,15 @@ impl AdminContext<'_> {
     /// Collect the numbers shown on the admin overview.
     pub async fn system_stats(&self) -> Result<SystemStats> {
         let users_total = users::count(self.pool).await.map_err(AppError::from)?;
-        let admins = users::count_active_admins(self.pool, None).await.map_err(AppError::from)?;
-        let (links, _clicks_from_urls, expired) =
-            urls::global_counts(self.pool).await.map_err(AppError::from)?;
-        let (total_clicks, unique_clicks, bot_clicks) =
-            clicks::global_totals(self.pool).await.map_err(AppError::from)?;
+        let admins = users::count_active_admins(self.pool, None)
+            .await
+            .map_err(AppError::from)?;
+        let (links, _clicks_from_urls, expired) = urls::global_counts(self.pool)
+            .await
+            .map_err(AppError::from)?;
+        let (total_clicks, unique_clicks, bot_clicks) = clicks::global_totals(self.pool)
+            .await
+            .map_err(AppError::from)?;
         let active_invites = invites::list(self.pool, 500, 0)
             .await
             .map_err(AppError::from)?
@@ -390,7 +438,9 @@ pub fn database_size(path: &std::path::Path) -> u64 {
     let mut total = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
     for suffix in ["-wal", "-shm"] {
         let sidecar = std::path::PathBuf::from(format!("{}{suffix}", path.display()));
-        total += std::fs::metadata(sidecar).map(|meta| meta.len()).unwrap_or(0);
+        total += std::fs::metadata(sidecar)
+            .map(|meta| meta.len())
+            .unwrap_or(0);
     }
     total
 }
@@ -402,17 +452,25 @@ pub async fn list_users(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<User>> {
-    users::list(pool, filter, limit, offset).await.map_err(AppError::from)
+    users::list(pool, filter, limit, offset)
+        .await
+        .map_err(AppError::from)
 }
 
 /// Count users matching a filter.
 pub async fn count_users(pool: &SqlitePool, filter: &UserFilter) -> Result<i64> {
-    users::count_filtered(pool, filter).await.map_err(AppError::from)
+    users::count_filtered(pool, filter)
+        .await
+        .map_err(AppError::from)
 }
 
 /// Links per user, as a lookup table.
 pub async fn link_counts(pool: &SqlitePool) -> Result<std::collections::HashMap<i64, i64>> {
-    Ok(users::link_counts(pool).await.map_err(AppError::from)?.into_iter().collect())
+    Ok(users::link_counts(pool)
+        .await
+        .map_err(AppError::from)?
+        .into_iter()
+        .collect())
 }
 
 /// Audit log page plus total.
@@ -422,7 +480,9 @@ pub async fn audit_page(
     limit: i64,
     offset: i64,
 ) -> Result<(Vec<audit::AuditLog>, i64)> {
-    let rows = audit::list(pool, filter, limit, offset).await.map_err(AppError::from)?;
+    let rows = audit::list(pool, filter, limit, offset)
+        .await
+        .map_err(AppError::from)?;
     let total = audit::count(pool, filter).await.map_err(AppError::from)?;
     Ok((rows, total))
 }
@@ -432,12 +492,23 @@ pub async fn settings_snapshot(settings: &Settings) -> std::collections::HashMap
     settings.snapshot()
 }
 
+/// Checkpoint the write-ahead log so the database file stays compact.
+pub async fn checkpoint_wal(pool: &SqlitePool) -> Result<()> {
+    // TRUNCATE waits for readers, then resets the WAL file to zero bytes.
+    sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+        .execute(pool)
+        .await
+        .map_err(AppError::from)?;
+    Ok(())
+}
+
 /// Delete stale sessions and, when configured, old analytics data.
 pub async fn run_maintenance(pool: &SqlitePool, settings: &Settings) -> Result<()> {
     let now = time::now_iso();
     let stale_before = time::iso_days_ago(1);
-    let sessions_deleted =
-        sessions::delete_stale(pool, &stale_before).await.map_err(AppError::from)?;
+    let sessions_deleted = sessions::delete_stale(pool, &stale_before)
+        .await
+        .map_err(AppError::from)?;
 
     let attempts_before = time::iso_days_ago(30);
     let attempts_deleted = crate::db::login_attempts::delete_older_than(pool, &attempts_before)
@@ -445,15 +516,25 @@ pub async fn run_maintenance(pool: &SqlitePool, settings: &Settings) -> Result<(
         .map_err(AppError::from)?;
 
     let audit_before = time::iso_days_ago(180);
-    let audit_deleted = audit::delete_older_than(pool, &audit_before).await.map_err(AppError::from)?;
+    let audit_deleted = audit::delete_older_than(pool, &audit_before)
+        .await
+        .map_err(AppError::from)?;
 
     let mut clicks_deleted = 0;
     let retention = settings.click_retention_days();
     if retention > 0 {
         let before = time::iso_days_ago(retention);
-        clicks_deleted = clicks::delete_older_than(pool, &before).await.map_err(AppError::from)?;
+        clicks_deleted = clicks::delete_older_than(pool, &before)
+            .await
+            .map_err(AppError::from)?;
         let before_day = time::day_days_ago(retention);
-        clicks::delete_daily_before(pool, &before_day).await.map_err(AppError::from)?;
+        clicks::delete_daily_before(pool, &before_day)
+            .await
+            .map_err(AppError::from)?;
+    }
+
+    if let Err(err) = checkpoint_wal(pool).await {
+        tracing::debug!(error = %err, "wal checkpoint skipped");
     }
 
     if sessions_deleted + attempts_deleted + audit_deleted + clicks_deleted > 0 {

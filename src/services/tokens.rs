@@ -37,7 +37,10 @@ pub fn validate_name(name: &str) -> Result<String> {
         ));
     }
     if name.chars().any(char::is_control) {
-        return Err(AppError::validation("name", "the token name must not contain control characters"));
+        return Err(AppError::validation(
+            "name",
+            "the token name must not contain control characters",
+        ));
     }
     Ok(name.to_string())
 }
@@ -51,7 +54,10 @@ pub fn validate_expiry(raw: Option<&str>) -> Result<Option<String>> {
                 AppError::validation("expires_at", "expiry must look like 2030-01-31T12:00:00Z")
             })?;
             if parsed <= time::now() {
-                return Err(AppError::validation("expires_at", "expiry must be in the future"));
+                return Err(AppError::validation(
+                    "expires_at",
+                    "expiry must be in the future",
+                ));
             }
             Ok(Some(time::to_iso(parsed)))
         }
@@ -106,16 +112,13 @@ pub async fn create(
 
 /// Tokens of a user, newest first.
 pub async fn list(pool: &SqlitePool, user_id: i64) -> Result<Vec<ApiToken>> {
-    tokens::list_for_user(pool, user_id).await.map_err(AppError::from)
+    tokens::list_for_user(pool, user_id)
+        .await
+        .map_err(AppError::from)
 }
 
 /// Revoke a token owned by a user.
-pub async fn revoke(
-    pool: &SqlitePool,
-    actor: &User,
-    id: i64,
-    ip_hash: Option<&str>,
-) -> Result<()> {
+pub async fn revoke(pool: &SqlitePool, actor: &User, id: i64, ip_hash: Option<&str>) -> Result<()> {
     let revoked = tokens::revoke(pool, id, actor.id, &time::now_iso())
         .await
         .map_err(AppError::from)?;
@@ -137,7 +140,10 @@ mod tests {
 
     #[test]
     fn validates_names() {
-        assert_eq!(validate_name("  ci pipeline ").expect("valid"), "ci pipeline");
+        assert_eq!(
+            validate_name("  ci pipeline ").expect("valid"),
+            "ci pipeline"
+        );
         assert!(validate_name("").is_err());
         assert!(validate_name("   ").is_err());
         assert!(validate_name(&"x".repeat(MAX_NAME_LEN + 1)).is_err());
@@ -148,7 +154,9 @@ mod tests {
     fn validates_expiry() {
         assert_eq!(validate_expiry(None).expect("none"), None);
         assert_eq!(validate_expiry(Some("  ")).expect("blank"), None);
-        assert!(validate_expiry(Some("2030-01-01")).expect("future").is_some());
+        assert!(validate_expiry(Some("2030-01-01"))
+            .expect("future")
+            .is_some());
         assert!(validate_expiry(Some("2000-01-01")).is_err());
         assert!(validate_expiry(Some("nope")).is_err());
     }

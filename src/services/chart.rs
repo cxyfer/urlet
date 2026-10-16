@@ -12,8 +12,10 @@ use crate::services::time;
 /// Build a dense daily series covering the last `days` days (oldest first).
 pub fn fill_days(series: &[DailyStat], days: i64) -> Vec<DailyPointDto> {
     let days = days.clamp(1, 365);
-    let mut by_day: HashMap<&str, &DailyStat> =
-        series.iter().map(|stat| (stat.day.as_str(), stat)).collect();
+    let mut by_day: HashMap<&str, &DailyStat> = series
+        .iter()
+        .map(|stat| (stat.day.as_str(), stat))
+        .collect();
 
     (0..days)
         .rev()
@@ -26,7 +28,12 @@ pub fn fill_days(series: &[DailyStat], days: i64) -> Vec<DailyPointDto> {
                     unique_clicks: stat.unique_clicks,
                     bot_clicks: stat.bot_clicks,
                 },
-                None => DailyPointDto { day, clicks: 0, unique_clicks: 0, bot_clicks: 0 },
+                None => DailyPointDto {
+                    day,
+                    clicks: 0,
+                    unique_clicks: 0,
+                    bot_clicks: 0,
+                },
             }
         })
         .collect()
@@ -40,7 +47,12 @@ pub fn svg_bars(points: &[DailyPointDto]) -> String {
     if points.is_empty() {
         return String::new();
     }
-    let max = points.iter().map(|point| point.clicks).max().unwrap_or(0).max(1) as f64;
+    let max = points
+        .iter()
+        .map(|point| point.clicks)
+        .max()
+        .unwrap_or(0)
+        .max(1) as f64;
     let slot = 100.0 / points.len() as f64;
     let width = (slot * 0.68).max(0.4);
     let chart_height = 38.0;
@@ -77,7 +89,12 @@ pub fn svg_bars(points: &[DailyPointDto]) -> String {
 
 /// Highest count in a breakdown, used to size the bars in the template.
 pub fn max_count(items: &[DimensionDto]) -> i64 {
-    items.iter().map(|item| item.count).max().unwrap_or(0).max(1)
+    items
+        .iter()
+        .map(|item| item.count)
+        .max()
+        .unwrap_or(0)
+        .max(1)
 }
 
 /// Percentage width for a bar in a breakdown list.
@@ -85,7 +102,9 @@ pub fn bar_percent(count: i64, max: i64) -> i64 {
     if max <= 0 {
         return 0;
     }
-    ((count as f64 / max as f64) * 100.0).round().clamp(0.0, 100.0) as i64
+    ((count as f64 / max as f64) * 100.0)
+        .round()
+        .clamp(0.0, 100.0) as i64
 }
 
 #[cfg(test)]
@@ -93,7 +112,12 @@ mod tests {
     use super::*;
 
     fn stat(day: &str, clicks: i64, unique: i64, bots: i64) -> DailyStat {
-        DailyStat { day: day.to_string(), clicks, unique_clicks: unique, bot_clicks: bots }
+        DailyStat {
+            day: day.to_string(),
+            clicks,
+            unique_clicks: unique,
+            bot_clicks: bots,
+        }
     }
 
     #[test]
@@ -120,7 +144,11 @@ mod tests {
         let svg = svg_bars(&points);
         assert!(svg.starts_with("<svg"));
         assert!(svg.ends_with("</svg>"));
-        assert_eq!(svg.matches("<rect").count(), 2, "one human bar and one bot bar");
+        assert_eq!(
+            svg.matches("<rect").count(),
+            2,
+            "one human bar and one bot bar"
+        );
         assert!(svg.contains("aria-label"));
     }
 
@@ -132,8 +160,14 @@ mod tests {
     #[test]
     fn computes_bar_percentages() {
         let items = vec![
-            DimensionDto { label: "a".into(), count: 10 },
-            DimensionDto { label: "b".into(), count: 5 },
+            DimensionDto {
+                label: "a".into(),
+                count: 10,
+            },
+            DimensionDto {
+                label: "b".into(),
+                count: 5,
+            },
         ];
         assert_eq!(max_count(&items), 10);
         assert_eq!(bar_percent(10, 10), 100);

@@ -13,7 +13,10 @@ async fn first_account_becomes_administrator() {
     let (_, user) = app.register("owner@example.com", "supersecret").await;
     assert_eq!(user["user"]["role"], "admin");
     assert_eq!(user["user"]["email"], "owner@example.com");
-    assert!(user["user"]["password_hash"].is_null(), "hash must never be serialised");
+    assert!(
+        user["user"]["password_hash"].is_null(),
+        "hash must never be serialised"
+    );
 }
 
 #[tokio::test]
@@ -54,13 +57,19 @@ async fn invalid_registrations_are_rejected() {
     let app = TestApp::spawn().await;
 
     let bad_email = app
-        .post_json("/api/v1/auth/register", json!({ "email": "nope", "password": "supersecret" }))
+        .post_json(
+            "/api/v1/auth/register",
+            json!({ "email": "nope", "password": "supersecret" }),
+        )
         .await;
     assert_eq!(bad_email.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(bad_email.json()["error"]["details"]["field"], "email");
 
     let weak = app
-        .post_json("/api/v1/auth/register", json!({ "email": "a@example.com", "password": "short" }))
+        .post_json(
+            "/api/v1/auth/register",
+            json!({ "email": "a@example.com", "password": "short" }),
+        )
         .await;
     assert_eq!(weak.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(weak.json()["error"]["details"]["field"], "password");
@@ -72,16 +81,28 @@ async fn login_flow_and_wrong_password() {
     app.register("user@example.com", "supersecret").await;
 
     let wrong = app
-        .post_json("/api/v1/auth/login", json!({ "email": "user@example.com", "password": "nope" }))
+        .post_json(
+            "/api/v1/auth/login",
+            json!({ "email": "user@example.com", "password": "nope" }),
+        )
         .await;
     assert_eq!(wrong.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(wrong.json()["error"]["message"], "invalid email or password");
+    assert_eq!(
+        wrong.json()["error"]["message"],
+        "invalid email or password"
+    );
 
     let unknown = app
-        .post_json("/api/v1/auth/login", json!({ "email": "ghost@example.com", "password": "nope" }))
+        .post_json(
+            "/api/v1/auth/login",
+            json!({ "email": "ghost@example.com", "password": "nope" }),
+        )
         .await;
     assert_eq!(unknown.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(unknown.json()["error"]["message"], "invalid email or password");
+    assert_eq!(
+        unknown.json()["error"]["message"],
+        "invalid email or password"
+    );
 
     let cookie = app.login("user@example.com", "supersecret").await;
     let me = app.get_as("/api/v1/auth/me", &cookie).await;
@@ -99,7 +120,9 @@ async fn anonymous_requests_are_unauthorised() {
 #[tokio::test]
 async fn garbage_session_cookie_is_unauthorised() {
     let app = TestApp::spawn().await;
-    let response = app.get_as("/api/v1/auth/me", "uwurls_session=not-a-real-token").await;
+    let response = app
+        .get_as("/api/v1/auth/me", "uwurls_session=not-a-real-token")
+        .await;
     assert_eq!(response.status, StatusCode::UNAUTHORIZED);
 }
 
@@ -108,9 +131,14 @@ async fn logout_revokes_the_session() {
     let app = TestApp::spawn().await;
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
 
-    let logout = app.post_json_as("/api/v1/auth/logout", json!({}), &cookie).await;
+    let logout = app
+        .post_json_as("/api/v1/auth/logout", json!({}), &cookie)
+        .await;
     assert_eq!(logout.status, StatusCode::NO_CONTENT);
-    assert!(logout.header("set-cookie").is_some(), "session cookie is cleared");
+    assert!(
+        logout.header("set-cookie").is_some(),
+        "session cookie is cleared"
+    );
 
     let me = app.get_as("/api/v1/auth/me", &cookie).await;
     assert_eq!(me.status, StatusCode::UNAUTHORIZED);
@@ -132,13 +160,25 @@ async fn changing_the_password_revokes_other_sessions() {
     assert_eq!(response.status, StatusCode::NO_CONTENT, "{}", response.body);
 
     // The session that changed the password survives, the other one does not.
-    assert_eq!(app.get_as("/api/v1/auth/me", &second).await.status, StatusCode::OK);
-    assert_eq!(app.get_as("/api/v1/auth/me", &first).await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        app.get_as("/api/v1/auth/me", &second).await.status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.get_as("/api/v1/auth/me", &first).await.status,
+        StatusCode::UNAUTHORIZED
+    );
 
     let fresh = app.login("user@example.com", "brandnewpass").await;
-    assert_eq!(app.get_as("/api/v1/auth/me", &fresh).await.status, StatusCode::OK);
+    assert_eq!(
+        app.get_as("/api/v1/auth/me", &fresh).await.status,
+        StatusCode::OK
+    );
     let stale = app
-        .post_json("/api/v1/auth/login", json!({ "email": "user@example.com", "password": "supersecret" }))
+        .post_json(
+            "/api/v1/auth/login",
+            json!({ "email": "user@example.com", "password": "supersecret" }),
+        )
         .await;
     assert_eq!(stale.status, StatusCode::UNAUTHORIZED);
 }
@@ -162,17 +202,31 @@ async fn profile_can_be_updated_and_validated() {
     let app = TestApp::spawn().await;
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
 
-    let response = app.send(patch_json_as("/api/v1/auth/me", json!({ "display_name": "Ada" }), &cookie)).await;
+    let response = app
+        .send(patch_json_as(
+            "/api/v1/auth/me",
+            json!({ "display_name": "Ada" }),
+            &cookie,
+        ))
+        .await;
     assert_eq!(response.status, StatusCode::OK, "{}", response.body);
     assert_eq!(response.json()["user"]["display_name"], "Ada");
 
     let too_long = json!({ "display_name": "x".repeat(61) });
-    let response = app.send(patch_json_as("/api/v1/auth/me", too_long, &cookie)).await;
+    let response = app
+        .send(patch_json_as("/api/v1/auth/me", too_long, &cookie))
+        .await;
     assert_eq!(response.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(response.json()["error"]["details"]["field"], "display_name");
 
     // An empty string clears the display name.
-    let response = app.send(patch_json_as("/api/v1/auth/me", json!({ "display_name": "" }), &cookie)).await;
+    let response = app
+        .send(patch_json_as(
+            "/api/v1/auth/me",
+            json!({ "display_name": "" }),
+            &cookie,
+        ))
+        .await;
     assert_eq!(response.status, StatusCode::OK);
     assert!(response.json()["user"]["display_name"].is_null());
 }
@@ -188,7 +242,13 @@ async fn sessions_can_be_listed_and_revoked() {
     let sessions = list.json();
     let sessions = sessions.as_array().expect("array");
     assert_eq!(sessions.len(), 2);
-    assert_eq!(sessions.iter().filter(|session| session["current"] == true).count(), 1);
+    assert_eq!(
+        sessions
+            .iter()
+            .filter(|session| session["current"] == true)
+            .count(),
+        1
+    );
 
     let other_id = sessions
         .iter()
@@ -197,12 +257,22 @@ async fn sessions_can_be_listed_and_revoked() {
         .as_i64()
         .expect("id");
 
-    let response = app.send(delete_as(&format!("/api/v1/auth/sessions/{other_id}"), &cookie)).await;
+    let response = app
+        .send(delete_as(
+            &format!("/api/v1/auth/sessions/{other_id}"),
+            &cookie,
+        ))
+        .await;
     assert_eq!(response.status, StatusCode::NO_CONTENT);
-    assert_eq!(app.get_as("/api/v1/auth/me", &other).await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        app.get_as("/api/v1/auth/me", &other).await.status,
+        StatusCode::UNAUTHORIZED
+    );
 
     // Revoking a session that does not belong to the caller is a 404.
-    let response = app.send(delete_as("/api/v1/auth/sessions/9999", &cookie)).await;
+    let response = app
+        .send(delete_as("/api/v1/auth/sessions/9999", &cookie))
+        .await;
     assert_eq!(response.status, StatusCode::NOT_FOUND);
 }
 
@@ -277,7 +347,10 @@ async fn login_is_rate_limited() {
     let mut limited = false;
     for _ in 0..15 {
         let response = app
-            .post_json("/api/v1/auth/login", json!({ "email": "user@example.com", "password": "wrong" }))
+            .post_json(
+                "/api/v1/auth/login",
+                json!({ "email": "user@example.com", "password": "wrong" }),
+            )
             .await;
         if response.status == StatusCode::TOO_MANY_REQUESTS {
             limited = true;
@@ -286,14 +359,20 @@ async fn login_is_rate_limited() {
             break;
         }
     }
-    assert!(limited, "login should be rate limited after repeated failures");
+    assert!(
+        limited,
+        "login should be rate limited after repeated failures"
+    );
 }
 
 #[tokio::test]
 async fn suspended_accounts_cannot_use_existing_sessions() {
     let app = TestApp::spawn().await;
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
-    assert_eq!(app.get_as("/api/v1/auth/me", &cookie).await.status, StatusCode::OK);
+    assert_eq!(
+        app.get_as("/api/v1/auth/me", &cookie).await.status,
+        StatusCode::OK
+    );
 
     sqlx::query("UPDATE users SET status = 'suspended' WHERE email_normalized = ?")
         .bind("user@example.com")
@@ -301,9 +380,15 @@ async fn suspended_accounts_cannot_use_existing_sessions() {
         .await
         .expect("suspend");
 
-    assert_eq!(app.get_as("/api/v1/auth/me", &cookie).await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        app.get_as("/api/v1/auth/me", &cookie).await.status,
+        StatusCode::UNAUTHORIZED
+    );
     let login = app
-        .post_json("/api/v1/auth/login", json!({ "email": "user@example.com", "password": "supersecret" }))
+        .post_json(
+            "/api/v1/auth/login",
+            json!({ "email": "user@example.com", "password": "supersecret" }),
+        )
         .await;
     assert_eq!(login.status, StatusCode::FORBIDDEN);
 }
@@ -318,7 +403,10 @@ async fn registration_can_be_closed() {
         .expect("update setting");
 
     let response = app
-        .post_json("/api/v1/auth/register", json!({ "email": "a@example.com", "password": "supersecret" }))
+        .post_json(
+            "/api/v1/auth/register",
+            json!({ "email": "a@example.com", "password": "supersecret" }),
+        )
         .await;
     assert_eq!(response.status, StatusCode::FORBIDDEN);
 }
@@ -331,10 +419,16 @@ async fn invite_only_registration_requires_a_valid_code() {
         .update(&app.state.db, "registration_mode", "invite", None)
         .await
         .expect("update setting");
-    assert_eq!(app.state.settings.registration_mode(), RegistrationMode::Invite);
+    assert_eq!(
+        app.state.settings.registration_mode(),
+        RegistrationMode::Invite
+    );
 
     let without_code = app
-        .post_json("/api/v1/auth/register", json!({ "email": "a@example.com", "password": "supersecret" }))
+        .post_json(
+            "/api/v1/auth/register",
+            json!({ "email": "a@example.com", "password": "supersecret" }),
+        )
         .await;
     assert_eq!(without_code.status, StatusCode::FORBIDDEN);
 
@@ -374,7 +468,11 @@ async fn invite_only_registration_requires_a_valid_code() {
             json!({ "email": "b@example.com", "password": "supersecret", "invite_code": code }),
         )
         .await;
-    assert_eq!(reused.status, StatusCode::FORBIDDEN, "a single-use invite cannot be reused");
+    assert_eq!(
+        reused.status,
+        StatusCode::FORBIDDEN,
+        "a single-use invite cannot be reused"
+    );
 }
 
 #[tokio::test]
@@ -390,8 +488,12 @@ async fn bootstrap_administrator_from_configuration() {
     assert_eq!(me.json()["user"]["role"], "admin");
 
     // Bootstrapping again must not create a duplicate.
-    uwurls::server::bootstrap(&app.state).await.expect("bootstrap is idempotent");
-    let users = uwurls::db::users::count(&app.state.db).await.expect("count");
+    uwurls::server::bootstrap(&app.state)
+        .await
+        .expect("bootstrap is idempotent");
+    let users = uwurls::db::users::count(&app.state.db)
+        .await
+        .expect("count");
     assert_eq!(users, 1);
 }
 
@@ -411,7 +513,10 @@ async fn security_headers_are_present() {
     let app = TestApp::spawn().await;
     let response = app.get("/health").await;
     assert!(response.header("content-security-policy").is_some());
-    assert_eq!(response.header("x-content-type-options").as_deref(), Some("nosniff"));
+    assert_eq!(
+        response.header("x-content-type-options").as_deref(),
+        Some("nosniff")
+    );
     assert_eq!(response.header("x-frame-options").as_deref(), Some("DENY"));
     assert!(response.header("x-request-id").is_some());
 }

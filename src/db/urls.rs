@@ -56,7 +56,10 @@ impl UrlState {
 
 impl Url {
     pub fn has_password(&self) -> bool {
-        self.password_hash.as_deref().map(|hash| !hash.is_empty()).unwrap_or(false)
+        self.password_hash
+            .as_deref()
+            .map(|hash| !hash.is_empty())
+            .unwrap_or(false)
     }
 
     pub fn is_custom(&self) -> bool {
@@ -109,7 +112,8 @@ pub struct NewUrl {
     pub is_custom_slug: bool,
 }
 
-const SELECT: &str = "SELECT id, user_id, domain_id, slug, target_url, title, notes, password_hash, \
+const SELECT: &str =
+    "SELECT id, user_id, domain_id, slug, target_url, title, notes, password_hash, \
                       expires_at, max_clicks, click_count, unique_click_count, redirect_type, \
                       status, is_custom_slug, last_clicked_at, created_at, updated_at, deleted_at \
                       FROM urls";
@@ -150,12 +154,18 @@ pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Url>, sqlx:
 }
 
 /// Find a live link by id, restricted to its owner.
-pub async fn find_owned(pool: &SqlitePool, id: i64, user_id: i64) -> Result<Option<Url>, sqlx::Error> {
-    sqlx::query_as::<_, Url>(&format!("{SELECT} WHERE id = ? AND user_id = ? AND deleted_at IS NULL"))
-        .bind(id)
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await
+pub async fn find_owned(
+    pool: &SqlitePool,
+    id: i64,
+    user_id: i64,
+) -> Result<Option<Url>, sqlx::Error> {
+    sqlx::query_as::<_, Url>(&format!(
+        "{SELECT} WHERE id = ? AND user_id = ? AND deleted_at IS NULL"
+    ))
+    .bind(id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
 }
 
 /// Find a live link by slug. The column is `COLLATE NOCASE`, so this is
@@ -289,7 +299,11 @@ enum Bind {
 }
 
 /// Soft delete a link. The slug stays reserved.
-pub async fn soft_delete(pool: &SqlitePool, id: i64, user_id: Option<i64>) -> Result<bool, sqlx::Error> {
+pub async fn soft_delete(
+    pool: &SqlitePool,
+    id: i64,
+    user_id: Option<i64>,
+) -> Result<bool, sqlx::Error> {
     let now = time::now_iso();
     let result = match user_id {
         Some(user_id) => {
@@ -304,16 +318,14 @@ pub async fn soft_delete(pool: &SqlitePool, id: i64, user_id: Option<i64>) -> Re
             .execute(pool)
             .await?
         }
-        None => {
-            sqlx::query(
-                "UPDATE urls SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
-            )
-            .bind(&now)
-            .bind(&now)
-            .bind(id)
-            .execute(pool)
-            .await?
-        }
+        None => sqlx::query(
+            "UPDATE urls SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+        )
+        .bind(&now)
+        .bind(&now)
+        .bind(id)
+        .execute(pool)
+        .await?,
     };
     Ok(result.rows_affected() > 0)
 }

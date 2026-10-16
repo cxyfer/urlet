@@ -60,7 +60,11 @@ pub async fn stats(
     let browsers = clicks::breakdown_for_url(&state.db, url.id, Dimension::Browser, 10).await?;
     let operating_systems = clicks::breakdown_for_url(&state.db, url.id, Dimension::Os, 10).await?;
 
-    let tag_names = tags::for_url(&state.db, url.id).await?.into_iter().map(|tag| tag.name).collect();
+    let tag_names = tags::for_url(&state.db, url.id)
+        .await?
+        .into_iter()
+        .map(|tag| tag.name)
+        .collect();
 
     Ok(Json(UrlStatsDto {
         url: UrlDto::new(&url, &state.config.base_url, tag_names),
@@ -84,11 +88,24 @@ pub async fn clicks_log(
         .await?
         .ok_or_else(|| ApiError(AppError::not_found()))?;
 
-    let pagination = Pagination { page: query.page, per_page: query.per_page };
-    let rows = clicks::recent_for_url(&state.db, url.id, pagination.per_page(), pagination.offset())
-        .await?;
+    let pagination = Pagination {
+        page: query.page,
+        per_page: query.per_page,
+    };
+    let rows = clicks::recent_for_url(
+        &state.db,
+        url.id,
+        pagination.per_page(),
+        pagination.offset(),
+    )
+    .await?;
     let total = clicks::count_for_url(&state.db, url.id).await?;
-    let page = Page::new(rows.iter().map(click_dto).collect::<Vec<_>>(), pagination.page(), pagination.per_page(), total);
+    let page = Page::new(
+        rows.iter().map(click_dto).collect::<Vec<_>>(),
+        pagination.page(),
+        pagination.per_page(),
+        total,
+    );
 
     Ok(Json(ClickList {
         items: page.items,
@@ -128,7 +145,12 @@ pub fn click_dto(click: &Click) -> ClickDto {
 
 /// Convert breakdown rows into the public shape.
 pub fn dimensions(rows: Vec<clicks::DimensionCount>) -> Vec<DimensionDto> {
-    rows.into_iter().map(|row| DimensionDto { label: row.label, count: row.count }).collect()
+    rows.into_iter()
+        .map(|row| DimensionDto {
+            label: row.label,
+            count: row.count,
+        })
+        .collect()
 }
 
 /// Daily points helper shared with the HTML dashboard.

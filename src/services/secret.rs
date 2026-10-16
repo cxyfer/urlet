@@ -86,14 +86,20 @@ pub fn constant_time_eq(a: &str, b: &str) -> bool {
 pub fn random_token(bytes: usize) -> String {
     let mut buf = vec![0u8; bytes];
     rand::thread_rng().fill_bytes(&mut buf);
-    B64.encode(&buf).replace('+', "-").replace('/', "_").trim_end_matches('=').to_string()
+    B64.encode(&buf)
+        .replace('+', "-")
+        .replace('/', "_")
+        .trim_end_matches('=')
+        .to_string()
 }
 
 /// Short, unambiguous random code for invite codes.
 pub fn random_code(len: usize) -> String {
     const ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let mut rng = rand::thread_rng();
-    (0..len).map(|_| ALPHABET[(rng.next_u32() as usize) % ALPHABET.len()] as char).collect()
+    (0..len)
+        .map(|_| ALPHABET[(rng.next_u32() as usize) % ALPHABET.len()] as char)
+        .collect()
 }
 
 fn to_hex(bytes: &[u8]) -> String {

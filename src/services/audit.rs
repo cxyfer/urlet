@@ -49,7 +49,12 @@ pub struct Audit {
 
 impl Audit {
     pub fn new(action: &str) -> Self {
-        Self { entry: NewAuditLog { action: action.to_string(), ..Default::default() } }
+        Self {
+            entry: NewAuditLog {
+                action: action.to_string(),
+                ..Default::default()
+            },
+        }
     }
 
     pub fn actor(mut self, user_id: i64, role: &str) -> Self {

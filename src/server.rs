@@ -28,7 +28,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/", get(routes::pages::home))
         .nest("/app", routes::pages::router())
         .route("/{slug}", get(routes::redirect::redirect))
-        .route("/{slug}/unlock", axum::routing::post(routes::redirect::unlock_link))
+        .route(
+            "/{slug}/unlock",
+            axum::routing::post(routes::redirect::unlock_link),
+        )
         .nest("/api/v1", routes::api::router())
         .fallback(routes::not_found)
         .layer(axum::middleware::from_fn_with_state(
@@ -59,9 +62,10 @@ pub async fn bootstrap(state: &AppState) -> Result<()> {
 
 /// Create or promote the administrator configured through the environment.
 async fn bootstrap_admin(state: &AppState) -> Result<()> {
-    let (Some(email), Some(plain_password)) =
-        (state.config.admin_email.clone(), state.config.admin_password.clone())
-    else {
+    let (Some(email), Some(plain_password)) = (
+        state.config.admin_email.clone(),
+        state.config.admin_password.clone(),
+    ) else {
         return Ok(());
     };
 
@@ -77,7 +81,10 @@ async fn bootstrap_admin(state: &AppState) -> Result<()> {
                 db::users::set_role_status(&state.db, existing.id, "admin", "active")
                     .await
                     .map_err(AppError::from)?;
-                tracing::info!(user_id = existing.id, "bootstrap account promoted to administrator");
+                tracing::info!(
+                    user_id = existing.id,
+                    "bootstrap account promoted to administrator"
+                );
             }
         }
         None => {
@@ -103,7 +110,12 @@ async fn bootstrap_admin(state: &AppState) -> Result<()> {
 /// Point out the obvious foot-gun: a closed instance with no accounts.
 async fn warn_about_first_user(state: &AppState) -> Result<()> {
     let users = db::users::count(&state.db).await.map_err(AppError::from)?;
-    if users == 0 && !state.settings.registration_mode().allows_public_registration() {
+    if users == 0
+        && !state
+            .settings
+            .registration_mode()
+            .allows_public_registration()
+    {
         tracing::warn!(
             mode = state.settings.registration_mode().as_str(),
             "no accounts exist and registration is not open; set UWURLS_ADMIN_EMAIL and \
@@ -154,10 +166,13 @@ pub async fn serve(config: Config) -> Result<()> {
         "uwurls is listening"
     );
 
-    axum::serve(listener, build_router(state).into_make_service_with_connect_info::<SocketAddr>())
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .map_err(|err| AppError::internal(format!("server error: {err}")))?;
+    axum::serve(
+        listener,
+        build_router(state).into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .map_err(|err| AppError::internal(format!("server error: {err}")))?;
 
     tracing::info!("shutdown complete");
     Ok(())

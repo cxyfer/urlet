@@ -3,7 +3,7 @@
 use sqlx::SqlitePool;
 
 use crate::db::tags;
-use crate::db::urls::{self, NewUrl, Url, UrlUpdate, UrlState};
+use crate::db::urls::{self, NewUrl, Url, UrlState, UrlUpdate};
 use crate::db::users::User;
 use crate::error::{AppError, Result};
 use crate::services::audit::{action, target, Audit};
@@ -63,7 +63,10 @@ pub struct UpdateInput {
 pub fn validate_redirect_type(value: i64) -> Result<i64> {
     match value {
         301 | 302 | 307 | 308 => Ok(value),
-        _ => Err(AppError::validation("redirect_type", "redirect type must be 301, 302, 307 or 308")),
+        _ => Err(AppError::validation(
+            "redirect_type",
+            "redirect type must be 301, 302, 307 or 308",
+        )),
     }
 }
 
@@ -71,13 +74,19 @@ pub fn validate_redirect_type(value: i64) -> Result<i64> {
 pub fn validate_expiry(raw: &str) -> Result<String> {
     let raw = raw.trim();
     if raw.is_empty() {
-        return Err(AppError::validation("expires_at", "expiry must be a date or empty"));
+        return Err(AppError::validation(
+            "expires_at",
+            "expiry must be a date or empty",
+        ));
     }
     let parsed = time::parse_flexible(raw).ok_or_else(|| {
         AppError::validation("expires_at", "expiry must look like 2030-01-31T12:00:00Z")
     })?;
     if parsed <= time::now() {
-        return Err(AppError::validation("expires_at", "expiry must be in the future"));
+        return Err(AppError::validation(
+            "expires_at",
+            "expiry must be in the future",
+        ));
     }
     Ok(time::to_iso(parsed))
 }
@@ -85,10 +94,16 @@ pub fn validate_expiry(raw: &str) -> Result<String> {
 /// Validate the click limit.
 pub fn validate_max_clicks(value: i64) -> Result<i64> {
     if value < 1 {
-        return Err(AppError::validation("max_clicks", "the click limit must be at least 1"));
+        return Err(AppError::validation(
+            "max_clicks",
+            "the click limit must be at least 1",
+        ));
     }
     if value > 100_000_000 {
-        return Err(AppError::validation("max_clicks", "the click limit is too large"));
+        return Err(AppError::validation(
+            "max_clicks",
+            "the click limit is too large",
+        ));
     }
     Ok(value)
 }
@@ -106,7 +121,10 @@ pub fn validate_title(raw: &str) -> Result<Option<String>> {
         ));
     }
     if trimmed.chars().any(|c| c.is_control()) {
-        return Err(AppError::validation("title", "the title must not contain control characters"));
+        return Err(AppError::validation(
+            "title",
+            "the title must not contain control characters",
+        ));
     }
     Ok(Some(trimmed.to_string()))
 }
@@ -142,7 +160,10 @@ pub fn normalize_tags(tags: &[String]) -> Result<Vec<String>> {
             ));
         }
         if trimmed.chars().any(|c| c.is_control() || c == ',') {
-            return Err(AppError::validation("tags", "tags must not contain commas or control characters"));
+            return Err(AppError::validation(
+                "tags",
+                "tags must not contain commas or control characters",
+            ));
         }
         let lowered = trimmed.to_lowercase();
         if seen.contains(&lowered) {
@@ -190,7 +211,9 @@ impl UrlContext<'_> {
 
         let quota = self.settings.max_urls_per_user();
         if quota > 0 {
-            let used = urls::count_for_user(self.pool, self.actor.id).await.map_err(AppError::from)?;
+            let used = urls::count_for_user(self.pool, self.actor.id)
+                .await
+                .map_err(AppError::from)?;
             if used >= quota {
                 return Err(AppError::forbidden(format!(
                     "you have reached your limit of {quota} links"
@@ -199,11 +222,21 @@ impl UrlContext<'_> {
         }
 
         let tags = normalize_tags(&input.tags)?;
-        let (slug, is_custom) = match input.slug.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        let (slug, is_custom) = match input
+            .slug
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             Some(custom) => {
                 let custom = slug::validate(custom)?;
-                if urls::slug_taken(self.pool, &custom).await.map_err(AppError::from)? {
-                    return Err(AppError::conflict(format!("the slug '{custom}' is already taken")));
+                if urls::slug_taken(self.pool, &custom)
+                    .await
+                    .map_err(AppError::from)?
+                {
+                    return Err(AppError::conflict(format!(
+                        "the slug '{custom}' is already taken"
+                    )));
                 }
                 (custom, true)
             }
@@ -231,7 +264,9 @@ impl UrlContext<'_> {
             None => None,
         };
         let password_hash = prepare_password(input.password.as_deref())?;
-        let domain_id = crate::db::domains::default_id(self.pool).await.map_err(AppError::from)?;
+        let domain_id = crate::db::domains::default_id(self.pool)
+            .await
+            .map_err(AppError::from)?;
 
         let url_id = urls::create(
             self.pool,
@@ -281,8 +316,13 @@ impl UrlContext<'_> {
         if let Some(raw) = input.slug.as_deref() {
             let custom = slug::validate(raw)?;
             if custom != url.slug {
-                if urls::slug_taken(self.pool, &custom).await.map_err(AppError::from)? {
-                    return Err(AppError::conflict(format!("the slug '{custom}' is already taken")));
+                if urls::slug_taken(self.pool, &custom)
+                    .await
+                    .map_err(AppError::from)?
+                {
+                    return Err(AppError::conflict(format!(
+                        "the slug '{custom}' is already taken"
+                    )));
                 }
                 changes.slug = Some(custom);
                 changes.is_custom_slug = Some(true);
@@ -321,7 +361,10 @@ impl UrlContext<'_> {
         if let Some(status) = input.status.as_deref() {
             let status = status.trim().to_ascii_lowercase();
             if status != "active" && status != "disabled" {
-                return Err(AppError::validation("status", "status must be 'active' or 'disabled'"));
+                return Err(AppError::validation(
+                    "status",
+                    "status must be 'active' or 'disabled'",
+                ));
             }
             changes.status = Some(status);
         }
@@ -395,14 +438,20 @@ impl UrlContext<'_> {
         let length = self.settings.default_slug_length();
         for _ in 0..SLUG_RETRIES {
             let candidate = slug::generate(length);
-            if !urls::slug_taken(self.pool, &candidate).await.map_err(AppError::from)? {
+            if !urls::slug_taken(self.pool, &candidate)
+                .await
+                .map_err(AppError::from)?
+            {
                 return Ok(candidate);
             }
         }
         // Extremely unlikely; fall back to a longer slug before giving up.
         for _ in 0..SLUG_RETRIES {
             let candidate = slug::generate(length + 4);
-            if !urls::slug_taken(self.pool, &candidate).await.map_err(AppError::from)? {
+            if !urls::slug_taken(self.pool, &candidate)
+                .await
+                .map_err(AppError::from)?
+            {
                 return Ok(candidate);
             }
         }
@@ -412,10 +461,14 @@ impl UrlContext<'_> {
     async fn sync_tags(&self, url_id: i64, tags: &[String]) -> Result<()> {
         let mut ids = Vec::with_capacity(tags.len());
         for tag in tags {
-            let id = tags::ensure(self.pool, self.actor.id, tag).await.map_err(AppError::from)?;
+            let id = tags::ensure(self.pool, self.actor.id, tag)
+                .await
+                .map_err(AppError::from)?;
             ids.push(id);
         }
-        tags::set_for_url(self.pool, url_id, &ids).await.map_err(AppError::from)?;
+        tags::set_for_url(self.pool, url_id, &ids)
+            .await
+            .map_err(AppError::from)?;
         Ok(())
     }
 
@@ -520,10 +573,16 @@ mod tests {
 
     #[test]
     fn validates_titles_and_notes() {
-        assert_eq!(validate_title("  Hello  ").expect("valid"), Some("Hello".to_string()));
+        assert_eq!(
+            validate_title("  Hello  ").expect("valid"),
+            Some("Hello".to_string())
+        );
         assert_eq!(validate_title("   ").expect("valid"), None);
         assert!(validate_title(&"x".repeat(MAX_TITLE_LEN + 1)).is_err());
-        assert_eq!(validate_notes(" note ").expect("valid"), Some("note".to_string()));
+        assert_eq!(
+            validate_notes(" note ").expect("valid"),
+            Some("note".to_string())
+        );
         assert!(validate_notes(&"x".repeat(MAX_NOTES_LEN + 1)).is_err());
     }
 
@@ -533,7 +592,9 @@ mod tests {
         assert_eq!(prepare_password(Some("")).expect("empty"), None);
         assert_eq!(prepare_password(Some("   ")).expect("blank"), None);
         assert!(prepare_password(Some("abc")).is_err());
-        let hash = prepare_password(Some("linkpass")).expect("hashed").expect("some");
+        let hash = prepare_password(Some("linkpass"))
+            .expect("hashed")
+            .expect("some");
         assert!(hash.starts_with("$argon2id$"));
         assert!(password::verify("linkpass", &hash));
     }

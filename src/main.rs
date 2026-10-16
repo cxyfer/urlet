@@ -65,7 +65,9 @@ fn init_logging(config: &Config) {
         .or_else(|_| EnvFilter::try_new(&config.log_filter))
         .unwrap_or_else(|_| EnvFilter::new("info"));
 
-    let builder = tracing_subscriber::fmt().with_env_filter(filter).with_target(false);
+    let builder = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(false);
     match config.log_format {
         LogFormat::Json => {
             let _ = builder.json().try_init();
@@ -111,14 +113,22 @@ fn probe(url: &str) -> Result<(), String> {
     let (host, port, path) = parse_http_url(url)?;
     let address = format!("{host}:{port}");
     let mut stream = TcpStream::connect(&address).map_err(|err| err.to_string())?;
-    stream.set_read_timeout(Some(Duration::from_secs(5))).map_err(|err| err.to_string())?;
-    stream.set_write_timeout(Some(Duration::from_secs(5))).map_err(|err| err.to_string())?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .map_err(|err| err.to_string())?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(5)))
+        .map_err(|err| err.to_string())?;
     let request = format!(
         "GET {path} HTTP/1.1\r\nHost: {address}\r\nUser-Agent: uwurls-healthcheck\r\nConnection: close\r\n\r\n"
     );
-    stream.write_all(request.as_bytes()).map_err(|err| err.to_string())?;
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|err| err.to_string())?;
     let mut response = String::new();
-    stream.read_to_string(&mut response).map_err(|err| err.to_string())?;
+    stream
+        .read_to_string(&mut response)
+        .map_err(|err| err.to_string())?;
     let status_line = response.lines().next().unwrap_or_default();
     if status_line.contains(" 200") {
         Ok(())
@@ -128,7 +138,9 @@ fn probe(url: &str) -> Result<(), String> {
 }
 
 fn parse_http_url(url: &str) -> Result<(String, u16, String), String> {
-    let (scheme, rest) = url.split_once("://").ok_or_else(|| "missing scheme".to_string())?;
+    let (scheme, rest) = url
+        .split_once("://")
+        .ok_or_else(|| "missing scheme".to_string())?;
     let default_port = match scheme {
         "http" => 80,
         "https" => 443,
@@ -139,9 +151,11 @@ fn parse_http_url(url: &str) -> Result<(String, u16, String), String> {
         None => (rest, "/".to_string()),
     };
     let (host, port) = match authority.rsplit_once(':') {
-        Some((host, port)) => {
-            (host.to_string(), port.parse::<u16>().map_err(|_| "invalid port".to_string())?)
-        }
+        Some((host, port)) => (
+            host.to_string(),
+            port.parse::<u16>()
+                .map_err(|_| "invalid port".to_string())?,
+        ),
         None => (authority.to_string(), default_port),
     };
     if host.is_empty() {

@@ -3,9 +3,9 @@
 use sqlx::SqlitePool;
 
 use crate::config::Config;
-use crate::db::{invites, login_attempts, sessions, users};
 use crate::db::sessions::Session;
 use crate::db::users::User;
+use crate::db::{invites, login_attempts, sessions, users};
 use crate::error::{AppError, Result};
 use crate::services::audit::{action, target, Audit};
 use crate::services::settings::{RegistrationMode, Settings};
@@ -45,38 +45,64 @@ pub fn normalize_email(email: &str) -> String {
 pub fn validate_email(email: &str) -> Result<()> {
     let email = email.trim();
     if email.is_empty() || email.len() > 254 {
-        return Err(AppError::validation("email", "a valid email address is required"));
+        return Err(AppError::validation(
+            "email",
+            "a valid email address is required",
+        ));
     }
     if email.contains(char::is_whitespace) {
-        return Err(AppError::validation("email", "email must not contain spaces"));
+        return Err(AppError::validation(
+            "email",
+            "email must not contain spaces",
+        ));
     }
     if email.matches('@').count() != 1 {
-        return Err(AppError::validation("email", "email must contain exactly one @"));
+        return Err(AppError::validation(
+            "email",
+            "email must contain exactly one @",
+        ));
     }
     let Some((local, domain)) = email.split_once('@') else {
         return Err(AppError::validation("email", "email must contain @"));
     };
     if local.is_empty() || local.len() > 64 {
-        return Err(AppError::validation("email", "the part before @ is invalid"));
+        return Err(AppError::validation(
+            "email",
+            "the part before @ is invalid",
+        ));
     }
     if !local
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || "!#$%&'*+-/=?^_`{|}~.".contains(c))
     {
-        return Err(AppError::validation("email", "the part before @ is invalid"));
+        return Err(AppError::validation(
+            "email",
+            "the part before @ is invalid",
+        ));
     }
     if domain.is_empty() || !domain.contains('.') {
-        return Err(AppError::validation("email", "a valid email address is required"));
+        return Err(AppError::validation(
+            "email",
+            "a valid email address is required",
+        ));
     }
-    if !domain.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.') {
+    if !domain
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
+    {
         return Err(AppError::validation("email", "the domain is invalid"));
     }
     if domain.starts_with('.')
         || domain.ends_with('.')
         || domain.contains("..")
-        || domain.split('.').any(|label| label.is_empty() || label.starts_with('-') || label.ends_with('-'))
+        || domain
+            .split('.')
+            .any(|label| label.is_empty() || label.starts_with('-') || label.ends_with('-'))
     {
-        return Err(AppError::validation("email", "a valid email address is required"));
+        return Err(AppError::validation(
+            "email",
+            "a valid email address is required",
+        ));
     }
     Ok(())
 }
@@ -85,10 +111,16 @@ pub fn validate_email(email: &str) -> Result<()> {
 pub fn validate_display_name(name: &str) -> Result<()> {
     let length = name.chars().count();
     if length > 60 {
-        return Err(AppError::validation("display_name", "display name must be at most 60 characters"));
+        return Err(AppError::validation(
+            "display_name",
+            "display name must be at most 60 characters",
+        ));
     }
     if name.contains('\n') || name.contains('\r') {
-        return Err(AppError::validation("display_name", "display name must be a single line"));
+        return Err(AppError::validation(
+            "display_name",
+            "display name must be a single line",
+        ));
     }
     Ok(())
 }
@@ -118,7 +150,9 @@ impl AuthContext<'_> {
             .await
             .map_err(AppError::from)?;
         if existing.is_some() {
-            return Err(AppError::conflict("an account with this email already exists"));
+            return Err(AppError::conflict(
+                "an account with this email already exists",
+            ));
         }
 
         // The very first account bootstraps the instance as administrator.
@@ -128,7 +162,9 @@ impl AuthContext<'_> {
             RegistrationMode::Open => None,
             RegistrationMode::Invite => {
                 let Some(code) = invite_code.map(str::trim).filter(|code| !code.is_empty()) else {
-                    return Err(AppError::forbidden("an invite code is required to register"));
+                    return Err(AppError::forbidden(
+                        "an invite code is required to register",
+                    ));
                 };
                 let code_hash = secret::sha256_hex(code);
                 let invite = invites::find_active_by_hash(self.pool, &code_hash, &time::now_iso())
@@ -140,7 +176,9 @@ impl AuthContext<'_> {
                 }
             }
             RegistrationMode::Closed => {
-                return Err(AppError::forbidden("registration is disabled on this instance"))
+                return Err(AppError::forbidden(
+                    "registration is disabled on this instance",
+                ))
             }
         };
 
@@ -152,7 +190,9 @@ impl AuthContext<'_> {
                 email: email.clone(),
                 email_normalized: email_normalized.clone(),
                 password_hash,
-                display_name: display_name.map(str::to_string).filter(|name| !name.is_empty()),
+                display_name: display_name
+                    .map(str::to_string)
+                    .filter(|name| !name.is_empty()),
                 role: role.to_string(),
             },
         )
@@ -196,7 +236,10 @@ impl AuthContext<'_> {
             .await;
 
         if is_first_user {
-            tracing::info!(user_id = user.id, "first account created and promoted to administrator");
+            tracing::info!(
+                user_id = user.id,
+                "first account created and promoted to administrator"
+            );
         }
 
         Ok(user)
@@ -207,7 +250,9 @@ impl AuthContext<'_> {
         let email_normalized = normalize_email(email);
         let identifier_hash = self.identifier_hash(&email_normalized);
 
-        let user = users::find_by_email(self.pool, &email_normalized).await.map_err(AppError::from)?;
+        let user = users::find_by_email(self.pool, &email_normalized)
+            .await
+            .map_err(AppError::from)?;
 
         let Some(user) = user else {
             password::dummy_verify(password);
@@ -236,7 +281,9 @@ impl AuthContext<'_> {
         }
 
         self.record_attempt(&identifier_hash, true).await;
-        users::set_last_login(self.pool, user.id).await.map_err(AppError::from)?;
+        users::set_last_login(self.pool, user.id)
+            .await
+            .map_err(AppError::from)?;
         let token = self.open_session(user.id).await?;
 
         Audit::new(action::AUTH_LOGIN)
@@ -248,7 +295,10 @@ impl AuthContext<'_> {
             .await;
 
         // `last_login_at` was just written; reload so the response is accurate.
-        let user = users::find_by_id(self.pool, user.id).await.map_err(AppError::from)?.unwrap_or(user);
+        let user = users::find_by_id(self.pool, user.id)
+            .await
+            .map_err(AppError::from)?
+            .unwrap_or(user);
         Ok((user, token))
     }
 
@@ -280,7 +330,9 @@ impl AuthContext<'_> {
 
     /// Revoke a single session.
     pub async fn logout(&self, session_id: i64, user: &User) -> Result<()> {
-        sessions::revoke(self.pool, session_id, &time::now_iso()).await.map_err(AppError::from)?;
+        sessions::revoke(self.pool, session_id, &time::now_iso())
+            .await
+            .map_err(AppError::from)?;
         Audit::new(action::AUTH_LOGOUT)
             .actor(user.id, &user.role)
             .target(target::USER, user.id)
@@ -313,7 +365,9 @@ impl AuthContext<'_> {
         }
 
         let hash = password::hash(new_password)?;
-        users::set_password(self.pool, user.id, &hash).await.map_err(AppError::from)?;
+        users::set_password(self.pool, user.id, &hash)
+            .await
+            .map_err(AppError::from)?;
         let revoked = sessions::revoke_for_user(self.pool, user.id, &time::now_iso(), keep_session)
             .await
             .map_err(AppError::from)?;
@@ -346,7 +400,9 @@ impl AuthContext<'_> {
 /// Resolve a session token to a session and its user.
 pub async fn resolve_session(pool: &SqlitePool, token: &str) -> Result<Option<(Session, User)>> {
     let token_hash = secret::sha256_hex(token);
-    let Some(session) = sessions::find_by_token_hash(pool, &token_hash).await.map_err(AppError::from)?
+    let Some(session) = sessions::find_by_token_hash(pool, &token_hash)
+        .await
+        .map_err(AppError::from)?
     else {
         return Ok(None);
     };
@@ -354,7 +410,10 @@ pub async fn resolve_session(pool: &SqlitePool, token: &str) -> Result<Option<(S
     if !session.is_valid_at(&now) {
         return Ok(None);
     }
-    let Some(user) = users::find_by_id(pool, session.user_id).await.map_err(AppError::from)? else {
+    let Some(user) = users::find_by_id(pool, session.user_id)
+        .await
+        .map_err(AppError::from)?
+    else {
         return Ok(None);
     };
     if !user.is_active() {
@@ -376,14 +435,19 @@ pub async fn resolve_api_token(
     token: &str,
 ) -> Result<Option<(crate::db::tokens::ApiToken, User)>> {
     let token_hash = secret::sha256_hex(token);
-    let Some(record) = crate::db::tokens::find_by_hash(pool, &token_hash).await.map_err(AppError::from)?
+    let Some(record) = crate::db::tokens::find_by_hash(pool, &token_hash)
+        .await
+        .map_err(AppError::from)?
     else {
         return Ok(None);
     };
     if !record.is_valid_at(&time::now_iso()) {
         return Ok(None);
     }
-    let Some(user) = users::find_by_id(pool, record.user_id).await.map_err(AppError::from)? else {
+    let Some(user) = users::find_by_id(pool, record.user_id)
+        .await
+        .map_err(AppError::from)?
+    else {
         return Ok(None);
     };
     if !user.is_active() {

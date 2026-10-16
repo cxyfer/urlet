@@ -35,7 +35,9 @@ pub fn now_iso() -> String {
 
 /// Parse a stored timestamp. Returns `None` for malformed input.
 pub fn parse_iso(s: &str) -> Option<OffsetDateTime> {
-    PrimitiveDateTime::parse(s, ISO).ok().map(PrimitiveDateTime::assume_utc)
+    PrimitiveDateTime::parse(s, ISO)
+        .ok()
+        .map(PrimitiveDateTime::assume_utc)
 }
 
 /// Parse user supplied timestamps leniently.
@@ -71,8 +73,7 @@ pub fn parse_flexible(input: &str) -> Option<OffsetDateTime> {
         return Some(parsed.assume_utc());
     }
 
-    if let Ok(parsed) =
-        OffsetDateTime::parse(input, &time::format_description::well_known::Rfc3339)
+    if let Ok(parsed) = OffsetDateTime::parse(input, &time::format_description::well_known::Rfc3339)
     {
         return Some(parsed.to_offset(UtcOffset::UTC));
     }
@@ -120,8 +121,7 @@ pub fn iso_seconds_ago(seconds: i64) -> String {
 
 /// First instant of the UTC day `days` ago (inclusive lower bound for charts).
 pub fn day_start_days_ago(days: i64) -> String {
-    let start = (now() - Duration::days(days))
-        .replace_time(time::Time::MIDNIGHT);
+    let start = (now() - Duration::days(days)).replace_time(time::Time::MIDNIGHT);
     to_iso(start)
 }
 

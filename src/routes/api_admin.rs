@@ -125,7 +125,11 @@ pub struct InviteDto {
 
 impl InviteDto {
     fn new(invite: &Invite, now: &str) -> Self {
-        let expired = invite.expires_at.as_deref().map(|value| value <= now).unwrap_or(false);
+        let expired = invite
+            .expires_at
+            .as_deref()
+            .map(|value| value <= now)
+            .unwrap_or(false);
         Self {
             id: invite.id,
             prefix: invite.code_prefix.clone(),
@@ -192,14 +196,23 @@ pub async fn list_users(
     Query(query): Query<AdminUsersQuery>,
 ) -> Result<Json<Page<AdminUserDto>>, ApiError> {
     require_admin(&user)?;
-    let pagination = Pagination { page: query.page, per_page: query.per_page };
+    let pagination = Pagination {
+        page: query.page,
+        per_page: query.per_page,
+    };
     let filter = UserFilter {
         search: clean(&query.q),
         role: clean(&query.role),
         status: clean(&query.status),
     };
 
-    let rows = admin::list_users(&state.db, &filter, pagination.per_page(), pagination.offset()).await?;
+    let rows = admin::list_users(
+        &state.db,
+        &filter,
+        pagination.per_page(),
+        pagination.offset(),
+    )
+    .await?;
     let total = admin::count_users(&state.db, &filter).await?;
     let counts = admin::link_counts(&state.db).await?;
 
@@ -211,7 +224,12 @@ pub async fn list_users(
         })
         .collect();
 
-    Ok(Json(Page::new(items, pagination.page(), pagination.per_page(), total)))
+    Ok(Json(Page::new(
+        items,
+        pagination.page(),
+        pagination.per_page(),
+        total,
+    )))
 }
 
 /// `PATCH /api/v1/admin/users/{id}`
@@ -244,7 +262,9 @@ pub async fn reset_password(
     Json(payload): Json<ResetPasswordPayload>,
 ) -> Result<Response, ApiError> {
     require_admin(&user)?;
-    context(&state, &client, &user).reset_password(id, &payload.new_password).await?;
+    context(&state, &client, &user)
+        .reset_password(id, &payload.new_password)
+        .await?;
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -267,7 +287,10 @@ pub async fn list_urls(
     Query(query): Query<AdminUrlsQuery>,
 ) -> Result<Json<Page<UrlDto>>, ApiError> {
     require_admin(&user)?;
-    let pagination = Pagination { page: query.page, per_page: query.per_page };
+    let pagination = Pagination {
+        page: query.page,
+        per_page: query.per_page,
+    };
     let filter = AdminUrlFilter {
         search: clean(&query.q),
         status: clean(&query.status),
@@ -275,7 +298,13 @@ pub async fn list_urls(
         sort: UrlSort::parse(query.sort.as_deref()),
     };
 
-    let rows = urls::list_all(&state.db, &filter, pagination.per_page(), pagination.offset()).await?;
+    let rows = urls::list_all(
+        &state.db,
+        &filter,
+        pagination.per_page(),
+        pagination.offset(),
+    )
+    .await?;
     let total = urls::count_all(&state.db, &filter).await?;
     let ids: Vec<i64> = rows.iter().map(|row| row.id).collect();
     let mut tag_map = tags::for_urls(&state.db, &ids).await?;
@@ -283,12 +312,22 @@ pub async fn list_urls(
     let items = rows
         .iter()
         .map(|row| {
-            let names = tag_map.remove(&row.id).unwrap_or_default().into_iter().map(|tag| tag.name).collect();
+            let names = tag_map
+                .remove(&row.id)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|tag| tag.name)
+                .collect();
             UrlDto::new(row, &state.config.base_url, names)
         })
         .collect();
 
-    Ok(Json(Page::new(items, pagination.page(), pagination.per_page(), total)))
+    Ok(Json(Page::new(
+        items,
+        pagination.page(),
+        pagination.per_page(),
+        total,
+    )))
 }
 
 /// `PATCH /api/v1/admin/urls/{id}`
@@ -303,8 +342,14 @@ pub async fn update_url(
     context(&state, &client, &user)
         .update_url(id, payload.status.as_deref(), payload.redirect_type)
         .await?;
-    let url = urls::find_by_id(&state.db, id).await?.ok_or_else(|| ApiError(AppError::not_found()))?;
-    let names = tags::for_url(&state.db, url.id).await?.into_iter().map(|tag| tag.name).collect();
+    let url = urls::find_by_id(&state.db, id)
+        .await?
+        .ok_or_else(|| ApiError(AppError::not_found()))?;
+    let names = tags::for_url(&state.db, url.id)
+        .await?
+        .into_iter()
+        .map(|tag| tag.name)
+        .collect();
     Ok(Json(UrlDto::new(&url, &state.config.base_url, names)))
 }
 
@@ -328,7 +373,9 @@ pub async fn list_invites(
     require_admin(&user)?;
     let now = crate::services::time::now_iso();
     let rows = crate::db::invites::list(&state.db, 200, 0).await?;
-    Ok(Json(InviteList { items: rows.iter().map(|row| InviteDto::new(row, &now)).collect() }))
+    Ok(Json(InviteList {
+        items: rows.iter().map(|row| InviteDto::new(row, &now)).collect(),
+    }))
 }
 
 /// `POST /api/v1/admin/invites`
@@ -340,7 +387,11 @@ pub async fn create_invite(
 ) -> Result<Response, ApiError> {
     require_admin(&user)?;
     let created = context(&state, &client, &user)
-        .create_invite(payload.note.as_deref(), payload.max_uses, payload.expires_at.as_deref())
+        .create_invite(
+            payload.note.as_deref(),
+            payload.max_uses,
+            payload.expires_at.as_deref(),
+        )
         .await?;
     let now = crate::services::time::now_iso();
     let body = CreatedInviteResponse {
@@ -380,7 +431,9 @@ pub async fn put_settings(
 ) -> Result<Json<HashMap<String, String>>, ApiError> {
     require_admin(&user)?;
     let values: Vec<(String, String)> = payload.into_iter().collect();
-    context(&state, &client, &user).update_settings(&values).await?;
+    context(&state, &client, &user)
+        .update_settings(&values)
+        .await?;
     Ok(Json(state.settings.snapshot()))
 }
 
@@ -391,16 +444,29 @@ pub async fn audit(
     Query(query): Query<AdminAuditQuery>,
 ) -> Result<Json<Page<AuditDto>>, ApiError> {
     require_admin(&user)?;
-    let pagination = Pagination { page: query.page, per_page: query.per_page };
+    let pagination = Pagination {
+        page: query.page,
+        per_page: query.per_page,
+    };
     let filter = AuditFilter {
         action: clean(&query.action),
         target_type: clean(&query.target_type),
         actor_user_id: query.actor,
     };
-    let (rows, total) =
-        admin::audit_page(&state.db, &filter, pagination.per_page(), pagination.offset()).await?;
+    let (rows, total) = admin::audit_page(
+        &state.db,
+        &filter,
+        pagination.per_page(),
+        pagination.offset(),
+    )
+    .await?;
     let items = rows.iter().map(AuditDto::from).collect();
-    Ok(Json(Page::new(items, pagination.page(), pagination.per_page(), total)))
+    Ok(Json(Page::new(
+        items,
+        pagination.page(),
+        pagination.per_page(),
+        total,
+    )))
 }
 
 /// `GET /api/v1/admin/stats`
@@ -415,11 +481,7 @@ pub async fn stats(
     Ok(Json(stats))
 }
 
-fn context<'a>(
-    state: &'a AppState,
-    client: &'a ClientInfo,
-    user: &'a User,
-) -> AdminContext<'a> {
+fn context<'a>(state: &'a AppState, client: &'a ClientInfo, user: &'a User) -> AdminContext<'a> {
     AdminContext {
         pool: &state.db,
         config: &state.config,
@@ -433,12 +495,18 @@ fn require_admin(user: &User) -> Result<(), ApiError> {
     if user.is_admin() {
         Ok(())
     } else {
-        Err(ApiError(AppError::forbidden("administrator privileges are required")))
+        Err(ApiError(AppError::forbidden(
+            "administrator privileges are required",
+        )))
     }
 }
 
 fn clean(value: &Option<String>) -> Option<String> {
-    value.as_deref().map(str::trim).filter(|value| !value.is_empty()).map(str::to_string)
+    value
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 #[cfg(test)]

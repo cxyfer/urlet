@@ -13,7 +13,10 @@ pub const MAX_LEN: usize = 2048;
 pub fn validate(raw: &str) -> Result<String> {
     let raw = raw.trim();
     if raw.is_empty() {
-        return Err(AppError::validation("target_url", "a destination URL is required"));
+        return Err(AppError::validation(
+            "target_url",
+            "a destination URL is required",
+        ));
     }
     if raw.chars().count() > MAX_LEN {
         return Err(AppError::validation(
@@ -22,29 +25,44 @@ pub fn validate(raw: &str) -> Result<String> {
         ));
     }
     if raw.chars().any(|c| c.is_control()) {
-        return Err(AppError::validation("target_url", "the URL must not contain control characters"));
+        return Err(AppError::validation(
+            "target_url",
+            "the URL must not contain control characters",
+        ));
     }
 
     let candidate = add_missing_scheme(raw);
-    let (scheme, rest) = candidate
-        .split_once("://")
-        .ok_or_else(|| AppError::validation("target_url", "the URL must be absolute (http or https)"))?;
+    let (scheme, rest) = candidate.split_once("://").ok_or_else(|| {
+        AppError::validation("target_url", "the URL must be absolute (http or https)")
+    })?;
 
     if !scheme.eq_ignore_ascii_case("http") && !scheme.eq_ignore_ascii_case("https") {
-        return Err(AppError::validation("target_url", "only http and https URLs are supported"));
+        return Err(AppError::validation(
+            "target_url",
+            "only http and https URLs are supported",
+        ));
     }
 
     let authority = rest.split(['/', '?', '#']).next().unwrap_or(rest);
     let host = authority.rsplit('@').next().unwrap_or(authority);
     if host.is_empty() {
-        return Err(AppError::validation("target_url", "the URL is missing a host"));
+        return Err(AppError::validation(
+            "target_url",
+            "the URL is missing a host",
+        ));
     }
     if host.chars().any(char::is_whitespace) {
-        return Err(AppError::validation("target_url", "the URL must not contain spaces"));
+        return Err(AppError::validation(
+            "target_url",
+            "the URL must not contain spaces",
+        ));
     }
     let host_without_port = host.split(':').next().unwrap_or(host);
     if host_without_port.is_empty() {
-        return Err(AppError::validation("target_url", "the URL is missing a host"));
+        return Err(AppError::validation(
+            "target_url",
+            "the URL is missing a host",
+        ));
     }
     let looks_like_host = host_without_port == "localhost"
         || host_without_port.parse::<std::net::IpAddr>().is_ok()
@@ -56,7 +74,11 @@ pub fn validate(raw: &str) -> Result<String> {
         ));
     }
 
-    Ok(format!("{}://{}", scheme.to_ascii_lowercase(), lowercase_host(rest)))
+    Ok(format!(
+        "{}://{}",
+        scheme.to_ascii_lowercase(),
+        lowercase_host(rest)
+    ))
 }
 
 /// Prefix `https://` when the user typed a bare host.
@@ -70,7 +92,8 @@ fn add_missing_scheme(raw: &str) -> String {
     let head = raw.split(['/', '?', '#']).next().unwrap_or(raw);
     if let Some((scheme, rest)) = head.split_once(':') {
         let looks_like_port = !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit());
-        let looks_like_scheme = !scheme.is_empty() && scheme.chars().all(|c| c.is_ascii_alphabetic());
+        let looks_like_scheme =
+            !scheme.is_empty() && scheme.chars().all(|c| c.is_ascii_alphabetic());
         if looks_like_scheme && !looks_like_port {
             return raw.to_string();
         }
@@ -105,16 +128,34 @@ mod tests {
 
     #[test]
     fn accepts_http_and_https() {
-        assert_eq!(validate("https://example.com/a?b=1").expect("valid"), "https://example.com/a?b=1");
-        assert_eq!(validate("http://example.com").expect("valid"), "http://example.com");
+        assert_eq!(
+            validate("https://example.com/a?b=1").expect("valid"),
+            "https://example.com/a?b=1"
+        );
+        assert_eq!(
+            validate("http://example.com").expect("valid"),
+            "http://example.com"
+        );
     }
 
     #[test]
     fn adds_https_to_bare_hosts() {
-        assert_eq!(validate("example.com/path").expect("valid"), "https://example.com/path");
-        assert_eq!(validate("localhost:3000").expect("valid"), "https://localhost:3000");
-        assert_eq!(validate("127.0.0.1/x").expect("valid"), "https://127.0.0.1/x");
-        assert_eq!(validate("example.com:8443/a").expect("valid"), "https://example.com:8443/a");
+        assert_eq!(
+            validate("example.com/path").expect("valid"),
+            "https://example.com/path"
+        );
+        assert_eq!(
+            validate("localhost:3000").expect("valid"),
+            "https://localhost:3000"
+        );
+        assert_eq!(
+            validate("127.0.0.1/x").expect("valid"),
+            "https://127.0.0.1/x"
+        );
+        assert_eq!(
+            validate("example.com:8443/a").expect("valid"),
+            "https://example.com:8443/a"
+        );
     }
 
     #[test]
@@ -149,7 +190,10 @@ mod tests {
 
     #[test]
     fn extracts_hosts() {
-        assert_eq!(host_of("https://Example.com:8443/a").as_deref(), Some("example.com"));
+        assert_eq!(
+            host_of("https://Example.com:8443/a").as_deref(),
+            Some("example.com")
+        );
         assert_eq!(host_of("not-a-url"), None);
     }
 }

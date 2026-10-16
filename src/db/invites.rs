@@ -119,14 +119,18 @@ pub async fn list(pool: &SqlitePool, limit: i64, offset: i64) -> Result<Vec<Invi
 
 /// Count invites.
 pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM invite_codes").fetch_one(pool).await
+    sqlx::query_scalar("SELECT COUNT(*) FROM invite_codes")
+        .fetch_one(pool)
+        .await
 }
 
 /// Revoke an invite.
 pub async fn revoke(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query("UPDATE invite_codes SET status = 'revoked' WHERE id = ? AND status = 'active'")
-        .bind(id)
-        .execute(pool)
-        .await?;
+    let result = sqlx::query(
+        "UPDATE invite_codes SET status = 'revoked' WHERE id = ? AND status = 'active'",
+    )
+    .bind(id)
+    .execute(pool)
+    .await?;
     Ok(result.rows_affected() > 0)
 }

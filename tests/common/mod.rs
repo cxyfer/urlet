@@ -49,7 +49,12 @@ impl TestApp {
 
     /// Send a request through the real router.
     pub async fn send(&self, request: Request<Body>) -> TestResponse {
-        let response = self.router.clone().oneshot(request).await.expect("router call");
+        let response = self
+            .router
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("router call");
         TestResponse::from_response(response).await
     }
 
@@ -72,9 +77,17 @@ impl TestApp {
     /// Register a user and return `(cookie, user_json)`.
     pub async fn register(&self, email: &str, password: &str) -> (String, Value) {
         let response = self
-            .post_json("/api/v1/auth/register", serde_json::json!({ "email": email, "password": password }))
+            .post_json(
+                "/api/v1/auth/register",
+                serde_json::json!({ "email": email, "password": password }),
+            )
             .await;
-        assert_eq!(response.status, StatusCode::CREATED, "register failed: {}", response.body);
+        assert_eq!(
+            response.status,
+            StatusCode::CREATED,
+            "register failed: {}",
+            response.body
+        );
         let cookie = response.session_cookie().expect("session cookie");
         (cookie, response.json())
     }
@@ -82,9 +95,17 @@ impl TestApp {
     /// Log in and return the session cookie.
     pub async fn login(&self, email: &str, password: &str) -> String {
         let response = self
-            .post_json("/api/v1/auth/login", serde_json::json!({ "email": email, "password": password }))
+            .post_json(
+                "/api/v1/auth/login",
+                serde_json::json!({ "email": email, "password": password }),
+            )
             .await;
-        assert_eq!(response.status, StatusCode::OK, "login failed: {}", response.body);
+        assert_eq!(
+            response.status,
+            StatusCode::OK,
+            "login failed: {}",
+            response.body
+        );
         response.session_cookie().expect("session cookie")
     }
 }
@@ -109,7 +130,11 @@ impl TestResponse {
         let bytes = axum::body::to_bytes(response.into_body(), 8 * 1024 * 1024)
             .await
             .expect("read body");
-        Self { status, headers, body: String::from_utf8_lossy(&bytes).to_string() }
+        Self {
+            status,
+            headers,
+            body: String::from_utf8_lossy(&bytes).to_string(),
+        }
     }
 
     pub fn json(&self) -> Value {
@@ -162,7 +187,9 @@ fn base_request(method: &str, uri: &str) -> axum::http::request::Builder {
 }
 
 pub fn get(uri: &str) -> Request<Body> {
-    base_request("GET", uri).body(Body::empty()).expect("request")
+    base_request("GET", uri)
+        .body(Body::empty())
+        .expect("request")
 }
 
 pub fn get_as(uri: &str, cookie: &str) -> Request<Body> {
@@ -189,7 +216,12 @@ pub fn post_json_as(uri: &str, body: Value, cookie: &str) -> Request<Body> {
 }
 
 /// JSON POST with an explicit origin (or none), used by the CSRF tests.
-pub fn post_json_origin(uri: &str, body: Value, cookie: Option<&str>, origin: Option<&str>) -> Request<Body> {
+pub fn post_json_origin(
+    uri: &str,
+    body: Value,
+    cookie: Option<&str>,
+    origin: Option<&str>,
+) -> Request<Body> {
     let mut builder = base_request("POST", uri).header(header::CONTENT_TYPE, "application/json");
     if let Some(cookie) = cookie {
         builder = builder.header(header::COOKIE, cookie);
@@ -201,9 +233,14 @@ pub fn post_json_origin(uri: &str, body: Value, cookie: Option<&str>, origin: Op
 }
 
 /// Form POST (browser style) with an explicit origin.
-pub fn post_form(uri: &str, body: &str, cookie: Option<&str>, origin: Option<&str>) -> Request<Body> {
-    let mut builder = base_request("POST", uri)
-        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded");
+pub fn post_form(
+    uri: &str,
+    body: &str,
+    cookie: Option<&str>,
+    origin: Option<&str>,
+) -> Request<Body> {
+    let mut builder =
+        base_request("POST", uri).header(header::CONTENT_TYPE, "application/x-www-form-urlencoded");
     if let Some(cookie) = cookie {
         builder = builder.header(header::COOKIE, cookie);
     }
@@ -215,9 +252,10 @@ pub fn post_form(uri: &str, body: &str, cookie: Option<&str>, origin: Option<&st
 
 /// Bearer authenticated request helper.
 pub fn with_bearer(mut request: Request<Body>, token: &str) -> Request<Body> {
-    request
-        .headers_mut()
-        .insert(header::AUTHORIZATION, format!("Bearer {token}").parse().expect("header"));
+    request.headers_mut().insert(
+        header::AUTHORIZATION,
+        format!("Bearer {token}").parse().expect("header"),
+    );
     request
 }
 

@@ -49,7 +49,10 @@ mod tests {
     #[test]
     fn issues_and_verifies() {
         let token = issue(SECRET, "Promo", 30);
-        assert!(verify(SECRET, "promo", &token), "slug matching is case-insensitive");
+        assert!(
+            verify(SECRET, "promo", &token),
+            "slug matching is case-insensitive"
+        );
         assert!(verify(SECRET, "PROMO", &token));
     }
 
@@ -67,7 +70,11 @@ mod tests {
         assert!(!verify(SECRET, "promo", ""));
         assert!(!verify(SECRET, "promo", "no-dot"));
         assert!(!verify(SECRET, "promo", "not-a-number.abc"));
-        assert!(!verify(SECRET, "promo", &format!("{}.", time::now().unix_timestamp() + 60)));
+        assert!(!verify(
+            SECRET,
+            "promo",
+            &format!("{}.", time::now().unix_timestamp() + 60)
+        ));
     }
 
     #[test]

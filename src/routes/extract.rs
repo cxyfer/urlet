@@ -38,8 +38,9 @@ where
             .map_err(|err| ApiError(AppError::bad_request(format!("cannot read body: {err}"))))?;
 
         let value = if json {
-            serde_json::from_slice(&bytes)
-                .map_err(|err| ApiError(AppError::bad_request(format!("invalid JSON body: {err}"))))?
+            serde_json::from_slice(&bytes).map_err(|err| {
+                ApiError(AppError::bad_request(format!("invalid JSON body: {err}")))
+            })?
         } else {
             serde_urlencoded::from_bytes(&bytes).map_err(|err| {
                 ApiError(AppError::bad_request(format!("invalid form body: {err}")))

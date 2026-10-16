@@ -15,7 +15,12 @@ pub struct UserAgentInfo {
 
 impl Default for UserAgentInfo {
     fn default() -> Self {
-        Self { device_type: "Unknown", browser: "Other", os: "Unknown", is_bot: false }
+        Self {
+            device_type: "Unknown",
+            browser: "Other",
+            os: "Unknown",
+            is_bot: false,
+        }
     }
 }
 
@@ -58,7 +63,12 @@ const BOT_MARKERS: &[&str] = &[
 /// Parse a user agent string. Missing agents are treated as `Unknown`.
 pub fn parse(user_agent: Option<&str>) -> UserAgentInfo {
     let Some(raw) = user_agent.map(str::trim).filter(|value| !value.is_empty()) else {
-        return UserAgentInfo { device_type: "Unknown", browser: "Other", os: "Unknown", is_bot: false };
+        return UserAgentInfo {
+            device_type: "Unknown",
+            browser: "Other",
+            os: "Unknown",
+            is_bot: false,
+        };
     };
     let lower = raw.to_ascii_lowercase();
     let is_bot = BOT_MARKERS.iter().any(|marker| lower.contains(marker));
@@ -67,7 +77,12 @@ pub fn parse(user_agent: Option<&str>) -> UserAgentInfo {
     let browser = detect_browser(&lower);
     let device_type = detect_device(&lower, is_bot);
 
-    UserAgentInfo { device_type, browser, os, is_bot }
+    UserAgentInfo {
+        device_type,
+        browser,
+        os,
+        is_bot,
+    }
 }
 
 fn detect_os(lower: &str) -> &'static str {
@@ -140,9 +155,17 @@ pub fn referrer_host(referrer: Option<&str>, own_hosts: &[&str]) -> Option<Strin
     if referrer.is_empty() || referrer.eq_ignore_ascii_case("null") {
         return None;
     }
-    let rest = referrer.split_once("://").map(|(_, rest)| rest).unwrap_or(referrer);
+    let rest = referrer
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(referrer);
     let authority = rest.split(['/', '?', '#']).next()?;
-    let host = authority.rsplit('@').next()?.split(':').next()?.to_ascii_lowercase();
+    let host = authority
+        .rsplit('@')
+        .next()?
+        .split(':')
+        .next()?
+        .to_ascii_lowercase();
     if host.is_empty() {
         return None;
     }
@@ -219,8 +242,14 @@ mod tests {
             referrer_host(Some("https://news.example.com/article"), &["s.example.com"]),
             Some("news.example.com".to_string())
         );
-        assert_eq!(referrer_host(Some("https://www.s.example.com/x"), &["s.example.com"]), None);
-        assert_eq!(referrer_host(Some("https://s.example.com:8443/x"), &["s.example.com"]), None);
+        assert_eq!(
+            referrer_host(Some("https://www.s.example.com/x"), &["s.example.com"]),
+            None
+        );
+        assert_eq!(
+            referrer_host(Some("https://s.example.com:8443/x"), &["s.example.com"]),
+            None
+        );
         assert_eq!(referrer_host(None, &[]), None);
         assert_eq!(referrer_host(Some(""), &[]), None);
     }

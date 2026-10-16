@@ -1,14 +1,27 @@
 //! Click recording.
 //!
 //! Recording happens off the redirect path: the response is written first and
-//! the database work runs in a detached task, so a slow disk never delays a
-//! visitor.
+//! the work is queued for a single background writer.
+//!
+//! A single writer (instead of one task per click) matters for SQLite: writes
+//! are serialised anyway, and concurrent writers starve the automatic WAL
+//! checkpoint, which makes the `-wal` file grow without bound.
+
+use std::sync::Arc;
 
 use sqlx::SqlitePool;
+use tokio::sync::mpsc;
 
 use crate::config::Config;
 use crate::db::clicks::{self, NewClick};
+use crate::services::settings::Settings;
 use crate::services::{secret, time, ua};
+
+/// Maximum number of queued clicks before new ones are dropped.
+///
+/// Analytics are best effort: dropping under extreme load is preferable to
+/// growing the queue without bound or slowing redirects down.
+pub const QUEUE_CAPACITY: usize = 10_000;
 
 /// Everything needed to record one click.
 #[derive(Debug, Clone)]
@@ -20,8 +33,60 @@ pub struct ClickInput {
     pub password_protected: bool,
 }
 
-/// Record a click, swallowing errors (analytics must never break redirects).
-pub async fn record(pool: &SqlitePool, config: &Config, analytics_enabled: bool, input: ClickInput) {
+/// Handle to the background click writer.
+#[derive(Debug, Clone)]
+pub struct ClickRecorder {
+    sender: mpsc::Sender<ClickInput>,
+}
+
+impl ClickRecorder {
+    /// Start the writer task. It stops when every clone of the recorder is gone.
+    pub fn start(
+        pool: SqlitePool,
+        config: Arc<Config>,
+        settings: Arc<Settings>,
+        capacity: usize,
+    ) -> Self {
+        let (sender, mut receiver) = mpsc::channel::<ClickInput>(capacity.max(1));
+        tokio::spawn(async move {
+            while let Some(input) = receiver.recv().await {
+                if !settings.analytics_enabled() {
+                    continue;
+                }
+                if let Err(err) = record_inner(&pool, &config, &input).await {
+                    tracing::warn!(error = %err, url_id = input.url_id, "click recording failed");
+                }
+            }
+        });
+        Self { sender }
+    }
+
+    /// Queue a click. Never blocks and never fails the caller.
+    pub fn record(&self, input: ClickInput) {
+        match self.sender.try_send(input) {
+            Ok(()) => {}
+            Err(mpsc::error::TrySendError::Full(dropped)) => {
+                tracing::warn!(
+                    url_id = dropped.url_id,
+                    "click queue is full, dropping click"
+                );
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                tracing::debug!("click writer stopped, dropping click");
+            }
+        }
+    }
+}
+
+/// Record a click synchronously, swallowing errors.
+///
+/// Used by tests that want deterministic timing.
+pub async fn record(
+    pool: &SqlitePool,
+    config: &Config,
+    analytics_enabled: bool,
+    input: ClickInput,
+) {
     if !analytics_enabled {
         return;
     }
@@ -47,7 +112,11 @@ async fn record_inner(
 
     // The visitor hash rotates daily and never contains the raw address.
     let visitor_hash = input.ip_hash.as_ref().map(|ip_hash| {
-        let material = format!("{ip_hash}|{}|{}", input.user_agent.as_deref().unwrap_or(""), day);
+        let material = format!(
+            "{ip_hash}|{}|{}",
+            input.user_agent.as_deref().unwrap_or(""),
+            day
+        );
         secret::hmac_hex(&config.secret, &material)
     });
 
@@ -63,8 +132,14 @@ async fn record_inner(
             clicked_at: clicked_at.clone(),
             ip_hash: input.ip_hash.clone(),
             visitor_hash,
-            user_agent: input.user_agent.as_deref().map(|agent| agent.chars().take(512).collect()),
-            referrer: input.referrer.as_deref().map(|value| value.chars().take(512).collect()),
+            user_agent: input
+                .user_agent
+                .as_deref()
+                .map(|agent| agent.chars().take(512).collect()),
+            referrer: input
+                .referrer
+                .as_deref()
+                .map(|value| value.chars().take(512).collect()),
             referrer_host,
             device_type: agent.device_type.to_string(),
             browser: agent.browser.to_string(),

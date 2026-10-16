@@ -12,10 +12,12 @@ use crate::db::clicks::{self, Click, Dimension};
 use crate::db::{tags, urls};
 use crate::error::AppError;
 use crate::middleware::auth::{ClientInfo, MaybeUser};
+use crate::routes::api_stats::{click_dto, summary_dto};
 use crate::routes::dto::{StatsSummaryDto, UrlDto};
 use crate::routes::pages::dashboard::{bar_rows, BarRow};
-use crate::routes::pages::{flash_from_query, redirect_err, redirect_ok, redirect_to_login, Chrome, UrlRow};
-use crate::routes::api_stats::{click_dto, summary_dto};
+use crate::routes::pages::{
+    flash_from_query, redirect_err, redirect_ok, redirect_to_login, Chrome, UrlRow,
+};
 use crate::services::ratelimit::limits;
 use crate::services::urls::{CreateInput, UpdateInput, UrlContext};
 use crate::services::{chart, time};
@@ -144,11 +146,17 @@ fn split_tags(raw: &Option<String>) -> Vec<String> {
 }
 
 fn optional_number(raw: &Option<String>) -> Option<i64> {
-    raw.as_deref().map(str::trim).filter(|value| !value.is_empty()).and_then(|value| value.parse().ok())
+    raw.as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse().ok())
 }
 
 fn checkbox(raw: &Option<String>) -> bool {
-    matches!(raw.as_deref().map(str::trim), Some("on") | Some("1") | Some("true"))
+    matches!(
+        raw.as_deref().map(str::trim),
+        Some("on") | Some("1") | Some("true")
+    )
 }
 
 /// `POST /app/urls`
@@ -216,14 +224,21 @@ pub async fn detail(
     };
     let user = current.user;
 
-    let Some(url) = urls::find_owned(&state.db, id, user.id).await.map_err(AppError::from)? else {
+    let Some(url) = urls::find_owned(&state.db, id, user.id)
+        .await
+        .map_err(AppError::from)?
+    else {
         return Ok(redirect_err("/app", "not_found").into_response());
     };
 
     let days = query.days.unwrap_or(30).clamp(1, 365);
     let from_day = time::day_days_ago(days - 1);
-    let summary = clicks::summary_for_url(&state.db, url.id).await.map_err(AppError::from)?;
-    let series = clicks::daily_series(&state.db, url.id, &from_day).await.map_err(AppError::from)?;
+    let summary = clicks::summary_for_url(&state.db, url.id)
+        .await
+        .map_err(AppError::from)?;
+    let series = clicks::daily_series(&state.db, url.id, &from_day)
+        .await
+        .map_err(AppError::from)?;
     let daily = chart::fill_days(&series, days);
 
     let referrers = clicks::breakdown_for_url(&state.db, url.id, Dimension::Referrer, 8)
@@ -239,14 +254,25 @@ pub async fn detail(
         .await
         .map_err(AppError::from)?;
 
-    let recent = clicks::recent_for_url(&state.db, url.id, 25, 0).await.map_err(AppError::from)?;
-    let tag_names: Vec<String> =
-        tags::for_url(&state.db, url.id).await.map_err(AppError::from)?.into_iter().map(|tag| tag.name).collect();
+    let recent = clicks::recent_for_url(&state.db, url.id, 25, 0)
+        .await
+        .map_err(AppError::from)?;
+    let tag_names: Vec<String> = tags::for_url(&state.db, url.id)
+        .await
+        .map_err(AppError::from)?
+        .into_iter()
+        .map(|tag| tag.name)
+        .collect();
 
     let dto = UrlDto::new(&url, &state.config.base_url, tag_names.clone());
     let page = UrlDetailPage {
         site_name: state.settings.site_name(),
-        chrome: Chrome::new(&state, &user, "dashboard", flash_from_query(query.ok.as_deref(), query.err.as_deref())),
+        chrome: Chrome::new(
+            &state,
+            &user,
+            "dashboard",
+            flash_from_query(query.ok.as_deref(), query.err.as_deref()),
+        ),
         url: UrlRow::new(&dto),
         summary: summary_dto(&summary),
         chart: chart::svg_bars(&daily),
@@ -372,7 +398,10 @@ pub async fn delete(
 
 fn dimension_dtos(rows: Vec<clicks::DimensionCount>) -> Vec<crate::routes::dto::DimensionDto> {
     rows.into_iter()
-        .map(|row| crate::routes::dto::DimensionDto { label: row.label, count: row.count })
+        .map(|row| crate::routes::dto::DimensionDto {
+            label: row.label,
+            count: row.count,
+        })
         .collect()
 }
 

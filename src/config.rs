@@ -83,7 +83,10 @@ impl Config {
         })?;
 
         let explicit_secret = env_str("UWURLS_SECRET").filter(|s| !s.is_empty());
-        let secret = Arc::new(secret::load_or_create(&data_dir, explicit_secret.as_deref())?);
+        let secret = Arc::new(secret::load_or_create(
+            &data_dir,
+            explicit_secret.as_deref(),
+        )?);
 
         let secure_cookies = match env_str("UWURLS_SECURE_COOKIES") {
             Some(v) => parse_bool(&v),
@@ -107,7 +110,9 @@ impl Config {
             secret,
             session_ttl_hours: env_i64("UWURLS_SESSION_TTL_HOURS", 168),
             unlock_ttl_minutes: env_i64("UWURLS_UNLOCK_TTL_MINUTES", 30),
-            trust_proxy: env_str("UWURLS_TRUST_PROXY").map(|v| parse_bool(&v)).unwrap_or(false),
+            trust_proxy: env_str("UWURLS_TRUST_PROXY")
+                .map(|v| parse_bool(&v))
+                .unwrap_or(false),
             registration_override: env_str("UWURLS_REGISTRATION")
                 .filter(|v| !v.trim().is_empty())
                 .map(|v| v.trim().to_ascii_lowercase()),
@@ -170,11 +175,16 @@ fn env_str(name: &str) -> Option<String> {
 }
 
 fn env_i64(name: &str, default: i64) -> i64 {
-    env_str(name).and_then(|v| v.trim().parse().ok()).unwrap_or(default)
+    env_str(name)
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(default)
 }
 
 fn parse_bool(value: &str) -> bool {
-    matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
 }
 
 /// Split a base URL into `(scheme, host)` without pulling in a URL parser.
@@ -209,7 +219,9 @@ fn sqlite_path(database_url: &str) -> Option<PathBuf> {
 /// Directory that contains the SQLite file, used for the generated secret.
 fn sqlite_dir(database_url: &str) -> Option<PathBuf> {
     let path = sqlite_path(database_url)?;
-    path.parent().filter(|p| !p.as_os_str().is_empty()).map(Path::to_path_buf)
+    path.parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(Path::to_path_buf)
 }
 
 #[cfg(test)]

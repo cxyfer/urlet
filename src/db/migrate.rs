@@ -13,7 +13,10 @@ use crate::services::time::now_iso;
 /// Ordered list of migrations. Append only — never edit an applied file.
 pub const MIGRATIONS: &[(&str, &str)] = &[
     ("0001_init", include_str!("../../migrations/0001_init.sql")),
-    ("0002_clicks_indexes", include_str!("../../migrations/0002_clicks_indexes.sql")),
+    (
+        "0002_clicks_indexes",
+        include_str!("../../migrations/0002_clicks_indexes.sql"),
+    ),
 ];
 
 /// Apply all pending migrations.
@@ -33,7 +36,12 @@ pub async fn run(pool: &SqlitePool) -> Result<()> {
             .fetch_all(pool)
             .await?
             .into_iter()
-            .map(|row| (row.get::<String, _>("version"), row.get::<String, _>("checksum")))
+            .map(|row| {
+                (
+                    row.get::<String, _>("version"),
+                    row.get::<String, _>("checksum"),
+                )
+            })
             .collect();
 
     for (version, sql) in MIGRATIONS {
@@ -86,15 +94,26 @@ mod tests {
         run(&pool).await.expect("first run");
         run(&pool).await.expect("second run is a no-op");
 
-        let tables: Vec<String> = sqlx::query("SELECT name FROM sqlite_master WHERE type = 'table'")
-            .fetch_all(&pool)
-            .await
-            .expect("tables")
-            .into_iter()
-            .map(|row| row.get::<String, _>("name"))
-            .collect();
-        for expected in ["users", "urls", "clicks", "sessions", "settings", "audit_logs"] {
-            assert!(tables.contains(&expected.to_string()), "missing table {expected}");
+        let tables: Vec<String> =
+            sqlx::query("SELECT name FROM sqlite_master WHERE type = 'table'")
+                .fetch_all(&pool)
+                .await
+                .expect("tables")
+                .into_iter()
+                .map(|row| row.get::<String, _>("name"))
+                .collect();
+        for expected in [
+            "users",
+            "urls",
+            "clicks",
+            "sessions",
+            "settings",
+            "audit_logs",
+        ] {
+            assert!(
+                tables.contains(&expected.to_string()),
+                "missing table {expected}"
+            );
         }
 
         let seeded: i64 = sqlx::query("SELECT COUNT(*) AS c FROM settings")

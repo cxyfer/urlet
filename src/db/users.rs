@@ -31,7 +31,10 @@ impl User {
 
     /// Name to show in the UI.
     pub fn label(&self) -> &str {
-        self.display_name.as_deref().filter(|name| !name.is_empty()).unwrap_or(&self.email)
+        self.display_name
+            .as_deref()
+            .filter(|name| !name.is_empty())
+            .unwrap_or(&self.email)
     }
 }
 
@@ -82,12 +85,17 @@ pub async fn find_by_email(
 
 /// Find a user by id.
 pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<User>, sqlx::Error> {
-    sqlx::query_as::<_, User>(&format!("{SELECT} WHERE id = ?")).bind(id).fetch_optional(pool).await
+    sqlx::query_as::<_, User>(&format!("{SELECT} WHERE id = ?"))
+        .bind(id)
+        .fetch_optional(pool)
+        .await
 }
 
 /// Total number of accounts that are not deleted.
 pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE deleted_at IS NULL").fetch_one(pool).await
+    sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE deleted_at IS NULL")
+        .fetch_one(pool)
+        .await
 }
 
 /// Filters for the administrative user listing.
@@ -160,11 +168,9 @@ pub async fn count_active_admins(
 
 /// Total links per user, for the admin user table.
 pub async fn link_counts(pool: &SqlitePool) -> Result<Vec<(i64, i64)>, sqlx::Error> {
-    sqlx::query_as(
-        "SELECT user_id, COUNT(*) FROM urls WHERE deleted_at IS NULL GROUP BY user_id",
-    )
-    .fetch_all(pool)
-    .await
+    sqlx::query_as("SELECT user_id, COUNT(*) FROM urls WHERE deleted_at IS NULL GROUP BY user_id")
+        .fetch_all(pool)
+        .await
 }
 
 /// Update the last successful login timestamp.
@@ -231,12 +237,14 @@ pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> 
         .bind(id)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("UPDATE urls SET deleted_at = ?, updated_at = ? WHERE user_id = ? AND deleted_at IS NULL")
-        .bind(&now)
-        .bind(&now)
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "UPDATE urls SET deleted_at = ?, updated_at = ? WHERE user_id = ? AND deleted_at IS NULL",
+    )
+    .bind(&now)
+    .bind(&now)
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
     sqlx::query("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
         .bind(&now)
         .bind(id)

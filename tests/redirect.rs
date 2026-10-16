@@ -8,8 +8,15 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 async fn create_url(app: &TestApp, cookie: &str, payload: Value) -> Value {
-    let response = app.send(post_json_as("/api/v1/urls", payload, cookie)).await;
-    assert_eq!(response.status, StatusCode::CREATED, "create failed: {}", response.body);
+    let response = app
+        .send(post_json_as("/api/v1/urls", payload, cookie))
+        .await;
+    assert_eq!(
+        response.status,
+        StatusCode::CREATED,
+        "create failed: {}",
+        response.body
+    );
     response.json()
 }
 
@@ -37,12 +44,23 @@ async fn wait_for_clicks(app: &TestApp, url_id: i64, expected: i64) -> i64 {
 async fn redirects_with_the_configured_status() {
     let app = TestApp::spawn().await;
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
-    create_url(&app, &cookie, json!({ "target_url": "https://example.com/landing", "slug": "go" })).await;
+    create_url(
+        &app,
+        &cookie,
+        json!({ "target_url": "https://example.com/landing", "slug": "go" }),
+    )
+    .await;
 
     let response = app.get("/go").await;
     assert_eq!(response.status, StatusCode::FOUND);
-    assert_eq!(response.header("location").as_deref(), Some("https://example.com/landing"));
-    assert_eq!(response.header("cache-control").as_deref(), Some("private, no-store"));
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some("https://example.com/landing")
+    );
+    assert_eq!(
+        response.header("cache-control").as_deref(),
+        Some("private, no-store")
+    );
 }
 
 #[tokio::test]
@@ -58,14 +76,22 @@ async fn supports_permanent_redirects() {
 
     let response = app.get("/perm").await;
     assert_eq!(response.status, StatusCode::MOVED_PERMANENTLY);
-    assert_eq!(response.header("cache-control").as_deref(), Some("private, max-age=300"));
+    assert_eq!(
+        response.header("cache-control").as_deref(),
+        Some("private, max-age=300")
+    );
 }
 
 #[tokio::test]
 async fn slugs_are_case_insensitive_on_lookup() {
     let app = TestApp::spawn().await;
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
-    create_url(&app, &cookie, json!({ "target_url": "https://example.com", "slug": "MiXeD" })).await;
+    create_url(
+        &app,
+        &cookie,
+        json!({ "target_url": "https://example.com", "slug": "MiXeD" }),
+    )
+    .await;
 
     assert_eq!(app.get("/mixed").await.status, StatusCode::FOUND);
     assert_eq!(app.get("/MIXED").await.status, StatusCode::FOUND);
@@ -80,7 +106,12 @@ async fn unknown_disabled_and_deleted_links_are_404() {
     assert_eq!(missing.status, StatusCode::NOT_FOUND);
     assert!(missing.body.contains("Link not found"));
 
-    let disabled = create_url(&app, &cookie, json!({ "target_url": "https://example.com", "slug": "off" })).await;
+    let disabled = create_url(
+        &app,
+        &cookie,
+        json!({ "target_url": "https://example.com", "slug": "off" }),
+    )
+    .await;
     app.send(common::patch_json_as(
         &format!("/api/v1/urls/{}", disabled["id"].as_i64().expect("id")),
         json!({ "status": "disabled" }),
@@ -89,7 +120,12 @@ async fn unknown_disabled_and_deleted_links_are_404() {
     .await;
     assert_eq!(app.get("/off").await.status, StatusCode::NOT_FOUND);
 
-    let deleted = create_url(&app, &cookie, json!({ "target_url": "https://example.com", "slug": "gone" })).await;
+    let deleted = create_url(
+        &app,
+        &cookie,
+        json!({ "target_url": "https://example.com", "slug": "gone" }),
+    )
+    .await;
     app.send(common::delete_as(
         &format!("/api/v1/urls/{}", deleted["id"].as_i64().expect("id")),
         &cookie,
@@ -149,7 +185,10 @@ async fn password_protected_links_never_leak_the_target() {
     let page = app.get("/vault").await;
     assert_eq!(page.status, StatusCode::OK);
     assert!(page.body.contains("Protected link"));
-    assert!(!page.body.contains("secret.example"), "the target must not be rendered");
+    assert!(
+        !page.body.contains("secret.example"),
+        "the target must not be rendered"
+    );
     assert!(page.header("cache-control").is_some());
 
     // No click is recorded for a page view alone.
@@ -175,36 +214,62 @@ async fn unlock_flow_with_form_and_json() {
     let id = url["id"].as_i64().expect("id");
 
     // Wrong password: form submission re-renders the page with an error.
-    let wrong = app.send(post_form("/vault2/unlock", "password=nope", None, Some("http://localhost:8080"))).await;
+    let wrong = app
+        .send(post_form(
+            "/vault2/unlock",
+            "password=nope",
+            None,
+            Some("http://localhost:8080"),
+        ))
+        .await;
     assert_eq!(wrong.status, StatusCode::UNAUTHORIZED);
     assert!(wrong.body.contains("Incorrect password"));
     assert!(!wrong.body.contains("secret.example"));
 
     // Wrong password via JSON.
     let wrong_json = app
-        .send(common::post_json("/vault2/unlock", json!({ "password": "nope" })))
+        .send(common::post_json(
+            "/vault2/unlock",
+            json!({ "password": "nope" }),
+        ))
         .await;
     assert_eq!(wrong_json.status, StatusCode::UNAUTHORIZED);
     assert_eq!(wrong_json.json()["error"]["code"], "unauthorized");
 
     // Correct password via JSON returns the redirect target and a cookie.
     let ok_json = app
-        .send(common::post_json("/vault2/unlock", json!({ "password": "linkpass" })))
+        .send(common::post_json(
+            "/vault2/unlock",
+            json!({ "password": "linkpass" }),
+        ))
         .await;
     assert_eq!(ok_json.status, StatusCode::OK, "{}", ok_json.body);
     assert_eq!(ok_json.json()["redirect"], "/vault2");
-    let unlock_cookie = ok_json.cookie_named("uwurls_unlock_vault2").expect("unlock cookie");
-    assert!(ok_json.header("set-cookie").expect("set-cookie").contains("HttpOnly"));
+    let unlock_cookie = ok_json
+        .cookie_named("uwurls_unlock_vault2")
+        .expect("unlock cookie");
+    assert!(ok_json
+        .header("set-cookie")
+        .expect("set-cookie")
+        .contains("HttpOnly"));
 
     // With the cookie the link redirects.
     let followed = app.get_as("/vault2", &unlock_cookie).await;
     assert_eq!(followed.status, StatusCode::FOUND);
-    assert_eq!(followed.header("location").as_deref(), Some("https://secret.example/private"));
+    assert_eq!(
+        followed.header("location").as_deref(),
+        Some("https://secret.example/private")
+    );
     wait_for_clicks(&app, id, 1).await;
 
     // Form flow returns a 303 to the short link.
     let ok_form = app
-        .send(post_form("/vault2/unlock", "password=linkpass", None, Some("http://localhost:8080")))
+        .send(post_form(
+            "/vault2/unlock",
+            "password=linkpass",
+            None,
+            Some("http://localhost:8080"),
+        ))
         .await;
     assert_eq!(ok_form.status, StatusCode::SEE_OTHER);
     assert_eq!(ok_form.header("location").as_deref(), Some("/vault2"));
@@ -224,10 +289,20 @@ async fn unlock_cookies_are_scoped_to_one_link() {
         .await;
     }
 
-    let unlocked = app.send(common::post_json("/first/unlock", json!({ "password": "linkpass" }))).await;
-    let unlock_cookie = unlocked.cookie_named("uwurls_unlock_first").expect("cookie");
+    let unlocked = app
+        .send(common::post_json(
+            "/first/unlock",
+            json!({ "password": "linkpass" }),
+        ))
+        .await;
+    let unlock_cookie = unlocked
+        .cookie_named("uwurls_unlock_first")
+        .expect("cookie");
 
-    assert_eq!(app.get_as("/first", &unlock_cookie).await.status, StatusCode::FOUND);
+    assert_eq!(
+        app.get_as("/first", &unlock_cookie).await.status,
+        StatusCode::FOUND
+    );
     // The same cookie value under another name must not unlock the second link.
     let forged = unlock_cookie.replace("uwurls_unlock_first", "uwurls_unlock_second");
     let second = app.get_as("/second", &forged).await;
@@ -248,7 +323,12 @@ async fn unlock_attempts_are_rate_limited() {
 
     let mut limited = false;
     for _ in 0..15 {
-        let response = app.send(common::post_json("/brute/unlock", json!({ "password": "wrong" }))).await;
+        let response = app
+            .send(common::post_json(
+                "/brute/unlock",
+                json!({ "password": "wrong" }),
+            ))
+            .await;
         if response.status == StatusCode::TOO_MANY_REQUESTS {
             limited = true;
             break;
@@ -261,17 +341,27 @@ async fn unlock_attempts_are_rate_limited() {
 async fn clicks_are_recorded_with_analytics_dimensions() {
     let app = TestApp::spawn().await;
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
-    let url = create_url(&app, &cookie, json!({ "target_url": "https://example.com", "slug": "tracked" })).await;
+    let url = create_url(
+        &app,
+        &cookie,
+        json!({ "target_url": "https://example.com", "slug": "tracked" }),
+    )
+    .await;
     let id = url["id"].as_i64().expect("id");
 
     let mut builder = axum::http::Request::builder()
         .method("GET")
         .uri("/tracked")
         .header(header::HOST, "localhost:8080")
-        .header(header::USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
+        .header(
+            header::USER_AGENT,
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
+        )
         .header(header::REFERER, "https://news.example.com/story");
     builder = builder.header(header::COOKIE, "unrelated=1");
-    let response = app.send(builder.body(axum::body::Body::empty()).expect("request")).await;
+    let response = app
+        .send(builder.body(axum::body::Body::empty()).expect("request"))
+        .await;
     assert_eq!(response.status, StatusCode::FOUND);
 
     wait_for_clicks(&app, id, 1).await;
@@ -291,12 +381,13 @@ async fn clicks_are_recorded_with_analytics_dimensions() {
     assert_eq!(row.5, 1, "first click from a visitor is unique");
 
     // Counters and rollups are updated too.
-    let (clicks, unique, last): (i64, i64, Option<String>) =
-        sqlx::query_as("SELECT click_count, unique_click_count, last_clicked_at FROM urls WHERE id = ?")
-            .bind(id)
-            .fetch_one(&app.state.db)
-            .await
-            .expect("url counters");
+    let (clicks, unique, last): (i64, i64, Option<String>) = sqlx::query_as(
+        "SELECT click_count, unique_click_count, last_clicked_at FROM urls WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(&app.state.db)
+    .await
+    .expect("url counters");
     assert_eq!((clicks, unique), (1, 1));
     assert!(last.is_some());
 
@@ -312,7 +403,12 @@ async fn clicks_are_recorded_with_analytics_dimensions() {
 async fn bot_traffic_is_flagged_and_can_be_disabled() {
     let app = TestApp::spawn().await;
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
-    let url = create_url(&app, &cookie, json!({ "target_url": "https://example.com", "slug": "bots" })).await;
+    let url = create_url(
+        &app,
+        &cookie,
+        json!({ "target_url": "https://example.com", "slug": "bots" }),
+    )
+    .await;
     let id = url["id"].as_i64().expect("id");
 
     let request = axum::http::Request::builder()
@@ -352,7 +448,12 @@ async fn bot_traffic_is_flagged_and_can_be_disabled() {
 async fn statistics_endpoint_reports_series_and_breakdowns() {
     let app = TestApp::spawn().await;
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
-    let url = create_url(&app, &cookie, json!({ "target_url": "https://example.com", "slug": "stats" })).await;
+    let url = create_url(
+        &app,
+        &cookie,
+        json!({ "target_url": "https://example.com", "slug": "stats" }),
+    )
+    .await;
     let id = url["id"].as_i64().expect("id");
 
     for agent in [
@@ -371,7 +472,9 @@ async fn statistics_endpoint_reports_series_and_breakdowns() {
     }
     wait_for_clicks(&app, id, 2).await;
 
-    let response = app.get_as(&format!("/api/v1/urls/{id}/stats?days=7"), &cookie).await;
+    let response = app
+        .get_as(&format!("/api/v1/urls/{id}/stats?days=7"), &cookie)
+        .await;
     assert_eq!(response.status, StatusCode::OK, "{}", response.body);
     let stats = response.json();
     assert_eq!(stats["summary"]["total_clicks"], 2);
@@ -389,15 +492,23 @@ async fn statistics_endpoint_reports_series_and_breakdowns() {
     assert!(devices.contains(&"Mobile".to_string()));
     assert!(devices.contains(&"Desktop".to_string()));
 
-    let clicks = app.get_as(&format!("/api/v1/urls/{id}/clicks"), &cookie).await.json();
+    let clicks = app
+        .get_as(&format!("/api/v1/urls/{id}/clicks"), &cookie)
+        .await
+        .json();
     assert_eq!(clicks["total"], 2);
     assert_eq!(clicks["items"].as_array().expect("items").len(), 2);
-    assert!(clicks["items"][0].get("ip_hash").is_none(), "hashes are never exposed");
+    assert!(
+        clicks["items"][0].get("ip_hash").is_none(),
+        "hashes are never exposed"
+    );
 
     // Another user cannot read the statistics.
     let (other, _) = app.register("other@example.com", "supersecret").await;
     assert_eq!(
-        app.get_as(&format!("/api/v1/urls/{id}/stats"), &other).await.status,
+        app.get_as(&format!("/api/v1/urls/{id}/stats"), &other)
+            .await
+            .status,
         StatusCode::NOT_FOUND
     );
 }
@@ -420,19 +531,33 @@ async fn public_metadata_never_exposes_the_target() {
     assert_eq!(body["title"], "Board deck");
     assert_eq!(body["has_password"], true);
     assert_eq!(body["state"], "active");
-    assert!(!response.body.contains("secret.example.com"), "the target must not leak");
+    assert!(
+        !response.body.contains("secret.example.com"),
+        "the target must not leak"
+    );
 
-    assert_eq!(app.get("/api/v1/public/urls/unknown").await.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        app.get("/api/v1/public/urls/unknown").await.status,
+        StatusCode::NOT_FOUND
+    );
 
     // A disabled link disappears from the public endpoint too.
-    let created = create_url(&app, &cookie, json!({ "target_url": "https://example.com", "slug": "hidden" })).await;
+    let created = create_url(
+        &app,
+        &cookie,
+        json!({ "target_url": "https://example.com", "slug": "hidden" }),
+    )
+    .await;
     app.send(common::patch_json_as(
         &format!("/api/v1/urls/{}", created["id"].as_i64().expect("id")),
         json!({ "status": "disabled" }),
         &cookie,
     ))
     .await;
-    assert_eq!(app.get("/api/v1/public/urls/hidden").await.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        app.get("/api/v1/public/urls/hidden").await.status,
+        StatusCode::NOT_FOUND
+    );
 }
 
 #[tokio::test]

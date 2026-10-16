@@ -47,16 +47,24 @@ pub async fn csrf_protect(
         origin = ?request.headers().get(header::ORIGIN),
         "rejected cross-site state changing request"
     );
-    Err(AppError::forbidden("request rejected: cross-site submission"))
+    Err(AppError::forbidden(
+        "request rejected: cross-site submission",
+    ))
 }
 
 /// `true` for methods that must not change state.
 pub fn is_safe_method(method: &Method) -> bool {
-    matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS | Method::TRACE)
+    matches!(
+        *method,
+        Method::GET | Method::HEAD | Method::OPTIONS | Method::TRACE
+    )
 }
 
 fn has_form_content_type(headers: &HeaderMap) -> bool {
-    let Some(value) = headers.get(header::CONTENT_TYPE).and_then(|value| value.to_str().ok()) else {
+    let Some(value) = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+    else {
         return false;
     };
     let value = value.to_ascii_lowercase();
@@ -78,7 +86,9 @@ pub fn same_origin(headers: &HeaderMap, config: &Config) -> bool {
         let Some(value) = headers.get(name).and_then(|value| value.to_str().ok()) else {
             continue;
         };
-        let Some(origin_host) = host_of(value) else { continue };
+        let Some(origin_host) = host_of(value) else {
+            continue;
+        };
         if (!host.is_empty() && origin_host == host)
             || origin_host.eq_ignore_ascii_case(&config.base_host)
         {
@@ -137,7 +147,10 @@ mod tests {
 
     #[test]
     fn accepts_matching_origin() {
-        let same = headers(&[("host", "localhost:8080"), ("origin", "http://localhost:8080")]);
+        let same = headers(&[
+            ("host", "localhost:8080"),
+            ("origin", "http://localhost:8080"),
+        ]);
         assert!(same_origin(&same, &config()));
     }
 
@@ -152,7 +165,10 @@ mod tests {
 
     #[test]
     fn rejects_foreign_origin() {
-        let foreign = headers(&[("host", "localhost:8080"), ("origin", "https://evil.example")]);
+        let foreign = headers(&[
+            ("host", "localhost:8080"),
+            ("origin", "https://evil.example"),
+        ]);
         assert!(!same_origin(&foreign, &config()));
     }
 
@@ -175,8 +191,14 @@ mod tests {
 
     #[test]
     fn ignores_userinfo_in_origin() {
-        assert_eq!(host_of("http://user@localhost:8080").as_deref(), Some("localhost:8080"));
-        assert_eq!(host_of("https://s.example.com/a/b").as_deref(), Some("s.example.com"));
+        assert_eq!(
+            host_of("http://user@localhost:8080").as_deref(),
+            Some("localhost:8080")
+        );
+        assert_eq!(
+            host_of("https://s.example.com/a/b").as_deref(),
+            Some("s.example.com")
+        );
         assert_eq!(host_of("not a url"), None);
     }
 }

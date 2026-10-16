@@ -35,13 +35,26 @@ async fn non_admins_are_rejected() {
         "/api/v1/admin/stats",
     ] {
         let response = app.get_as(uri, &member_cookie).await;
-        assert_eq!(response.status, StatusCode::FORBIDDEN, "{uri} must be admin only");
+        assert_eq!(
+            response.status,
+            StatusCode::FORBIDDEN,
+            "{uri} must be admin only"
+        );
         assert_eq!(response.json()["error"]["code"], "forbidden");
     }
 
-    assert_eq!(app.get("/api/v1/admin/users").await.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(app.get_as("/app/admin", &member_cookie).await.status, StatusCode::FORBIDDEN);
-    assert_eq!(app.get_as("/app/admin/users", &member_cookie).await.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        app.get("/api/v1/admin/users").await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        app.get_as("/app/admin", &member_cookie).await.status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.get_as("/app/admin/users", &member_cookie).await.status,
+        StatusCode::FORBIDDEN
+    );
 }
 
 #[tokio::test]
@@ -59,7 +72,12 @@ async fn admin_pages_render_for_administrators() {
         ("/app/admin/audit", "Audit log"),
     ] {
         let response = app.get_as(uri, &cookie).await;
-        assert_eq!(response.status, StatusCode::OK, "{uri} failed: {}", response.body);
+        assert_eq!(
+            response.status,
+            StatusCode::OK,
+            "{uri} failed: {}",
+            response.body
+        );
         assert!(response.body.contains(needle), "{uri} is missing {needle}");
     }
 }
@@ -69,8 +87,12 @@ async fn user_listing_supports_filters_and_link_counts() {
     let app = TestApp::spawn().await;
     let (cookie, admin_id) = admin(&app).await;
     let (member_cookie, member_id) = member(&app, "member@example.com").await;
-    app.send(post_json_as("/api/v1/urls", json!({ "target_url": "https://example.com" }), &member_cookie))
-        .await;
+    app.send(post_json_as(
+        "/api/v1/urls",
+        json!({ "target_url": "https://example.com" }),
+        &member_cookie,
+    ))
+    .await;
 
     let all = app.get_as("/api/v1/admin/users", &cookie).await.json();
     assert_eq!(all["total"], 2);
@@ -91,11 +113,17 @@ async fn user_listing_supports_filters_and_link_counts() {
         .expect("member row");
     assert_eq!(member_row["link_count"], 1);
 
-    let search = app.get_as("/api/v1/admin/users?q=member", &cookie).await.json();
+    let search = app
+        .get_as("/api/v1/admin/users?q=member", &cookie)
+        .await
+        .json();
     assert_eq!(search["total"], 1);
     assert_eq!(search["items"][0]["id"], member_id);
 
-    let by_role = app.get_as("/api/v1/admin/users?role=admin", &cookie).await.json();
+    let by_role = app
+        .get_as("/api/v1/admin/users?role=admin", &cookie)
+        .await
+        .json();
     assert_eq!(by_role["total"], 1);
     assert_eq!(by_role["items"][0]["id"], admin_id);
 }
@@ -106,7 +134,10 @@ async fn suspending_a_user_kills_their_sessions() {
     let (cookie, _) = admin(&app).await;
     let (member_cookie, member_id) = member(&app, "member@example.com").await;
 
-    assert_eq!(app.get_as("/api/v1/auth/me", &member_cookie).await.status, StatusCode::OK);
+    assert_eq!(
+        app.get_as("/api/v1/auth/me", &member_cookie).await.status,
+        StatusCode::OK
+    );
 
     let response = app
         .send(patch_json_as(
@@ -118,9 +149,15 @@ async fn suspending_a_user_kills_their_sessions() {
     assert_eq!(response.status, StatusCode::OK, "{}", response.body);
     assert_eq!(response.json()["status"], "suspended");
 
-    assert_eq!(app.get_as("/api/v1/auth/me", &member_cookie).await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        app.get_as("/api/v1/auth/me", &member_cookie).await.status,
+        StatusCode::UNAUTHORIZED
+    );
     let login = app
-        .post_json("/api/v1/auth/login", json!({ "email": "member@example.com", "password": "supersecret" }))
+        .post_json(
+            "/api/v1/auth/login",
+            json!({ "email": "member@example.com", "password": "supersecret" }),
+        )
         .await;
     assert_eq!(login.status, StatusCode::FORBIDDEN);
 }
@@ -131,10 +168,17 @@ async fn administrators_cannot_lock_themselves_out() {
     let (cookie, admin_id) = admin(&app).await;
 
     let demote = app
-        .send(patch_json_as(&format!("/api/v1/admin/users/{admin_id}"), json!({ "role": "user" }), &cookie))
+        .send(patch_json_as(
+            &format!("/api/v1/admin/users/{admin_id}"),
+            json!({ "role": "user" }),
+            &cookie,
+        ))
         .await;
     assert_eq!(demote.status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(demote.json()["error"]["message"].as_str().expect("message").contains("your own"));
+    assert!(demote.json()["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("your own"));
 
     let suspend = app
         .send(patch_json_as(
@@ -145,11 +189,19 @@ async fn administrators_cannot_lock_themselves_out() {
         .await;
     assert_eq!(suspend.status, StatusCode::UNPROCESSABLE_ENTITY);
 
-    let delete = app.send(delete_as(&format!("/api/v1/admin/users/{admin_id}"), &cookie)).await;
+    let delete = app
+        .send(delete_as(
+            &format!("/api/v1/admin/users/{admin_id}"),
+            &cookie,
+        ))
+        .await;
     assert_eq!(delete.status, StatusCode::UNPROCESSABLE_ENTITY);
 
     // Still an administrator.
-    assert_eq!(app.get_as("/api/v1/admin/users", &cookie).await.status, StatusCode::OK);
+    assert_eq!(
+        app.get_as("/api/v1/admin/users", &cookie).await.status,
+        StatusCode::OK
+    );
 }
 
 #[tokio::test]
@@ -166,10 +218,16 @@ async fn password_reset_revokes_sessions_and_changes_the_password() {
         ))
         .await;
     assert_eq!(response.status, StatusCode::NO_CONTENT, "{}", response.body);
-    assert_eq!(app.get_as("/api/v1/auth/me", &member_cookie).await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        app.get_as("/api/v1/auth/me", &member_cookie).await.status,
+        StatusCode::UNAUTHORIZED
+    );
 
     let login = app
-        .post_json("/api/v1/auth/login", json!({ "email": "member@example.com", "password": "brandnewpass" }))
+        .post_json(
+            "/api/v1/auth/login",
+            json!({ "email": "member@example.com", "password": "brandnewpass" }),
+        )
         .await;
     assert_eq!(login.status, StatusCode::OK);
 }
@@ -180,16 +238,33 @@ async fn deleting_a_user_removes_their_links() {
     let (cookie, _) = admin(&app).await;
     let (member_cookie, member_id) = member(&app, "member@example.com").await;
     let created = app
-        .send(post_json_as("/api/v1/urls", json!({ "target_url": "https://example.com", "slug": "gone" }), &member_cookie))
+        .send(post_json_as(
+            "/api/v1/urls",
+            json!({ "target_url": "https://example.com", "slug": "gone" }),
+            &member_cookie,
+        ))
         .await
         .json();
     let url_id = created["id"].as_i64().expect("id");
 
-    let response = app.send(delete_as(&format!("/api/v1/admin/users/{member_id}"), &cookie)).await;
+    let response = app
+        .send(delete_as(
+            &format!("/api/v1/admin/users/{member_id}"),
+            &cookie,
+        ))
+        .await;
     assert_eq!(response.status, StatusCode::NO_CONTENT);
     assert_eq!(app.get("/gone").await.status, StatusCode::NOT_FOUND);
-    assert_eq!(app.get_as(&format!("/api/v1/urls/{url_id}"), &cookie).await.status, StatusCode::NOT_FOUND);
-    assert_eq!(app.get_as("/api/v1/admin/users", &cookie).await.json()["total"], 1);
+    assert_eq!(
+        app.get_as(&format!("/api/v1/urls/{url_id}"), &cookie)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        app.get_as("/api/v1/admin/users", &cookie).await.json()["total"],
+        1
+    );
 }
 
 #[tokio::test]
@@ -216,19 +291,31 @@ async fn admin_can_list_and_moderate_links() {
         .await
         .json();
     assert_eq!(by_owner["total"], 1);
-    let other = app.get_as("/api/v1/admin/urls?user_id=99999", &cookie).await.json();
+    let other = app
+        .get_as("/api/v1/admin/urls?user_id=99999", &cookie)
+        .await
+        .json();
     assert_eq!(other["total"], 0);
 
     let disabled = app
-        .send(patch_json_as(&format!("/api/v1/admin/urls/{url_id}"), json!({ "status": "disabled" }), &cookie))
+        .send(patch_json_as(
+            &format!("/api/v1/admin/urls/{url_id}"),
+            json!({ "status": "disabled" }),
+            &cookie,
+        ))
         .await;
     assert_eq!(disabled.status, StatusCode::OK, "{}", disabled.body);
     assert_eq!(disabled.json()["state"], "disabled");
     assert_eq!(app.get("/thing").await.status, StatusCode::NOT_FOUND);
 
-    let deleted = app.send(delete_as(&format!("/api/v1/admin/urls/{url_id}"), &cookie)).await;
+    let deleted = app
+        .send(delete_as(&format!("/api/v1/admin/urls/{url_id}"), &cookie))
+        .await;
     assert_eq!(deleted.status, StatusCode::NO_CONTENT);
-    assert_eq!(app.get_as("/api/v1/admin/urls", &cookie).await.json()["total"], 0);
+    assert_eq!(
+        app.get_as("/api/v1/admin/urls", &cookie).await.json()["total"],
+        0
+    );
 }
 
 #[tokio::test]
@@ -268,13 +355,23 @@ async fn invites_drive_invite_only_registration() {
             json!({ "email": "first@example.com", "password": "supersecret", "invite_code": code }),
         )
         .await;
-    assert_eq!(registered.status, StatusCode::CREATED, "{}", registered.body);
+    assert_eq!(
+        registered.status,
+        StatusCode::CREATED,
+        "{}",
+        registered.body
+    );
     let listing = app.get_as("/api/v1/admin/invites", &cookie).await.json();
     assert_eq!(listing["items"][0]["used_count"], 1);
     assert_eq!(listing["items"][0]["remaining"], 1);
 
     // A revoked code cannot be used.
-    let revoked = app.send(delete_as(&format!("/api/v1/admin/invites/{invite_id}"), &cookie)).await;
+    let revoked = app
+        .send(delete_as(
+            &format!("/api/v1/admin/invites/{invite_id}"),
+            &cookie,
+        ))
+        .await;
     assert_eq!(revoked.status, StatusCode::NO_CONTENT);
     let blocked = app
         .post_json(
@@ -283,7 +380,15 @@ async fn invites_drive_invite_only_registration() {
         )
         .await;
     assert_eq!(blocked.status, StatusCode::FORBIDDEN);
-    assert_eq!(app.send(delete_as(&format!("/api/v1/admin/invites/{invite_id}"), &cookie)).await.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        app.send(delete_as(
+            &format!("/api/v1/admin/invites/{invite_id}"),
+            &cookie
+        ))
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
 }
 
 #[tokio::test]
@@ -292,7 +397,11 @@ async fn invite_form_creates_a_code_and_shows_it_once() {
     let (cookie, _) = admin(&app).await;
 
     let response = app
-        .send(post_form_as("/app/admin/invites", "note=team&max_uses=3&expires_at=2030-01-01", &cookie))
+        .send(post_form_as(
+            "/app/admin/invites",
+            "note=team&max_uses=3&expires_at=2030-01-01",
+            &cookie,
+        ))
         .await;
     assert_eq!(response.status, StatusCode::OK, "{}", response.body);
     assert!(response.body.contains("Copy this invite code now"));
@@ -331,12 +440,20 @@ async fn settings_can_be_read_and_updated() {
 
     // Unknown keys and invalid values are rejected.
     let unknown = app
-        .send(put_json_as("/api/v1/admin/settings", json!({ "nope": "1" }), &cookie))
+        .send(put_json_as(
+            "/api/v1/admin/settings",
+            json!({ "nope": "1" }),
+            &cookie,
+        ))
         .await;
     assert_eq!(unknown.status, StatusCode::UNPROCESSABLE_ENTITY);
 
     let invalid = app
-        .send(put_json_as("/api/v1/admin/settings", json!({ "default_slug_length": "2" }), &cookie))
+        .send(put_json_as(
+            "/api/v1/admin/settings",
+            json!({ "default_slug_length": "2" }),
+            &cookie,
+        ))
         .await;
     assert_eq!(invalid.status, StatusCode::UNPROCESSABLE_ENTITY);
 }
@@ -355,7 +472,10 @@ async fn settings_form_persists_values() {
         ))
         .await;
     assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
-    assert_eq!(response.header("location").as_deref(), Some("/app/admin/settings?ok=saved"));
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some("/app/admin/settings?ok=saved")
+    );
 
     assert_eq!(app.state.settings.site_name(), "Team Links");
     assert_eq!(app.state.settings.default_slug_length(), 9);
@@ -373,8 +493,12 @@ async fn audit_log_records_actions_and_filters() {
     let app = TestApp::spawn().await;
     let (cookie, _) = admin(&app).await;
     let (member_cookie, member_id) = member(&app, "member@example.com").await;
-    app.send(post_json_as("/api/v1/urls", json!({ "target_url": "https://example.com", "slug": "audited" }), &member_cookie))
-        .await;
+    app.send(post_json_as(
+        "/api/v1/urls",
+        json!({ "target_url": "https://example.com", "slug": "audited" }),
+        &member_cookie,
+    ))
+    .await;
 
     let response = app.get_as("/api/v1/admin/audit", &cookie).await;
     assert_eq!(response.status, StatusCode::OK);
@@ -387,10 +511,16 @@ async fn audit_log_records_actions_and_filters() {
         .map(|item| item["action"].as_str().expect("action").to_string())
         .collect();
     for expected in ["auth.register", "url.created"] {
-        assert!(actions.contains(&expected.to_string()), "missing {expected} in {actions:?}");
+        assert!(
+            actions.contains(&expected.to_string()),
+            "missing {expected} in {actions:?}"
+        );
     }
 
-    let filtered = app.get_as("/api/v1/admin/audit?action=url.created", &cookie).await.json();
+    let filtered = app
+        .get_as("/api/v1/admin/audit?action=url.created", &cookie)
+        .await
+        .json();
     assert_eq!(filtered["total"], 1);
     assert_eq!(filtered["items"][0]["target_type"], "url");
 
@@ -401,7 +531,10 @@ async fn audit_log_records_actions_and_filters() {
         &cookie,
     ))
     .await;
-    let admin_entries = app.get_as("/api/v1/admin/audit?action=admin.user_updated", &cookie).await.json();
+    let admin_entries = app
+        .get_as("/api/v1/admin/audit?action=admin.user_updated", &cookie)
+        .await
+        .json();
     assert_eq!(admin_entries["total"], 1);
     assert_eq!(admin_entries["items"][0]["metadata"]["status"], "suspended");
 }
@@ -411,8 +544,12 @@ async fn stats_report_instance_numbers() {
     let app = TestApp::spawn().await;
     let (cookie, _) = admin(&app).await;
     let (member_cookie, _) = member(&app, "member@example.com").await;
-    app.send(post_json_as("/api/v1/urls", json!({ "target_url": "https://example.com", "slug": "counted" }), &member_cookie))
-        .await;
+    app.send(post_json_as(
+        "/api/v1/urls",
+        json!({ "target_url": "https://example.com", "slug": "counted" }),
+        &member_cookie,
+    ))
+    .await;
     app.get("/counted").await;
 
     let response = app.get_as("/api/v1/admin/stats", &cookie).await;
@@ -432,7 +569,11 @@ async fn admin_forms_moderate_users_and_links() {
     let (cookie, _) = admin(&app).await;
     let (member_cookie, member_id) = member(&app, "member@example.com").await;
     let created = app
-        .send(post_json_as("/api/v1/urls", json!({ "target_url": "https://example.com", "slug": "moderated" }), &member_cookie))
+        .send(post_json_as(
+            "/api/v1/urls",
+            json!({ "target_url": "https://example.com", "slug": "moderated" }),
+            &member_cookie,
+        ))
         .await
         .json();
     let url_id = created["id"].as_i64().expect("id");
@@ -445,7 +586,10 @@ async fn admin_forms_moderate_users_and_links() {
         ))
         .await;
     assert_eq!(suspended.status, StatusCode::SEE_OTHER);
-    assert_eq!(suspended.header("location").as_deref(), Some("/app/admin/users?ok=user"));
+    assert_eq!(
+        suspended.header("location").as_deref(),
+        Some("/app/admin/users?ok=user")
+    );
 
     let disabled = app
         .send(post_form_as(
@@ -454,13 +598,23 @@ async fn admin_forms_moderate_users_and_links() {
             &cookie,
         ))
         .await;
-    assert_eq!(disabled.header("location").as_deref(), Some("/app/admin/urls?ok=updated"));
+    assert_eq!(
+        disabled.header("location").as_deref(),
+        Some("/app/admin/urls?ok=updated")
+    );
     assert_eq!(app.get("/moderated").await.status, StatusCode::NOT_FOUND);
 
     let deleted = app
-        .send(post_form_as(&format!("/app/admin/urls/{url_id}/delete"), "", &cookie))
+        .send(post_form_as(
+            &format!("/app/admin/urls/{url_id}/delete"),
+            "",
+            &cookie,
+        ))
         .await;
-    assert_eq!(deleted.header("location").as_deref(), Some("/app/admin/urls?ok=deleted"));
+    assert_eq!(
+        deleted.header("location").as_deref(),
+        Some("/app/admin/urls?ok=deleted")
+    );
 
     let reset = app
         .send(post_form_as(
@@ -469,7 +623,10 @@ async fn admin_forms_moderate_users_and_links() {
             &cookie,
         ))
         .await;
-    assert_eq!(reset.header("location").as_deref(), Some("/app/admin/users?ok=user"));
+    assert_eq!(
+        reset.header("location").as_deref(),
+        Some("/app/admin/users?ok=user")
+    );
 
     // The account is still suspended, so re-enable it before signing in.
     let reactivated = app
@@ -493,7 +650,11 @@ async fn maintenance_prunes_stale_rows() {
     let (cookie, _) = admin(&app).await;
     let (member_cookie, _) = member(&app, "member@example.com").await;
     let created = app
-        .send(post_json_as("/api/v1/urls", json!({ "target_url": "https://example.com", "slug": "old" }), &member_cookie))
+        .send(post_json_as(
+            "/api/v1/urls",
+            json!({ "target_url": "https://example.com", "slug": "old" }),
+            &member_cookie,
+        ))
         .await
         .json();
     let url_id = created["id"].as_i64().expect("id");
@@ -535,7 +696,10 @@ async fn maintenance_prunes_stale_rows() {
         .fetch_one(&app.state.db)
         .await
         .expect("rollups");
-    assert_eq!(clicks, 0, "clicks older than the retention window are pruned");
+    assert_eq!(
+        clicks, 0,
+        "clicks older than the retention window are pruned"
+    );
     assert_eq!(rollups, 0);
 
     // The link itself is untouched.
@@ -543,19 +707,28 @@ async fn maintenance_prunes_stale_rows() {
     assert_eq!(admin_links["total"], 1);
     assert_eq!(admin_links["items"][0]["id"], url_id);
     // The aged session is gone, so the member cookie no longer works.
-    assert_eq!(app.get_as("/api/v1/auth/me", &member_cookie).await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        app.get_as("/api/v1/auth/me", &member_cookie).await.status,
+        StatusCode::UNAUTHORIZED
+    );
 }
 
 #[tokio::test]
 async fn admin_api_requires_json_errors_not_html() {
     let app = TestApp::spawn().await;
     let (cookie, _) = admin(&app).await;
-    let response = app.send(delete_as("/api/v1/admin/users/9999", &cookie)).await;
+    let response = app
+        .send(delete_as("/api/v1/admin/users/9999", &cookie))
+        .await;
     assert_eq!(response.status, StatusCode::NOT_FOUND);
     assert_eq!(response.json()["error"]["code"], "not_found");
 
     let bad_status = app
-        .send(patch_json_as("/api/v1/admin/users/1", json!({ "status": "nonsense" }), &cookie))
+        .send(patch_json_as(
+            "/api/v1/admin/users/1",
+            json!({ "status": "nonsense" }),
+            &cookie,
+        ))
         .await;
     assert_eq!(bad_status.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(bad_status.json()["error"]["details"]["field"], "status");

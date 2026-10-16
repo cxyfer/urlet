@@ -209,10 +209,7 @@ pub async fn count_for_url(pool: &SqlitePool, url_id: i64) -> Result<i64, sqlx::
 }
 
 /// Aggregate summary for one link.
-pub async fn summary_for_url(
-    pool: &SqlitePool,
-    url_id: i64,
-) -> Result<ClickSummary, sqlx::Error> {
+pub async fn summary_for_url(pool: &SqlitePool, url_id: i64) -> Result<ClickSummary, sqlx::Error> {
     sqlx::query_as::<_, ClickSummary>(
         "SELECT COUNT(*) AS total_clicks,
                 IFNULL(SUM(is_unique), 0) AS unique_clicks,
@@ -265,10 +262,7 @@ pub async fn breakdown_for_url(
 }
 
 /// Totals across every link of one user (dashboard cards).
-pub async fn user_summary(
-    pool: &SqlitePool,
-    user_id: i64,
-) -> Result<ClickSummary, sqlx::Error> {
+pub async fn user_summary(pool: &SqlitePool, user_id: i64) -> Result<ClickSummary, sqlx::Error> {
     sqlx::query_as::<_, ClickSummary>(
         "SELECT COUNT(*) AS total_clicks,
                 IFNULL(SUM(c.is_unique), 0) AS unique_clicks,
@@ -358,9 +352,7 @@ pub async fn delete_daily_before(pool: &SqlitePool, before_day: &str) -> Result<
 
 /// Global click totals (administrative dashboard).
 pub async fn global_totals(pool: &SqlitePool) -> Result<(i64, i64, i64), sqlx::Error> {
-    sqlx::query_as(
-        "SELECT COUNT(*), IFNULL(SUM(is_unique), 0), IFNULL(SUM(is_bot), 0) FROM clicks",
-    )
-    .fetch_one(pool)
-    .await
+    sqlx::query_as("SELECT COUNT(*), IFNULL(SUM(is_unique), 0), IFNULL(SUM(is_bot), 0) FROM clicks")
+        .fetch_one(pool)
+        .await
 }

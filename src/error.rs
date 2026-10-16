@@ -15,13 +15,18 @@ pub type Result<T> = std::result::Result<T, AppError>;
 #[derive(Debug)]
 pub enum AppError {
     BadRequest(String),
-    Validation { field: &'static str, message: String },
+    Validation {
+        field: &'static str,
+        message: String,
+    },
     Unauthorized(String),
     Forbidden(String),
     NotFound,
     Conflict(String),
     Gone(String),
-    RateLimited { retry_after_secs: u64 },
+    RateLimited {
+        retry_after_secs: u64,
+    },
     Internal(String),
 }
 
@@ -31,7 +36,10 @@ impl AppError {
     }
 
     pub fn validation(field: &'static str, message: impl Into<String>) -> Self {
-        Self::Validation { field, message: message.into() }
+        Self::Validation {
+            field,
+            message: message.into(),
+        }
     }
 
     pub fn unauthorized(message: impl Into<String>) -> Self {
@@ -296,8 +304,14 @@ mod tests {
     fn maps_variants_to_status_codes() {
         assert_eq!(AppError::not_found().status(), StatusCode::NOT_FOUND);
         assert_eq!(AppError::gone("expired").status(), StatusCode::GONE);
-        assert_eq!(AppError::rate_limited(5).status(), StatusCode::TOO_MANY_REQUESTS);
-        assert_eq!(AppError::validation("slug", "bad").status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            AppError::rate_limited(5).status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(
+            AppError::validation("slug", "bad").status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
     }
 
     #[test]

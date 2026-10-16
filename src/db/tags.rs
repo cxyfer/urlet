@@ -92,7 +92,10 @@ pub async fn for_urls(
     if url_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let placeholders = std::iter::repeat("?").take(url_ids.len()).collect::<Vec<_>>().join(", ");
+    let placeholders = std::iter::repeat("?")
+        .take(url_ids.len())
+        .collect::<Vec<_>>()
+        .join(", ");
     let sql = format!(
         "SELECT ut.url_id AS url_id, t.id, t.user_id, t.name, t.color, t.created_at
          FROM url_tags ut JOIN tags t ON t.id = ut.tag_id
@@ -135,7 +138,10 @@ pub async fn set_for_url(
     tag_ids: &[i64],
 ) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
-    sqlx::query("DELETE FROM url_tags WHERE url_id = ?").bind(url_id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM url_tags WHERE url_id = ?")
+        .bind(url_id)
+        .execute(&mut *tx)
+        .await?;
     for tag_id in tag_ids {
         sqlx::query("INSERT OR IGNORE INTO url_tags (url_id, tag_id) VALUES (?, ?)")
             .bind(url_id)

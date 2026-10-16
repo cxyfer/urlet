@@ -18,7 +18,12 @@ pub struct ApiToken {
 
 impl ApiToken {
     pub fn is_valid_at(&self, now: &str) -> bool {
-        self.revoked_at.is_none() && self.expires_at.as_deref().map(|exp| exp > now).unwrap_or(true)
+        self.revoked_at.is_none()
+            && self
+                .expires_at
+                .as_deref()
+                .map(|exp| exp > now)
+                .unwrap_or(true)
     }
 }
 

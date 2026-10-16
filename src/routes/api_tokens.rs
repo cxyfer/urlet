@@ -68,7 +68,9 @@ pub async fn list(
 ) -> Result<Json<TokenList>, ApiError> {
     let now = time::now_iso();
     let rows = tokens::list(&state.db, user.id).await?;
-    Ok(Json(TokenList { items: rows.iter().map(|row| ApiTokenDto::new(row, &now)).collect() }))
+    Ok(Json(TokenList {
+        items: rows.iter().map(|row| ApiTokenDto::new(row, &now)).collect(),
+    }))
 }
 
 /// `POST /api/v1/tokens`

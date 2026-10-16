@@ -35,10 +35,14 @@ pub async fn ensure_default(pool: &SqlitePool, hostname: &str) -> Result<i64, sq
 
 /// Id of the default domain, if one has been registered.
 pub async fn default_id(pool: &SqlitePool) -> Result<Option<i64>, sqlx::Error> {
-    sqlx::query_scalar("SELECT id FROM domains WHERE is_default = 1 LIMIT 1").fetch_optional(pool).await
+    sqlx::query_scalar("SELECT id FROM domains WHERE is_default = 1 LIMIT 1")
+        .fetch_optional(pool)
+        .await
 }
 
 /// All known hostnames.
 pub async fn all_hostnames(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
-    sqlx::query_scalar("SELECT hostname FROM domains ORDER BY hostname").fetch_all(pool).await
+    sqlx::query_scalar("SELECT hostname FROM domains ORDER BY hostname")
+        .fetch_all(pool)
+        .await
 }

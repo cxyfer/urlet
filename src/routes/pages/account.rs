@@ -12,7 +12,9 @@ use crate::db::{sessions, users};
 use crate::error::AppError;
 use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::routes::dto::{SessionDto, UserDto};
-use crate::routes::pages::{flash_from_query, redirect_err, redirect_ok, redirect_to_login, Chrome};
+use crate::routes::pages::{
+    flash_from_query, redirect_err, redirect_ok, redirect_to_login, Chrome,
+};
 use crate::services::audit::{action, target, Audit};
 use crate::services::auth::AuthContext;
 use crate::services::ratelimit::limits;
@@ -116,7 +118,11 @@ pub async fn update_profile(
         return Ok(redirect_err("/app/account", "invalid").into_response());
     };
 
-    let display_name = payload.display_name.as_deref().map(str::trim).filter(|name| !name.is_empty());
+    let display_name = payload
+        .display_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty());
     if let Some(name) = display_name {
         if let Err(err) = crate::services::auth::validate_display_name(name) {
             return Ok(redirect_err("/app/account", super::urls::error_code(&err)).into_response());
@@ -285,7 +291,9 @@ async fn render_account(
     flash: Option<crate::routes::pages::Flash>,
     new_token: Option<String>,
 ) -> Result<Response, AppError> {
-    let session_rows = sessions::list_for_user(&state.db, user.id).await.map_err(AppError::from)?;
+    let session_rows = sessions::list_for_user(&state.db, user.id)
+        .await
+        .map_err(AppError::from)?;
     let token_rows = tokens::list(&state.db, user.id).await?;
     let fresh = users::find_by_id(&state.db, user.id)
         .await

@@ -10,10 +10,10 @@ use crate::db::urls::{self, Url, UrlState};
 use crate::error::{AppError, Result};
 use crate::middleware::auth::ClientInfo;
 use crate::routes::extract::Flexible;
-use crate::services::click::{self, ClickInput};
+use crate::services::click::ClickInput;
 use crate::services::cookies;
 use crate::services::ratelimit::limits;
-use crate::services::{unlock, password};
+use crate::services::{password, unlock};
 use crate::state::AppState;
 
 /// Password prompt for a protected link.
@@ -90,7 +90,11 @@ pub async fn unlock_link(
     state
         .limiter
         .check(
-            &format!("unlock:{}:{}", slug.to_ascii_lowercase(), client.limiter_key()),
+            &format!(
+                "unlock:{}:{}",
+                slug.to_ascii_lowercase(),
+                client.limiter_key()
+            ),
             limits::UNLOCK_CAPACITY,
             limits::UNLOCK_REFILL_PER_SEC,
         )
@@ -126,7 +130,10 @@ pub async fn unlock_link(
     if !password::verify(&payload.password, password_hash) {
         tracing::info!(slug = %url.slug, "failed unlock attempt");
         return if wants_json {
-            Ok(crate::error::ApiError(AppError::unauthorized("incorrect password")).into_response())
+            Ok(
+                crate::error::ApiError(AppError::unauthorized("incorrect password"))
+                    .into_response(),
+            )
         } else {
             Ok(password_page(
                 &state,
@@ -137,7 +144,11 @@ pub async fn unlock_link(
         };
     }
 
-    let token = unlock::issue(&state.config.secret, &url.slug, state.config.unlock_ttl_minutes);
+    let token = unlock::issue(
+        &state.config.secret,
+        &url.slug,
+        state.config.unlock_ttl_minutes,
+    );
     let cookie = cookies::build(
         &unlock::cookie_name(&url.slug),
         &token,
@@ -148,7 +159,10 @@ pub async fn unlock_link(
     let mut response = if wants_json {
         (
             StatusCode::OK,
-            axum::Json(UnlockResponse { ok: true, redirect: format!("/{}", url.slug) }),
+            axum::Json(UnlockResponse {
+                ok: true,
+                redirect: format!("/{}", url.slug),
+            }),
         )
             .into_response()
     } else {
@@ -170,7 +184,10 @@ fn unlocked_response(state: &AppState, url: &Url, wants_json: bool) -> Response 
     if wants_json {
         (
             StatusCode::OK,
-            axum::Json(UnlockResponse { ok: true, redirect: format!("/{}", url.slug) }),
+            axum::Json(UnlockResponse {
+                ok: true,
+                redirect: format!("/{}", url.slug),
+            }),
         )
             .into_response()
     } else {
@@ -192,22 +209,17 @@ fn is_unlocked(state: &AppState, client: &ClientInfo, slug: &str) -> bool {
     }
 }
 
-/// Fire and forget click recording.
+/// Queue a click for the background writer.
 fn spawn_click(state: &AppState, client: &ClientInfo, url: &Url) {
     if !state.settings.analytics_enabled() {
         return;
     }
-    let pool = state.db.clone();
-    let config = state.config.clone();
-    let input = ClickInput {
+    state.clicks.record(ClickInput {
         url_id: url.id,
         ip_hash: client.ip_hash.clone(),
         user_agent: client.user_agent.clone(),
         referrer: client.referrer.clone(),
         password_protected: url.has_password(),
-    };
-    tokio::spawn(async move {
-        click::record(&pool, &config, true, input).await;
     });
 }
 
@@ -224,7 +236,9 @@ fn redirect_response(url: &Url) -> Response {
     } else {
         "private, no-store"
     };
-    response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
     response
 }
 
@@ -266,7 +280,9 @@ fn render<T: Template>(template: T, status: StatusCode) -> Response {
     match template.render() {
         Ok(html) => {
             let mut response = (status, Html(html)).into_response();
-            response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            response
+                .headers_mut()
+                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
             response
         }
         Err(err) => AppError::internal(format!("template error: {err}")).into_response(),

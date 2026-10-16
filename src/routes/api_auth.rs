@@ -11,11 +11,11 @@ use crate::error::{ApiError, AppError};
 use crate::middleware::auth::{ClientInfo, CurrentUser, MaybeUser};
 use crate::routes::dto::{SessionDto, UserDto};
 use crate::services::audit::{action, target, Audit};
+use crate::services::auth;
 use crate::services::auth::{AuthContext, SessionToken};
 use crate::services::cookies;
 use crate::services::ratelimit::limits;
 use crate::services::time;
-use crate::services::auth;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -76,8 +76,13 @@ pub async fn register(
 
     // Registering signs you in: one less round trip for the web UI.
     let token = context.open_session(user.id).await?;
-    let mut response =
-        (StatusCode::CREATED, Json(UserEnvelope { user: UserDto::from(&user) })).into_response();
+    let mut response = (
+        StatusCode::CREATED,
+        Json(UserEnvelope {
+            user: UserDto::from(&user),
+        }),
+    )
+        .into_response();
     attach_session_cookie(&mut response, &token, client.secure);
     Ok(response)
 }
@@ -99,8 +104,13 @@ pub async fn login(
     let context = context(&state, &client);
     let (user, token) = context.login(&payload.email, &payload.password).await?;
 
-    let mut response =
-        (StatusCode::OK, Json(UserEnvelope { user: UserDto::from(&user) })).into_response();
+    let mut response = (
+        StatusCode::OK,
+        Json(UserEnvelope {
+            user: UserDto::from(&user),
+        }),
+    )
+        .into_response();
     attach_session_cookie(&mut response, &token, client.secure);
     Ok(response)
 }
@@ -113,7 +123,9 @@ pub async fn logout(
 ) -> Result<Response, ApiError> {
     if let Some(current) = current {
         if let Some(session_id) = current.session_id {
-            context(&state, &client).logout(session_id, &current.user).await?;
+            context(&state, &client)
+                .logout(session_id, &current.user)
+                .await?;
         }
     }
     let mut response = StatusCode::NO_CONTENT.into_response();
@@ -123,7 +135,9 @@ pub async fn logout(
 
 /// `GET /api/v1/auth/me`
 pub async fn me(CurrentUser { user, .. }: CurrentUser) -> Json<UserEnvelope> {
-    Json(UserEnvelope { user: UserDto::from(&user) })
+    Json(UserEnvelope {
+        user: UserDto::from(&user),
+    })
 }
 
 /// `PATCH /api/v1/auth/me`
@@ -153,14 +167,18 @@ pub async fn update_me(
     let updated = users::find_by_id(&state.db, user.id)
         .await?
         .ok_or_else(|| ApiError(AppError::not_found()))?;
-    Ok(Json(UserEnvelope { user: UserDto::from(&updated) }))
+    Ok(Json(UserEnvelope {
+        user: UserDto::from(&updated),
+    }))
 }
 
 /// `POST /api/v1/auth/password`
 pub async fn change_password(
     State(state): State<AppState>,
     client: ClientInfo,
-    CurrentUser { user, session_id, .. }: CurrentUser,
+    CurrentUser {
+        user, session_id, ..
+    }: CurrentUser,
     Json(payload): Json<ChangePasswordPayload>,
 ) -> Result<Response, ApiError> {
     enforce(
@@ -170,7 +188,12 @@ pub async fn change_password(
         limits::PASSWORD_REFILL_PER_SEC,
     )?;
     context(&state, &client)
-        .change_password(&user, &payload.current_password, &payload.new_password, session_id)
+        .change_password(
+            &user,
+            &payload.current_password,
+            &payload.new_password,
+            session_id,
+        )
         .await?;
     Ok(StatusCode::NO_CONTENT.into_response())
 }
@@ -178,10 +201,16 @@ pub async fn change_password(
 /// `GET /api/v1/auth/sessions`
 pub async fn list_sessions(
     State(state): State<AppState>,
-    CurrentUser { user, session_id, .. }: CurrentUser,
+    CurrentUser {
+        user, session_id, ..
+    }: CurrentUser,
 ) -> Result<Json<Vec<SessionDto>>, ApiError> {
     let rows = sessions::list_for_user(&state.db, user.id).await?;
-    Ok(Json(rows.iter().map(|row| SessionDto::new(row, session_id)).collect()))
+    Ok(Json(
+        rows.iter()
+            .map(|row| SessionDto::new(row, session_id))
+            .collect(),
+    ))
 }
 
 /// `DELETE /api/v1/auth/sessions/{id}`
@@ -216,14 +245,25 @@ fn context<'a>(state: &'a AppState, client: &'a ClientInfo) -> AuthContext<'a> {
 }
 
 fn enforce(state: &AppState, key: &str, capacity: f64, refill: f64) -> Result<(), ApiError> {
-    state.limiter.check(key, capacity, refill).map_err(AppError::rate_limited).map_err(ApiError)
+    state
+        .limiter
+        .check(key, capacity, refill)
+        .map_err(AppError::rate_limited)
+        .map_err(ApiError)
 }
 
 /// Append the session cookie to a response.
 pub fn attach_session_cookie(response: &mut Response, token: &SessionToken, secure: bool) {
-    let value = cookies::build(cookies::SESSION_COOKIE, &token.token, token.max_age_secs, secure);
+    let value = cookies::build(
+        cookies::SESSION_COOKIE,
+        &token.token,
+        token.max_age_secs,
+        secure,
+    );
     if let Ok(header_value) = HeaderValue::from_str(&value) {
-        response.headers_mut().append(header::SET_COOKIE, header_value);
+        response
+            .headers_mut()
+            .append(header::SET_COOKIE, header_value);
     }
 }
 
@@ -231,11 +271,18 @@ pub fn attach_session_cookie(response: &mut Response, token: &SessionToken, secu
 pub fn clear_session_cookie(response: &mut Response, secure: bool) {
     let value = cookies::clear(cookies::SESSION_COOKIE, secure);
     if let Ok(header_value) = HeaderValue::from_str(&value) {
-        response.headers_mut().append(header::SET_COOKIE, header_value);
+        response
+            .headers_mut()
+            .append(header::SET_COOKIE, header_value);
     }
 }
 
 /// Build the raw `Set-Cookie` value for a session (used by HTML form logins).
 pub fn session_cookie_value(token: &SessionToken, secure: bool) -> String {
-    cookies::build(cookies::SESSION_COOKIE, &token.token, token.max_age_secs, secure)
+    cookies::build(
+        cookies::SESSION_COOKIE,
+        &token.token,
+        token.max_age_secs,
+        secure,
+    )
 }

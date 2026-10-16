@@ -40,7 +40,9 @@ impl Default for RateLimiter {
 
 impl RateLimiter {
     pub fn new() -> Self {
-        Self { inner: Mutex::new(Inner::default()) }
+        Self {
+            inner: Mutex::new(Inner::default()),
+        }
     }
 
     /// Consume one token for `key`.
@@ -57,15 +59,15 @@ impl RateLimiter {
 
         inner.checks = inner.checks.wrapping_add(1);
         if inner.checks % PRUNE_INTERVAL == 0 || inner.buckets.len() > MAX_BUCKETS {
-            inner.buckets.retain(|_, bucket| {
-                now.duration_since(bucket.updated).as_secs() < IDLE_TTL_SECS
-            });
+            inner
+                .buckets
+                .retain(|_, bucket| now.duration_since(bucket.updated).as_secs() < IDLE_TTL_SECS);
         }
 
-        let bucket = inner
-            .buckets
-            .entry(key.to_string())
-            .or_insert(Bucket { tokens: capacity, updated: now });
+        let bucket = inner.buckets.entry(key.to_string()).or_insert(Bucket {
+            tokens: capacity,
+            updated: now,
+        });
 
         let elapsed = now.duration_since(bucket.updated).as_secs_f64();
         bucket.tokens = (bucket.tokens + elapsed * refill_per_second).min(capacity);
@@ -87,7 +89,10 @@ impl RateLimiter {
 
     /// Number of tracked keys (used by tests).
     pub fn tracked_keys(&self) -> usize {
-        self.inner.lock().map(|inner| inner.buckets.len()).unwrap_or(0)
+        self.inner
+            .lock()
+            .map(|inner| inner.buckets.len())
+            .unwrap_or(0)
     }
 }
 

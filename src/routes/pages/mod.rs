@@ -37,12 +37,7 @@ pub struct Chrome {
 }
 
 impl Chrome {
-    pub fn new(
-        state: &AppState,
-        user: &User,
-        active: &'static str,
-        flash: Option<Flash>,
-    ) -> Self {
+    pub fn new(state: &AppState, user: &User, active: &'static str, flash: Option<Flash>) -> Self {
         Self {
             site_name: state.settings.site_name(),
             email: user.label().to_string(),
@@ -82,7 +77,10 @@ pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
             "user_deleted" => "User deleted.",
             _ => return None,
         };
-        return Some(Flash { kind: "ok", message: message.to_string() });
+        return Some(Flash {
+            kind: "ok",
+            message: message.to_string(),
+        });
     }
 
     if let Some(code) = err {
@@ -100,7 +98,10 @@ pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
             "csrf" => "The form expired. Please try again.",
             _ => return None,
         };
-        return Some(Flash { kind: "error", message: message.to_string() });
+        return Some(Flash {
+            kind: "error",
+            message: message.to_string(),
+        });
     }
 
     None
@@ -127,7 +128,8 @@ pub fn redirect_to_login(next: Option<&str>) -> Redirect {
 /// Only same-site relative paths are accepted as a post-login destination.
 pub fn safe_next(next: Option<&str>) -> Option<String> {
     let next = next?.trim();
-    if next.starts_with('/') && !next.starts_with("//") && !next.contains("://") && next.len() < 512 {
+    if next.starts_with('/') && !next.starts_with("//") && !next.contains("://") && next.len() < 512
+    {
         Some(next.to_string())
     } else {
         None
@@ -187,7 +189,11 @@ pub fn page_links(
     };
 
     if page > 1 {
-        links.push(PageLink { url: build(page - 1), label: "‹".to_string(), current: false });
+        links.push(PageLink {
+            url: build(page - 1),
+            label: "‹".to_string(),
+            current: false,
+        });
     }
     for target in first..=last {
         links.push(PageLink {
@@ -197,7 +203,11 @@ pub fn page_links(
         });
     }
     if page < total_pages {
-        links.push(PageLink { url: build(page + 1), label: "›".to_string(), current: false });
+        links.push(PageLink {
+            url: build(page + 1),
+            label: "›".to_string(),
+            current: false,
+        });
     }
     links
 }
@@ -272,14 +282,20 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(dashboard::dashboard))
         .route("/login", get(auth::login_page).post(auth::login_submit))
-        .route("/register", get(auth::register_page).post(auth::register_submit))
+        .route(
+            "/register",
+            get(auth::register_page).post(auth::register_submit),
+        )
         .route("/logout", post(auth::logout))
         .route("/urls", post(urls::create))
         .route("/urls/{id}", get(urls::detail).post(urls::update))
         .route("/urls/{id}/delete", post(urls::delete))
         .route("/account", get(account::page).post(account::update_profile))
         .route("/account/password", post(account::change_password))
-        .route("/account/sessions/{id}/delete", post(account::revoke_session))
+        .route(
+            "/account/sessions/{id}/delete",
+            post(account::revoke_session),
+        )
         .route("/account/tokens", post(account::create_token))
         .route("/account/tokens/{id}/delete", post(account::revoke_token))
         // administration
@@ -291,9 +307,15 @@ pub fn router() -> Router<AppState> {
         .route("/admin/urls", get(admin::urls_page))
         .route("/admin/urls/{id}", post(admin::update_url))
         .route("/admin/urls/{id}/delete", post(admin::delete_url))
-        .route("/admin/invites", get(admin::invites_page).post(admin::create_invite))
+        .route(
+            "/admin/invites",
+            get(admin::invites_page).post(admin::create_invite),
+        )
         .route("/admin/invites/{id}/delete", post(admin::revoke_invite))
-        .route("/admin/settings", get(admin::settings_page).post(admin::update_settings))
+        .route(
+            "/admin/settings",
+            get(admin::settings_page).post(admin::update_settings),
+        )
         .route("/admin/audit", get(admin::audit_page))
 }
 
@@ -308,7 +330,10 @@ mod tests {
 
     #[test]
     fn only_relative_next_targets_are_allowed() {
-        assert_eq!(safe_next(Some("/app/urls/1")).as_deref(), Some("/app/urls/1"));
+        assert_eq!(
+            safe_next(Some("/app/urls/1")).as_deref(),
+            Some("/app/urls/1")
+        );
         assert_eq!(safe_next(Some("//evil.example")), None);
         assert_eq!(safe_next(Some("https://evil.example")), None);
         assert_eq!(safe_next(Some("javascript:alert(1)")), None);
@@ -320,9 +345,15 @@ mod tests {
     fn encodes_query_values() {
         assert_eq!(encode("promo & more"), "promo%20%26%20more");
         assert_eq!(encode("safe-._~"), "safe-._~");
-        assert_eq!(query_string(&[("q", "a b".into()), ("empty", String::new())]), "q=a%20b");
+        assert_eq!(
+            query_string(&[("q", "a b".into()), ("empty", String::new())]),
+            "q=a%20b"
+        );
         assert_eq!(with_param("/app", "ok", "created"), "/app?ok=created");
-        assert_eq!(with_param("/app?q=x", "ok", "created"), "/app?q=x&ok=created");
+        assert_eq!(
+            with_param("/app?q=x", "ok", "created"),
+            "/app?q=x&ok=created"
+        );
     }
 
     #[test]
@@ -340,8 +371,16 @@ mod tests {
 
     #[test]
     fn maps_known_flash_codes_only() {
-        assert_eq!(flash_from_query(Some("created"), None).expect("flash").kind, "ok");
-        assert_eq!(flash_from_query(None, Some("conflict")).expect("flash").kind, "error");
+        assert_eq!(
+            flash_from_query(Some("created"), None).expect("flash").kind,
+            "ok"
+        );
+        assert_eq!(
+            flash_from_query(None, Some("conflict"))
+                .expect("flash")
+                .kind,
+            "error"
+        );
         assert!(flash_from_query(Some("<script>"), None).is_none());
         assert!(flash_from_query(None, None).is_none());
     }

@@ -81,11 +81,12 @@ pub async fn touch(
 
 /// Revoke one session. Returns the number of rows changed.
 pub async fn revoke(pool: &SqlitePool, id: i64, now: &str) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query("UPDATE sessions SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
-        .bind(now)
-        .bind(id)
-        .execute(pool)
-        .await?;
+    let result =
+        sqlx::query("UPDATE sessions SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
+            .bind(now)
+            .bind(id)
+            .execute(pool)
+            .await?;
     Ok(result.rows_affected())
 }
 
@@ -109,11 +110,13 @@ pub async fn revoke_for_user(
             .await?
         }
         None => {
-            sqlx::query("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
-                .bind(now)
-                .bind(user_id)
-                .execute(pool)
-                .await?
+            sqlx::query(
+                "UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+            )
+            .bind(now)
+            .bind(user_id)
+            .execute(pool)
+            .await?
         }
     };
     Ok(result.rows_affected())

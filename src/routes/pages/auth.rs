@@ -141,7 +141,8 @@ pub async fn login_submit(
 
     match context.login(&payload.email, &payload.password).await {
         Ok((_user, token)) => {
-            let target = safe_next(payload.next.as_deref().or(Some(""))).unwrap_or_else(|| "/app".into());
+            let target =
+                safe_next(payload.next.as_deref().or(Some(""))).unwrap_or_else(|| "/app".into());
             let mut response = Redirect::to(&target).into_response();
             let cookie = crate::routes::api_auth::session_cookie_value(&token, client.secure);
             if let Ok(value) = HeaderValue::from_str(&cookie) {

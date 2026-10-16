@@ -351,7 +351,11 @@ pub async fn users_page(
                     status: user.status.clone(),
                     link_count: counts.get(&user.id).copied().unwrap_or(0),
                     created: time::humanize(&user.created_at),
-                    last_login: user.last_login_at.as_deref().map(time::humanize).unwrap_or_else(|| "never".into()),
+                    last_login: user
+                        .last_login_at
+                        .as_deref()
+                        .map(time::humanize)
+                        .unwrap_or_else(|| "never".into()),
                     is_self: user.id == current.user.id,
                 })
                 .collect(),
@@ -387,9 +391,13 @@ pub async fn urls_page(
     let rows = urls::list_all(&state.db, &filter, PER_PAGE, (page - 1) * PER_PAGE)
         .await
         .map_err(AppError::from)?;
-    let total = urls::count_all(&state.db, &filter).await.map_err(AppError::from)?;
+    let total = urls::count_all(&state.db, &filter)
+        .await
+        .map_err(AppError::from)?;
     let ids: Vec<i64> = rows.iter().map(|row| row.id).collect();
-    let mut tag_map = tags::for_urls(&state.db, &ids).await.map_err(AppError::from)?;
+    let mut tag_map = tags::for_urls(&state.db, &ids)
+        .await
+        .map_err(AppError::from)?;
 
     let mut owners: Vec<(i64, String)> = Vec::new();
     let mut url_rows = Vec::with_capacity(rows.len());
@@ -406,7 +414,12 @@ pub async fn urls_page(
                 email
             }
         };
-        let names = tag_map.remove(&row.id).unwrap_or_default().into_iter().map(|tag| tag.name).collect();
+        let names = tag_map
+            .remove(&row.id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|tag| tag.name)
+            .collect();
         url_rows.push(AdminUrlRow {
             url: UrlRow::new(&UrlDto::new(row, &state.config.base_url, names)),
             owner,
@@ -458,8 +471,13 @@ pub async fn invites_page(
     let Some(current) = admin_user(current)? else {
         return Ok(redirect_to_login(Some("/app/admin/invites")).into_response());
     };
-    render_invites(&state, &current.user, flash_from_query(query.ok.as_deref(), query.err.as_deref()), None)
-        .await
+    render_invites(
+        &state,
+        &current.user,
+        flash_from_query(query.ok.as_deref(), query.err.as_deref()),
+        None,
+    )
+    .await
 }
 
 /// `POST /app/admin/invites`
@@ -485,7 +503,11 @@ pub async fn create_invite(
 
     let context = context(&state, &client, &current.user);
     match context
-        .create_invite(payload.note.as_deref(), max_uses, payload.expires_at.as_deref())
+        .create_invite(
+            payload.note.as_deref(),
+            max_uses,
+            payload.expires_at.as_deref(),
+        )
         .await
     {
         Ok(created) => {
@@ -494,13 +516,16 @@ pub async fn create_invite(
                 &current.user,
                 Some(crate::routes::pages::Flash {
                     kind: "ok",
-                    message: "Invite code created. Copy it now — it is not shown again.".to_string(),
+                    message: "Invite code created. Copy it now — it is not shown again."
+                        .to_string(),
                 }),
                 Some(created.plain_code),
             )
             .await
         }
-        Err(err) => Ok(redirect_err("/app/admin/invites", super::urls::error_code(&err)).into_response()),
+        Err(err) => {
+            Ok(redirect_err("/app/admin/invites", super::urls::error_code(&err)).into_response())
+        }
     }
 }
 
@@ -515,9 +540,14 @@ pub async fn revoke_invite(
         return Ok(redirect_to_login(Some("/app/admin/invites")).into_response());
     };
     Ok(
-        match context(&state, &client, &current.user).revoke_invite(id).await {
+        match context(&state, &client, &current.user)
+            .revoke_invite(id)
+            .await
+        {
             Ok(()) => redirect_ok("/app/admin/invites", "invite_revoked").into_response(),
-            Err(err) => redirect_err("/app/admin/invites", super::urls::error_code(&err)).into_response(),
+            Err(err) => {
+                redirect_err("/app/admin/invites", super::urls::error_code(&err)).into_response()
+            }
         },
     )
 }
@@ -555,20 +585,39 @@ pub async fn update_settings(
     let values = vec![
         ("site_name".to_string(), payload.site_name),
         ("registration_mode".to_string(), payload.registration_mode),
-        ("default_slug_length".to_string(), payload.default_slug_length),
+        (
+            "default_slug_length".to_string(),
+            payload.default_slug_length,
+        ),
         ("max_urls_per_user".to_string(), payload.max_urls_per_user),
-        ("default_redirect_type".to_string(), payload.default_redirect_type),
+        (
+            "default_redirect_type".to_string(),
+            payload.default_redirect_type,
+        ),
         (
             "analytics_enabled".to_string(),
-            if payload.analytics_enabled.is_some() { "true" } else { "false" }.to_string(),
+            if payload.analytics_enabled.is_some() {
+                "true"
+            } else {
+                "false"
+            }
+            .to_string(),
         ),
-        ("click_retention_days".to_string(), payload.click_retention_days),
+        (
+            "click_retention_days".to_string(),
+            payload.click_retention_days,
+        ),
     ];
 
     Ok(
-        match context(&state, &client, &current.user).update_settings(&values).await {
+        match context(&state, &client, &current.user)
+            .update_settings(&values)
+            .await
+        {
             Ok(()) => redirect_ok("/app/admin/settings", "saved").into_response(),
-            Err(err) => redirect_err("/app/admin/settings", super::urls::error_code(&err)).into_response(),
+            Err(err) => {
+                redirect_err("/app/admin/settings", super::urls::error_code(&err)).into_response()
+            }
         },
     )
 }
@@ -666,7 +715,9 @@ pub async fn update_user(
             .await
         {
             Ok(_) => redirect_ok("/app/admin/users", "user").into_response(),
-            Err(err) => redirect_err("/app/admin/users", super::urls::error_code(&err)).into_response(),
+            Err(err) => {
+                redirect_err("/app/admin/users", super::urls::error_code(&err)).into_response()
+            }
         },
     )
 }
@@ -692,7 +743,9 @@ pub async fn reset_password(
             .await
         {
             Ok(()) => redirect_ok("/app/admin/users", "user").into_response(),
-            Err(err) => redirect_err("/app/admin/users", super::urls::error_code(&err)).into_response(),
+            Err(err) => {
+                redirect_err("/app/admin/users", super::urls::error_code(&err)).into_response()
+            }
         },
     )
 }
@@ -708,9 +761,14 @@ pub async fn delete_user(
         return Ok(redirect_to_login(Some("/app/admin/users")).into_response());
     };
     Ok(
-        match context(&state, &client, &current.user).delete_user(id).await {
+        match context(&state, &client, &current.user)
+            .delete_user(id)
+            .await
+        {
             Ok(()) => redirect_ok("/app/admin/users", "user_deleted").into_response(),
-            Err(err) => redirect_err("/app/admin/users", super::urls::error_code(&err)).into_response(),
+            Err(err) => {
+                redirect_err("/app/admin/users", super::urls::error_code(&err)).into_response()
+            }
         },
     )
 }
@@ -736,7 +794,9 @@ pub async fn update_url(
             .await
         {
             Ok(()) => redirect_ok("/app/admin/urls", "updated").into_response(),
-            Err(err) => redirect_err("/app/admin/urls", super::urls::error_code(&err)).into_response(),
+            Err(err) => {
+                redirect_err("/app/admin/urls", super::urls::error_code(&err)).into_response()
+            }
         },
     )
 }
@@ -754,7 +814,9 @@ pub async fn delete_url(
     Ok(
         match context(&state, &client, &current.user).delete_url(id).await {
             Ok(()) => redirect_ok("/app/admin/urls", "deleted").into_response(),
-            Err(err) => redirect_err("/app/admin/urls", super::urls::error_code(&err)).into_response(),
+            Err(err) => {
+                redirect_err("/app/admin/urls", super::urls::error_code(&err)).into_response()
+            }
         },
     )
 }
@@ -788,7 +850,9 @@ async fn render_invites(
     new_code: Option<String>,
 ) -> Result<Response, AppError> {
     let now = time::now_iso();
-    let rows = crate::db::invites::list(&state.db, 200, 0).await.map_err(AppError::from)?;
+    let rows = crate::db::invites::list(&state.db, 200, 0)
+        .await
+        .map_err(AppError::from)?;
     render(
         InvitesPage {
             section: "invites",
@@ -797,7 +861,11 @@ async fn render_invites(
             invites: rows
                 .iter()
                 .map(|invite: &Invite| {
-                    let expired = invite.expires_at.as_deref().map(|value| value <= now.as_str()).unwrap_or(false);
+                    let expired = invite
+                        .expires_at
+                        .as_deref()
+                        .map(|value| value <= now.as_str())
+                        .unwrap_or(false);
                     InviteRow {
                         id: invite.id,
                         prefix: invite.code_prefix.clone(),
@@ -808,7 +876,11 @@ async fn render_invites(
                             .as_deref()
                             .map(time::humanize)
                             .unwrap_or_else(|| "never".to_string()),
-                        status: if invite.status == "active" { "active".into() } else { "revoked".into() },
+                        status: if invite.status == "active" {
+                            "active".into()
+                        } else {
+                            "revoked".into()
+                        },
                         usable: invite.status == "active" && !invite.is_exhausted() && !expired,
                         created: time::humanize(&invite.created_at),
                     }

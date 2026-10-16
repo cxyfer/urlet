@@ -15,7 +15,12 @@ async fn login(app: &TestApp, email: &str, password: &str) -> String {
             Some("http://localhost:8080"),
         ))
         .await;
-    assert_eq!(response.status, StatusCode::SEE_OTHER, "login failed: {}", response.body);
+    assert_eq!(
+        response.status,
+        StatusCode::SEE_OTHER,
+        "login failed: {}",
+        response.body
+    );
     response.session_cookie().expect("session cookie")
 }
 
@@ -35,7 +40,10 @@ async fn dashboard_requires_a_session() {
     assert_eq!(response.header("location").as_deref(), Some("/app/login"));
 
     let response = app.get("/app/urls/1").await;
-    assert_eq!(response.header("location").as_deref(), Some("/app/login?next=%2Fapp%2Furls%2F1"));
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some("/app/login?next=%2Fapp%2Furls%2F1")
+    );
 }
 
 #[tokio::test]
@@ -92,8 +100,14 @@ async fn form_login_and_logout_round_trip() {
 
     let logout = app.send(post_form_as("/app/logout", "", &cookie)).await;
     assert_eq!(logout.status, StatusCode::SEE_OTHER);
-    assert_eq!(logout.header("location").as_deref(), Some("/app/login?ok=logout"));
-    assert_eq!(app.get_as("/app", &cookie).await.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        logout.header("location").as_deref(),
+        Some("/app/login?ok=logout")
+    );
+    assert_eq!(
+        app.get_as("/app", &cookie).await.status,
+        StatusCode::SEE_OTHER
+    );
 }
 
 #[tokio::test]
@@ -177,7 +191,10 @@ async fn short_link_forms_create_update_and_delete() {
         ))
         .await;
     assert_eq!(updated.status, StatusCode::SEE_OTHER, "{}", updated.body);
-    assert_eq!(updated.header("location").as_deref(), Some(format!("/app/urls/{id}?ok=updated").as_str()));
+    assert_eq!(
+        updated.header("location").as_deref(),
+        Some(format!("/app/urls/{id}?ok=updated").as_str())
+    );
 
     let detail = app.get_as(&format!("/app/urls/{id}"), &cookie).await;
     assert!(detail.body.contains("Renamed"));
@@ -195,9 +212,14 @@ async fn short_link_forms_create_update_and_delete() {
         .await;
     assert_eq!(blocked.status, StatusCode::FORBIDDEN);
 
-    let deleted = app.send(post_form_as(&format!("/app/urls/{id}/delete"), "", &cookie)).await;
+    let deleted = app
+        .send(post_form_as(&format!("/app/urls/{id}/delete"), "", &cookie))
+        .await;
     assert_eq!(deleted.status, StatusCode::SEE_OTHER);
-    assert_eq!(deleted.header("location").as_deref(), Some("/app?ok=deleted"));
+    assert_eq!(
+        deleted.header("location").as_deref(),
+        Some("/app?ok=deleted")
+    );
     let list = app.get_as("/app", &cookie).await;
     assert!(list.body.contains("No links match this filter") || !list.body.contains("promo"));
 }
@@ -208,18 +230,36 @@ async fn create_form_reports_errors_with_a_flash_code() {
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
 
     let invalid = app
-        .send(post_form_as("/app/urls", "target_url=javascript%3Aalert%281%29", &cookie))
+        .send(post_form_as(
+            "/app/urls",
+            "target_url=javascript%3Aalert%281%29",
+            &cookie,
+        ))
         .await;
-    assert_eq!(invalid.header("location").as_deref(), Some("/app?err=invalid"));
+    assert_eq!(
+        invalid.header("location").as_deref(),
+        Some("/app?err=invalid")
+    );
 
     let first = app
-        .send(post_form_as("/app/urls", "target_url=https%3A%2F%2Fa.example&slug=taken", &cookie))
+        .send(post_form_as(
+            "/app/urls",
+            "target_url=https%3A%2F%2Fa.example&slug=taken",
+            &cookie,
+        ))
         .await;
     assert_eq!(first.status, StatusCode::SEE_OTHER);
     let duplicate = app
-        .send(post_form_as("/app/urls", "target_url=https%3A%2F%2Fb.example&slug=taken", &cookie))
+        .send(post_form_as(
+            "/app/urls",
+            "target_url=https%3A%2F%2Fb.example&slug=taken",
+            &cookie,
+        ))
         .await;
-    assert_eq!(duplicate.header("location").as_deref(), Some("/app?err=conflict"));
+    assert_eq!(
+        duplicate.header("location").as_deref(),
+        Some("/app?err=conflict")
+    );
 
     let flash = app.get_as("/app?err=conflict", &cookie).await;
     assert!(flash.body.contains("already taken"));
@@ -236,7 +276,9 @@ async fn dashboard_filters_and_flash_banners() {
     ))
     .await;
 
-    let filtered = app.get_as("/app?q=alpha&tag=work&sort=clicks", &cookie).await;
+    let filtered = app
+        .get_as("/app?q=alpha&tag=work&sort=clicks", &cookie)
+        .await;
     assert_eq!(filtered.status, StatusCode::OK);
     assert!(filtered.body.contains("value=\"alpha\""));
 
@@ -259,7 +301,11 @@ async fn account_page_lists_sessions_and_issues_tokens() {
     assert!(page.body.contains("this device"));
 
     let created = app
-        .send(post_form_as("/app/account/tokens", "name=ci+pipeline&expires_at=2030-01-01", &cookie))
+        .send(post_form_as(
+            "/app/account/tokens",
+            "name=ci+pipeline&expires_at=2030-01-01",
+            &cookie,
+        ))
         .await;
     assert_eq!(created.status, StatusCode::OK);
     assert!(created.body.contains("Copy this token now"));
@@ -277,9 +323,16 @@ async fn profile_and_password_forms_work() {
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
 
     let profile = app
-        .send(post_form_as("/app/account", "display_name=Ada+Lovelace", &cookie))
+        .send(post_form_as(
+            "/app/account",
+            "display_name=Ada+Lovelace",
+            &cookie,
+        ))
         .await;
-    assert_eq!(profile.header("location").as_deref(), Some("/app/account?ok=profile"));
+    assert_eq!(
+        profile.header("location").as_deref(),
+        Some("/app/account?ok=profile")
+    );
     let page = app.get_as("/app/account", &cookie).await;
     assert!(page.body.contains("Ada Lovelace"));
 
@@ -290,7 +343,10 @@ async fn profile_and_password_forms_work() {
             &cookie,
         ))
         .await;
-    assert_eq!(wrong.header("location").as_deref(), Some("/app/account?err=password"));
+    assert_eq!(
+        wrong.header("location").as_deref(),
+        Some("/app/account?err=password")
+    );
 
     let changed = app
         .send(post_form_as(
@@ -299,7 +355,10 @@ async fn profile_and_password_forms_work() {
             &cookie,
         ))
         .await;
-    assert_eq!(changed.header("location").as_deref(), Some("/app/account?ok=password"));
+    assert_eq!(
+        changed.header("location").as_deref(),
+        Some("/app/account?ok=password")
+    );
     assert!(app
         .send(post_form(
             "/app/login",
@@ -328,10 +387,20 @@ async fn revoking_the_current_session_signs_out() {
         .expect("id");
 
     let response = app
-        .send(post_form_as(&format!("/app/account/sessions/{current}/delete"), "", &cookie))
+        .send(post_form_as(
+            &format!("/app/account/sessions/{current}/delete"),
+            "",
+            &cookie,
+        ))
         .await;
-    assert_eq!(response.header("location").as_deref(), Some("/app/login?ok=logout"));
-    assert_eq!(app.get_as("/app", &cookie).await.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some("/app/login?ok=logout")
+    );
+    assert_eq!(
+        app.get_as("/app", &cookie).await.status,
+        StatusCode::SEE_OTHER
+    );
 }
 
 #[tokio::test]
@@ -339,7 +408,11 @@ async fn json_api_still_works_alongside_the_pages() {
     let app = TestApp::spawn().await;
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
     let created = app
-        .send(common::post_json_as("/api/v1/urls", json!({ "target_url": "https://example.com" }), &cookie))
+        .send(common::post_json_as(
+            "/api/v1/urls",
+            json!({ "target_url": "https://example.com" }),
+            &cookie,
+        ))
         .await;
     assert_eq!(created.status, StatusCode::CREATED);
 

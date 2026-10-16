@@ -61,14 +61,20 @@ pub fn validate(slug: &str) -> Result<String> {
             format!("slug must be at most {MAX_LEN} characters"),
         ));
     }
-    if !slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if !slug
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         return Err(AppError::validation(
             "slug",
             "slug may only contain letters, digits, '-' and '_'",
         ));
     }
     if is_reserved(slug) {
-        return Err(AppError::validation("slug", format!("'{slug}' is a reserved path")));
+        return Err(AppError::validation(
+            "slug",
+            format!("'{slug}' is a reserved path"),
+        ));
     }
     Ok(slug.to_string())
 }

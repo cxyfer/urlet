@@ -33,7 +33,9 @@ pub fn client_ip_parts(
             }
         }
     }
-    extensions.get::<ConnectInfo<SocketAddr>>().map(|info| info.0.ip())
+    extensions
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|info| info.0.ip())
 }
 
 /// [`client_ip_parts`] for a whole request.
@@ -47,7 +49,10 @@ pub fn is_secure_request(headers: &HeaderMap, config: &Config) -> bool {
         return true;
     }
     if config.trust_proxy {
-        if let Some(proto) = headers.get("x-forwarded-proto").and_then(|v| v.to_str().ok()) {
+        if let Some(proto) = headers
+            .get("x-forwarded-proto")
+            .and_then(|v| v.to_str().ok())
+        {
             return proto.split(',').next().unwrap_or_default().trim() == "https";
         }
     }

@@ -39,7 +39,10 @@ pub fn validate(password: &str) -> Result<()> {
         ));
     }
     if password.trim().is_empty() {
-        return Err(AppError::validation("password", "password must not be blank"));
+        return Err(AppError::validation(
+            "password",
+            "password must not be blank",
+        ));
     }
     Ok(())
 }
@@ -57,7 +60,9 @@ pub fn hash(password: &str) -> Result<String> {
 /// Verify a password against a stored PHC string. Never panics, never errors.
 pub fn verify(password: &str, stored: &str) -> bool {
     match PasswordHash::new(stored) {
-        Ok(parsed) => Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok(),
+        Ok(parsed) => Argon2::default()
+            .verify_password(password.as_bytes(), &parsed)
+            .is_ok(),
         Err(_) => false,
     }
 }
@@ -66,9 +71,8 @@ pub fn verify(password: &str, stored: &str) -> bool {
 /// time of "unknown account" and "wrong password" are indistinguishable.
 pub fn dummy_verify(password: &str) {
     static DUMMY: OnceLock<String> = OnceLock::new();
-    let hash = DUMMY.get_or_init(|| {
-        hash("uwurls-dummy-password-for-timing-equalisation").unwrap_or_default()
-    });
+    let hash = DUMMY
+        .get_or_init(|| hash("uwurls-dummy-password-for-timing-equalisation").unwrap_or_default());
     let _ = verify(password, hash);
 }
 

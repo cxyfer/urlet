@@ -62,12 +62,17 @@ pub struct ClientInfo {
 impl ClientInfo {
     /// Key fragment identifying the caller for rate limiting.
     pub fn limiter_key(&self) -> String {
-        self.ip_hash.clone().unwrap_or_else(|| "unknown".to_string())
+        self.ip_hash
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string())
     }
 
     /// Value of a request cookie.
     pub fn cookie(&self, name: &str) -> Option<&str> {
-        self.cookies.iter().find(|(key, _)| key == name).map(|(_, value)| value.as_str())
+        self.cookies
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.as_str())
     }
 
     /// Should the response be JSON rather than HTML?
@@ -97,9 +102,11 @@ pub async fn authenticate(parts: &Parts, state: &AppState) -> Option<CurrentUser
 
     let token = cookies::get(&parts.headers, cookies::SESSION_COOKIE)?;
     match auth_service::resolve_session(&state.db, &token).await {
-        Ok(Some((session, user))) => {
-            Some(CurrentUser { user, session_id: Some(session.id), token_id: None })
-        }
+        Ok(Some((session, user))) => Some(CurrentUser {
+            user,
+            session_id: Some(session.id),
+            token_id: None,
+        }),
         Ok(None) => None,
         Err(err) => {
             tracing::error!(error = %err, "session lookup failed");

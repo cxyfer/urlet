@@ -86,8 +86,18 @@ pub struct Page<T> {
 
 impl<T> Page<T> {
     pub fn new(items: Vec<T>, page: i64, per_page: i64, total: i64) -> Self {
-        let total_pages = if per_page <= 0 { 1 } else { (total + per_page - 1) / per_page };
-        Self { items, page, per_page, total, total_pages: total_pages.max(1) }
+        let total_pages = if per_page <= 0 {
+            1
+        } else {
+            (total + per_page - 1) / per_page
+        };
+        Self {
+            items,
+            page,
+            per_page,
+            total,
+            total_pages: total_pages.max(1),
+        }
     }
 }
 
@@ -107,7 +117,9 @@ impl Pagination {
     }
 
     pub fn per_page(&self) -> i64 {
-        self.per_page.unwrap_or(Self::DEFAULT_PER_PAGE).clamp(1, Self::MAX_PER_PAGE)
+        self.per_page
+            .unwrap_or(Self::DEFAULT_PER_PAGE)
+            .clamp(1, Self::MAX_PER_PAGE)
     }
 
     pub fn offset(&self) -> i64 {
@@ -192,7 +204,12 @@ pub struct TagDto {
 
 impl From<&TagWithCount> for TagDto {
     fn from(tag: &TagWithCount) -> Self {
-        Self { id: tag.id, name: tag.name.clone(), color: tag.color.clone(), url_count: tag.url_count }
+        Self {
+            id: tag.id,
+            name: tag.name.clone(),
+            color: tag.color.clone(),
+            url_count: tag.url_count,
+        }
     }
 }
 
@@ -286,12 +303,18 @@ mod tests {
 
     #[test]
     fn pagination_is_clamped() {
-        let pagination = Pagination { page: Some(0), per_page: Some(1000) };
+        let pagination = Pagination {
+            page: Some(0),
+            per_page: Some(1000),
+        };
         assert_eq!(pagination.page(), 1);
         assert_eq!(pagination.per_page(), 100);
         assert_eq!(pagination.offset(), 0);
 
-        let pagination = Pagination { page: Some(3), per_page: Some(10) };
+        let pagination = Pagination {
+            page: Some(3),
+            per_page: Some(10),
+        };
         assert_eq!(pagination.offset(), 20);
     }
 
