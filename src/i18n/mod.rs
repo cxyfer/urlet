@@ -102,8 +102,10 @@ impl Lang {
 
     /// Pick the best supported language from an `Accept-Language` header.
     ///
-    /// Quality weights are honoured; equal weights keep header order. `q=0`
-    /// entries and the `*` wildcard are ignored.
+    /// Quality weights are honoured; equal weights keep header order. Entries
+    /// with a missing, zero, negative or non-finite weight (`q=NaN`, `q=inf`,
+    /// `q=abc`) are dropped: a malformed weight must never outrank a valid one.
+    /// The `*` wildcard is ignored.
     pub fn from_accept_language(header: &str) -> Option<Lang> {
         let mut candidates: Vec<(f32, usize, Lang)> = Vec::new();
         for (index, item) in header.split(',').enumerate() {
@@ -120,22 +122,22 @@ impl Lang {
                     .strip_prefix("q=")
                     .or_else(|| parameter.strip_prefix("Q="));
                 if let Some(raw) = raw {
-                    quality = raw.trim().parse().unwrap_or(0.0);
+                    quality = parse_quality(raw.trim());
                 }
             }
-            if quality <= 0.0 {
+            // `parse_quality` already folds non-finite input to zero; the
+            // explicit `is_finite` keeps the intent readable and the ordering
+            // total.
+            if !quality.is_finite() || quality <= 0.0 {
                 continue;
             }
             if let Some(lang) = Lang::parse(tag) {
                 candidates.push((quality, index, lang));
             }
         }
-        // `sort_by` is stable, so the index tie-break only documents the intent.
-        candidates.sort_by(|a, b| {
-            b.0.partial_cmp(&a.0)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then(a.1.cmp(&b.1))
-        });
+        // `sort_by` is stable, so the index tie-break only documents the intent,
+        // and `total_cmp` keeps the ordering total even for exotic weights.
+        candidates.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
         candidates.first().map(|(_, _, lang)| *lang)
     }
 
@@ -152,6 +154,9 @@ impl Lang {
         if let Some(value) = catalog(Lang::En).get(key) {
             return value;
         }
+        // A typo in a template key shows up in the log instead of silently
+        // printing the key on the page.
+        tracing::warn!(key, language = self.code(), "missing translation key");
         Box::leak(key.to_string().into_boxed_str())
     }
 
@@ -182,6 +187,63 @@ fn parse_catalog(raw: &str, code: &str) -> HashMap<String, String> {
         tracing::error!(language = code, error = %err, "invalid translation catalogue");
         HashMap::new()
     })
+}
+
+/// Parse the `q=` weight of one `Accept-Language` entry.
+///
+/// Anything that is not a usable positive weight — unparsable text, `NaN`,
+/// `inf`, negatives — becomes `0.0`, so the entry is dropped rather than
+/// outranking a well formed alternative. (A bare `NaN` compares false against
+/// every bound, which is exactly how it used to win.)
+fn parse_quality(raw: &str) -> f32 {
+    match raw.parse::<f32>() {
+        Ok(value) if value.is_finite() => value,
+        _ => 0.0,
+    }
+}
+
+/// Human readable label of a role (`user`, `admin`).
+///
+/// Lower case in English on purpose: the value is shown inside parentheses in
+/// the audit log, where `#1 (admin)` is the established output. `/api/v1` keeps
+/// returning the raw token.
+pub fn role_label(lang: Lang, value: &str) -> String {
+    let key = match value {
+        "admin" => "admin.role.admin",
+        "user" => "admin.role.user",
+        _ => return value.to_string(),
+    };
+    lang.t(key).to_string()
+}
+
+/// Human readable label of a registration mode (`open`, `invite`, `closed`).
+///
+/// `/api/v1` keeps returning the raw token; only the pages use the label.
+pub fn registration_mode_label(lang: Lang, value: &str) -> String {
+    let key = match value {
+        "open" => "admin.mode.open",
+        "invite" => "admin.mode.invite",
+        "closed" => "admin.mode.closed",
+        _ => return value.to_string(),
+    };
+    lang.t(key).to_string()
+}
+
+/// Human readable label of a device class recorded by the analytics collector
+/// (`Desktop`, `Mobile`, `Tablet`, `Bot`) or of an unparsable user agent
+/// (`Unknown`).
+///
+/// Browser and operating system names are proper nouns and are shown as stored.
+pub fn device_label(lang: Lang, value: &str) -> String {
+    let key = match value {
+        "Desktop" => "device.desktop",
+        "Mobile" => "device.mobile",
+        "Tablet" => "device.tablet",
+        "Bot" => "device.bot",
+        "Unknown" => "common.unknown",
+        _ => return value.to_string(),
+    };
+    lang.t(key).to_string()
 }
 
 tokio::task_local! {
@@ -455,6 +517,43 @@ mod tests {
     }
 
     #[test]
+    fn malformed_quality_weights_never_outrank_a_valid_one() {
+        // `NaN` compares false against every bound, so it used to be kept and
+        // then sort as "equal" — landing ahead of a legitimate `q=1`.
+        for weight in [
+            "NaN", "nan", "inf", "-inf", "Infinity", "abc", "", "0", "-1",
+        ] {
+            let header = format!("zh;q={weight},en;q=1");
+            assert_eq!(
+                Lang::from_accept_language(&header),
+                Some(Lang::En),
+                "`q={weight}` must not beat a valid `q=1`"
+            );
+            // The same weight on the well formed entry drops it instead.
+            let header = format!("zh;q=1,en;q={weight}");
+            assert_eq!(
+                Lang::from_accept_language(&header),
+                Some(Lang::ZhHans),
+                "`q={weight}` must not displace a valid `q=1`"
+            );
+            assert_eq!(
+                Lang::from_accept_language(&format!("zh;q={weight}")),
+                None,
+                "`q={weight}` is not a usable weight"
+            );
+        }
+        // Weights that are merely unusual still order correctly.
+        assert_eq!(
+            Lang::from_accept_language("zh;q=0.5,en;q=0.75"),
+            Some(Lang::En)
+        );
+        assert_eq!(
+            Lang::from_accept_language("zh;q=1.0,en;q=0.999"),
+            Some(Lang::ZhHans)
+        );
+    }
+
+    #[test]
     fn translates_with_english_fallback() {
         assert_eq!(Lang::ZhHant.t("nav.links"), "連結");
         assert_ne!(Lang::ZhHant.t("nav.links"), Lang::En.t("nav.links"));
@@ -482,6 +581,227 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Top level keys of a flat JSON object, in file order, duplicates included.
+    ///
+    /// `serde_json::Map` sorts its keys and silently keeps the last duplicate,
+    /// so the raw text has to be scanned to see order and repetition at all.
+    fn top_level_keys(raw: &str) -> Vec<String> {
+        let mut keys = Vec::new();
+        let mut depth = 0usize;
+        let mut in_string = false;
+        let mut escaped = false;
+        let mut current = String::new();
+        let mut chars = raw.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if in_string {
+                if escaped {
+                    escaped = false;
+                    current.push(ch);
+                    continue;
+                }
+                match ch {
+                    '\\' => escaped = true,
+                    '"' => {
+                        in_string = false;
+                        // A string at depth 1 followed by `:` is a key.
+                        if depth == 1 {
+                            let mut lookahead = chars.clone();
+                            let next = lookahead.find(|c: &char| !c.is_whitespace());
+                            if next == Some(':') {
+                                keys.push(std::mem::take(&mut current));
+                            }
+                        }
+                    }
+                    other => current.push(other),
+                }
+                continue;
+            }
+            match ch {
+                '"' => {
+                    in_string = true;
+                    current.clear();
+                }
+                '{' | '[' => depth += 1,
+                '}' | ']' => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+        keys
+    }
+
+    /// Values that are deliberately identical in every catalogue: a timestamp
+    /// format, a sample URL, a tag list and a token name. They are machine
+    /// readable examples, not prose, so translating them would mislead.
+    const IDENTICAL_IN_EVERY_LANGUAGE: &[&str] = &[
+        "common.password_placeholder",
+        "dashboard.new.destination_placeholder",
+        "dashboard.new.tags_placeholder",
+        "account.tokens.name_placeholder",
+    ];
+
+    #[test]
+    fn top_level_key_scanner_handles_duplicates_and_nesting() {
+        let raw = r#"{
+          "a": "x",
+          "b": {"a": "nested", "z": 1},
+          "a": "y",
+          "c": [1, 2]
+        }"#;
+        assert_eq!(top_level_keys(raw), vec!["a", "b", "a", "c"]);
+    }
+
+    #[test]
+    fn catalogues_keep_the_same_keys_in_the_same_file_order() {
+        let english = top_level_keys(EN_JSON);
+        assert!(!english.is_empty());
+        // The scanner must see every key, otherwise the comparison is vacuous.
+        assert_eq!(english.len(), Lang::En.keys().len());
+        assert_eq!(top_level_keys(ZH_HANT_JSON), english);
+        assert_eq!(top_level_keys(ZH_HANS_JSON), english);
+    }
+
+    #[test]
+    fn no_catalogue_declares_a_key_twice() {
+        for (code, raw) in [
+            ("en", EN_JSON),
+            ("zh-Hant", ZH_HANT_JSON),
+            ("zh-Hans", ZH_HANS_JSON),
+        ] {
+            let mut seen = std::collections::HashSet::new();
+            for key in top_level_keys(raw) {
+                assert!(seen.insert(key.clone()), "{code} declares {key} twice");
+            }
+        }
+    }
+
+    /// Key prefixes whose values are proper nouns chosen by configuration.
+    ///
+    /// `admin.settings.captcha_provider.*` comes from the bot protection branch:
+    /// a provider name is a brand, so its original spelling is correct in every
+    /// language. Do not widen this into a general "contains ASCII" rule.
+    const IDENTICAL_KEY_PREFIXES: &[&str] = &["admin.settings.captcha_provider."];
+
+    /// Brand, product and protocol tokens that must survive translation
+    /// verbatim, so a value containing one may legitimately equal the English
+    /// text (`Google reCAPTCHA`, `Windows`, `API Token`, …).
+    const KEEP_VERBATIM_TOKENS: &[&str] = &[
+        "Cloudflare",
+        "Turnstile",
+        "reCAPTCHA",
+        "Google",
+        "Chrome",
+        "Safari",
+        "Firefox",
+        "Edge",
+        "Windows",
+        "macOS",
+        "Linux",
+        "Android",
+        "iOS",
+        "API",
+        "URL",
+        "Slug",
+        "Token",
+    ];
+
+    /// Is `key` allowed to carry the English text unchanged?
+    fn may_equal_english(key: &str, value: &str) -> bool {
+        IDENTICAL_IN_EVERY_LANGUAGE.contains(&key)
+            || IDENTICAL_KEY_PREFIXES
+                .iter()
+                .any(|prefix| key.starts_with(prefix))
+            || KEEP_VERBATIM_TOKENS
+                .iter()
+                .any(|token| value.contains(token))
+    }
+
+    #[test]
+    fn chinese_catalogues_do_not_copy_the_english_prose() {
+        for lang in [Lang::ZhHant, Lang::ZhHans] {
+            for key in lang.keys() {
+                let english = Lang::En.t(key);
+                let translated = lang.t(key);
+                if english != translated || may_equal_english(key, english) {
+                    continue;
+                }
+                panic!(
+                    "{} still carries the English text for {key}.\n  English:    {english:?}\n  {}: {translated:?}\n\
+                     A missing translation has to be filled in; a value that must stay verbatim (a brand, a \
+                     provider name, an example the user types) belongs in IDENTICAL_IN_EVERY_LANGUAGE, \
+                     IDENTICAL_KEY_PREFIXES or KEEP_VERBATIM_TOKENS.",
+                    lang.code(),
+                    lang.code()
+                );
+            }
+        }
+        // The allow lists must not rot: every entry has to be identical today.
+        for key in IDENTICAL_IN_EVERY_LANGUAGE {
+            for lang in [Lang::ZhHant, Lang::ZhHans] {
+                assert_eq!(
+                    lang.t(key),
+                    Lang::En.t(key),
+                    "{key} is no longer identical in {}, drop it from the allow list",
+                    lang.code()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_verbatim_allow_list_matches_the_bot_protection_keys() {
+        // Guards the merge with the bot protection branch: its provider names
+        // are English in every catalogue and must not be reported as missing
+        // translations.
+        assert!(may_equal_english(
+            "admin.settings.captcha_provider.turnstile",
+            "Cloudflare Turnstile"
+        ));
+        assert!(may_equal_english(
+            "admin.settings.captcha_provider.recaptcha",
+            "Google reCAPTCHA"
+        ));
+        assert!(may_equal_english("account.tokens.heading", "API Token"));
+        // The helper only decides whether an *already identical* value is
+        // exempt; a translated label that merely mentions a brand is not.
+        assert!(!may_equal_english(
+            "admin.settings.captcha_allowlist_label",
+            "Allowed email domains"
+        ));
+        assert!(!may_equal_english(
+            "admin.settings.captcha_allowlist_hint",
+            "One domain per line"
+        ));
+    }
+
+    #[test]
+    fn domain_labels_are_translated_and_unknown_values_survive() {
+        assert_eq!(registration_mode_label(Lang::En, "open"), "open");
+        assert_eq!(registration_mode_label(Lang::ZhHant, "open"), "開放");
+        assert_eq!(registration_mode_label(Lang::ZhHans, "invite"), "邀请制");
+        assert_eq!(registration_mode_label(Lang::ZhHant, "closed"), "關閉");
+        assert_eq!(
+            registration_mode_label(Lang::ZhHant, "surprise"),
+            "surprise"
+        );
+
+        assert_eq!(role_label(Lang::En, "admin"), "admin");
+        assert_eq!(role_label(Lang::ZhHant, "admin"), "管理員");
+        assert_eq!(role_label(Lang::ZhHans, "user"), "用户");
+        assert_eq!(role_label(Lang::ZhHant, "robot"), "robot");
+
+        assert_eq!(device_label(Lang::ZhHant, "Desktop"), "電腦");
+        assert_eq!(device_label(Lang::ZhHans, "Mobile"), "移动设备");
+        assert_eq!(device_label(Lang::ZhHant, "Tablet"), "平板");
+        assert_eq!(device_label(Lang::ZhHans, "Bot"), "机器人");
+        // The unparsable-user-agent fallback is translated too, and stays
+        // byte identical in English so the English UI does not shift.
+        assert_eq!(device_label(Lang::ZhHant, "Unknown"), "未知");
+        assert_eq!(device_label(Lang::En, "Unknown"), "Unknown");
+        assert_eq!(device_label(Lang::En, "Desktop"), "Desktop");
+        // Proper nouns and unknown values pass through.
+        assert_eq!(device_label(Lang::ZhHant, "SmartFridge"), "SmartFridge");
     }
 
     #[test]
