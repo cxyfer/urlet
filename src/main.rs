@@ -186,6 +186,18 @@ ENVIRONMENT:
     UWURLS_ADMIN_EMAIL    Bootstrap administrator email
     UWURLS_ADMIN_PASSWORD Bootstrap administrator password
     UWURLS_REGISTRATION   open | invite | closed (overrides the settings table)
+    UWURLS_CAPTCHA_PROVIDER
+                          none | turnstile | recaptcha (overrides the settings table)
+    UWURLS_CAPTCHA_SITE_KEY
+                          Public site key of the chosen provider
+    UWURLS_CAPTCHA_SECRET_KEY
+                          Secret key of the chosen provider
+    UWURLS_CAPTCHA_ON_REGISTER
+                          Protect the registration form (true | false)
+    UWURLS_CAPTCHA_ON_LOGIN
+                          Protect the sign-in form (true | false)
+    UWURLS_CAPTCHA_ON_CREATE
+                          Protect the link creation form (true | false)
     UWURLS_SECURE_COOKIES Force the Secure cookie flag
     UWURLS_TRUST_PROXY    Honour X-Forwarded-For / X-Forwarded-Proto
     UWURLS_LOG            tracing filter (default info)
