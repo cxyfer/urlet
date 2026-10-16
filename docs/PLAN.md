@@ -1,193 +1,218 @@
-# uwurls — 分階段實作計畫 (Implementation Plan)
+**English** | [繁體中文](zh-TW/PLAN.md)
 
-> 對應規格：`docs/SPEC.md` v1.0
-> 原則：每個階段結束時程式碼必須**可編譯、可測試、可提交**；每個階段一個（或數個）本地 commit。
+# uwurls — Phased Implementation Plan
 
-## 執行結果（已完成）
+> Spec: `docs/SPEC.md` v1.1
+> Principle: at the end of every phase the code must **compile, test, and commit**; each phase gets one (or a few) local commits.
 
-| 階段 | 狀態 | Commit |
-|------|------|--------|
-| P0 Spec 與計畫 | ✅ 完成 | `4109fc8 📝 docs: add spec and phased implementation plan` |
-| P1 專案骨架與資料層 | ✅ 完成 | `06f91a7 🎉 init: bootstrap uwurls project skeleton` |
-| P2 認證與 Session | ✅ 完成 | `e0d8902 ✨ feat(auth): add sessions, registration, login and CSRF protection` |
-| P3 短網址核心 | ✅ 完成 | `e1db4fc ✨ feat(urls): add short link CRUD, slugs, tags and expiry rules` |
-| P4 轉址與解鎖 | ✅ 完成 | `2a8ca77 ✨ feat(redirect): add redirects, password unlock and click analytics` |
-| P5 Web UI | ✅ 完成 | `eae0e0b ✨ feat(ui): add server rendered dashboard, detail and account pages` |
-| P6 管理後台與 API | ✅ 完成 | `c74302a ✨ feat(admin): add admin panel, invites, settings and maintenance` |
-| P7 測試與文件 | ✅ 完成 | 見 `git log`（smoke.sh、README、API.md、DEPLOYMENT.md） |
-| P8 最終驗證 | ✅ 完成 | 見 `git log`（release 建置、映像檔策略、收尾） |
+## Results (completed)
 
-驗收數據：`cargo test` 187 個測試全綠、`cargo clippy --all-targets -- -D warnings` 與
-`cargo fmt --check` 無警告、`scripts/smoke.sh` 81 項端對端檢查全數通過。
+| Phase | Status | Commit |
+|-------|--------|--------|
+| P0 Spec and plan | ✅ Done | `4109fc8 📝 docs: add spec and phased implementation plan` |
+| P1 Project skeleton and data layer | ✅ Done | `06f91a7 🎉 init: bootstrap uwurls project skeleton` |
+| P2 Authentication and sessions | ✅ Done | `e0d8902 ✨ feat(auth): add sessions, registration, login and CSRF protection` |
+| P3 Short link core | ✅ Done | `e1db4fc ✨ feat(urls): add short link CRUD, slugs, tags and expiry rules` |
+| P4 Redirect and unlock | ✅ Done | `2a8ca77 ✨ feat(redirect): add redirects, password unlock and click analytics` |
+| P5 Web UI | ✅ Done | `eae0e0b ✨ feat(ui): add server rendered dashboard, detail and account pages` |
+| P6 Admin panel and API | ✅ Done | `c74302a ✨ feat(admin): add admin panel, invites, settings and maintenance` |
+| P7 Tests and documentation | ✅ Done | See `git log` (smoke.sh, README, API.md, DEPLOYMENT.md) |
+| P8 Final verification | ✅ Done | See `git log` (release build, image strategy, wrap-up) |
 
----
-
-## 里程碑總覽
-
-| 階段 | 名稱 | 產出 | 驗收 | Commit |
-|------|------|------|------|--------|
-| P0 | Spec 與計畫 | `docs/SPEC.md`、`docs/PLAN.md` | 規格涵蓋所有需求、可追溯 | `📝 docs: add spec and phased implementation plan` |
-| P1 | 專案骨架與資料層 | Cargo 專案、config、14 張表 migrations、db 模組、錯誤處理、health、Dockerfile、compose | `cargo run` 可啟動、`/health` 回 200、遷移成功 | `🎉 init: bootstrap uwurls project skeleton` |
-| P2 | 認證與 Session | 註冊/登入/登出、Argon2、Session、CSRF、速率限制、admin bootstrap | 整合測試涵蓋註冊登入、未授權 401、CSRF 403 | `✨ feat(auth): ...` |
-| P3 | 短網址核心 | slug 服務、URL CRUD、標籤、過期/點擊上限/密碼欄位、配額 | 整合測試涵蓋 CRUD、所有權隔離、slug 驗證 | `✨ feat(urls): ...` |
-| P4 | 轉址與解鎖 | redirect handler、點擊記錄、UA 解析、解鎖 Cookie、410/404 頁 | 整合測試涵蓋轉址、密碼流程、過期 410 | `✨ feat(redirect): ...` |
-| P5 | Web UI | Askama 模板 + CSS/JS、儀表板、網址詳情、帳號頁 | 手動 + smoke 驗證頁面可操作 | `✨ feat(ui): ...` |
-| P6 | 管理後台與 API | 使用者管理、邀請碼、設定、稽核、API Token、`/api/v1` 完整化 | 整合測試涵蓋 admin 授權與 Token | `✨ feat(admin): ...` |
-| P7 | 測試與文件 | 整合測試補齊、`scripts/smoke.sh`、README、API.md、DEPLOYMENT.md | `cargo test` 全綠、smoke 全通過 | `🧪 test: ...` / `📝 docs: ...` |
-| P8 | 最終驗證與收尾 | clippy/fmt 清零、release 建置、compose 設定驗證、映像檔策略確認 | 驗收清單全數勾選 | `🔖 chore: finalize v1.0.0` |
+Acceptance data (v1.0): `cargo test` is all green with 187 tests, `cargo clippy --all-targets -- -D warnings`
+and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scripts/smoke.sh` pass.
 
 ---
 
-## P1 — 專案骨架與資料層
+## Milestone Overview
 
-**任務**
-
-1. `Cargo.toml`：axum 0.8、tokio、sqlx(sqlite, runtime-tokio, migrate)、askama、argon2、sha2、hmac、time、serde、tracing、tower-http、rand/getrandom、base64、subtle、thiserror、anyhow、uuid？（不需要）
-2. `[profile.release]`：`lto=true`、`codegen-units=1`、`strip=true`、`opt-level="z"`、`panic="abort"`
-3. `src/config.rs`：環境變數解析 + 預設值 + 驗證（BASE_URL、DB 路徑、secret 自動產生）
-4. `migrations/0001_init.sql`：§6.3 全部 14 張表 + 索引 + seed settings
-5. `src/db/`：pool 建立（WAL/pragmas）、`migrate()`、各表 CRUD 模組骨架
-6. `src/error.rs`：`AppError` 列舉 + `IntoResponse`（HTML 與 JSON 雙模式）
-7. `src/server.rs` + `src/main.rs`：router、`/health`、`/assets/*`、優雅關閉
-8. `Dockerfile`、`docker-compose.yml`、`docker-compose.tls.yml`、`deploy/Caddyfile`、`.env.example`、`.gitignore`
-9. `rustfmt.toml`、`clippy` 設定
-
-**驗收**：`cargo build` 成功；啟動後 `curl /health` 回 200 JSON；DB 檔自動建立且 14 張表存在。
-
----
-
-## P2 — 認證與 Session
-
-**任務**
-
-1. `services/password.rs`：Argon2id 雜湊/驗證 + 常數時間比較
-2. `services/secret.rs`：HMAC-SHA256 工具（IP 雜湊、解鎖 Cookie 簽章）
-3. `services/ratelimit.rs`：記憶體令牌桶（key → bucket，定期清理）
-4. `db/users.rs`、`db/sessions.rs`、`db/login_attempts.rs`
-5. `services/auth.rs`：註冊（模式檢查、邀請碼）、登入、登出、修改密碼、Session 建立/驗證/撤銷
-6. `middleware/auth.rs`：`CurrentUser` extractor（Session Cookie 或 Bearer Token）
-7. `middleware/csrf.rs`：非 GET 且使用 Cookie 認證時檢查 `Origin`/`Referer`
-8. `middleware/security.rs`：安全標頭；`middleware/request_id.rs`
-9. `routes/api_auth.rs`：§7.1 端點
-10. 首個使用者自動成為 admin；`UWURLS_ADMIN_EMAIL/PASSWORD` bootstrap
-
-**驗收**：整合測試 — 註冊/登入/登出/`/me`/改密碼、未登入 401、跨來源 POST 403、連續失敗登入觸發 429。
+| Phase | Name | Deliverable | Acceptance | Commit |
+|-------|------|-------------|------------|--------|
+| P0 | Spec and plan | `docs/SPEC.md`, `docs/PLAN.md` | The spec covers every requirement and is traceable | `📝 docs: add spec and phased implementation plan` |
+| P1 | Project skeleton and data layer | Cargo project, config, 14-table migrations, db modules, error handling, health, Dockerfile, compose | `cargo run` starts, `/health` returns 200, migrations succeed | `🎉 init: bootstrap uwurls project skeleton` |
+| P2 | Authentication and sessions | Register/login/logout, Argon2, sessions, CSRF, rate limiting, admin bootstrap | Integration tests cover register/login, 401 when unauthorized, CSRF 403 | `✨ feat(auth): ...` |
+| P3 | Short link core | Slug service, URL CRUD, tags, expiry/click-cap/password columns, quota | Integration tests cover CRUD, ownership isolation, slug validation | `✨ feat(urls): ...` |
+| P4 | Redirect and unlock | Redirect handler, click recording, UA parsing, unlock cookie, 410/404 pages | Integration tests cover redirects, the password flow, expiry 410 | `✨ feat(redirect): ...` |
+| P5 | Web UI | Askama templates + CSS/JS, dashboard, link detail, account page | Pages verified manually and by smoke tests | `✨ feat(ui): ...` |
+| P6 | Admin panel and API | User management, invite codes, settings, audit, API tokens, complete `/api/v1` | Integration tests cover admin authorization and tokens | `✨ feat(admin): ...` |
+| P7 | Tests and documentation | Completed integration tests, `scripts/smoke.sh`, README, API.md, DEPLOYMENT.md | `cargo test` all green, smoke tests all pass | `🧪 test: ...` / `📝 docs: ...` |
+| P8 | Final verification and wrap-up | clippy/fmt clean, release build, compose config validation, image strategy confirmed | Every acceptance item checked | `🔖 chore: finalize v1.0.0` |
+| P9 | i18n, bot protection and navigation homepage | Three embedded locale catalogs, language negotiation and switching, optional Turnstile/reCAPTCHA on register, sign-in and create, landing page at `/` | Negotiation, cookie switching, captcha fail-closed (including sign-in) and the landing page covered by tests; `/` returns 200 | `📝 docs: ...` / `✨ feat(i18n): ...` |
 
 ---
 
-## P3 — 短網址核心
+## P1 — Project Skeleton and Data Layer
 
-**任務**
+**Tasks**
 
-1. `services/slug.rs`：base62 產生、驗證（長度/字元/保留字）、碰撞重試
-2. `services/url_target.rs`：目標網址正規化與 scheme 白名單（開放轉址防護）
-3. `db/urls.rs`、`db/tags.rs`、`db/domains.rs`：CRUD、列表查詢（搜尋/標籤/狀態/排序/分頁）、配額檢查
-4. `services/urls.rs`：建立/更新/刪除業務邏輯（含標籤 upsert、過期與上限驗證、密碼雜湊）
-5. `routes/api_urls.rs`：§7.2 端點（`/stats`、`/clicks` 先回結構化資料）
-6. `routes/api_tags.rs`：§7.3 標籤端點
-7. 稽核日誌寫入（`services/audit.rs`）
+1. `Cargo.toml`: axum 0.8, tokio, sqlx (sqlite, runtime-tokio, migrate), askama, argon2, sha2, hmac, time, serde, tracing, tower-http, rand/getrandom, base64, subtle, thiserror, anyhow, uuid? (not needed)
+2. `[profile.release]`: `lto=true`, `codegen-units=1`, `strip=true`, `opt-level="z"`, `panic="abort"`
+3. `src/config.rs`: environment variable parsing + defaults + validation (BASE_URL, DB path, auto-generated secret)
+4. `migrations/0001_init.sql`: all 14 tables from §6.3 + indexes + seed settings
+5. `src/db/`: pool setup (WAL/pragmas), `migrate()`, CRUD module skeletons for every table
+6. `src/error.rs`: the `AppError` enum + `IntoResponse` (HTML and JSON modes)
+7. `src/server.rs` + `src/main.rs`: router, `/health`, `/assets/*`, graceful shutdown
+8. `Dockerfile`, `docker-compose.yml`, `docker-compose.tls.yml`, `deploy/Caddyfile`, `.env.example`, `.gitignore`
+9. `rustfmt.toml`, clippy configuration
 
-**驗收**：整合測試 — CRUD、自訂/自動 slug、保留字拒絕、無效 target 拒絕、他人網址 404、配額上限、標籤篩選。
+**Acceptance**: `cargo build` succeeds; after startup `curl /health` returns 200 JSON; the DB file is created automatically with all 14 tables present.
 
 ---
 
-## P4 — 轉址與解鎖
+## P2 — Authentication and Sessions
 
-**任務**
+**Tasks**
 
-1. `routes/redirect.rs`：`GET /{slug}` 狀態機（不存在 404 / 刪除 404 / 停用 404 / 過期 410 / 需密碼 200 密碼頁 / 已解鎖 302）
-2. `services/unlock.rs`：解鎖 Cookie 簽發與驗證（HMAC + slug 綁定 + TTL）
-3. `routes/redirect.rs`：`POST /{slug}/unlock`（表單 + JSON）、速率限制
-4. `services/ua.rs`：輕量 UA 解析（device/browser/os/bot）
-5. `services/click.rs`：非同步寫入 `clicks` + `url_daily_stats` upsert + `click_count` 遞增 + 唯一訪客判定
-6. 過期/404/密碼頁模板（Askama，最小版）
-7. `middleware/security.rs`：轉址回應快取標頭
+1. `services/password.rs`: Argon2id hashing/verification + constant-time comparison
+2. `services/secret.rs`: HMAC-SHA256 helpers (IP hashing, unlock cookie signatures)
+3. `services/ratelimit.rs`: in-memory token buckets (key → bucket, periodically pruned)
+4. `db/users.rs`, `db/sessions.rs`, `db/login_attempts.rs`
+5. `services/auth.rs`: registration (mode checks, invite codes), login, logout, password change, session creation/validation/revocation
+6. `middleware/auth.rs`: the `CurrentUser` extractor (session cookie or Bearer token)
+7. `middleware/csrf.rs`: check `Origin`/`Referer` on non-GET requests that use cookie authentication
+8. `middleware/security.rs`: security headers; `middleware/request_id.rs`
+9. `routes/api_auth.rs`: the §7.1 endpoints
+10. The first user becomes admin automatically; `UWURLS_ADMIN_EMAIL/PASSWORD` bootstrap
 
-**驗收**：整合測試 — 正常轉址 302、自訂 301/307、密碼頁不洩漏 target、錯誤密碼 401、正確密碼後轉址、過期 410、達點擊上限 410、刪除/停用 404、點擊數與彙總正確增加。
+**Acceptance**: integration tests — register/login/logout/`/me`/change password, 401 when not logged in, 403 for cross-origin POST, and 429 after repeated failed logins.
+
+---
+
+## P3 — Short Link Core
+
+**Tasks**
+
+1. `services/slug.rs`: base62 generation, validation (length/characters/reserved words), collision retries
+2. `services/url_target.rs`: target URL normalization and scheme allowlist (open redirect protection)
+3. `db/urls.rs`, `db/tags.rs`, `db/domains.rs`: CRUD, list queries (search/tag/status/sort/pagination), quota checks
+4. `services/urls.rs`: create/update/delete business logic (tag upserts, expiry and cap validation, password hashing)
+5. `routes/api_urls.rs`: the §7.2 endpoints (`/stats` and `/clicks` return structured data first)
+6. `routes/api_tags.rs`: the §7.3 tag endpoints
+7. Audit log writes (`services/audit.rs`)
+
+**Acceptance**: integration tests — CRUD, custom/automatic slugs, reserved-word rejection, invalid target rejection, 404 for another user's link, quota limits, tag filtering.
+
+---
+
+## P4 — Redirect and Unlock
+
+**Tasks**
+
+1. `routes/redirect.rs`: the `GET /{slug}` state machine (missing 404 / deleted 404 / disabled 404 / expired 410 / password required 200 password page / unlocked 302)
+2. `services/unlock.rs`: issuing and verifying unlock cookies (HMAC + slug binding + TTL)
+3. `routes/redirect.rs`: `POST /{slug}/unlock` (form + JSON), rate limiting
+4. `services/ua.rs`: lightweight UA parsing (device/browser/os/bot)
+5. `services/click.rs`: asynchronous writes to `clicks` + `url_daily_stats` upsert + `click_count` increment + unique visitor detection
+6. Expiry/404/password page templates (Askama, minimal)
+7. `middleware/security.rs`: cache headers for redirect responses
+
+**Acceptance**: integration tests — normal 302 redirect, custom 301/307, password page does not leak the target, wrong password 401, correct password redirects, expired 410, click cap reached 410, deleted/disabled 404, and click counts plus rollups increment correctly.
 
 ---
 
 ## P5 — Web UI
 
-**任務**
+**Tasks**
 
-1. `templates/base.html` + `assets/app.css`（響應式、深色模式）+ `assets/app.js`（複製、確認、表單增強）
-2. `templates/login.html`、`register.html`
-3. `templates/dashboard.html`：統計卡片、SVG 趨勢圖、網址列表（搜尋/標籤/狀態/分頁）、建立表單（含進階選項：密碼、過期、點擊上限、標籤）
-4. `templates/url_detail.html`：編輯、統計圖表、最近點擊、刪除
-5. `templates/account.html`：個人資料、修改密碼、Session 清單、API Token 管理
-6. `routes/pages_*.rs`：`/app/**` 路由 + 表單 POST handler（HTML 導向 + flash 訊息）
-7. SVG 圖表產生器（`services/chart.rs`）
+1. `templates/base.html` + `assets/app.css` (responsive, dark mode) + `assets/app.js` (copy, confirm, form enhancements)
+2. `templates/login.html`, `register.html`
+3. `templates/dashboard.html`: stat cards, SVG trend chart, link list (search/tag/status/pagination), create form (with advanced options: password, expiry, click cap, tags)
+4. `templates/url_detail.html`: edit, analytics charts, recent clicks, delete
+5. `templates/account.html`: profile, change password, session list, API token management
+6. `routes/pages_*.rs`: `/app/**` routes + form POST handlers (HTML redirects + flash messages)
+7. SVG chart generator (`services/chart.rs`)
 
-**驗收**：以真實二進位手動/腳本走完：註冊 → 建立（含密碼與過期）→ 複製短網址 → 詳情頁看到統計 → 帳號頁建立 Token。
-
----
-
-## P6 — 管理後台與 API 完整化
-
-**任務**
-
-1. `middleware/admin.rs`：admin 授權
-2. `routes/api_admin.rs`：§7.4 全部端點（使用者、全站網址、邀請碼、設定、稽核、系統資訊）
-3. `routes/api_tokens.rs`：§7.3 Token 端點
-4. `routes/api_public.rs`：公開中介資料端點
-5. `templates/admin/*.html` + `/app/admin/**` 頁面
-6. `db/settings.rs`：設定讀寫 + 快取（`RwLock` 記憶體快取，寫入失效）
-7. 每日維護任務（清理過期 Session、點擊保留期清理）
-
-**驗收**：整合測試 — 非 admin 存取 403、admin 可停權使用者（其 Session 立即失效）、邀請碼註冊流程、設定更新生效、稽核日誌有紀錄、API Token 認證成功。
+**Acceptance**: manually/scripted against the real binary — register → create (with password and expiry) → copy the short link → see analytics on the detail page → create a token on the account page.
 
 ---
 
-## P7 — 測試與文件
+## P6 — Admin Panel and Complete API
 
-**任務**
+**Tasks**
 
-1. `tests/common/mod.rs`：測試 App 工廠（臨時 SQLite、記憶體設定）
-2. `tests/integration.rs`：§10 全部整合測試案例
-3. 單元測試補齊（slug、UA、過期、設定、CSRF、密碼、chart）
-4. `scripts/smoke.sh`：真實二進位 + curl 端對端（含 410、解鎖、所有權隔離）
-5. `README.md`（快速開始、部署、備份、升級）、`docs/API.md`、`docs/DEPLOYMENT.md`
-6. `LICENSE`（MIT）
+1. `middleware/admin.rs`: admin authorization
+2. `routes/api_admin.rs`: all §7.4 endpoints (users, site-wide links, invite codes, settings, audit, system info)
+3. `routes/api_tokens.rs`: the §7.3 token endpoints
+4. `routes/api_public.rs`: the public metadata endpoint
+5. `templates/admin/*.html` + `/app/admin/**` pages
+6. `db/settings.rs`: settings reads/writes + cache (`RwLock` in-memory cache invalidated on write)
+7. Daily maintenance task (purge expired sessions, prune clicks by retention)
 
-**驗收**：`cargo test` 全綠、`scripts/smoke.sh` 全通過。
-
----
-
-## P8 — 最終驗證與收尾
-
-**任務**
-
-1. `cargo fmt`、`cargo clippy --all-targets -- -D warnings` 清零
-2. `cargo build --release` 並量測二進位大小（目標 ≤ 15 MB）
-3. `docker compose config` / YAML 驗證；確認 Dockerfile 邏輯正確（本機無 Docker 引擎時，以 YAML 解析 + 明確標註）
-4. 以 release 二進位跑一次 smoke test 與健康檢查
-5. 更新 `docs/PLAN.md` 勾選狀態、README 驗收清單
-
-**驗收**：`docs/SPEC.md` §11 驗收清單全數勾選。
+**Acceptance**: integration tests — non-admin access 403, admin can suspend a user (their sessions become invalid immediately), the invite-code registration flow, settings updates take effect, the audit log records entries, and API token authentication succeeds.
 
 ---
 
-## 風險與對策
+## P7 — Tests and Documentation
 
-| 風險 | 影響 | 對策 |
-|------|------|------|
-| 本機無 Docker 引擎（Docker Desktop WSL 整合未啟用） | 無法實際 `docker build`/`compose up` | 以 YAML 解析驗證 compose、以 release 二進位驗證行為、Dockerfile 採標準多階段樣式並在文件中標註未實機驗證 |
-| musl 靜態建置若失敗 | 映像檔無法執行 | 保留 `debian-slim` 執行期作為備援方案（文件中說明） |
-| SQLite 寫入鎖競爭 | 高併發點擊寫入延遲 | WAL + `busy_timeout` + 非同步寫入 + 彙總表 upsert 合併寫入 |
-| Askama 模板與路由不同步 | 執行期 500 | 模板於編譯期檢查；整合測試覆蓋每個頁面 GET |
-| 相依套件版本漂移 | 建置失敗 | 提交 `Cargo.lock`；建置階段固定工具鏈映像版本 |
+**Tasks**
+
+1. `tests/common/mod.rs`: test app factory (temporary SQLite, in-memory settings)
+2. `tests/integration.rs`: every integration test case from §10
+3. Fill in unit tests (slug, UA, expiry, settings, CSRF, password, chart)
+4. `scripts/smoke.sh`: real binary + curl end-to-end (including 410, unlock, ownership isolation)
+5. `README.md` (quick start, deployment, backup, upgrade), `docs/API.md`, `docs/DEPLOYMENT.md`
+6. `LICENSE` (MIT)
+
+**Acceptance**: `cargo test` all green, `scripts/smoke.sh` all pass.
 
 ---
 
-## P8 驗收量測結果
+## P8 — Final Verification and Wrap-up
 
-| 項目 | 目標（`docs/SPEC.md` §3.3、§5.2） | 實測 |
-|------|-----------------------------------|------|
-| Release 二進位大小 | ≤ 15 MB | **4.2 MB**（stripped, LTO, `opt-level=z`） |
-| 閒置記憶體 RSS | ≤ 30 MB | **6.8 MB**（500 次請求後 6.8 MB） |
-| 轉址延遲（P95） | < 10 ms | **0.74 ms**（p50 0.40 ms、p99 1.05 ms、本機 500 次 keep-alive） |
-| 冷啟動到可服務 | ≤ 1 秒 | **約 0.2 秒**（含遷移） |
-| 容器映像 | ≤ 40 MB | **13.2 MB**（Docker Compose 27.4 實機建置並 `up -d` 通過） |
-| 測試 | 全綠 | `cargo test` 187 項、`scripts/smoke.sh` 81 項 |
-| 靜態檢查 | 無警告 | `cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 通過 |
+**Tasks**
+
+1. `cargo fmt`, `cargo clippy --all-targets -- -D warnings` clean
+2. `cargo build --release` and measure the binary size (target ≤ 15 MB)
+3. `docker compose config` / YAML validation; confirm the Dockerfile logic is correct (when no local Docker engine is available, use YAML parsing and state this explicitly)
+4. Run the smoke test and health check once against the release binary
+5. Update the checkboxes in `docs/PLAN.md` and the README acceptance list
+
+**Acceptance**: every item in the `docs/SPEC.md` §11 acceptance list is checked.
+
+---
+
+## P9 — i18n, Bot Protection and Navigation Homepage (v1.1)
+
+**Tasks**
+
+1. Locale catalogs `src/i18n/{en,zh-Hant,zh-Hans}.json` loaded by `src/i18n/mod.rs`: load the catalogs with `include_str!`, negotiate from `Accept-Language` honoring `q=` weights with **English** as the fallback, and fall back to the English string for a missing key.
+2. `src/middleware/locale.rs`: resolve the active language from the `uwurls_lang` cookie or `Accept-Language` (the cookie wins), publish it through a task-local context for handlers and error pages, render `<html lang>` from it, and add `Content-Language` plus `Vary: Accept-Language, Cookie` to HTML responses.
+3. `GET /app/lang/{code}?next=<path>`: set the cookie (`Path=/`, `SameSite=Lax`, `Max-Age` one year, not HttpOnly, `Secure` when `UWURLS_SECURE_COOKIES=true`) and return 302; only same-site relative paths are accepted for `next`, and anything else (including a missing `next`) falls back to `/app`; an unknown `code` is treated as `en`.
+4. `src/services/captcha.rs`: a provider abstraction for Cloudflare Turnstile and Google reCAPTCHA v2, settings values overridden by non-empty environment variables, a form-encoded 5-second HTTPS POST through `ureq` 2 (rustls + webpki-roots, no OpenSSL) to the provider siteverify endpoint, a check that the reported `hostname` is the base-URL host or on the allow-list (a missing `hostname` passes, a mismatch is rejected and logged at `WARN`), and a fail-closed result (timeout, non-2xx, or unparsable response rejects the request). Tests live in `tests/captcha.rs`.
+5. Enforce captcha on the web registration, sign-in and create-short-link forms, and on `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (JSON field `captcha_token`, 400 `captcha_failed`); on `POST /api/v1/urls` enforce it for session-cookie calls only and exempt `Authorization: Bearer uw_...` calls, so automation keeps working.
+6. Admin settings: the seven new keys `captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`, `captcha_on_login`, `captcha_on_create`, `captcha_allowed_hostnames`, each with a matching `UWURLS_CAPTCHA_*` environment variable (including `UWURLS_CAPTCHA_ON_LOGIN` and `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES`) that overrides the stored value when non-empty; the secret key field is write-only (an empty submission keeps the current value).
+7. `GET /` landing page (`src/routes/pages/home.rs` + `templates/landing.html`): hero, feature highlights, login and register entry points, language switcher, and footer, plus a dashboard entry point for signed-in users; remove the 302 redirect to `/app`.
+8. Tests: language negotiation (`q=` weights, fallback to English), cookie switching and `next` validation, API JSON staying English, the captcha enablement matrix, captcha fail-closed behavior on register, sign-in and create, and `GET /` returning 200.
+9. Docs: update `docs/SPEC.md` and the Chinese mirror `docs/zh-TW/SPEC.md` (FR tables, route list, environment variables, settings keys), both `PLAN.md` files, both READMEs, `docs/API.md`, `docs/DEPLOYMENT.md`, their `docs/zh-TW/` mirrors and `.env.example`.
+
+**Acceptance**: `GET /` returns 200 for anonymous and signed-in visitors and no longer redirects; `Accept-Language` negotiation and the language cookie switch the UI, while JSON API responses stay English; captcha is enabled only when provider ≠ `none`, both keys are non-empty, and the matching switch (`on_register`, `on_login` or `on_create`) is true, and it fails closed on timeout/non-2xx/parse failure on register, sign-in and create; on `POST /api/v1/urls` captcha applies to session-cookie calls and `Authorization: Bearer uw_...` calls stay exempt; the admin secret key is never rendered back; `cargo test`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check` are clean.
+
+---
+
+## Risks and Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| No local Docker engine (Docker Desktop WSL integration disabled) | Cannot actually run `docker build`/`compose up` | Validate compose with YAML parsing, verify behavior with the release binary, and follow the standard multi-stage Dockerfile pattern while documenting that it was not verified on real hardware |
+| musl static build fails | The image cannot run | Keep a `debian-slim` runtime as a fallback (documented) |
+| SQLite write lock contention | Latency on high-concurrency click writes | WAL + `busy_timeout` + asynchronous writes + merged writes through rollup upserts |
+| Askama templates drift from routes | Runtime 500s | Templates are checked at compile time; integration tests cover a GET of every page |
+| Dependency version drift | Build failures | Commit `Cargo.lock`; pin the toolchain image version in the build stage |
+
+---
+
+## P8 Acceptance Measurements
+
+| Item | Target (`docs/SPEC.md` §3.3, §5.2) | Measured |
+|------|-------------------------------------|----------|
+| Release binary size | ≤ 15 MB | **4.2 MB** (stripped, LTO, `opt-level=z`) |
+| Idle memory RSS | ≤ 30 MB | **6.8 MB** (6.8 MB after 500 requests) |
+| Redirect latency (P95) | < 10 ms | **0.74 ms** (p50 0.40 ms, p99 1.05 ms, 500 keep-alive requests locally) |
+| Cold start to serving | ≤ 1 second | **~0.2 s** (including migrations) |
+| Container image | ≤ 40 MB | **13.2 MB** (built and `up -d` verified on real hardware with Docker Compose 27.4) |
+| Tests | All green | `cargo test` 187 items, `scripts/smoke.sh` 81 items |
+| Static checks | No warnings | `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` pass |
+
+The table above is the v1.0 record; the current v1.1 numbers (5.7 MB glibc / 5.8 MB musl binary,
+14.8 MB image, 8.7 MB RSS, ~0.1 s cold start, 245 tests) are tracked in `docs/SPEC.md` §3.3 — read
+them there rather than quoting this table.

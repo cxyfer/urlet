@@ -1,48 +1,60 @@
+**English** | [繁體中文](README.zh-TW.md)
+
 # uwurls
 
-**輕量化、自託管的多用戶短網址系統。** 單一 Rust 二進位檔 + 單一 SQLite 檔案，
-一個 `docker compose up -d` 就能上線，不需要外部資料庫、快取服務或前端建置流程。
+**A lightweight, self-hosted, multi-user URL shortener.** One Rust binary and one SQLite
+file: a single `docker compose up -d` and you are live. No external database, no cache
+service, no frontend build step.
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
-## 功能
+## Features
 
-| 功能 | 說明 |
-|------|------|
-| 👥 多用戶 | 每位使用者獨立管理自己的短網址；跨帳號存取一律 404 |
-| 🔗 短網址管理 | 自訂或自動產生 slug、標題、備註、標籤、啟用/停用、軟刪除 |
-| 🔒 密碼保護 | 短網址層級密碼（Argon2id），解鎖後以簽章 Cookie 記住 30 分鐘 |
-| ⏳ 過期機制 | 絕對到期時間與點擊次數上限，過期回 410 Gone |
-| 📊 點擊分析 | 每日趨勢、來源網域、裝置/瀏覽器/作業系統分佈、最近點擊 |
-| 🧩 標籤 | 依標籤篩選與分類，附使用次數 |
-| 🔑 API Token | `Authorization: Bearer uw_...`，可設到期與撤銷 |
-| 🛠 管理後台 | 使用者管理、全站短網址、邀請碼、站台設定、稽核日誌 |
-| 🐳 部署 | 單一容器 + named volume；附 Caddy 自動 HTTPS overlay |
-| 🪶 輕量 | 二進位 4.2 MB、映像 13.2 MB、RSS 7 MB、轉址 P95 0.74 ms |
+| Feature | Description |
+|---------|-------------|
+| 👥 Multi-user | Every user manages their own links; cross-account access always returns 404 |
+| 🏠 Landing page | `/` is an introduction and navigation page with sign-in and sign-up entries; it no longer redirects straight to the login form |
+| 🔗 Link management | Custom or generated slugs, titles, notes, tags, enable/disable, soft delete |
+| 🔒 Password protection | Per-link passwords (Argon2id); after unlocking, a signed cookie remembers the visitor for 30 minutes |
+| ⏳ Expiry | Absolute expiration time and click limits; expired links return 410 Gone |
+| 📊 Click analytics | Daily trends, referrer domains, device/browser/OS breakdown, recent clicks |
+| 🧩 Tags | Filter and group links by tag, with usage counts |
+| 🔑 API tokens | `Authorization: Bearer uw_...`, with optional expiry and revocation |
+| 🛠 Admin panel | User management, all site links, invite codes, site settings, audit log |
+| 🌐 Localized UI | English, Traditional Chinese, and Simplified Chinese; the first visit follows the browser's `Accept-Language` header and falls back to English |
+| 🤖 Bot protection | Cloudflare Turnstile or Google reCAPTCHA v2, enabled through environment variables or the admin panel; applies to the registration, sign-in and link creation forms |
+| 🐳 Deployment | Single container plus a named volume; optional Caddy overlay for automatic HTTPS |
+| 🪶 Lightweight | 5.7 MB (glibc) / 5.8 MB (musl) binary, 14.8 MB container image, 8.7 MB RSS after 500 requests, and sub-millisecond redirect latency at P95 (see the note below) |
 
-## 快速開始
+> The binary and image figures include the embedded locale catalogs and the TLS stack used by the
+> optional bot protection; the redirect latency was measured on v1.0 and is expected to be
+> unchanged, since captcha verification only runs on the registration, sign-in and link-creation
+> forms — never on the redirect path.
 
-### Docker Compose（推薦）
+## Quick start
+
+### Docker Compose (recommended)
 
 ```bash
 git clone <this repo> uwurls && cd uwurls
-cp .env.example .env      # 至少設定 UWURLS_BASE_URL 與管理員帳密
+cp .env.example .env      # set at least UWURLS_BASE_URL and the admin credentials
 docker compose up -d --build
 ```
 
-打開 `http://localhost:8080`，用 `.env` 裡的 `UWURLS_ADMIN_EMAIL` / `UWURLS_ADMIN_PASSWORD`
-登入（伺服器啟動時會自動建立該管理員）。
+Open `http://localhost:8080`. The landing page links to sign-in and sign-up; sign in with
+the `UWURLS_ADMIN_EMAIL` / `UWURLS_ADMIN_PASSWORD` from `.env` (the server creates that
+administrator on startup).
 
-想讓 Caddy 自動申請 HTTPS 憑證：
+To let Caddy obtain HTTPS certificates automatically:
 
 ```bash
 export UWURLS_DOMAIN=s.example.com
 docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
 ```
 
-> 需要 Docker Compose ≥ 2.24（overlay 使用 `!override` 標籤）。
+> Requires Docker Compose ≥ 2.24 (the overlay uses the `!override` tag).
 
-### 直接執行二進位檔
+### Running the binary directly
 
 ```bash
 cargo build --release
@@ -53,108 +65,128 @@ UWURLS_ADMIN_PASSWORD=change-me-please \
 ./target/release/uwurls serve
 ```
 
-### 命令列
+### Command line
 
 ```
-uwurls serve                 # 啟動伺服器（預設）
-uwurls migrate               # 套用資料庫遷移後結束
-uwurls healthcheck [URL]     # 健康檢查（容器 HEALTHCHECK 使用，無需 curl）
+uwurls serve                 # start the server (default)
+uwurls migrate               # apply database migrations, then exit
+uwurls healthcheck [URL]     # health check (used by the container HEALTHCHECK, no curl needed)
 uwurls version | help
 ```
 
-## 首次使用
+## First run
 
-1. 若設定了 `UWURLS_ADMIN_EMAIL` / `UWURLS_ADMIN_PASSWORD`，啟動時會建立管理員。
-2. 若資料庫中**沒有任何帳號**，第一位註冊的使用者會自動成為管理員。
-3. 之後可在 **Admin → Invites** 產生邀請碼，並在 **Admin → Settings** 把註冊模式改為
-   `invite`（僅邀請碼）或 `closed`（關閉註冊）。
+1. If `UWURLS_ADMIN_EMAIL` / `UWURLS_ADMIN_PASSWORD` are set, the administrator is created
+   at startup.
+2. If the database holds **no accounts at all**, the first user to register becomes an
+   administrator automatically.
+3. After that, generate invite codes under **Admin → Invites** and switch the registration
+   mode to `invite` (invite code only) or `closed` (registration disabled) under
+   **Admin → Settings**.
 
-## 畫面
+## Screenshots
 
-| 短網址詳情與統計 | 管理後台 |
+The screenshots were captured before the localized UI and the new landing page were added,
+so labels may differ slightly from a current build.
+
+| Link detail and stats | Admin panel |
 |---|---|
 | ![URL detail](docs/screenshots/url-detail.png) | ![Admin](docs/screenshots/admin-overview.png) |
 
-| 密碼保護頁 | 已過期連結（可一鍵延長） |
+| Password page | Expired link (one-click extend) |
 |---|---|
 | ![Password page](docs/screenshots/password-page.png) | ![Expired link](docs/screenshots/expired-link.png) |
 
-深色模式：![Dark mode](docs/screenshots/dark.png)
+Dark mode: ![Dark mode](docs/screenshots/dark.png)
 
-## 技術選擇
+## Technical choices
 
-| 層級 | 選擇 | 為什麼 |
-|------|------|--------|
-| HTTP | Axum 0.8 + Tokio | 型別安全、生態成熟、單一二進位 |
-| 資料庫 | SQLite（sqlx，WAL） | 免外部服務、單檔備份，自託管規模足夠 |
-| 遷移 | 內嵌 SQL + checksum 驗證 | 啟動自動遷移，二進位檔自帶 schema |
-| 介面 | Askama SSR + 手寫 CSS/JS | 沒有 Node/Vite 建置步驟，映像檔極小 |
-| 認證 | 伺服器端 Session + API Token | 可即時撤銷，不必引入 JWT 相依 |
-| 密碼 | Argon2id（19 MiB, t=2, p=1） | OWASP 建議參數 |
+| Layer | Choice | Why |
+|-------|--------|-----|
+| HTTP | Axum 0.8 + Tokio | Type-safe, mature ecosystem, single binary |
+| Database | SQLite (sqlx, WAL) | No external service, single-file backups, plenty for self-hosted scale |
+| Migrations | Embedded SQL with checksum verification | Migrations run on startup; the binary ships its own schema |
+| UI | Askama SSR with hand-written CSS/JS | No Node/Vite build step, very small image |
+| Authentication | Server-side sessions + API tokens | Revocable immediately, without adding a JWT dependency |
+| Passwords | Argon2id (19 MiB, t=2, p=1) | OWASP-recommended parameters |
 
-**刻意不做**：OAuth、使用者群組權限矩陣、GeoIP、關鍵字黑名單、Webhook、郵件寄送。
-資料表與架構已為這些功能預留空間（見 `docs/SPEC.md` §12）。
+**Deliberately out of scope**: OAuth, user group permission matrices, GeoIP, keyword
+blocklists, webhooks, email delivery. The tables and architecture leave room for them
+(see `docs/SPEC.md` §12).
 
-## 專案結構
+## Project layout
 
 ```
 uwurls/
 ├── Cargo.toml
-├── Dockerfile                  # 多階段建置（rust:alpine → alpine）
-├── docker-compose.yml          # 單一容器 + named volume
-├── docker-compose.tls.yml      # 可選：Caddy 自動 HTTPS
+├── Dockerfile                  # multi-stage build (rust:alpine → alpine)
+├── docker-compose.yml          # single container + named volume
+├── docker-compose.tls.yml      # optional: Caddy with automatic HTTPS
 ├── deploy/Caddyfile
-├── migrations/                 # 內嵌 SQL 遷移
-├── templates/                  # Askama 模板（編譯期檢查）
+├── migrations/                 # embedded SQL migrations
+├── templates/                  # Askama templates (checked at compile time)
 ├── scripts/
-│   ├── smoke.sh                # 端對端驗收測試（curl）
-│   ├── demo.sh                 # 產生示範資料並截圖
-│   └── screenshot.py           # Playwright 截圖腳本
+│   ├── smoke.sh                # end-to-end acceptance test (curl)
+│   ├── demo.sh                 # generate demo data and screenshots
+│   └── screenshot.py           # Playwright screenshot script
 ├── src/
-│   ├── assets/                 # 內嵌 CSS/JS/favicon
-│   ├── db/                     # 所有 SQL（每張表一個模組）
-│   ├── middleware/             # 認證、CSRF、安全標頭、request id
-│   ├── routes/                 # HTTP：api_*、pages/*、redirect、health
-│   ├── services/               # 業務邏輯：auth、urls、slug、click、admin...
+│   ├── assets/                 # embedded CSS/JS/favicon
+│   ├── db/                     # all SQL (one module per table)
+│   ├── middleware/             # auth, CSRF, security headers, request id
+│   ├── routes/                 # HTTP: api_*, pages/*, redirect, health
+│   ├── services/               # business logic: auth, urls, slug, click, admin...
 │   ├── config.rs  error.rs  state.rs  server.rs
-│   └── main.rs                 # CLI 入口
+│   └── main.rs                 # CLI entry point
 └── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}
 ```
 
-## 開發
+## Development
 
 ```bash
-cargo test                 # 單元 + 整合測試（187 個）
+cargo test                 # unit + integration tests (245)
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收（81 項）
-bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
+bash scripts/smoke.sh      # end-to-end acceptance run against the real binary (81 checks)
+bash scripts/demo.sh       # build a demo site and write screenshots to .tmp/demo/shots
 ```
 
-需要 Rust 1.80 以上。整合測試使用獨立的臨時 SQLite，不會碰到你的開發資料。
+Rust 1.80 or newer is required. Integration tests use their own temporary SQLite database
+and never touch your development data.
 
-## 文件
+## Documentation
 
-- [`docs/SPEC.md`](docs/SPEC.md) — 規格書：需求、資料模型、API、非功能需求
-- [`docs/PLAN.md`](docs/PLAN.md) — 分階段實作計畫與驗收標準
-- [`docs/API.md`](docs/API.md) — JSON API 參考
-- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — 部署、設定、備份、升級、疑難排解
+- [`docs/SPEC.md`](docs/SPEC.md) — specification: requirements, data model, API, non-functional requirements
+- [`docs/PLAN.md`](docs/PLAN.md) — phased implementation plan and acceptance criteria
+- [`docs/API.md`](docs/API.md) — JSON API reference
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — deployment, configuration, backup, upgrades, troubleshooting
 
-## 安全性
+Chinese translations of these documents live under `docs/zh-TW/`.
 
-- Argon2id 密碼雜湊；Session / API Token / 邀請碼只存雜湊值
-- Cookie：`HttpOnly`、`SameSite=Lax`、可強制 `Secure`
-- CSRF：Cookie 認證的狀態變更請求檢查同源；表單類請求一律檢查
-- 安全標頭：CSP（`default-src 'self'`）、`X-Content-Type-Options`、
-  `X-Frame-Options`、`Referrer-Policy`、HTTPS 時加 HSTS
-- 開放轉址防護：目標僅允許 `http`/`https`，`javascript:`/`data:`/`file:` 一律拒絕
-- 隱私：不存原始 IP，只存 HMAC 後的 `ip_hash` 與每日輪替的 `visitor_hash`
-- 速率限制：登入（每 IP 與每帳號兩層）、註冊、解鎖、建立短網址、改密碼
-- 帳號鎖定：同一帳號 15 分鐘內 30 次失敗即暫時拒絕登入（持久化，重啟不重置）
-- 反向代理：優先信任代理設定的 `X-Real-IP`，其次取 `X-Forwarded-For` 最右側
-- 密碼雜湊在阻塞執行緒池中進行，並限制同時最多 4 個 Argon2 計算
-- 稽核日誌：登入、註冊、短網址異動、Token、管理操作、設定變更
+## Security
 
-## 授權
+- Argon2id password hashing; sessions, API tokens, and invite codes are stored as hashes only
+- Cookies: `HttpOnly`, `SameSite=Lax`, `Secure` when enforced
+- CSRF: state-changing requests authenticated by cookie are checked for same origin; form
+  submissions are always checked
+- Security headers: CSP (`default-src 'self'`), `X-Content-Type-Options`,
+  `X-Frame-Options`, `Referrer-Policy`, plus HSTS over HTTPS
+- Open redirect protection: targets must be `http` or `https`; `javascript:`, `data:`, and
+  `file:` are always rejected
+- Privacy: raw IP addresses are never stored, only an HMAC'd `ip_hash` and a daily-rotating
+  `visitor_hash`
+- Rate limiting: sign-in (per IP and per account), registration, unlock, link creation,
+  password change
+- Bot verification: optional Turnstile or reCAPTCHA v2 on registration, sign-in and link
+  creation, toggled per form with `UWURLS_CAPTCHA_ON_REGISTER`, `UWURLS_CAPTCHA_ON_LOGIN` and
+  `UWURLS_CAPTCHA_ON_CREATE`
+- Account lockout: 30 failed sign-ins for the same account within 15 minutes temporarily
+  blocks it (persisted, so a restart does not reset the counter)
+- Reverse proxy: the proxy's `X-Real-IP` is trusted first, otherwise the rightmost
+  `X-Forwarded-For` entry is used
+- Password hashing runs on a blocking thread pool with at most 4 concurrent Argon2
+  computations
+- Audit log: sign-in, registration, link changes, tokens, admin actions, settings changes
 
-MIT，見 [`LICENSE`](LICENSE)。
+## License
+
+MIT, see [`LICENSE`](LICENSE).
