@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Instant;
 
+use crate::services::secret;
+
 /// Buckets idle for longer than this are pruned.
 const IDLE_TTL_SECS: u64 = 900;
 /// Hard cap on tracked keys, protects memory against key flooding.
@@ -24,6 +26,22 @@ struct Bucket {
 struct Inner {
     buckets: HashMap<String, Bucket>,
     checks: u64,
+}
+
+/// Drop the `count` least recently used buckets so the map stays bounded even
+/// under a key-flooding attempt.
+fn evict_oldest(buckets: &mut HashMap<String, Bucket>, count: usize) {
+    if buckets.is_empty() || count == 0 {
+        return;
+    }
+    let mut ages: Vec<(String, Instant)> = buckets
+        .iter()
+        .map(|(key, bucket)| (key.clone(), bucket.updated))
+        .collect();
+    ages.sort_by_key(|(_, updated)| *updated);
+    for (key, _) in ages.into_iter().take(count) {
+        buckets.remove(&key);
+    }
 }
 
 /// Cheap, thread safe token bucket limiter.
@@ -64,7 +82,14 @@ impl RateLimiter {
                 .retain(|_, bucket| now.duration_since(bucket.updated).as_secs() < IDLE_TTL_SECS);
         }
 
-        let bucket = inner.buckets.entry(key.to_string()).or_insert(Bucket {
+        // Keys are hashed: they embed attacker controlled text (an email
+        // address or a path segment) and would otherwise be retained verbatim
+        // for the whole idle window.
+        let key = secret::sha256_hex(key);
+        if !inner.buckets.contains_key(&key) && inner.buckets.len() >= MAX_BUCKETS {
+            evict_oldest(&mut inner.buckets, MAX_BUCKETS / 10);
+        }
+        let bucket = inner.buckets.entry(key).or_insert(Bucket {
             tokens: capacity,
             updated: now,
         });
@@ -94,6 +119,13 @@ impl RateLimiter {
             .map(|inner| inner.buckets.len())
             .unwrap_or(0)
     }
+
+    /// Forget every bucket (used by tests).
+    pub fn reset(&self) {
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.buckets.clear();
+        }
+    }
 }
 
 /// Named limits used across the application.
@@ -101,6 +133,11 @@ pub mod limits {
     /// Login: 10 attempts per 5 minutes per (email, IP).
     pub const LOGIN_CAPACITY: f64 = 10.0;
     pub const LOGIN_REFILL_PER_SEC: f64 = 10.0 / 300.0;
+
+    /// Login: 40 attempts per 5 minutes per IP, across every account. Caps the
+    /// amount of Argon2 work a single host can request.
+    pub const LOGIN_IP_CAPACITY: f64 = 40.0;
+    pub const LOGIN_IP_REFILL_PER_SEC: f64 = 40.0 / 300.0;
 
     /// Registration: 5 attempts per hour per IP.
     pub const REGISTER_CAPACITY: f64 = 5.0;
@@ -148,6 +185,32 @@ mod tests {
         assert!(limiter.check("k", 1.0, 1000.0).is_err());
         std::thread::sleep(std::time::Duration::from_millis(5));
         assert!(limiter.check("k", 1.0, 1000.0).is_ok());
+    }
+
+    #[test]
+    fn keys_are_hashed_and_the_map_stays_bounded() {
+        let limiter = RateLimiter::new();
+        let huge = "x".repeat(10_000);
+        assert!(limiter.check(&huge, 1.0, 0.0).is_ok());
+        assert!(
+            limiter.check(&huge, 1.0, 0.0).is_err(),
+            "the digest keeps the bucket identity"
+        );
+        assert_eq!(
+            limiter.tracked_keys(),
+            1,
+            "a huge key is stored as a digest"
+        );
+
+        for index in 0..(MAX_BUCKETS + 100) {
+            let _ = limiter.check(&format!("flood-{index}"), 1.0, 1.0);
+        }
+        assert!(
+            limiter.tracked_keys() <= MAX_BUCKETS,
+            "the map stays bounded"
+        );
+        limiter.reset();
+        assert_eq!(limiter.tracked_keys(), 0);
     }
 
     #[test]

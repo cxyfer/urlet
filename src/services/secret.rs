@@ -30,16 +30,17 @@ pub fn load_or_create(data_dir: &Path, explicit: Option<&str>) -> Result<Vec<u8>
     if let Ok(existing) = std::fs::read_to_string(&path) {
         let trimmed = existing.trim();
         if trimmed.len() >= 16 {
+            // An older version may have created the file world readable.
+            tighten_permissions(&path);
             return Ok(trimmed.as_bytes().to_vec());
         }
     }
 
     let generated = generate_secret();
-    std::fs::write(&path, &generated).map_err(|source| ConfigError::Io {
+    write_private(&path, &generated).map_err(|source| ConfigError::Io {
         path: path.clone(),
         source,
     })?;
-    restrict_permissions(&path);
     tracing::info!(path = %path.display(), "generated a new server secret");
     Ok(generated.as_bytes().to_vec())
 }
@@ -50,14 +51,44 @@ fn generate_secret() -> String {
     B64.encode(bytes)
 }
 
+/// Create the file with mode 0600 from the start: a chmod afterwards would
+/// leave a window where the HMAC key is world readable.
 #[cfg(unix)]
-fn restrict_permissions(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+fn write_private(path: &Path, contents: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    file.write_all(contents.as_bytes())?;
+    file.sync_all()
 }
 
 #[cfg(not(unix))]
-fn restrict_permissions(_path: &Path) {}
+fn write_private(path: &Path, contents: &str) -> std::io::Result<()> {
+    std::fs::write(path, contents)
+}
+
+/// Reduce the permissions of an existing secret file to 0600 when needed.
+#[cfg(unix)]
+fn tighten_permissions(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return;
+    };
+    if metadata.permissions().mode() & 0o077 != 0 {
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        tracing::warn!(path = %path.display(), "tightened permissions on the existing server secret");
+    }
+}
+
+#[cfg(not(unix))]
+fn tighten_permissions(_path: &Path) {}
 
 /// Hex encoded SHA-256 of `input`. Used for session/API token storage.
 pub fn sha256_hex(input: &str) -> String {
@@ -115,6 +146,22 @@ fn to_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn generated_secret_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("uwurls-secret-mode-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        load_or_create(&dir, None).expect("generated");
+        let mode = std::fs::metadata(dir.join(SECRET_FILE))
+            .expect("metadata")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600, "secret must be 0600, got {mode:o}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn creates_and_reloads_secret() {

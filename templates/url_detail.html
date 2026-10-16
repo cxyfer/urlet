@@ -37,6 +37,18 @@
     </div>
 </div>
 
+{% if url.state == "expired" || url.state == "limit_reached" %}
+<div class="alert alert-warn">
+    This link no longer redirects. Extend it below to bring it back.
+    <form method="post" action="/app/urls/{{ url.id }}/extend" class="row mt">
+        <button class="btn btn-sm" type="submit" name="days" value="30">+30 days</button>
+        <button class="btn btn-sm" type="submit" name="days" value="365">+1 year</button>
+        <button class="btn btn-sm" type="submit" name="clicks" value="100">+100 clicks</button>
+        <button class="btn btn-sm" type="submit" name="clicks" value="1000">+1000 clicks</button>
+    </form>
+</div>
+{% endif %}
+
 <div class="card mt">
     <div class="row between">
         <h2>Clicks per day</h2>

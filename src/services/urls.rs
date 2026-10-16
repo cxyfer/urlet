@@ -18,8 +18,8 @@ pub const MAX_TAG_LEN: usize = 32;
 pub const MAX_TITLE_LEN: usize = 200;
 /// Maximum notes length.
 pub const MAX_NOTES_LEN: usize = 1000;
-/// How often slug allocation retries on a collision.
-const SLUG_RETRIES: usize = 6;
+/// How often slug allocation retries on a collision (spec FR-URL-2).
+const SLUG_RETRIES: usize = 5;
 
 /// Everything the link service needs from the request context.
 pub struct UrlContext<'a> {
@@ -181,24 +181,42 @@ pub fn normalize_tags(tags: &[String]) -> Result<Vec<String>> {
     Ok(result)
 }
 
+/// Validate an optional link password without blocking the runtime.
+pub async fn prepare_password_async(raw: Option<&str>) -> Result<Option<String>> {
+    match raw.map(str::trim) {
+        None => Ok(None),
+        Some("") => Ok(None),
+        Some(plain) => {
+            validate_link_password(plain)?;
+            Ok(Some(password::hash_async(plain.to_string()).await?))
+        }
+    }
+}
+
+/// Link password policy (spec FR-PWD-1).
+pub fn validate_link_password(plain: &str) -> Result<()> {
+    if plain.chars().count() < 4 {
+        return Err(AppError::validation(
+            "password",
+            "the link password must be at least 4 characters",
+        ));
+    }
+    if plain.chars().count() > 128 {
+        return Err(AppError::validation(
+            "password",
+            "the link password must be at most 128 characters",
+        ));
+    }
+    Ok(())
+}
+
 /// Validate an optional link password. `Ok(None)` means "no password".
 pub fn prepare_password(raw: Option<&str>) -> Result<Option<String>> {
     match raw.map(str::trim) {
         None => Ok(None),
         Some("") => Ok(None),
         Some(plain) => {
-            if plain.chars().count() < 4 {
-                return Err(AppError::validation(
-                    "password",
-                    "the link password must be at least 4 characters",
-                ));
-            }
-            if plain.chars().count() > 128 {
-                return Err(AppError::validation(
-                    "password",
-                    "the link password must be at most 128 characters",
-                ));
-            }
+            validate_link_password(plain)?;
             Ok(Some(password::hash(plain)?))
         }
     }
@@ -263,7 +281,7 @@ impl UrlContext<'_> {
             Some(raw) => validate_notes(raw)?,
             None => None,
         };
-        let password_hash = prepare_password(input.password.as_deref())?;
+        let password_hash = prepare_password_async(input.password.as_deref()).await?;
         let domain_id = crate::db::domains::default_id(self.pool)
             .await
             .map_err(AppError::from)?;
@@ -341,7 +359,7 @@ impl UrlContext<'_> {
             });
         }
         if let Some(raw) = &input.password {
-            changes.password_hash = Some(prepare_password(raw.as_deref())?);
+            changes.password_hash = Some(prepare_password_async(raw.as_deref()).await?);
         }
         if let Some(raw) = &input.expires_at {
             changes.expires_at = Some(match raw.as_deref() {

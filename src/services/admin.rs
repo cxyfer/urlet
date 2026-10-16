@@ -9,7 +9,6 @@ use sqlx::SqlitePool;
 
 use crate::config::Config;
 use crate::db::invites::Invite;
-use crate::db::tokens::ApiToken;
 use crate::db::urls::{self, UrlUpdate};
 use crate::db::users::{self, User, UserFilter};
 use crate::db::{audit, clicks, invites, sessions, settings as settings_db, tokens};
@@ -55,6 +54,8 @@ pub struct AdminContext<'a> {
     pub settings: &'a Settings,
     pub actor: &'a User,
     pub ip_hash: Option<&'a str>,
+    /// Process start time, used for the uptime figure.
+    pub started_at: time::OffsetDateTime,
 }
 
 impl AdminContext<'_> {
@@ -166,11 +167,15 @@ impl AdminContext<'_> {
             .await
             .map_err(AppError::from)?
             .ok_or_else(AppError::not_found)?;
-        let hash = password::hash(new_password)?;
+        let hash = password::hash_async(new_password.to_string()).await?;
         users::set_password(self.pool, user.id, &hash)
             .await
             .map_err(AppError::from)?;
         sessions::revoke_for_user(self.pool, user.id, &time::now_iso(), None)
+            .await
+            .map_err(AppError::from)?;
+        // A reset must also invalidate every API token of that account.
+        crate::db::tokens::revoke_all_for_user(self.pool, user.id, &time::now_iso())
             .await
             .map_err(AppError::from)?;
 
@@ -405,18 +410,15 @@ impl AdminContext<'_> {
             .into_iter()
             .filter(|invite| invite.status == "active" && !invite.is_exhausted())
             .count() as i64;
-        let active_tokens = tokens::list_for_user(self.pool, self.actor.id)
+        let active_tokens = tokens::count_active(self.pool, &time::now_iso())
             .await
-            .map_err(AppError::from)?
-            .into_iter()
-            .filter(|token: &ApiToken| token.is_valid_at(&time::now_iso()))
-            .count() as i64;
+            .map_err(AppError::from)?;
 
         let database_bytes = self.config.sqlite_path().map(|path| database_size(&path));
 
         Ok(SystemStats {
             version: crate::VERSION,
-            uptime_seconds: 0,
+            uptime_seconds: (time::now() - self.started_at).whole_seconds().max(0),
             users: users_total,
             admins,
             links,
@@ -494,12 +496,7 @@ pub async fn settings_snapshot(settings: &Settings) -> std::collections::HashMap
 
 /// Checkpoint the write-ahead log so the database file stays compact.
 pub async fn checkpoint_wal(pool: &SqlitePool) -> Result<()> {
-    // TRUNCATE waits for readers, then resets the WAL file to zero bytes.
-    sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
-        .execute(pool)
-        .await
-        .map_err(AppError::from)?;
-    Ok(())
+    crate::db::checkpoint_wal(pool).await
 }
 
 /// Delete stale sessions and, when configured, old analytics data.

@@ -229,7 +229,9 @@ async fn create_form_reports_errors_with_a_flash_code() {
     let app = TestApp::spawn().await;
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
 
-    let invalid = app
+    // Validation failures map to specific flash codes so the banner can explain
+    // the rule that was broken.
+    let invalid_target = app
         .send(post_form_as(
             "/app/urls",
             "target_url=javascript%3Aalert%281%29",
@@ -237,8 +239,44 @@ async fn create_form_reports_errors_with_a_flash_code() {
         ))
         .await;
     assert_eq!(
-        invalid.header("location").as_deref(),
-        Some("/app?err=invalid")
+        invalid_target.header("location").as_deref(),
+        Some("/app?err=target")
+    );
+
+    let reserved = app
+        .send(post_form_as(
+            "/app/urls",
+            "target_url=https%3A%2F%2Fa.example&slug=api",
+            &cookie,
+        ))
+        .await;
+    assert_eq!(
+        reserved.header("location").as_deref(),
+        Some("/app?err=slug")
+    );
+
+    let past_expiry = app
+        .send(post_form_as(
+            "/app/urls",
+            "target_url=https%3A%2F%2Fa.example&expires_at=2000-01-01",
+            &cookie,
+        ))
+        .await;
+    assert_eq!(
+        past_expiry.header("location").as_deref(),
+        Some("/app?err=expiry")
+    );
+
+    let short_password = app
+        .send(post_form_as(
+            "/app/urls",
+            "target_url=https%3A%2F%2Fa.example&password=ab",
+            &cookie,
+        ))
+        .await;
+    assert_eq!(
+        short_password.header("location").as_deref(),
+        Some("/app?err=password_rules")
     );
 
     let first = app
@@ -377,9 +415,9 @@ async fn revoking_the_current_session_signs_out() {
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
 
     let sessions = app.get_as("/api/v1/auth/sessions", &cookie).await.json();
-    let current = sessions
+    let current = sessions["items"]
         .as_array()
-        .expect("sessions")
+        .expect("items")
         .iter()
         .find(|session| session["current"] == true)
         .expect("current session")["id"]
@@ -401,6 +439,65 @@ async fn revoking_the_current_session_signs_out() {
         app.get_as("/app", &cookie).await.status,
         StatusCode::SEE_OTHER
     );
+}
+
+#[tokio::test]
+async fn tags_are_rendered_in_list_views() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+
+    for (slug, tags) in [("first", "campaign,docs"), ("second", "campaign")] {
+        let response = app
+            .send(post_form_as(
+                "/app/urls",
+                &format!(
+                    "target_url=https%3A%2F%2F{slug}.example&slug={slug}&tags={}",
+                    tags.replace(',', "%2C")
+                ),
+                &cookie,
+            ))
+            .await;
+        assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    }
+
+    // The dashboard and the JSON list both resolve tags for many links at once.
+    let dashboard = app.get_as("/app", &cookie).await;
+    assert!(
+        dashboard.body.contains("campaign"),
+        "dashboard shows the tag"
+    );
+    assert!(dashboard.body.contains("docs"), "dashboard shows every tag");
+
+    let list = app.get_as("/api/v1/urls", &cookie).await.json();
+    let first = list["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .find(|item| item["slug"] == "first")
+        .expect("first link");
+    assert_eq!(first["tags"], serde_json::json!(["campaign", "docs"]));
+    let second = list["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .find(|item| item["slug"] == "second")
+        .expect("second link");
+    assert_eq!(second["tags"], serde_json::json!(["campaign"]));
+
+    // Tag filtering still works and reports usage counts. (The "top links"
+    // card is intentionally not filtered, so assert through the JSON API.)
+    let filtered = app.get_as("/api/v1/urls?tag=docs", &cookie).await.json();
+    assert_eq!(filtered["total"], 1);
+    assert_eq!(filtered["items"][0]["slug"], "first");
+
+    let tags = app.get_as("/api/v1/tags", &cookie).await.json();
+    let campaign = tags["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .find(|tag| tag["name"] == "campaign")
+        .expect("campaign tag");
+    assert_eq!(campaign["url_count"], 2);
 }
 
 #[tokio::test]

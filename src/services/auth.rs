@@ -11,8 +11,12 @@ use crate::services::audit::{action, target, Audit};
 use crate::services::settings::{RegistrationMode, Settings};
 use crate::services::{password, secret, time};
 
-/// Refresh `last_seen_at` at most once per minute.
+/// Refresh `last_seen_at` (and slide the expiry) at most once per minute.
 const SESSION_TOUCH_INTERVAL_SECS: i64 = 60;
+/// Window used to count failed sign-in attempts per identifier.
+const LOCKOUT_WINDOW_MINUTES: i64 = 15;
+/// Failed attempts in that window before the account is temporarily locked.
+const LOCKOUT_THRESHOLD: i64 = 30;
 
 /// Everything an authentication flow needs from the request context.
 pub struct AuthContext<'a> {
@@ -182,7 +186,7 @@ impl AuthContext<'_> {
             }
         };
 
-        let password_hash = password::hash(password)?;
+        let password_hash = password::hash_async(password.to_string()).await?;
         let role = if is_first_user { "admin" } else { "user" };
         let user_id = users::create(
             self.pool,
@@ -247,6 +251,11 @@ impl AuthContext<'_> {
 
     /// Verify credentials and open a session.
     pub async fn login(&self, email: &str, password: &str) -> Result<(User, SessionToken)> {
+        // Bound the work before hashing anything: the caller controls this
+        // string and it feeds both the limiter key and the audit hash.
+        if email.len() > 254 {
+            return Err(AppError::unauthorized("invalid email or password"));
+        }
         let email_normalized = normalize_email(email);
         let identifier_hash = self.identifier_hash(&email_normalized);
 
@@ -254,13 +263,31 @@ impl AuthContext<'_> {
             .await
             .map_err(AppError::from)?;
 
+        // A distributed guessing attempt would otherwise walk through the whole
+        // account space: per-IP limits do not help against a botnet, so failed
+        // attempts for one identifier are also counted in the database.
+        let failures = login_attempts::count_failures_since(
+            self.pool,
+            &identifier_hash,
+            &time::iso_minutes_ago(LOCKOUT_WINDOW_MINUTES),
+        )
+        .await
+        .unwrap_or(0);
+        if failures >= LOCKOUT_THRESHOLD {
+            tracing::warn!(
+                failures,
+                "account temporarily locked after repeated failures"
+            );
+            return Err(AppError::rate_limited((LOCKOUT_WINDOW_MINUTES * 60) as u64));
+        }
+
         let Some(user) = user else {
-            password::dummy_verify(password);
+            password::dummy_verify_async(password.to_string()).await;
             self.record_attempt(&identifier_hash, false).await;
             return Err(AppError::unauthorized("invalid email or password"));
         };
 
-        if !password::verify(password, &user.password_hash) {
+        if !password::verify_async(password.to_string(), user.password_hash.clone()).await {
             self.record_attempt(&identifier_hash, false).await;
             Audit::new(action::AUTH_LOGIN_FAILED)
                 .actor(user.id, &user.role)
@@ -353,29 +380,38 @@ impl AuthContext<'_> {
         new_password: &str,
         keep_session: Option<i64>,
     ) -> Result<()> {
-        if !password::verify(current_password, &user.password_hash) {
+        if !password::verify_async(current_password.to_string(), user.password_hash.clone()).await {
             return Err(AppError::unauthorized("current password is incorrect"));
         }
         password::validate(new_password)?;
-        if password::verify(new_password, &user.password_hash) {
+        if password::verify_async(new_password.to_string(), user.password_hash.clone()).await {
             return Err(AppError::validation(
                 "new_password",
                 "the new password must differ from the current one",
             ));
         }
 
-        let hash = password::hash(new_password)?;
+        let hash = password::hash_async(new_password.to_string()).await?;
         users::set_password(self.pool, user.id, &hash)
             .await
             .map_err(AppError::from)?;
         let revoked = sessions::revoke_for_user(self.pool, user.id, &time::now_iso(), keep_session)
             .await
             .map_err(AppError::from)?;
+        // API tokens are credentials too: changing the password must invalidate
+        // them, otherwise an exfiltrated token keeps working.
+        let revoked_tokens =
+            crate::db::tokens::revoke_all_for_user(self.pool, user.id, &time::now_iso())
+                .await
+                .map_err(AppError::from)?;
 
         Audit::new(action::AUTH_PASSWORD_CHANGED)
             .actor(user.id, &user.role)
             .target(target::USER, user.id)
-            .metadata(serde_json::json!({ "revoked_sessions": revoked }))
+            .metadata(serde_json::json!({
+                "revoked_sessions": revoked,
+                "revoked_tokens": revoked_tokens,
+            }))
             .ip_hash(self.ip_hash.map(str::to_string))
             .record(self.pool)
             .await;
@@ -398,7 +434,13 @@ impl AuthContext<'_> {
 }
 
 /// Resolve a session token to a session and its user.
-pub async fn resolve_session(pool: &SqlitePool, token: &str) -> Result<Option<(Session, User)>> {
+///
+/// `session_ttl_hours` is used to slide the expiry forward on activity.
+pub async fn resolve_session(
+    pool: &SqlitePool,
+    token: &str,
+    session_ttl_hours: i64,
+) -> Result<Option<(Session, User)>> {
     let token_hash = secret::sha256_hex(token);
     let Some(session) = sessions::find_by_token_hash(pool, &token_hash)
         .await
@@ -420,10 +462,12 @@ pub async fn resolve_session(pool: &SqlitePool, token: &str) -> Result<Option<(S
         return Ok(None);
     }
 
-    // Sliding `last_seen_at`, written at most once per minute.
+    // Sliding session: refresh `last_seen_at` and push `expires_at` forward,
+    // written at most once per minute.
     let stale_before = time::iso_seconds_ago(SESSION_TOUCH_INTERVAL_SECS);
     if session.last_seen_at < stale_before {
-        let _ = sessions::touch(pool, session.id, &stale_before, &now).await;
+        let expires_at = time::iso_in_hours(session_ttl_hours);
+        let _ = sessions::touch(pool, session.id, &stale_before, &now, &expires_at).await;
     }
 
     Ok(Some((session, user)))

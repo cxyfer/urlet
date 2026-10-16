@@ -62,20 +62,26 @@ pub async fn find_by_token_hash(
         .await
 }
 
-/// Refresh `last_seen_at`, but only when it is older than `stale_before`
-/// (keeps the write path off the hot read path).
+/// Refresh `last_seen_at` *and* push `expires_at` forward, but only when the
+/// session was last seen before `stale_before` (keeps the write path off the
+/// hot read path). This is what makes the session slide.
 pub async fn touch(
     pool: &SqlitePool,
     id: i64,
     stale_before: &str,
     now: &str,
+    expires_at: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE sessions SET last_seen_at = ? WHERE id = ? AND last_seen_at < ?")
-        .bind(now)
-        .bind(id)
-        .bind(stale_before)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "UPDATE sessions SET last_seen_at = ?, expires_at = ?
+         WHERE id = ? AND last_seen_at < ?",
+    )
+    .bind(now)
+    .bind(expires_at)
+    .bind(id)
+    .bind(stale_before)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

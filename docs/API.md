@@ -85,12 +85,15 @@
 { "current_password": "...", "new_password": "..." }
 ```
 
-`204`。成功後會撤銷**其他**所有 Session（當前這個保留）。
+`204`。成功後會撤銷**其他**所有 Session（當前這個保留）**以及該帳號的所有 API Token**。
 錯誤：`401` 當前密碼錯誤、`422` 新密碼不符政策。
 
 ### `GET /api/v1/auth/sessions`
 
 `200` → `{ "items": [ { "id", "user_agent", "created_at", "last_seen_at", "expires_at", "current", "revoked" } ] }`
+
+Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expires_at` 往後推，
+並重新簽發 Cookie，因此持續使用不會過期。
 
 ### `DELETE /api/v1/auth/sessions/{id}`
 
@@ -212,6 +215,7 @@
   "unique_click_count": 3,
   "redirect_type": 302,
   "status": "active",
+  "is_expired": false,
   "state": "active",
   "is_custom_slug": true,
   "last_clicked_at": "2026-02-11T09:00:00.000Z",
@@ -246,7 +250,7 @@
 
 ### `GET /{slug}`
 
-- 有效且無密碼 → `30x` + `Location`（301/308 為 `private, max-age=300`，其餘 `private, no-store`）
+- 有效且無密碼 → `30x` + `Location`（301/308 為 `private, max-age=300`，302/307 為 `private, no-store`）
 - 需要密碼 → `200` 密碼輸入頁（**不洩漏目標網址**）
 - 已過期或達點擊上限 → `410`
 - 不存在／已刪除／已停用 → `404`
@@ -321,11 +325,15 @@
 
 | 對象 | 限制 |
 |------|------|
-| 登入 | 每 (IP, email) 5 分鐘 10 次 |
+| 登入 | 每 (IP, email) 5 分鐘 10 次，**以及**每 IP 5 分鐘 40 次（跨帳號） |
 | 註冊 | 每 IP 每小時 5 次 |
 | 解鎖短網址 | 每 (slug, IP) 5 分鐘 10 次 |
 | 建立短網址 | 每使用者每小時 120 次 |
 | 修改密碼 | 每使用者每小時 10 次 |
 
-超過限制回 `429` 並附 `Retry-After`（秒）。限制為單一程序記憶體計數，
-重啟即重置。
+超過限制回 `429` 並附 `Retry-After`（秒）。記憶體計數器重啟即重置，
+但**帳號鎖定**會持久化：同一個 email 於 15 分鐘內累積 30 次失敗後，
+即使密碼正確也會回 `429`（`Retry-After: 900`），直到視窗滑過為止。
+
+登入的 IP 來源：`UWURLS_TRUST_PROXY=true` 時優先採用 `X-Real-IP`，
+其次取 `X-Forwarded-For` 最右側的位址。

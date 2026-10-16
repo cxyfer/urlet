@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::db::sessions::Session;
 use crate::db::tags::TagWithCount;
-use crate::db::urls::Url;
+use crate::db::urls::{Url, UrlState};
 use crate::db::users::User;
 use crate::services::time;
 
@@ -157,6 +157,9 @@ pub struct UrlDto {
     pub unique_click_count: i64,
     pub redirect_type: i64,
     pub status: String,
+    /// `true` when the link no longer redirects because it expired or reached
+    /// its click limit.
+    pub is_expired: bool,
     /// `active`, `expired`, `limit_reached`, `disabled` or `deleted`.
     pub state: String,
     pub is_custom_slug: bool,
@@ -184,6 +187,7 @@ impl UrlDto {
             unique_click_count: url.unique_click_count,
             redirect_type: url.redirect_type,
             status: url.status.clone(),
+            is_expired: matches!(state, UrlState::Expired | UrlState::LimitReached),
             state: state.as_str().to_string(),
             is_custom_slug: url.is_custom(),
             last_clicked_at: url.last_clicked_at.clone(),
@@ -282,6 +286,8 @@ pub struct OverviewDto {
     pub total_clicks: i64,
     pub unique_clicks: i64,
     pub bot_clicks: i64,
+    /// Percentage of clicks classified as automated traffic (0-100).
+    pub bot_share: i64,
     pub clicks_7d: i64,
     pub clicks_30d: i64,
     pub daily: Vec<DailyPointDto>,

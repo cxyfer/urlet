@@ -71,7 +71,7 @@ UWURLS_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-
 | `UWURLS_BIND` | `0.0.0.0:8080` | 監聽位址 |
 | `UWURLS_DATABASE_URL` | `sqlite:///data/uwurls.db?mode=rwc` | SQLite 連線字串 |
 | `UWURLS_DATA_DIR` | 資料庫所在目錄 | 自動產生密鑰的存放位置 |
-| `UWURLS_SECRET` | 自動產生 | HMAC 密鑰（≥ 16 字元）；**更換會讓所有 Session 與解鎖 Cookie 失效** |
+| `UWURLS_SECRET` | 自動產生 | HMAC 密鑰（至少 16 字元，建議 32+；自動產生的為 44 字元 base64）；**更換會讓所有 Session 與解鎖 Cookie 失效** |
 | `UWURLS_ADMIN_EMAIL` / `UWURLS_ADMIN_PASSWORD` | — | 啟動時建立或升級管理員 |
 | `UWURLS_REGISTRATION` | 讀取設定表 | 覆寫註冊模式：`open` / `invite` / `closed` |
 | `UWURLS_SECURE_COOKIES` | 依 `BASE_URL` 判斷 | 強制 Cookie `Secure` |
@@ -158,8 +158,10 @@ docker compose up -d --build      # 啟動時自動套用遷移
 ## 7. 反向代理注意事項
 
 - 一定要設定 `UWURLS_BASE_URL` 為使用者實際看到的網址，否則短網址會指向錯誤的網域。
-- 只有在代理**保證覆寫** `X-Forwarded-For` 時才開啟 `UWURLS_TRUST_PROXY`，
-  否則客戶端可以偽造 IP 繞過速率限制。
+- 只有在代理**保證覆寫** `X-Forwarded-For` / `X-Real-IP` 時才開啟 `UWURLS_TRUST_PROXY`，
+  否則客戶端可以偽造 IP 繞過速率限制。程式優先採用 `X-Real-IP`（代理自行設定），
+  其次取 `X-Forwarded-For` 最右側的位址，因此附加式代理也安全；
+  隨附的 `deploy/Caddyfile` 已設定 `header_up X-Real-IP {remote_host}`。
 - 需要傳遞 `Host`、`X-Forwarded-For`、`X-Forwarded-Proto`；Caddy 會自動處理。
 
 ## 8. 監控
@@ -179,6 +181,8 @@ docker compose up -d --build      # 啟動時自動套用遷移
 | 短網址指向 `http://localhost:8080` | 沒設定 `UWURLS_BASE_URL` |
 | 容器啟動後 `/health` 回 503 | volume 權限問題：`/data` 必須可寫（容器以 uid 10001 執行） |
 | 速率限制誤擋（NAT 後多個使用者） | 拉長限制或改用 API Token；限制是每 IP 計算 |
+| 登入回 429 但密碼正確 | 帳號被暫時鎖定（15 分鐘內 30 次失敗）。等待視窗滑過，或 `sqlite3 /data/uwurls.db "DELETE FROM login_attempts"` 立即解除 |
+| 忘記管理員密碼後想用 Token 存取 | 重設密碼會撤銷該帳號所有 API Token（安全性設計），請重新建立 |
 | 忘記管理員密碼 | 設定 `UWURLS_ADMIN_EMAIL` 為該帳號並重啟；或 `sqlite3` 直接更新，或建立新管理員後停用舊帳號 |
 | 短網址已過期想復原 | 到 `/app/urls/{id}` 清除或延長到期時間；資料未被刪除 |
 | 刪除短網址後想重用同一個 slug | 刻意不允許（避免舊連結被劫持）；請改用新 slug |
@@ -187,7 +191,7 @@ docker compose up -d --build      # 啟動時自動套用遷移
 
 - [ ] `UWURLS_BASE_URL` 使用 `https://`
 - [ ] `UWURLS_ADMIN_PASSWORD` 為強密碼，且登入後於 `/app/account` 更換
-- [ ] 設定 `UWURLS_SECRET`（或確保 `secret.key` 已備份）並妥善保管
+- [ ] 設定 `UWURLS_SECRET`（至少 32 個隨機字元）或確保自動產生的 `secret.key`（0600）已備份
 - [ ] 對外只暴露 80/443（由 Caddy 或既有代理終結 TLS）
 - [ ] 確認 `UWURLS_TRUST_PROXY` 的設定與代理行為一致
 - [ ] 註冊模式設為 `invite` 或 `closed`（除非真的要開放註冊）

@@ -86,6 +86,10 @@ pub async fn unlock_link(
     Flexible(payload): Flexible<UnlockPayload>,
 ) -> Result<Response> {
     let wants_json = client.wants_json();
+    // Reject impossible slugs before they reach the limiter or the database.
+    if slug.len() > crate::services::slug::MAX_LEN {
+        return Ok(not_found_page(&state));
+    }
 
     state
         .limiter
@@ -127,7 +131,7 @@ pub async fn unlock_link(
         return Ok(unlocked_response(&state, &url, wants_json));
     };
 
-    if !password::verify(&payload.password, password_hash) {
+    if !password::verify_async(payload.password.clone(), password_hash.to_string()).await {
         tracing::info!(slug = %url.slug, "failed unlock attempt");
         return if wants_json {
             Ok(

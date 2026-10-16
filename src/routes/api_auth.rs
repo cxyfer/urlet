@@ -51,6 +51,12 @@ pub struct UserEnvelope {
     pub user: UserDto,
 }
 
+/// Envelope for the session list, matching the other list endpoints.
+#[derive(Debug, Serialize)]
+pub struct SessionList {
+    pub items: Vec<SessionDto>,
+}
+
 /// `POST /api/v1/auth/register`
 pub async fn register(
     State(state): State<AppState>,
@@ -93,6 +99,15 @@ pub async fn login(
     client: ClientInfo,
     Json(payload): Json<LoginPayload>,
 ) -> Result<Response, ApiError> {
+    // An IP-wide bucket first: it caps how much Argon2 work one host can ask
+    // for, even when it rotates the email address on every attempt.
+    enforce(
+        &state,
+        &format!("login-ip:{}", client.limiter_key()),
+        limits::LOGIN_IP_CAPACITY,
+        limits::LOGIN_IP_REFILL_PER_SEC,
+    )?;
+
     let email_normalized = auth::normalize_email(&payload.email);
     enforce(
         &state,
@@ -204,13 +219,14 @@ pub async fn list_sessions(
     CurrentUser {
         user, session_id, ..
     }: CurrentUser,
-) -> Result<Json<Vec<SessionDto>>, ApiError> {
+) -> Result<Json<SessionList>, ApiError> {
     let rows = sessions::list_for_user(&state.db, user.id).await?;
-    Ok(Json(
-        rows.iter()
+    Ok(Json(SessionList {
+        items: rows
+            .iter()
             .map(|row| SessionDto::new(row, session_id))
             .collect(),
-    ))
+    }))
 }
 
 /// `DELETE /api/v1/auth/sessions/{id}`

@@ -74,6 +74,14 @@ pub async fn run(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
+/// Number of migrations recorded as applied.
+pub async fn applied_count(pool: &SqlitePool) -> Result<i64> {
+    sqlx::query_scalar("SELECT COUNT(*) FROM schema_migrations")
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::from)
+}
+
 fn checksum(sql: &str) -> String {
     let digest = Sha256::digest(sql.as_bytes());
     digest.iter().map(|byte| format!("{byte:02x}")).collect()

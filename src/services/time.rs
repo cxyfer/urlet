@@ -4,9 +4,11 @@
 //! *fixed* width (`YYYY-MM-DDTHH:MM:SS.sssZ`). Fixed width matters: it makes
 //! lexicographic comparison in SQL identical to chronological comparison.
 
+pub use time::OffsetDateTime;
+
 use time::format_description::FormatItem;
 use time::macros::format_description;
-use time::{Duration, OffsetDateTime, PrimitiveDateTime, UtcOffset};
+use time::{Duration, PrimitiveDateTime, UtcOffset};
 
 /// The canonical on-disk timestamp format. The trailing `Z` is a literal, so
 /// parsing goes through [`PrimitiveDateTime`] and assumes UTC.
@@ -109,6 +111,11 @@ pub fn iso_in_minutes(minutes: i64) -> String {
     to_iso(now() + Duration::minutes(minutes))
 }
 
+/// `base + days`.
+pub fn plus_days(base: OffsetDateTime, days: i64) -> OffsetDateTime {
+    base + Duration::days(days)
+}
+
 /// `now - days`, formatted for storage.
 pub fn iso_days_ago(days: i64) -> String {
     to_iso(now() - Duration::days(days))
@@ -117,6 +124,11 @@ pub fn iso_days_ago(days: i64) -> String {
 /// `now - seconds`, formatted for storage.
 pub fn iso_seconds_ago(seconds: i64) -> String {
     to_iso(now() - Duration::seconds(seconds))
+}
+
+/// `now - minutes`, formatted for storage.
+pub fn iso_minutes_ago(minutes: i64) -> String {
+    to_iso(now() - Duration::minutes(minutes))
 }
 
 /// First instant of the UTC day `days` ago (inclusive lower bound for charts).

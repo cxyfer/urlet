@@ -101,7 +101,7 @@ pub async fn authenticate(parts: &Parts, state: &AppState) -> Option<CurrentUser
     }
 
     let token = cookies::get(&parts.headers, cookies::SESSION_COOKIE)?;
-    match auth_service::resolve_session(&state.db, &token).await {
+    match auth_service::resolve_session(&state.db, &token, state.config.session_ttl_hours).await {
         Ok(Some((session, user))) => Some(CurrentUser {
             user,
             session_id: Some(session.id),

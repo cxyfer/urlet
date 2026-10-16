@@ -122,7 +122,7 @@ uwurls/
 ## 開發
 
 ```bash
-cargo test                 # 單元 + 整合測試（177 個）
+cargo test                 # 單元 + 整合測試（187 個）
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收（81 項）
@@ -147,7 +147,10 @@ bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
   `X-Frame-Options`、`Referrer-Policy`、HTTPS 時加 HSTS
 - 開放轉址防護：目標僅允許 `http`/`https`，`javascript:`/`data:`/`file:` 一律拒絕
 - 隱私：不存原始 IP，只存 HMAC 後的 `ip_hash` 與每日輪替的 `visitor_hash`
-- 速率限制：登入、註冊、解鎖、建立短網址、改密碼
+- 速率限制：登入（每 IP 與每帳號兩層）、註冊、解鎖、建立短網址、改密碼
+- 帳號鎖定：同一帳號 15 分鐘內 30 次失敗即暫時拒絕登入（持久化，重啟不重置）
+- 反向代理：優先信任代理設定的 `X-Real-IP`，其次取 `X-Forwarded-For` 最右側
+- 密碼雜湊在阻塞執行緒池中進行，並限制同時最多 4 個 Argon2 計算
 - 稽核日誌：登入、註冊、短網址異動、Token、管理操作、設定變更
 
 ## 授權

@@ -295,6 +295,7 @@ pub fn router() -> Router<AppState> {
         .route("/urls", post(urls::create))
         .route("/urls/{id}", get(urls::detail).post(urls::update))
         .route("/urls/{id}/delete", post(urls::delete))
+        .route("/urls/{id}/extend", post(urls::extend))
         .route("/account", get(account::page).post(account::update_profile))
         .route("/account/password", post(account::change_password))
         .route(

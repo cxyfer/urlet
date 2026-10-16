@@ -476,9 +476,7 @@ pub async fn stats(
     CurrentUser { user, .. }: CurrentUser,
 ) -> Result<Json<SystemStats>, ApiError> {
     require_admin(&user)?;
-    let mut stats = context(&state, &client, &user).system_stats().await?;
-    stats.uptime_seconds = state.uptime_seconds();
-    Ok(Json(stats))
+    Ok(Json(context(&state, &client, &user).system_stats().await?))
 }
 
 fn context<'a>(state: &'a AppState, client: &'a ClientInfo, user: &'a User) -> AdminContext<'a> {
@@ -488,6 +486,7 @@ fn context<'a>(state: &'a AppState, client: &'a ClientInfo, user: &'a User) -> A
         settings: &state.settings,
         actor: user,
         ip_hash: client.ip_hash.as_deref(),
+        started_at: state.started_at,
     }
 }
 

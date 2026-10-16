@@ -102,11 +102,6 @@ pub async fn for_urls(
          WHERE ut.url_id IN ({placeholders})
          ORDER BY t.name COLLATE NOCASE ASC"
     );
-    let mut query = sqlx::query_as::<_, Row>(&sql);
-    for id in url_ids {
-        query = query.bind(id);
-    }
-
     #[derive(FromRow)]
     struct Row {
         url_id: i64,
@@ -117,7 +112,11 @@ pub async fn for_urls(
         created_at: String,
     }
 
-    let rows: Vec<Row> = query_as::<_, Row>(&sql).fetch_all(pool).await?;
+    let mut query = query_as::<_, Row>(&sql);
+    for id in url_ids {
+        query = query.bind(id);
+    }
+    let rows: Vec<Row> = query.fetch_all(pool).await?;
     let mut map: HashMap<i64, Vec<Tag>> = HashMap::new();
     for row in rows {
         map.entry(row.url_id).or_default().push(Tag {

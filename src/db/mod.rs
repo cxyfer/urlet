@@ -46,6 +46,23 @@ pub async fn connect(config: &Config) -> Result<SqlitePool> {
         .map_err(|err| AppError::internal(format!("cannot open database: {err}")))
 }
 
+/// Cheap liveness probe used by `/health`.
+pub async fn ping(pool: &SqlitePool) -> bool {
+    sqlx::query_scalar::<_, i64>("SELECT 1")
+        .fetch_one(pool)
+        .await
+        .is_ok()
+}
+
+/// Checkpoint the write-ahead log, truncating it back to zero bytes.
+pub async fn checkpoint_wal(pool: &SqlitePool) -> Result<()> {
+    sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+        .execute(pool)
+        .await
+        .map_err(|err| AppError::internal(format!("wal checkpoint failed: {err}")))?;
+    Ok(())
+}
+
 /// Connect and run migrations.
 pub async fn init(config: &Config) -> Result<SqlitePool> {
     let pool = connect(config).await?;

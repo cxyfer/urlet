@@ -82,6 +82,17 @@ pub async fn touch_last_used(pool: &SqlitePool, id: i64, now: &str) -> Result<()
     Ok(())
 }
 
+/// Number of live tokens across the whole instance.
+pub async fn count_active(pool: &SqlitePool, now: &str) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM api_tokens
+         WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)",
+    )
+    .bind(now)
+    .fetch_one(pool)
+    .await
+}
+
 /// Tokens of one user, newest first.
 pub async fn list_for_user(pool: &SqlitePool, user_id: i64) -> Result<Vec<ApiToken>, sqlx::Error> {
     sqlx::query_as::<_, ApiToken>(&format!(
@@ -90,6 +101,22 @@ pub async fn list_for_user(pool: &SqlitePool, user_id: i64) -> Result<Vec<ApiTok
     .bind(user_id)
     .fetch_all(pool)
     .await
+}
+
+/// Revoke every live token of a user (used when credentials change).
+pub async fn revoke_all_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    now: &str,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE api_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+    )
+    .bind(now)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 /// Revoke a token owned by `user_id`. Returns `true` when a row changed.

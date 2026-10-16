@@ -118,6 +118,18 @@ pub async fn login_submit(
         }));
     };
 
+    if state
+        .limiter
+        .check(
+            &format!("login-ip:{}", client.limiter_key()),
+            limits::LOGIN_IP_CAPACITY,
+            limits::LOGIN_IP_REFILL_PER_SEC,
+        )
+        .is_err()
+    {
+        return Ok(Redirect::to("/app/login?err=rate_limited").into_response());
+    }
+
     let email_normalized = auth::normalize_email(&payload.email);
     if state
         .limiter

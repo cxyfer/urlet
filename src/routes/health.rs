@@ -18,10 +18,7 @@ pub struct Health {
 }
 
 pub async fn health(State(state): State<AppState>) -> Response {
-    let database_ok = sqlx::query_scalar::<_, i64>("SELECT 1")
-        .fetch_one(&state.db)
-        .await
-        .is_ok();
+    let database_ok = crate::db::ping(&state.db).await;
     let body = Health {
         status: if database_ok { "ok" } else { "degraded" },
         version: VERSION,

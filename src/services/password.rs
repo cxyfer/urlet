@@ -47,6 +47,44 @@ pub fn validate(password: &str) -> Result<()> {
     Ok(())
 }
 
+/// Maximum number of Argon2 computations running at the same time.
+///
+/// Each one allocates ~19 MiB, so the ceiling keeps a burst of login attempts
+/// from exhausting memory; the queue is bounded by the rate limiter.
+const MAX_CONCURRENT_HASHES: usize = 4;
+
+static HASH_PERMITS: tokio::sync::Semaphore =
+    tokio::sync::Semaphore::const_new(MAX_CONCURRENT_HASHES);
+
+/// Hash a password without blocking an async worker thread.
+pub async fn hash_async(password: String) -> Result<String> {
+    let _permit = HASH_PERMITS
+        .acquire()
+        .await
+        .map_err(|_| AppError::internal("password hasher is unavailable"))?;
+    tokio::task::spawn_blocking(move || hash(&password))
+        .await
+        .map_err(|err| AppError::internal(format!("password task failed: {err}")))?
+}
+
+/// Verify a password without blocking an async worker thread.
+pub async fn verify_async(password: String, stored: String) -> bool {
+    let Ok(_permit) = HASH_PERMITS.acquire().await else {
+        return false;
+    };
+    tokio::task::spawn_blocking(move || verify(&password, &stored))
+        .await
+        .unwrap_or(false)
+}
+
+/// [`dummy_verify`] without blocking an async worker thread.
+pub async fn dummy_verify_async(password: String) {
+    let Ok(_permit) = HASH_PERMITS.acquire().await else {
+        return;
+    };
+    let _ = tokio::task::spawn_blocking(move || dummy_verify(&password)).await;
+}
+
 /// Hash a password into a PHC string.
 pub fn hash(password: &str) -> Result<String> {
     validate(password)?;
@@ -100,6 +138,16 @@ mod tests {
         assert!(!verify("whatever", "not-a-phc-string"));
         assert!(!verify("whatever", ""));
         dummy_verify("whatever");
+    }
+
+    #[tokio::test]
+    async fn async_helpers_match_the_sync_ones() {
+        let hash = hash_async("async password".to_string())
+            .await
+            .expect("hash");
+        assert!(verify_async("async password".to_string(), hash.clone()).await);
+        assert!(!verify_async("wrong".to_string(), hash.clone()).await);
+        dummy_verify_async("whatever".to_string()).await;
     }
 
     #[test]

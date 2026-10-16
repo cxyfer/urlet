@@ -264,6 +264,7 @@ pub async fn overview(
         settings: &state.settings,
         actor: &current.user,
         ip_hash: None,
+        started_at: state.started_at,
     };
     let stats = context.system_stats().await?;
 
@@ -828,6 +829,7 @@ fn context<'a>(state: &'a AppState, client: &'a ClientInfo, user: &'a User) -> A
         settings: &state.settings,
         actor: user,
         ip_hash: client.ip_hash.as_deref(),
+        started_at: state.started_at,
     }
 }
 

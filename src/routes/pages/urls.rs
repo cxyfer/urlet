@@ -104,6 +104,15 @@ pub struct CreateForm {
     pub redirect_type: Option<String>,
 }
 
+/// Quick actions offered next to an expired or capped link (spec FR-EXP-3).
+#[derive(Debug, Deserialize)]
+pub struct ExtendForm {
+    #[serde(default)]
+    pub days: Option<String>,
+    #[serde(default)]
+    pub clicks: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct UpdateForm {
     #[serde(default)]
@@ -254,7 +263,8 @@ pub async fn detail(
         .await
         .map_err(AppError::from)?;
 
-    let recent = clicks::recent_for_url(&state.db, url.id, 25, 0)
+    // Spec FR-STAT-2: the detail page shows the last 50 clicks.
+    let recent = clicks::recent_for_url(&state.db, url.id, 50, 0)
         .await
         .map_err(AppError::from)?;
     let tag_names: Vec<String> = tags::for_url(&state.db, url.id)
@@ -393,6 +403,61 @@ pub async fn delete(
             Err(err) => redirect_err("/app", error_code(&err)).into_response(),
         },
         Err(_) => redirect_err("/app", "not_found").into_response(),
+    })
+}
+
+/// `POST /app/urls/{id}/extend` — push the expiry out or raise the click limit
+/// without opening the full edit form.
+pub async fn extend(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    MaybeUser(current): MaybeUser,
+    Path(id): Path<i64>,
+    form: std::result::Result<Form<ExtendForm>, FormRejection>,
+) -> Result<Response, AppError> {
+    let Some(current) = current else {
+        return Ok(redirect_to_login(Some(&format!("/app/urls/{id}"))).into_response());
+    };
+    let target_page = format!("/app/urls/{id}");
+    let Ok(Form(payload)) = form else {
+        return Ok(redirect_err(&target_page, "invalid").into_response());
+    };
+
+    let context = UrlContext {
+        pool: &state.db,
+        settings: &state.settings,
+        actor: &current.user,
+        ip_hash: client.ip_hash.as_deref(),
+    };
+    let Ok(url) = context.find_owned(id).await else {
+        return Ok(redirect_err("/app", "not_found").into_response());
+    };
+
+    let mut update = UpdateInput::default();
+    if let Some(days) = optional_number(&payload.days).filter(|days| (1..=3650).contains(days)) {
+        // Extend from the later of "now" and the current expiry.
+        let base = url
+            .expires_at
+            .as_deref()
+            .and_then(time::parse_iso)
+            .filter(|instant| *instant > time::now())
+            .unwrap_or_else(time::now);
+        update.expires_at = Some(Some(time::to_iso(time::plus_days(base, days))));
+    }
+    if let Some(clicks) =
+        optional_number(&payload.clicks).filter(|clicks| (1..=1_000_000).contains(clicks))
+    {
+        let base = url.max_clicks.unwrap_or(0).max(url.click_count);
+        update.max_clicks = Some(Some(base + clicks));
+    }
+
+    if update.expires_at.is_none() && update.max_clicks.is_none() {
+        return Ok(redirect_err(&target_page, "invalid").into_response());
+    }
+
+    Ok(match context.update(&url, update).await {
+        Ok(_) => redirect_ok(&target_page, "updated").into_response(),
+        Err(err) => redirect_err(&target_page, error_code(&err)).into_response(),
     })
 }
 

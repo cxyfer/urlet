@@ -181,6 +181,12 @@ pub async fn build_overview(state: &AppState, user_id: i64) -> Result<OverviewDt
         .await
         .map_err(AppError::from)?;
 
+    let bot_share = if summary.total_clicks > 0 {
+        ((summary.bot_clicks as f64 / summary.total_clicks as f64) * 100.0).round() as i64
+    } else {
+        0
+    };
+
     Ok(OverviewDto {
         links,
         active_links: (links - expired).max(0),
@@ -188,6 +194,7 @@ pub async fn build_overview(state: &AppState, user_id: i64) -> Result<OverviewDt
         total_clicks: summary.total_clicks,
         unique_clicks: summary.unique_clicks,
         bot_clicks: summary.bot_clicks,
+        bot_share,
         clicks_7d,
         clicks_30d,
         daily: chart::fill_days(&series, 14),

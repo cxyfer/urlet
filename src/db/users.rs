@@ -250,6 +250,11 @@ pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> 
         .bind(id)
         .execute(&mut *tx)
         .await?;
+    sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
+        .bind(&now)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     Ok(())
 }

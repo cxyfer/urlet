@@ -23,13 +23,28 @@ pub fn client_ip_parts(
     config: &Config,
 ) -> Option<IpAddr> {
     if config.trust_proxy {
-        for name in ["x-forwarded-for", "x-real-ip"] {
-            if let Some(value) = headers.get(name).and_then(|v| v.to_str().ok()) {
-                if let Some(first) = value.split(',').next() {
-                    if let Ok(ip) = first.trim().parse::<IpAddr>() {
-                        return Some(ip);
-                    }
-                }
+        // `X-Real-IP` is written by the proxy itself (the shipped Caddyfile sets
+        // `header_up X-Real-IP {remote_host}`), so a client cannot forge it.
+        if let Some(ip) = headers
+            .get("x-real-ip")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse::<IpAddr>().ok())
+        {
+            return Some(ip);
+        }
+        // Otherwise take the *rightmost* `X-Forwarded-For` entry: that is the
+        // hop the nearest proxy observed. The leftmost entry is attacker
+        // supplied for any proxy that appends instead of replacing.
+        if let Some(value) = headers
+            .get("x-forwarded-for")
+            .and_then(|value| value.to_str().ok())
+        {
+            if let Some(ip) = value
+                .split(',')
+                .rev()
+                .find_map(|hop| hop.trim().parse::<IpAddr>().ok())
+            {
+                return Some(ip);
             }
         }
     }
@@ -116,15 +131,41 @@ mod tests {
     }
 
     #[test]
-    fn ignores_forwarded_header_unless_trusted() {
+    fn ignores_forwarded_headers_unless_trusted() {
         let request = HttpRequest::builder()
             .header("x-forwarded-for", "203.0.113.9, 10.0.0.1")
             .body(Body::empty())
             .expect("request");
         assert_eq!(client_ip(&request, &test_config(false)), None);
+        // Rightmost hop: the leftmost entry can be injected by the client.
         assert_eq!(
             client_ip(&request, &test_config(true)),
-            Some("203.0.113.9".parse().expect("ip"))
+            Some("10.0.0.1".parse().expect("ip"))
+        );
+    }
+
+    #[test]
+    fn prefers_x_real_ip_over_forwarded_for() {
+        let request = HttpRequest::builder()
+            .header("x-forwarded-for", "203.0.113.9, 10.0.0.1")
+            .header("x-real-ip", "198.51.100.7")
+            .body(Body::empty())
+            .expect("request");
+        assert_eq!(
+            client_ip(&request, &test_config(true)),
+            Some("198.51.100.7".parse().expect("ip"))
+        );
+    }
+
+    #[test]
+    fn skips_unparsable_forwarded_hops() {
+        let request = HttpRequest::builder()
+            .header("x-forwarded-for", "not-an-ip, 10.0.0.1, also-bad")
+            .body(Body::empty())
+            .expect("request");
+        assert_eq!(
+            client_ip(&request, &test_config(true)),
+            Some("10.0.0.1".parse().expect("ip"))
         );
     }
 

@@ -24,7 +24,7 @@
 | P4 | Docker Compose 部署 | 單一 `docker-compose.yml`（app + named volume），可選 Caddy TLS overlay |
 | P5 | 盡可能輕量化 | 單一二進位、SQLite（無 MySQL/Redis）、SSR 模板（無 Node 建置）、映像檔 < 40 MB |
 | P6 | Rust 實作 | Rust 2021 + Axum 0.8 + Tokio + sqlx(SQLite) |
-| P7 | 完善的資料表設計 | 13 張表、完整索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
+| P7 | 完善的資料表設計 | 14 張表、27 個索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
 | P8 | 適度添加功能 | 標籤、點擊分析、API Token、邀請碼、管理後台、稽核日誌、每日彙總 |
 
 ### 1.2 與先前半成品 (OURLS / OURLS2) 的關係
@@ -92,7 +92,7 @@
 |------|------|--------------------------|
 | HTTP | `axum` 0.8 + `tokio` | 生態成熟、型別安全、單一二進位 |
 | DB | `sqlx` 0.8 + SQLite（`bundled`） | 免外部服務、單檔備份、WAL 併發讀取足夠自託管規模 |
-| 遷移 | `sqlx::migrate!` 內嵌 SQL | 編譯期嵌入，啟動自動遷移，無需 CLI |
+| 遷移 | `include_str!` 內嵌 SQL + 自製 runner | 編譯期嵌入、啟動自動遷移、`schema_migrations` 記錄 checksum，無需 CLI |
 | 模板 | `askama` 0.12 | 編譯期檢查的 SSR，無 Node/Vite 建置流程 |
 | 靜態資產 | `include_str!` 內嵌 CSS/JS | 二進位自帶資源，映像檔不需檔案系統 |
 | 密碼 | `argon2` (Argon2id) | 業界標準，抗 GPU 暴力破解 |
@@ -121,7 +121,7 @@ MaxMind/GeoIP、React/Node 工具鏈。
 | ID | 需求 | 說明 |
 |----|------|------|
 | FR-AUTH-1 | 註冊 | Email + 密碼。註冊模式由設定 `registration_mode` 控制：`open` / `invite` / `closed` |
-| FR-AUTH-2 | 登入 | Email + 密碼，成功後建立 Session（HttpOnly Cookie，預設 TTL 7 天，滑動續期） |
+| FR-AUTH-2 | 登入 | Email + 密碼，成功後建立 Session（HttpOnly Cookie，預設 TTL 7 天）。每次活動（最多每分鐘一次寫入）同時更新 `last_seen_at` 與 `expires_at`，並重新簽發 Cookie，因此持續使用不會被登出 |
 | FR-AUTH-3 | 登出 | 撤銷當前 Session（`revoked_at`）並清除 Cookie |
 | FR-AUTH-4 | 修改密碼 | 需驗證當前密碼；成功後撤銷該使用者其他所有 Session |
 | FR-AUTH-5 | 個人資料 | 修改顯示名稱；檢視 Email、角色、建立時間 |
@@ -179,7 +179,7 @@ MaxMind/GeoIP、React/Node 工具鏈。
 | FR-REDIR-4 | 使用者代理分析 | 解析 device_type / browser / os；機器人（bot UA）標記 `is_bot = 1` |
 | FR-REDIR-5 | 隱私 | 僅存 `ip_hash = HMAC(secret, ip)` 與 `visitor_hash = HMAC(secret, ip + ua + 日期)`；**不存原始 IP** |
 | FR-REDIR-6 | 唯一訪客 | 同一 `visitor_hash` 於同一 URL 首次點擊記 `is_unique = 1` |
-| FR-REDIR-7 | 快取控制 | 回應帶 `Cache-Control: no-store`（受保護/過期/停用）；正常轉址 `private, max-age=0` |
+| FR-REDIR-7 | 快取控制 | 密碼頁／410／404 為 `no-store`；302/307 轉址為 `private, no-store`；301/308 轉址為 `private, max-age=300`（永久轉址可短期快取，其餘一律不快取以維持點擊準確） |
 | FR-REDIR-8 | 統計開關 | 設定 `analytics_enabled = false` 時不寫入點擊 |
 
 ### 4.6 統計與分析 (FR-STAT)
@@ -195,10 +195,10 @@ MaxMind/GeoIP、React/Node 工具鏈。
 
 | ID | 需求 | 說明 |
 |----|------|------|
-| FR-TOK-1 | 建立 | 產生 `uw_` + 32 bytes base62；**僅在建立時顯示一次**明文 |
+| FR-TOK-1 | 建立 | 產生 `uw_` + 32 bytes CSPRNG 熵（base64url 編碼，43 字元）；**僅在建立時顯示一次**明文 |
 | FR-TOK-2 | 儲存 | 僅存 SHA-256 雜湊 + 前 8 字元前綴（供辨識） |
 | FR-TOK-3 | 使用 | `Authorization: Bearer <token>`；與 Session 認證並存 |
-| FR-TOK-4 | 生命週期 | 可設 `expires_at`、可撤銷（`revoked_at`）、記錄 `last_used_at` |
+| FR-TOK-4 | 生命週期 | 可設 `expires_at`、可撤銷（`revoked_at`）、記錄 `last_used_at`；使用者改密碼、管理員重設密碼或刪除帳號時，該帳號所有 Token 一併撤銷 |
 | FR-TOK-5 | 範圍 | `scopes` 欄位保留（v1 提供 `urls:read`、`urls:write`、`admin`），v1 僅檢查是否為 admin |
 
 ### 4.8 管理後台 (FR-ADMIN)
@@ -248,7 +248,7 @@ MaxMind/GeoIP、React/Node 工具鏈。
 
 | ID | 需求 |
 |----|------|
-| NFR-SEC-1 | 密碼：Argon2id；Session/Token：僅存雜湊；比較使用常數時間比較 |
+| NFR-SEC-1 | 密碼：Argon2id；Session/API Token/邀請碼僅存 SHA-256 雜湊，查詢以雜湊值進行索引比對（不儲存明文，因此無可比較的長度差異）；解鎖 Cookie 的簽章以常數時間比較 |
 | NFR-SEC-2 | Cookie：`HttpOnly`、`SameSite=Lax`、`Secure`（當 `UWURLS_SECURE_COOKIES=true` 或 Base URL 為 https） |
 | NFR-SEC-3 | CSRF：狀態變更請求檢查 `Origin`/`Referer` 同源；Cookie 認證 + 非 GET 一律驗證；Bearer Token 請求豁免 |
 | NFR-SEC-4 | 安全標頭：`Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: strict-origin-when-cross-origin`、`X-Frame-Options: DENY`、https 時 `Strict-Transport-Security` |
@@ -256,10 +256,13 @@ MaxMind/GeoIP、React/Node 工具鏈。
 | NFR-SEC-6 | 保留字防護：`api`、`app`、`assets`、`health`、`static`、`favicon.ico` 等不得作為 Slug |
 | NFR-SEC-7 | 錯誤訊息不洩漏內部細節；登入失敗統一回應「Email 或密碼錯誤」 |
 | NFR-SEC-8 | 使用者列舉防護：註冊重複 Email 回 409（可接受，屬常見取捨）；登入統一錯誤訊息 |
-| NFR-SEC-9 | 速率限制：登入 10 次/5 分鐘/IP、註冊 5 次/小時/IP、解鎖 10 次/5 分鐘/(slug,IP) |
-| NFR-SEC-10 | SQL 一律參數化（sqlx bind），無字串拼接 |
+| NFR-SEC-9 | 速率限制：登入 10 次/5 分鐘/(IP,email) **加** 40 次/5 分鐘/IP、註冊 5 次/小時/IP、解鎖 10 次/5 分鐘/(slug,IP)、建立短網址 120 次/小時/使用者、改密碼 10 次/小時/使用者 |
+| NFR-SEC-9b | 帳號鎖定：同一 email 15 分鐘內累積 30 次失敗即暫時拒絕登入（回 429），由 `login_attempts` 表持久化，重啟不重置；記憶體速率限制器的 key 以 SHA-256 儲存並有 5 萬筆上限 |
+| NFR-SEC-10 | SQL 一律參數化（sqlx bind），無字串拼接（`src/db/` 之外不得出現 SQL） |
 | NFR-SEC-11 | 稽核日誌涵蓋所有敏感操作 |
-| NFR-SEC-12 | 啟動時若 `UWURLS_SECRET` 未設定，於資料目錄產生並持久化隨機密鑰（權限 0600） |
+| NFR-SEC-12 | 啟動時若 `UWURLS_SECRET` 未設定，於資料目錄產生並持久化隨機密鑰（建立時即為 0600；既有檔案若權限過寬會自動收緊） |
+| NFR-SEC-13 | 反向代理標頭：`UWURLS_TRUST_PROXY=true` 時優先採用代理自行改寫的 `X-Real-IP`，其次取 `X-Forwarded-For` **最右側**（最左側可被客戶端偽造） |
+| NFR-SEC-14 | 密碼雜湊在 `spawn_blocking` 中執行，並以信號量限制同時最多 4 個 Argon2 計算（每個約 19 MiB） |
 
 ### 5.2 效能 (NFR-PERF)
 
@@ -441,7 +444,9 @@ login_attempts (稽核用)
 | `UWURLS_BIND` | `0.0.0.0:8080` | 監聽位址 |
 | `UWURLS_BASE_URL` | `http://localhost:8080` | 對外網址（用於產生短網址、CSRF 同源檢查、Cookie Secure 判斷） |
 | `UWURLS_DATABASE_URL` | `sqlite:///data/uwurls.db?mode=rwc` | SQLite 連線字串 |
-| `UWURLS_SECRET` | 自動產生並存檔 | Session/解鎖 Cookie/IP 雜湊的 HMAC 密鑰（≥ 32 字元） |
+| `UWURLS_DATA_DIR` | 資料庫所在目錄 | 自動產生密鑰的存放位置 |
+| `UWURLS_HEALTHCHECK_URL` | 由 `UWURLS_BIND` 推導 | `uwurls healthcheck` 的目標 URL |
+| `UWURLS_SECRET` | 自動產生並存檔 | Session/解鎖 Cookie/IP 雜湊的 HMAC 密鑰（至少 16 字元；自動產生的為 44 字元 base64） |
 | `UWURLS_SECRET_FILE` | `<資料目錄>/secret.key` | 自動產生密鑰的存放位置 |
 | `UWURLS_ADMIN_EMAIL` | — | 啟動時建立/升級的管理員 Email |
 | `UWURLS_ADMIN_PASSWORD` | — | 上述管理員密碼（僅首次建立時使用） |
@@ -531,7 +536,7 @@ uwurls 不對外暴露連接埠，由 Caddy 反向代理。
 - [x] `docker build` 成功，映像 **13.2 MB**；`docker compose up -d` 後容器狀態 `healthy`
 - [x] 容器內以 uid 10001 執行、根檔案系統唯讀、`cap_drop: ALL`；資料僅寫入 `/data` volume
 - [x] 容器實測：health、管理員登入、建立含密碼/過期/點擊上限的短網址、解鎖轉址、全部管理頁面 200、重啟後 Session 與解鎖 Cookie 仍有效
-- [x] 13 張表 + 索引依 §6 建立，啟動自動遷移（`schema_migrations` 有 checksum 保護）
+- [x] 14 張表 + 索引依 §6 建立，啟動自動遷移（`schema_migrations` 有 checksum 保護）
 - [x] 所有 FR/NFR 條目皆有對應實作或測試
 - [x] README 可讓新使用者在 5 分鐘內完成部署
 - [x] 每個階段皆有對應的本地 commit（見 `docs/PLAN.md`）

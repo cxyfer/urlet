@@ -17,8 +17,8 @@
 | P7 測試與文件 | ✅ 完成 | 見 `git log`（smoke.sh、README、API.md、DEPLOYMENT.md） |
 | P8 最終驗證 | ✅ 完成 | 見 `git log`（release 建置、映像檔策略、收尾） |
 
-驗收數據：`cargo test` 178 個測試全綠、`cargo clippy --all-targets -- -D warnings` 無警告、
-`scripts/smoke.sh` 81 項端對端檢查全數通過。
+驗收數據：`cargo test` 187 個測試全綠、`cargo clippy --all-targets -- -D warnings` 與
+`cargo fmt --check` 無警告、`scripts/smoke.sh` 81 項端對端檢查全數通過。
 
 ---
 
@@ -27,7 +27,7 @@
 | 階段 | 名稱 | 產出 | 驗收 | Commit |
 |------|------|------|------|--------|
 | P0 | Spec 與計畫 | `docs/SPEC.md`、`docs/PLAN.md` | 規格涵蓋所有需求、可追溯 | `📝 docs: add spec and phased implementation plan` |
-| P1 | 專案骨架與資料層 | Cargo 專案、config、13 張表 migrations、db 模組、錯誤處理、health、Dockerfile、compose | `cargo run` 可啟動、`/health` 回 200、遷移成功 | `🎉 init: bootstrap uwurls project skeleton` |
+| P1 | 專案骨架與資料層 | Cargo 專案、config、14 張表 migrations、db 模組、錯誤處理、health、Dockerfile、compose | `cargo run` 可啟動、`/health` 回 200、遷移成功 | `🎉 init: bootstrap uwurls project skeleton` |
 | P2 | 認證與 Session | 註冊/登入/登出、Argon2、Session、CSRF、速率限制、admin bootstrap | 整合測試涵蓋註冊登入、未授權 401、CSRF 403 | `✨ feat(auth): ...` |
 | P3 | 短網址核心 | slug 服務、URL CRUD、標籤、過期/點擊上限/密碼欄位、配額 | 整合測試涵蓋 CRUD、所有權隔離、slug 驗證 | `✨ feat(urls): ...` |
 | P4 | 轉址與解鎖 | redirect handler、點擊記錄、UA 解析、解鎖 Cookie、410/404 頁 | 整合測試涵蓋轉址、密碼流程、過期 410 | `✨ feat(redirect): ...` |
@@ -45,14 +45,14 @@
 1. `Cargo.toml`：axum 0.8、tokio、sqlx(sqlite, runtime-tokio, migrate)、askama、argon2、sha2、hmac、time、serde、tracing、tower-http、rand/getrandom、base64、subtle、thiserror、anyhow、uuid？（不需要）
 2. `[profile.release]`：`lto=true`、`codegen-units=1`、`strip=true`、`opt-level="z"`、`panic="abort"`
 3. `src/config.rs`：環境變數解析 + 預設值 + 驗證（BASE_URL、DB 路徑、secret 自動產生）
-4. `migrations/0001_init.sql`：§6.3 全部 13 張表 + 索引 + seed settings
+4. `migrations/0001_init.sql`：§6.3 全部 14 張表 + 索引 + seed settings
 5. `src/db/`：pool 建立（WAL/pragmas）、`migrate()`、各表 CRUD 模組骨架
 6. `src/error.rs`：`AppError` 列舉 + `IntoResponse`（HTML 與 JSON 雙模式）
 7. `src/server.rs` + `src/main.rs`：router、`/health`、`/assets/*`、優雅關閉
 8. `Dockerfile`、`docker-compose.yml`、`docker-compose.tls.yml`、`deploy/Caddyfile`、`.env.example`、`.gitignore`
 9. `rustfmt.toml`、`clippy` 設定
 
-**驗收**：`cargo build` 成功；啟動後 `curl /health` 回 200 JSON；DB 檔自動建立且 13 張表存在。
+**驗收**：`cargo build` 成功；啟動後 `curl /health` 回 200 JSON；DB 檔自動建立且 14 張表存在。
 
 ---
 
@@ -188,6 +188,6 @@
 | 閒置記憶體 RSS | ≤ 30 MB | **6.8 MB**（500 次請求後 6.8 MB） |
 | 轉址延遲（P95） | < 10 ms | **0.74 ms**（p50 0.40 ms、p99 1.05 ms、本機 500 次 keep-alive） |
 | 冷啟動到可服務 | ≤ 1 秒 | **約 0.2 秒**（含遷移） |
-| 容器映像 | ≤ 40 MB | 見下方 Docker 驗證段落 |
-| 測試 | 全綠 | `cargo test` 178 項、`scripts/smoke.sh` 81 項 |
+| 容器映像 | ≤ 40 MB | **13.2 MB**（Docker Compose 27.4 實機建置並 `up -d` 通過） |
+| 測試 | 全綠 | `cargo test` 187 項、`scripts/smoke.sh` 81 項 |
 | 靜態檢查 | 無警告 | `cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 通過 |

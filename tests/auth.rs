@@ -3,7 +3,11 @@
 mod common;
 
 use axum::http::StatusCode;
-use common::{delete_as, get, patch_json_as, post_form, post_json, post_json_origin, TestApp};
+use common::{
+    delete_as, get, patch_json_as, post_form, post_json, post_json_as, post_json_origin,
+    with_bearer, TestApp,
+};
+
 use serde_json::json;
 use uwurls::services::settings::RegistrationMode;
 
@@ -239,8 +243,9 @@ async fn sessions_can_be_listed_and_revoked() {
 
     let list = app.get_as("/api/v1/auth/sessions", &cookie).await;
     assert_eq!(list.status, StatusCode::OK);
+    // List endpoints share one envelope: {"items": [...]}.
     let sessions = list.json();
-    let sessions = sessions.as_array().expect("array");
+    let sessions = sessions["items"].as_array().expect("items");
     assert_eq!(sessions.len(), 2);
     assert_eq!(
         sessions
@@ -495,6 +500,116 @@ async fn bootstrap_administrator_from_configuration() {
         .await
         .expect("count");
     assert_eq!(users, 1);
+}
+
+#[tokio::test]
+async fn repeated_failures_lock_the_account_even_across_ips() {
+    let app = TestApp::spawn().await;
+    app.register("user@example.com", "supersecret").await;
+
+    // The in-memory limiter is reset between "hosts" to simulate a distributed
+    // attempt; the database backed lockout still has to stop it.
+    let mut locked = false;
+    for _ in 0..40 {
+        app.state.limiter.reset();
+        let response = app
+            .post_json(
+                "/api/v1/auth/login",
+                json!({ "email": "user@example.com", "password": "wrong" }),
+            )
+            .await;
+        if response.status == StatusCode::TOO_MANY_REQUESTS {
+            locked = true;
+            break;
+        }
+    }
+    assert!(locked, "the account must lock after repeated failures");
+
+    // Even the correct password is refused while the lock is active.
+    app.state.limiter.reset();
+    let correct = app
+        .post_json(
+            "/api/v1/auth/login",
+            json!({ "email": "user@example.com", "password": "supersecret" }),
+        )
+        .await;
+    assert_eq!(correct.status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(correct.header("retry-after").is_some());
+
+    // Other accounts are unaffected.
+    app.register("other@example.com", "supersecret").await;
+    app.state.limiter.reset();
+    let other = app
+        .post_json(
+            "/api/v1/auth/login",
+            json!({ "email": "other@example.com", "password": "supersecret" }),
+        )
+        .await;
+    assert_eq!(other.status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn changing_the_password_also_revokes_api_tokens() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+
+    let created = app
+        .send(post_json_as(
+            "/api/v1/tokens",
+            json!({ "name": "ci" }),
+            &cookie,
+        ))
+        .await
+        .json();
+    let token = created["token"].as_str().expect("token").to_string();
+
+    let mut request = common::get("/api/v1/urls");
+    request = with_bearer(request, &token);
+    assert_eq!(app.send(request).await.status, StatusCode::OK);
+
+    let changed = app
+        .post_json_as(
+            "/api/v1/auth/password",
+            json!({ "current_password": "supersecret", "new_password": "brandnewpass" }),
+            &cookie,
+        )
+        .await;
+    assert_eq!(changed.status, StatusCode::NO_CONTENT, "{}", changed.body);
+
+    let mut stale = common::get("/api/v1/urls");
+    stale = with_bearer(stale, &token);
+    assert_eq!(app.send(stale).await.status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn sessions_slide_while_in_use() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+
+    // Give the session a nearly expired deadline and an old last_seen_at, then
+    // verify that using it pushes the expiry out instead of leaving it fixed.
+    let nearly_expired = uwurls::services::time::iso_in_hours(1);
+    sqlx::query("UPDATE sessions SET last_seen_at = ?, expires_at = ?")
+        .bind("2020-01-01T00:00:00.000Z")
+        .bind(&nearly_expired)
+        .execute(&app.state.db)
+        .await
+        .expect("age the session");
+
+    assert_eq!(
+        app.get_as("/api/v1/auth/me", &cookie).await.status,
+        StatusCode::OK
+    );
+
+    let expires_at: String = sqlx::query_scalar("SELECT expires_at FROM sessions LIMIT 1")
+        .fetch_one(&app.state.db)
+        .await
+        .expect("expiry");
+    assert_eq!(expires_at.len(), 24, "canonical storage format");
+    assert!(
+        expires_at.as_str() > nearly_expired.as_str(),
+        "expiry must slide forward: {nearly_expired} -> {expires_at}"
+    );
 }
 
 #[tokio::test]

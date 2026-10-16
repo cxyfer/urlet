@@ -52,8 +52,7 @@ async fn migrate() -> Result<(), String> {
     let config = Config::from_env().map_err(|err| err.to_string())?;
     init_logging(&config);
     let pool = db::init(&config).await.map_err(|err| err.to_string())?;
-    let applied: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM schema_migrations")
-        .fetch_one(&pool)
+    let applied = db::migrate::applied_count(&pool)
         .await
         .map_err(|err| err.to_string())?;
     println!("database is up to date ({applied} migration(s) applied)");
