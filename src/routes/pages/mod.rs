@@ -11,11 +11,15 @@ pub mod auth;
 pub mod dashboard;
 pub mod urls;
 
-use axum::response::Redirect;
+use axum::extract::{Path, Query, State};
+use axum::http::{header, HeaderValue, StatusCode};
+use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::Router;
+use serde::Deserialize;
 
 use crate::db::users::User;
+use crate::i18n::{self, Lang};
 use crate::state::AppState;
 
 /// A banner shown at the top of a page.
@@ -60,52 +64,53 @@ pub struct PageLink {
 /// Translate `?ok=` / `?err=` codes into a banner. Unknown codes are ignored so
 /// the query string can never inject arbitrary text into a page.
 pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
+    let lang = i18n::current();
     if let Some(code) = ok {
-        let message = match code {
-            "created" => "Short link created.",
-            "updated" => "Changes saved.",
-            "deleted" => "Short link deleted.",
-            "profile" => "Profile updated.",
-            "password" => "Password changed. Other sessions were signed out.",
-            "session" => "Session signed out.",
-            "token_created" => "API token created.",
-            "token_revoked" => "API token revoked.",
-            "saved" => "Settings saved.",
-            "invite" => "Invite code created.",
-            "invite_revoked" => "Invite code revoked.",
-            "user" => "User updated.",
-            "user_deleted" => "User deleted.",
+        let key = match code {
+            "created" => "flash.ok.created",
+            "updated" => "flash.ok.updated",
+            "deleted" => "flash.ok.deleted",
+            "profile" => "flash.ok.profile",
+            "password" => "flash.ok.password",
+            "session" => "flash.ok.session",
+            "token_created" => "flash.ok.token_created",
+            "token_revoked" => "flash.ok.token_revoked",
+            "saved" => "flash.ok.saved",
+            "invite" => "flash.ok.invite",
+            "invite_revoked" => "flash.ok.invite_revoked",
+            "user" => "flash.ok.user",
+            "user_deleted" => "flash.ok.user_deleted",
             _ => return None,
         };
         return Some(Flash {
             kind: "ok",
-            message: message.to_string(),
+            message: lang.t(key).to_string(),
         });
     }
 
     if let Some(code) = err {
-        let message = match code {
-            "invalid" => "Please check the highlighted values and try again.",
-            "conflict" => "That value is already taken.",
-            "not_found" => "That item no longer exists.",
-            "rate_limited" => "Too many attempts. Please wait a moment.",
-            "denied" => "You are not allowed to do that.",
-            "quota" => "You have reached your link limit.",
-            "password" => "The current password was incorrect.",
-            "login" => "Invalid email or password.",
-            "registration" => "Registration is not available.",
-            "invite" => "That invite code is not valid.",
-            "csrf" => "The form expired. Please try again.",
-            "expiry" => "The expiry must be a future date and time, for example 2030-01-31 12:00.",
-            "slug" => "That slug is not allowed: use letters, digits, - and _ only (and avoid reserved paths).",
-            "target" => "The destination must be a valid http or https URL.",
-            "password_rules" => "The link password must be between 4 and 128 characters.",
-            "tags" => "Tags must be comma separated, at most 10 per link and 32 characters each.",
+        let key = match code {
+            "invalid" => "flash.err.invalid",
+            "conflict" => "flash.err.conflict",
+            "not_found" => "flash.err.not_found",
+            "rate_limited" => "flash.err.rate_limited",
+            "denied" => "flash.err.denied",
+            "quota" => "flash.err.quota",
+            "password" => "flash.err.password",
+            "login" => "flash.err.login",
+            "registration" => "flash.err.registration",
+            "invite" => "flash.err.invite",
+            "csrf" => "flash.err.csrf",
+            "expiry" => "flash.err.expiry",
+            "slug" => "flash.err.slug",
+            "target" => "flash.err.target",
+            "password_rules" => "flash.err.password_rules",
+            "tags" => "flash.err.tags",
             _ => return None,
         };
         return Some(Flash {
             kind: "error",
-            message: message.to_string(),
+            message: lang.t(key).to_string(),
         });
     }
 
@@ -133,12 +138,21 @@ pub fn redirect_to_login(next: Option<&str>) -> Redirect {
 /// Only same-site relative paths are accepted as a post-login destination.
 pub fn safe_next(next: Option<&str>) -> Option<String> {
     let next = next?.trim();
-    if next.starts_with('/') && !next.starts_with("//") && !next.contains("://") && next.len() < 512
+    // `//host` is a protocol-relative URL, but browsers treat a backslash as a
+    // path separator for http(s) too, so `/\host` resolves to `//host` as well
+    // (WHATWG URL). Both have to be rejected, and a backslash has no legitimate
+    // place in any of our paths. Control characters are rejected because the
+    // value is written straight into a `Location` header.
+    if !next.starts_with('/')
+        || next.starts_with("//")
+        || next.contains('\\')
+        || next.contains("://")
+        || next.chars().any(char::is_control)
+        || next.len() >= 512
     {
-        Some(next.to_string())
-    } else {
-        None
+        return None;
     }
+    Some(next.to_string())
 }
 
 /// Append a query parameter to a path, preserving existing ones.
@@ -166,6 +180,24 @@ pub fn encode(value: &str) -> String {
                 out.push(*byte as char)
             }
             _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+/// Percent encode a `Location` target.
+///
+/// `Location` is defined as a URI reference, so anything outside printable
+/// ASCII is encoded: browsers cope with raw UTF-8, intermediaries need not.
+/// The ASCII range — including the path and query separators — is left alone so
+/// ordinary redirects stay readable (`/app/account`, not `%2Fapp%2Faccount`).
+pub fn encode_location(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.as_bytes() {
+        if (0x21..=0x7e).contains(byte) {
+            out.push(*byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
         }
     }
     out
@@ -242,12 +274,13 @@ pub struct UrlRow {
 
 impl UrlRow {
     pub fn new(dto: &crate::routes::dto::UrlDto) -> Self {
-        let (state_class, state_label) = match dto.state.as_str() {
-            "active" => ("badge-ok", "Active"),
-            "expired" => ("badge-warn", "Expired"),
-            "limit_reached" => ("badge-warn", "Limit reached"),
-            "disabled" => ("badge-muted", "Disabled"),
-            _ => ("badge-muted", "Deleted"),
+        let lang = i18n::current();
+        let (state_class, state_key) = match dto.state.as_str() {
+            "active" => ("badge-ok", "state.active"),
+            "expired" => ("badge-warn", "state.expired"),
+            "limit_reached" => ("badge-warn", "state.limit_reached"),
+            "disabled" => ("badge-muted", "state.disabled"),
+            _ => ("badge-muted", "state.deleted"),
         };
         Self {
             id: dto.id,
@@ -262,12 +295,17 @@ impl UrlRow {
             unique_click_count: dto.unique_click_count,
             max_clicks: dto.max_clicks,
             expires_at: dto.expires_at.clone(),
-            expires_human: dto.expires_in.clone(),
-            created_human: crate::services::time::humanize(&dto.created_at),
+            // The DTO keeps the English `expires_in` for `/api/v1`; the page
+            // renders its own, localised, relative date.
+            expires_human: dto
+                .expires_at
+                .as_deref()
+                .map(|value| crate::services::time::humanize_lang(lang, value)),
+            created_human: crate::services::time::humanize_lang(lang, &dto.created_at),
             redirect_type: dto.redirect_type,
             state: dto.state.clone(),
             state_class,
-            state_label,
+            state_label: lang.t(state_key),
         }
     }
 }
@@ -323,6 +361,50 @@ pub fn router() -> Router<AppState> {
             get(admin::settings_page).post(admin::update_settings),
         )
         .route("/admin/audit", get(admin::audit_page))
+        // language switcher
+        .route("/lang/{code}", get(lang_switch))
+}
+
+/// Query string of `GET /app/lang/{code}`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct LangQuery {
+    #[serde(default)]
+    pub next: Option<String>,
+}
+
+/// `GET /app/lang/{code}` — remember the choice in a cookie and go back.
+///
+/// An unrecognised code is treated as English rather than failing the request.
+pub async fn lang_switch(
+    State(state): State<AppState>,
+    Path(code): Path<String>,
+    Query(query): Query<LangQuery>,
+) -> Response {
+    let lang = Lang::parse(&code).unwrap_or(Lang::En);
+    let target = safe_next(query.next.as_deref()).unwrap_or_else(|| "/app".to_string());
+
+    let mut response = StatusCode::FOUND.into_response();
+    // The fallback keeps the response a usable redirect even if encoding ever
+    // produced a value the header rejects.
+    let location = HeaderValue::from_str(&encode_location(&target))
+        .unwrap_or_else(|_| HeaderValue::from_static("/app"));
+    response.headers_mut().insert(header::LOCATION, location);
+
+    // Deliberately not `HttpOnly`: the value is read by CSS/JS if a theme ever
+    // needs it, and it carries no secret.
+    let mut cookie = format!(
+        "{}={}; Path=/; Max-Age={}; SameSite=Lax",
+        i18n::COOKIE_NAME,
+        lang.code(),
+        i18n::COOKIE_MAX_AGE
+    );
+    if state.config.secure_cookies {
+        cookie.push_str("; Secure");
+    }
+    if let Ok(value) = HeaderValue::from_str(&cookie) {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
+    response
 }
 
 /// `GET /` — send visitors to the dashboard (or the login screen).
@@ -345,6 +427,19 @@ mod tests {
         assert_eq!(safe_next(Some("javascript:alert(1)")), None);
         assert_eq!(safe_next(None), None);
         assert_eq!(safe_next(Some(&"a".repeat(600))), None);
+        // Browsers normalise a backslash to a slash for http(s), so `/\host`
+        // and `\/host` are protocol-relative URLs in disguise.
+        assert_eq!(safe_next(Some("/\\evil.example")), None);
+        assert_eq!(safe_next(Some("\\/evil.example")), None);
+        assert_eq!(safe_next(Some("/app\\..\\evil")), None);
+        // Control characters would corrupt the `Location` header.
+        assert_eq!(safe_next(Some("/app\r\nSet-Cookie: x=1")), None);
+        assert_eq!(safe_next(Some("/app\u{0}")), None);
+        // Ordinary deep links still work.
+        assert_eq!(
+            safe_next(Some("/app/admin/users?page=2")).as_deref(),
+            Some("/app/admin/users?page=2")
+        );
     }
 
     #[test]
@@ -360,6 +455,24 @@ mod tests {
             with_param("/app?q=x", "ok", "created"),
             "/app?q=x&ok=created"
         );
+    }
+
+    #[test]
+    fn location_targets_are_ascii_only() {
+        // Ordinary paths and queries stay readable.
+        assert_eq!(encode_location("/app/account"), "/app/account");
+        assert_eq!(
+            encode_location("/app/admin/users?page=2&q=a%20b"),
+            "/app/admin/users?page=2&q=a%20b"
+        );
+        // Non-ASCII and spaces are encoded: `Location` is a URI reference.
+        assert_eq!(encode_location("/日本"), "/%E6%97%A5%E6%9C%AC");
+        assert_eq!(
+            encode_location("/app/日本語"),
+            "/app/%E6%97%A5%E6%9C%AC%E8%AA%9E"
+        );
+        assert_eq!(encode_location("/a b"), "/a%20b");
+        assert!(encode_location("/日本").is_ascii());
     }
 
     #[test]

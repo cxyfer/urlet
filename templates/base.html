@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ lang.html_lang() }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,7 +15,8 @@
 </main>
 {% endblock %}
 <footer class="site">
-    {{ site_name }} — lightweight multi-user URL shortener
+    <span>{{ site_name }} — {{ lang.t("footer.tagline") }}</span>
+    {% block footer_lang %}{% include "partials/lang_switcher.html" %}{% endblock %}
 </footer>
 <script src="/assets/app.js" defer></script>
 </body>

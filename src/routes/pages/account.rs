@@ -10,6 +10,7 @@ use serde::Deserialize;
 
 use crate::db::{sessions, users};
 use crate::error::AppError;
+use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::routes::dto::{SessionDto, UserDto};
 use crate::routes::pages::{
@@ -32,6 +33,7 @@ pub struct AccountPage {
     /// Plain value of a token created by the current request (shown once).
     pub new_token: Option<String>,
     pub max_name_len: usize,
+    pub lang: Lang,
 }
 
 /// One row of the session table.
@@ -257,7 +259,9 @@ pub async fn create_token(
                 current.session_id,
                 Some(crate::routes::pages::Flash {
                     kind: "ok",
-                    message: "Token created. Copy it now — it will not be shown again.".to_string(),
+                    message: i18n::current()
+                        .t("account.tokens.created_flash")
+                        .to_string(),
                 }),
                 Some(created.plain),
             )
@@ -300,6 +304,7 @@ async fn render_account(
         .map_err(AppError::from)?
         .unwrap_or_else(|| user.clone());
 
+    let lang = i18n::current();
     let page = AccountPage {
         site_name: state.settings.site_name(),
         chrome: Chrome::new(state, &fresh, "account", flash),
@@ -315,10 +320,10 @@ async fn render_account(
                         .user_agent
                         .as_deref()
                         .map(|agent| crate::routes::pages::truncate(agent, 80))
-                        .unwrap_or_else(|| "Unknown client".to_string()),
-                    created: time::humanize(&dto.created_at),
-                    last_seen: time::humanize(&dto.last_seen_at),
-                    expires: time::humanize(&dto.expires_at),
+                        .unwrap_or_else(|| lang.t("account.sessions.unknown_client").to_string()),
+                    created: time::humanize_lang(lang, &dto.created_at),
+                    last_seen: time::humanize_lang(lang, &dto.last_seen_at),
+                    expires: time::humanize_lang(lang, &dto.expires_at),
                 }
             })
             .collect(),
@@ -328,14 +333,21 @@ async fn render_account(
                 id: token.id,
                 name: token.name.clone(),
                 prefix: token.token_prefix.clone(),
-                created: time::humanize(&token.created_at),
-                last_used: token.last_used_at.as_deref().map(time::humanize),
-                expires: token.expires_at.as_deref().map(time::humanize),
+                created: time::humanize_lang(lang, &token.created_at),
+                last_used: token
+                    .last_used_at
+                    .as_deref()
+                    .map(|value| time::humanize_lang(lang, value)),
+                expires: token
+                    .expires_at
+                    .as_deref()
+                    .map(|value| time::humanize_lang(lang, value)),
                 active: token.is_valid_at(&time::now_iso()),
             })
             .collect(),
         new_token,
         max_name_len: tokens::MAX_NAME_LEN,
+        lang,
     };
 
     match page.render() {

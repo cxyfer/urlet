@@ -1,18 +1,22 @@
 {% extends "base.html" %}
 
+{# Signed-in pages carry the switcher in the top bar instead of the footer. #}
+{% block footer_lang %}{% endblock %}
+
 {% block body %}
 <div class="topbar">
     <div class="topbar-inner">
         <a class="brand" href="/app">{{ chrome.site_name }}<span>.</span></a>
         <nav class="nav">
-            <a href="/app" {% if chrome.active == "dashboard" %}class="active"{% endif %}>Links</a>
-            <a href="/app/account" {% if chrome.active == "account" %}class="active"{% endif %}>Account</a>
+            <a href="/app" {% if chrome.active == "dashboard" %}class="active"{% endif %}>{{ lang.t("nav.links") }}</a>
+            <a href="/app/account" {% if chrome.active == "account" %}class="active"{% endif %}>{{ lang.t("nav.account") }}</a>
             {% if chrome.is_admin %}
-            <a href="/app/admin" {% if chrome.active == "admin" %}class="active"{% endif %}>Admin</a>
+            <a href="/app/admin" {% if chrome.active == "admin" %}class="active"{% endif %}>{{ lang.t("nav.admin") }}</a>
             {% endif %}
+            {% include "partials/lang_switcher.html" %}
             <span class="muted small">{{ chrome.email }}</span>
             <form method="post" action="/app/logout">
-                <button class="btn btn-ghost btn-sm" type="submit">Sign out</button>
+                <button class="btn btn-ghost btn-sm" type="submit">{{ lang.t("nav.sign_out") }}</button>
             </form>
         </nav>
     </div>

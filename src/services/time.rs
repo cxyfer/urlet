@@ -143,6 +143,9 @@ pub fn day_days_ago(days: i64) -> String {
 }
 
 /// A human friendly relative description such as `in 3 days` / `2 hours ago`.
+///
+/// Always English: this is the form embedded in `/api/v1` payloads. The pages
+/// use [`humanize_lang`] instead.
 pub fn humanize(timestamp: &str) -> String {
     let Some(t) = parse_iso(timestamp) else {
         return "unknown".to_string();
@@ -175,6 +178,59 @@ pub fn humanize(timestamp: &str) -> String {
     } else {
         format!("{value} {unit}{plural} ago")
     }
+}
+
+/// [`humanize`] rendered in the language of the page being built.
+///
+/// English delegates to [`humanize`] so the API wording and the web wording can
+/// never drift apart.
+pub fn humanize_lang(lang: crate::i18n::Lang, timestamp: &str) -> String {
+    if lang == crate::i18n::Lang::En {
+        return humanize(timestamp);
+    }
+    let Some(t) = parse_iso(timestamp) else {
+        return lang.t("time.unknown").to_string();
+    };
+    let delta = t - now();
+    let secs = delta.whole_seconds();
+    let abs = secs.abs();
+
+    let (unit, unit_secs) = if abs < 60 {
+        ("second", 1)
+    } else if abs < 3_570 {
+        ("minute", 60)
+    } else if abs < 82_800 {
+        ("hour", 3_600)
+    } else if abs < 3_888_000 {
+        ("day", 86_400)
+    } else {
+        ("month", 2_592_000)
+    };
+
+    let mut value = (abs + unit_secs / 2) / unit_secs;
+    if unit_secs > 1 && value == 0 {
+        value = 1;
+    }
+    let unit_key = match (unit, value == 1) {
+        ("second", true) => "time.unit.second",
+        ("second", false) => "time.unit.seconds",
+        ("minute", true) => "time.unit.minute",
+        ("minute", false) => "time.unit.minutes",
+        ("hour", true) => "time.unit.hour",
+        ("hour", false) => "time.unit.hours",
+        ("day", true) => "time.unit.day",
+        ("day", false) => "time.unit.days",
+        (_, true) => "time.unit.month",
+        (_, false) => "time.unit.months",
+    };
+    let template = if secs > 0 {
+        lang.t("time.in")
+    } else {
+        lang.t("time.ago")
+    };
+    template
+        .replace("{value}", &value.to_string())
+        .replace("{unit}", lang.t(unit_key))
 }
 
 #[cfg(test)]
@@ -212,6 +268,23 @@ mod tests {
         assert!(humanize(&iso_in_hours(2)).starts_with("in 2 hours"));
         assert!(humanize(&iso_in_minutes(-5)).ends_with("ago"));
         assert_eq!(humanize("garbage"), "unknown");
+    }
+
+    #[test]
+    fn humanize_lang_matches_english_and_translates() {
+        use crate::i18n::Lang;
+        // English output is byte identical to the API wording.
+        assert_eq!(
+            humanize_lang(Lang::En, &iso_in_hours(2)),
+            humanize(&iso_in_hours(2))
+        );
+        assert_eq!(humanize_lang(Lang::En, "garbage"), "unknown");
+
+        assert_eq!(humanize_lang(Lang::ZhHant, &iso_in_hours(2)), "2 小時後");
+        assert_eq!(humanize_lang(Lang::ZhHant, &iso_in_minutes(-5)), "5 分鐘前");
+        assert_eq!(humanize_lang(Lang::ZhHant, &iso_days_ago(1)), "1 天前");
+        assert_eq!(humanize_lang(Lang::ZhHant, "garbage"), "未知");
+        assert_eq!(humanize_lang(Lang::ZhHans, &iso_in_hours(2)), "2 小时后");
     }
 
     #[test]

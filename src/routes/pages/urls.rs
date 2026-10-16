@@ -11,6 +11,7 @@ use serde::Deserialize;
 use crate::db::clicks::{self, Click, Dimension};
 use crate::db::{tags, urls};
 use crate::error::AppError;
+use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::routes::api_stats::{click_dto, summary_dto};
 use crate::routes::dto::{StatsSummaryDto, UrlDto};
@@ -39,6 +40,11 @@ pub struct UrlDetailPage {
     pub clicks: Vec<ClickRow>,
     pub tags_csv: String,
     pub days: i64,
+    /// Localised "30 days ago" label of the chart axis.
+    pub days_label: String,
+    /// Localised "42 clicks in this window; grey segments are bots" legend.
+    pub chart_legend: String,
+    pub lang: Lang,
 }
 
 /// One row of the recent click log.
@@ -54,21 +60,35 @@ pub struct ClickRow {
 }
 
 impl ClickRow {
-    fn new(click: &Click) -> Self {
+    fn new(click: &Click, lang: Lang) -> Self {
         let dto = click_dto(click);
         let (kind, kind_class) = if dto.is_bot {
-            ("Bot", "badge-muted")
+            (lang.t("click.kind.bot"), "badge-muted")
         } else if dto.is_unique {
-            ("Unique", "badge-accent")
+            (lang.t("click.kind.unique"), "badge-accent")
         } else {
-            ("Repeat", "badge")
+            (lang.t("click.kind.repeat"), "badge")
         };
         Self {
-            when: time::humanize(&dto.clicked_at),
-            referrer: dto.referrer_host.unwrap_or_else(|| "direct".to_string()),
-            device: dto.device_type.unwrap_or_else(|| "Unknown".to_string()),
-            browser: dto.browser.unwrap_or_else(|| "Other".to_string()),
-            os: dto.os.unwrap_or_else(|| "Unknown".to_string()),
+            when: time::humanize_lang(lang, &dto.clicked_at),
+            // The same mapper as the breakdown charts, so a missing referrer or
+            // an unparsable user agent reads the same in both places.
+            referrer: dimension_label(
+                Dimension::Referrer,
+                dto.referrer_host.as_deref().unwrap_or("direct"),
+                lang,
+            ),
+            device: dimension_label(
+                Dimension::Device,
+                dto.device_type.as_deref().unwrap_or("Unknown"),
+                lang,
+            ),
+            browser: dimension_label(
+                Dimension::Browser,
+                dto.browser.as_deref().unwrap_or("Other"),
+                lang,
+            ),
+            os: dimension_label(Dimension::Os, dto.os.as_deref().unwrap_or("Unknown"), lang),
             kind,
             kind_class,
         }
@@ -275,6 +295,8 @@ pub async fn detail(
         .collect();
 
     let dto = UrlDto::new(&url, &state.config.base_url, tag_names.clone());
+    let lang = i18n::current();
+    let daily_total: i64 = daily.iter().map(|point| point.clicks).sum();
     let page = UrlDetailPage {
         site_name: state.settings.site_name(),
         chrome: Chrome::new(
@@ -286,14 +308,28 @@ pub async fn detail(
         url: UrlRow::new(&dto),
         summary: summary_dto(&summary),
         chart: chart::svg_bars(&daily),
-        daily_total: daily.iter().map(|point| point.clicks).sum(),
-        referrers: bar_rows(dimension_dtos(referrers)),
-        devices: bar_rows(dimension_dtos(devices)),
-        browsers: bar_rows(dimension_dtos(browsers)),
-        operating_systems: bar_rows(dimension_dtos(operating_systems)),
-        clicks: recent.iter().map(ClickRow::new).collect(),
+        daily_total,
+        referrers: bar_rows(dimension_dtos(referrers, Dimension::Referrer, lang)),
+        devices: bar_rows(dimension_dtos(devices, Dimension::Device, lang)),
+        browsers: bar_rows(dimension_dtos(browsers, Dimension::Browser, lang)),
+        operating_systems: bar_rows(dimension_dtos(operating_systems, Dimension::Os, lang)),
+        clicks: recent
+            .iter()
+            .map(|click| ClickRow::new(click, lang))
+            .collect(),
         tags_csv: tag_names.join(", "),
         days,
+        days_label: i18n::format(
+            lang,
+            "url_detail.chart.days_ago",
+            &[("days", days.to_string())],
+        ),
+        chart_legend: i18n::format(
+            lang,
+            "url_detail.chart.legend",
+            &[("clicks", daily_total.to_string())],
+        ),
+        lang,
     };
 
     match page.render() {
@@ -461,13 +497,47 @@ pub async fn extend(
     })
 }
 
-fn dimension_dtos(rows: Vec<clicks::DimensionCount>) -> Vec<crate::routes::dto::DimensionDto> {
+/// Convert one breakdown into template rows, with localised labels.
+///
+/// The SQL rollup fills missing values with English literals (`direct`,
+/// `Unknown`, `Other`) and the user agent parser stores device classes in
+/// English (`Desktop`, `Mobile`, `Tablet`, `Bot`). They are translated here, on
+/// the page path only: `/api/v1` keeps the raw labels so its payload stays
+/// stable and machine readable. The English labels are returned unchanged, so
+/// the English UI does not shift.
+fn dimension_dtos(
+    rows: Vec<clicks::DimensionCount>,
+    dimension: Dimension,
+    lang: Lang,
+) -> Vec<crate::routes::dto::DimensionDto> {
     rows.into_iter()
         .map(|row| crate::routes::dto::DimensionDto {
-            label: row.label,
+            label: dimension_label(dimension, &row.label, lang),
             count: row.count,
         })
         .collect()
+}
+
+/// Localise one breakdown label.
+///
+/// Proper nouns (`Chrome`, `Windows`, `news.example.com`) pass through.
+fn dimension_label(dimension: Dimension, label: &str, lang: Lang) -> String {
+    match dimension {
+        Dimension::Referrer => match label {
+            "direct" => lang.t("common.direct").to_string(),
+            _ => label.to_string(),
+        },
+        // Covers `Desktop`/`Mobile`/`Tablet`/`Bot` and the `Unknown` fallback.
+        Dimension::Device => i18n::device_label(lang, label),
+        Dimension::Browser => match label {
+            "Other" => lang.t("common.other").to_string(),
+            _ => label.to_string(),
+        },
+        Dimension::Os => match label {
+            "Unknown" => lang.t("common.unknown").to_string(),
+            _ => label.to_string(),
+        },
+    }
 }
 
 /// Map a service error onto a flash code the page understands.

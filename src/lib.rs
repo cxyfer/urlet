@@ -8,6 +8,7 @@ pub mod assets;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod i18n;
 pub mod middleware;
 pub mod routes;
 pub mod server;

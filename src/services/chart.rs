@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 
 use crate::db::clicks::DailyStat;
+use crate::i18n;
 use crate::routes::dto::{DailyPointDto, DimensionDto};
 use crate::services::time;
 
@@ -42,7 +43,8 @@ pub fn fill_days(series: &[DailyStat], days: i64) -> Vec<DailyPointDto> {
 /// Render a stacked bar chart: human clicks in the accent colour, bots in grey.
 ///
 /// The viewBox is normalised to `100 x 40` and stretched by CSS, so the markup
-/// stays resolution independent and small.
+/// stays resolution independent and small. Only the HTML pages call this, so the
+/// tooltips and the accessible name use the language of the current request.
 pub fn svg_bars(points: &[DailyPointDto]) -> String {
     if points.is_empty() {
         return String::new();
@@ -57,6 +59,7 @@ pub fn svg_bars(points: &[DailyPointDto]) -> String {
     let width = (slot * 0.68).max(0.4);
     let chart_height = 38.0;
 
+    let lang = i18n::current();
     let mut bars = String::new();
     for (index, point) in points.iter().enumerate() {
         let x = index as f64 * slot + (slot - width) / 2.0;
@@ -66,24 +69,33 @@ pub fn svg_bars(points: &[DailyPointDto]) -> String {
         let bot_height = bots as f64 / max * chart_height;
 
         if human_height > 0.0 {
+            let title = i18n::format(
+                lang,
+                "chart.click_title",
+                &[("clicks", human.to_string()), ("day", point.day.clone())],
+            );
             bars.push_str(&format!(
-                "<rect x=\"{x:.3}\" y=\"{:.3}\" width=\"{width:.3}\" height=\"{human_height:.3}\"><title>{human} click(s) on {}</title></rect>",
+                "<rect x=\"{x:.3}\" y=\"{:.3}\" width=\"{width:.3}\" height=\"{human_height:.3}\"><title>{title}</title></rect>",
                 40.0 - human_height,
-                point.day
             ));
         }
         if bot_height > 0.0 {
+            let title = i18n::format(
+                lang,
+                "chart.bot_click_title",
+                &[("clicks", bots.to_string()), ("day", point.day.clone())],
+            );
             bars.push_str(&format!(
-                "<rect class=\"alt\" x=\"{x:.3}\" y=\"{:.3}\" width=\"{width:.3}\" height=\"{bot_height:.3}\"><title>{bots} bot click(s) on {}</title></rect>",
+                "<rect class=\"alt\" x=\"{x:.3}\" y=\"{:.3}\" width=\"{width:.3}\" height=\"{bot_height:.3}\"><title>{title}</title></rect>",
                 40.0 - human_height - bot_height,
-                point.day
             ));
         }
     }
 
     format!(
         "<svg class=\"chart\" viewBox=\"0 0 100 40\" preserveAspectRatio=\"none\" role=\"img\" \
-         aria-label=\"Clicks per day\">{bars}</svg>"
+         aria-label=\"{}\">{bars}</svg>",
+        lang.t("url_detail.chart.heading")
     )
 }
 

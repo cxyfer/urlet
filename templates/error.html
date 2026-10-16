@@ -7,8 +7,8 @@
     <h1>{{ status_code }} — {{ title }}</h1>
     <p class="muted">{{ message }}</p>
     <div class="row">
-        <a class="btn" href="/app">Dashboard</a>
-        <a class="btn btn-ghost" href="/app/login">Sign in</a>
+        <a class="btn" href="/app">{{ lang.t("error.dashboard") }}</a>
+        <a class="btn btn-ghost" href="/app/login">{{ lang.t("auth.login.title") }}</a>
     </div>
 </div>
 {% endblock %}

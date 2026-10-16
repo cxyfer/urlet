@@ -14,6 +14,7 @@ use crate::db::urls::{self, AdminUrlFilter, UrlSort};
 use crate::db::users::{User, UserFilter};
 use crate::db::{tags, users};
 use crate::error::AppError;
+use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::routes::dto::UrlDto;
 use crate::routes::pages::dashboard::clean;
@@ -36,6 +37,7 @@ pub struct OverviewPage {
     pub section: &'static str,
     pub chrome: Chrome,
     pub stats: OverviewStats,
+    pub lang: Lang,
 }
 
 /// Numbers rendered on the overview page.
@@ -70,6 +72,11 @@ pub struct UsersPage {
     pub q: String,
     pub role: String,
     pub status: String,
+    /// Localised "{count} accounts" line.
+    pub count_label: String,
+    /// Localised "Page 2 of 5" line.
+    pub pagination_note: String,
+    pub lang: Lang,
 }
 
 /// One row of the user table.
@@ -101,6 +108,11 @@ pub struct AdminUrlsPage {
     pub q: String,
     pub status: String,
     pub user_id: String,
+    /// Localised "{count} links" line.
+    pub count_label: String,
+    /// Localised "Page 2 of 5" line.
+    pub pagination_note: String,
+    pub lang: Lang,
 }
 
 /// One row of the admin link table.
@@ -120,7 +132,11 @@ pub struct InvitesPage {
     pub chrome: Chrome,
     pub invites: Vec<InviteRow>,
     pub new_code: Option<String>,
+    /// Raw token (`open` / `invite` / `closed`), used for the conditional class.
     pub registration_mode: String,
+    /// Localised label of the same mode, used for display.
+    pub registration_mode_label: String,
+    pub lang: Lang,
 }
 
 /// One row of the invite table.
@@ -144,6 +160,7 @@ pub struct SettingsPage {
     pub section: &'static str,
     pub chrome: Chrome,
     pub values: SettingsValues,
+    pub lang: Lang,
 }
 
 /// Current values of every editable setting.
@@ -173,6 +190,11 @@ pub struct AuditPage {
     pub action: String,
     pub target_type: String,
     pub actions: Vec<String>,
+    /// Localised "{count} entries" line.
+    pub count_label: String,
+    /// Localised "Page 2 of 5" line.
+    pub pagination_note: String,
+    pub lang: Lang,
 }
 
 /// One row of the audit table.
@@ -267,6 +289,7 @@ pub async fn overview(
         started_at: state.started_at,
     };
     let stats = context.system_stats().await?;
+    let lang = i18n::current();
 
     render(
         OverviewPage {
@@ -292,9 +315,11 @@ pub async fn overview(
                 database_size: stats
                     .database_bytes
                     .map(human_bytes)
-                    .unwrap_or_else(|| "unknown".to_string()),
-                registration_mode: stats.registration_mode,
+                    .unwrap_or_else(|| lang.t("admin.overview.unknown").to_string()),
+                // The raw token still drives `/api/v1`; the page shows a label.
+                registration_mode: i18n::registration_mode_label(lang, &stats.registration_mode),
             },
+            lang,
         },
         StatusCode::OK,
     )
@@ -320,6 +345,7 @@ pub async fn users_page(
     let total = admin::count_users(&state.db, &filter).await?;
     let counts = admin::link_counts(&state.db).await?;
     let total_pages = ((total + PER_PAGE - 1) / PER_PAGE).max(1);
+    let lang = i18n::current();
 
     let mut params: Vec<(&str, String)> = Vec::new();
     if let Some(value) = clean(&query.q) {
@@ -351,12 +377,12 @@ pub async fn users_page(
                     role: user.role.clone(),
                     status: user.status.clone(),
                     link_count: counts.get(&user.id).copied().unwrap_or(0),
-                    created: time::humanize(&user.created_at),
+                    created: time::humanize_lang(lang, &user.created_at),
                     last_login: user
                         .last_login_at
                         .as_deref()
-                        .map(time::humanize)
-                        .unwrap_or_else(|| "never".into()),
+                        .map(|value| time::humanize_lang(lang, value))
+                        .unwrap_or_else(|| lang.t("common.never").to_string()),
                     is_self: user.id == current.user.id,
                 })
                 .collect(),
@@ -367,6 +393,16 @@ pub async fn users_page(
             q: clean(&query.q).unwrap_or_default(),
             role: clean(&query.role).unwrap_or_default(),
             status: clean(&query.status).unwrap_or_default(),
+            count_label: i18n::format(lang, "admin.users.count", &[("count", total.to_string())]),
+            pagination_note: i18n::format(
+                lang,
+                "common.page_of",
+                &[
+                    ("page", page.to_string()),
+                    ("total", total_pages.to_string()),
+                ],
+            ),
+            lang,
         },
         StatusCode::OK,
     )
@@ -400,6 +436,7 @@ pub async fn urls_page(
         .await
         .map_err(AppError::from)?;
 
+    let lang = i18n::current();
     let mut owners: Vec<(i64, String)> = Vec::new();
     let mut url_rows = Vec::with_capacity(rows.len());
     for row in &rows {
@@ -410,7 +447,7 @@ pub async fn urls_page(
                     .await
                     .map_err(AppError::from)?
                     .map(|user| user.email)
-                    .unwrap_or_else(|| "deleted user".to_string());
+                    .unwrap_or_else(|| lang.t("admin.urls.deleted_user").to_string());
                 owners.push((row.user_id, email.clone()));
                 email
             }
@@ -458,6 +495,16 @@ pub async fn urls_page(
             q: clean(&query.q).unwrap_or_default(),
             status: clean(&query.status).unwrap_or_default(),
             user_id: query.user_id.map(|id| id.to_string()).unwrap_or_default(),
+            count_label: i18n::format(lang, "admin.urls.count", &[("count", total.to_string())]),
+            pagination_note: i18n::format(
+                lang,
+                "common.page_of",
+                &[
+                    ("page", page.to_string()),
+                    ("total", total_pages.to_string()),
+                ],
+            ),
+            lang,
         },
         StatusCode::OK,
     )
@@ -517,8 +564,7 @@ pub async fn create_invite(
                 &current.user,
                 Some(crate::routes::pages::Flash {
                     kind: "ok",
-                    message: "Invite code created. Copy it now — it is not shown again."
-                        .to_string(),
+                    message: i18n::current().t("admin.invites.created_flash").to_string(),
                 }),
                 Some(created.plain_code),
             )
@@ -654,6 +700,7 @@ pub async fn audit_page(
     let mut actions: Vec<String> = rows.iter().map(|row| row.action.clone()).collect();
     actions.sort();
     actions.dedup();
+    let lang = i18n::current();
 
     render(
         AuditPage {
@@ -668,12 +715,16 @@ pub async fn audit_page(
             entries: rows
                 .iter()
                 .map(|row| AuditRow {
-                    when: time::humanize(&row.created_at),
+                    when: time::humanize_lang(lang, &row.created_at),
+                    // The action and the metadata stay raw: they are the values
+                    // the filter above searches by.
                     action: row.action.clone(),
                     actor: match (row.actor_user_id, row.actor_role.as_deref()) {
-                        (Some(id), Some(role)) => format!("#{id} ({role})"),
+                        (Some(id), Some(role)) => {
+                            format!("#{id} ({})", i18n::role_label(lang, role))
+                        }
                         (Some(id), None) => format!("#{id}"),
-                        _ => "system".to_string(),
+                        _ => lang.t("admin.audit.system").to_string(),
                     },
                     target: match (&row.target_type, &row.target_id) {
                         (Some(kind), Some(id)) => format!("{kind}:{id}"),
@@ -690,6 +741,16 @@ pub async fn audit_page(
             action: clean(&query.action).unwrap_or_default(),
             target_type: clean(&query.target_type).unwrap_or_default(),
             actions,
+            count_label: i18n::format(lang, "admin.audit.count", &[("count", total.to_string())]),
+            pagination_note: i18n::format(
+                lang,
+                "common.page_of",
+                &[
+                    ("page", page.to_string()),
+                    ("total", total_pages.to_string()),
+                ],
+            ),
+            lang,
         },
         StatusCode::OK,
     )
@@ -852,6 +913,7 @@ async fn render_invites(
     new_code: Option<String>,
 ) -> Result<Response, AppError> {
     let now = time::now_iso();
+    let lang = i18n::current();
     let rows = crate::db::invites::list(&state.db, 200, 0)
         .await
         .map_err(AppError::from)?;
@@ -876,20 +938,25 @@ async fn render_invites(
                         expires: invite
                             .expires_at
                             .as_deref()
-                            .map(time::humanize)
-                            .unwrap_or_else(|| "never".to_string()),
+                            .map(|value| time::humanize_lang(lang, value))
+                            .unwrap_or_else(|| lang.t("common.never").to_string()),
                         status: if invite.status == "active" {
-                            "active".into()
+                            lang.t("admin.invites.status.active").to_string()
                         } else {
-                            "revoked".into()
+                            lang.t("admin.invites.status.revoked").to_string()
                         },
                         usable: invite.status == "active" && !invite.is_exhausted() && !expired,
-                        created: time::humanize(&invite.created_at),
+                        created: time::humanize_lang(lang, &invite.created_at),
                     }
                 })
                 .collect(),
             new_code,
             registration_mode: state.settings.registration_mode().as_str().to_string(),
+            registration_mode_label: i18n::registration_mode_label(
+                lang,
+                state.settings.registration_mode().as_str(),
+            ),
+            lang,
         },
         StatusCode::OK,
     )
@@ -907,6 +974,7 @@ fn render_settings(
             site_name: state.settings.site_name(),
             chrome: Chrome::new(state, user, "admin", flash),
             values,
+            lang: i18n::current(),
         },
         StatusCode::OK,
     )
