@@ -83,6 +83,24 @@ async fn defaults_to_english_without_any_hint() {
 }
 
 #[tokio::test]
+async fn landing_page_is_translated() {
+    let app = TestApp::spawn().await;
+    let page = app.get("/").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert_eq!(page.header("content-language").as_deref(), Some("en"));
+    assert!(page.body.contains("Short links for teams"));
+
+    let page = app
+        .send(get_with("/", Some("zh-TW,zh;q=0.9,en;q=0.8"), None))
+        .await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert_eq!(page.header("content-language").as_deref(), Some("zh-Hant"));
+    assert!(page.body.contains("為喜歡簡單的團隊而做的短網址服務。"));
+    assert!(page.body.contains("建立帳號"));
+    assert!(!page.body.contains("Create account"));
+}
+
+#[tokio::test]
 async fn accept_language_selects_traditional_chinese() {
     let app = TestApp::spawn().await;
     let page = app

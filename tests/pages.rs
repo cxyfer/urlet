@@ -25,11 +25,37 @@ async fn login(app: &TestApp, email: &str, password: &str) -> String {
 }
 
 #[tokio::test]
-async fn home_redirects_to_the_app() {
+async fn landing_page_serves_anonymous_visitors() {
     let app = TestApp::spawn().await;
     let response = app.get("/").await;
-    assert_eq!(response.status, StatusCode::SEE_OTHER);
-    assert_eq!(response.header("location").as_deref(), Some("/app"));
+    assert_eq!(response.status, StatusCode::OK);
+    // English is the default when neither a cookie nor Accept-Language is sent.
+    assert_eq!(response.header("content-language").as_deref(), Some("en"));
+    assert!(response.body.contains("<html lang=\"en\">"));
+    assert!(response.body.contains("Short links for teams"));
+    // Both entry points into the application are offered.
+    assert!(response.body.contains("href=\"/app/register\""));
+    assert!(response.body.contains("href=\"/app/login\""));
+    assert!(!response.body.contains("Open dashboard"));
+    // One `h1`, six feature cards and a single language switcher.
+    assert_eq!(response.body.matches("<h1>").count(), 1);
+    assert_eq!(response.body.matches("landing-feature").count(), 6);
+    assert_eq!(response.body.matches("data-lang-switcher").count(), 1);
+}
+
+#[tokio::test]
+async fn landing_page_serves_signed_in_visitors() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let response = app.get_as("/", &cookie).await;
+    assert_eq!(response.status, StatusCode::OK);
+    assert!(response.body.contains("Open dashboard"));
+    // The top bar offers the dashboard and the sign-out form instead.
+    assert!(response.body.contains("href=\"/app\">Dashboard</a>"));
+    assert!(response.body.contains("user@example.com"));
+    assert!(response.body.contains("action=\"/app/logout\""));
+    // Signed-in visitors get the dashboard instead of the sign-up funnel.
+    assert!(!response.body.contains("Create account"));
 }
 
 #[tokio::test]
