@@ -27,7 +27,7 @@
 | HTTP | `code` | Meaning |
 |------|--------|---------|
 | 400 | `bad_request` | Malformed request, or nothing to change |
-| 400 | `captcha_failed` | Bot verification failed, expired, or was rejected by the provider (registration only) |
+| 400 | `captcha_failed` | Bot verification failed, expired, or was rejected by the provider (registration and sign-in) |
 | 401 | `unauthorized` | Not authenticated, token revoked, wrong password |
 | 403 | `forbidden` | Insufficient permission, CSRF rejection, registration closed, quota exhausted |
 | 404 | `not_found` | Resource does not exist (including resources that belong to someone else) |

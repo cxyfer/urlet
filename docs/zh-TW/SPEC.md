@@ -194,7 +194,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | FR-REDIR-2 | 轉址類型 | 支援 301 / 302（預設）/ 307 / 308 |
 | FR-REDIR-3 | 點擊記錄 | 非同步（`tokio::spawn`）寫入 `clicks` 與 `url_daily_stats`，不阻塞轉址 |
 | FR-REDIR-4 | 使用者代理分析 | 解析 device_type / browser / os；機器人（bot UA）標記 `is_bot = 1` |
-| FR-REDIR-5 | 隱私 | 僅存 `ip_hash = HMAC(secret, ip)` 與 `visitor_hash = HMAC(secret, ip + ua + 日期)`；**不存原始 IP** |
+| FR-REDIR-5 | 隱私 | 僅存 `ip_hash = HMAC(secret, ip)` 與 `visitor_hash = HMAC(secret, "{ip_hash}\|{user_agent}\|{day}")`（HMAC 的材料是已雜湊的 IP，不是原始位址）；**不存原始 IP** |
 | FR-REDIR-6 | 唯一訪客 | 同一 `visitor_hash` 於同一 URL 首次點擊記 `is_unique = 1` |
 | FR-REDIR-7 | 快取控制 | 密碼頁／410／404 為 `no-store`；302/307 轉址為 `private, no-store`；301/308 轉址為 `private, max-age=300`（永久轉址可短期快取，其餘一律不快取以維持點擊準確） |
 | FR-REDIR-8 | 統計開關 | 設定 `analytics_enabled = false` 時不寫入點擊 |
@@ -282,7 +282,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | FR-BOT-3 | 啟用條件 | 四個條件同時成立才啟用：provider ≠ `none`、兩把 key 皆非空、對應表單的開關（`on_register`、`on_login` 或 `on_create`）為 `true` |
 | FR-BOT-4 | 驗證方式 | 伺服器端以表單編碼（form-encoded）HTTPS POST 呼叫供應商的 siteverify 端點（帶 `secret`、`response`，以及可判定時的 `remoteip`）：Cloudflare `https://challenges.cloudflare.com/turnstile/v0/siteverify`、Google `https://www.google.com/recaptcha/api/siteverify`，逾時 5 秒，並透過 `ureq` 2 + rustls + webpki-roots 發出 |
 | FR-BOT-5 | 失敗關閉 | 任何失敗（逾時、非 2xx、回應無法解析）一律拒絕（fail closed） |
-| FR-BOT-6 | 套用範圍 | 網頁註冊表單、網頁登入表單、網頁建立短網址表單，以及 `POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`（JSON 欄位 `captcha_token`，失敗回 400 `captcha_failed`） |
+| FR-BOT-6 | 套用範圍 | 網頁註冊表單、網頁登入表單、網頁建立短網址表單，以及 `POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`（JSON 欄位 `captcha_token`，失敗回 400 `captcha_failed`）。`POST /api/v1/urls` 的 Session Cookie 呼叫見 FR-BOT-7 |
 | FR-BOT-7 | API Token 路徑 | `POST /api/v1/urls` **僅在**帶 API Token（`Authorization: Bearer uw_...`）時豁免驗證碼。使用 Session Cookie 者屬瀏覽器工作階段，受 `on_create` 約束，可帶 optional `captcha_token` |
 | FR-BOT-8 | 後台介面 | secret key 欄位為唯寫：不回顯已存值，留白送出表示維持原值 |
 
@@ -445,7 +445,7 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 
 | 方法 | 路徑 | 說明 |
 |------|------|------|
-| GET | `/api/v1/urls` | 查詢參數：`q, tag, status, page, per_page, sort(created_at\|clicks)` |
+| GET | `/api/v1/urls` | 查詢參數：`q, tag, status, page, per_page, sort(created_at\|clicks\|slug\|updated\|expires)` |
 | POST | `/api/v1/urls` | `{target_url, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?, captcha_token?}`；API Token 呼叫豁免驗證碼，Session Cookie 呼叫受 `on_create` 約束 |
 | GET | `/api/v1/urls/{id}` | 單筆（含 `short_url`、`is_expired`、`has_password`） |
 | PATCH | `/api/v1/urls/{id}` | 部分更新；`password: null` 清除密碼；`expires_at: null` 清除過期 |
@@ -474,7 +474,7 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 | GET | `/api/v1/admin/urls` | 全站網址列表 |
 | PATCH | `/api/v1/admin/urls/{id}` | 強制停用/啟用/刪除 |
 | GET | `/api/v1/admin/invites` | 邀請碼列表 |
-| POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?}` → 201 `{code: "inv_...", invite}` |
+| POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?}` → 201 `{code: "K7M2QPX4RT", invite}`（10 碼、無前綴） |
 | DELETE | `/api/v1/admin/invites/{id}` | 撤銷 → 204 |
 | GET | `/api/v1/admin/settings` | 全站設定 |
 | PUT | `/api/v1/admin/settings` | 更新設定（白名單鍵） |
@@ -489,8 +489,8 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 | GET | `/health` | `{status, version, database, uptime_seconds}` |
 | GET | `/app/lang/{code}` | 設定 `uwurls_lang` cookie 並 302 至 `next`；`next` 未帶或不是同站相對路徑時轉往 `/app` |
 | GET | `/{slug}` | 轉址（302 等）或密碼頁（HTML）或 410/404 頁 |
-| POST | `/{slug}/unlock` | 表單或 JSON `{password}`；成功 303 → `/{slug}` |
-| GET | `/api/v1/public/urls/{slug}` | 公開中介資料：`{slug, has_password, is_expired, title?}`（**不含 target**） |
+| POST | `/{slug}/unlock` | 表單或 JSON `{password}`；成功時 JSON 回 200 `{ok, redirect}`、表單 303 → `/{slug}` |
+| GET | `/api/v1/public/urls/{slug}` | 公開中介資料：`{slug, has_password, is_expired, state, title?}`（**不含 target**） |
 
 ---
 
@@ -503,10 +503,9 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 | `UWURLS_DATABASE_URL` | `sqlite:///data/uwurls.db?mode=rwc` | SQLite 連線字串 |
 | `UWURLS_DATA_DIR` | 資料庫所在目錄 | 自動產生密鑰的存放位置 |
 | `UWURLS_HEALTHCHECK_URL` | 由 `UWURLS_BIND` 推導 | `uwurls healthcheck` 的目標 URL |
-| `UWURLS_SECRET` | 自動產生並存檔 | Session/解鎖 Cookie/IP 雜湊的 HMAC 密鑰（至少 16 字元；自動產生的為 44 字元 base64） |
-| `UWURLS_SECRET_FILE` | `<資料目錄>/secret.key` | 自動產生密鑰的存放位置 |
+| `UWURLS_SECRET` | 自動產生並存檔 | Session/解鎖 Cookie/IP 雜湊的 HMAC 密鑰（至少 16 字元；自動產生的為 44 字元 base64，寫入資料目錄的 `secret.key`） |
 | `UWURLS_ADMIN_EMAIL` | — | 啟動時建立/升級的管理員 Email |
-| `UWURLS_ADMIN_PASSWORD` | — | 上述管理員密碼（僅首次建立時使用） |
+| `UWURLS_ADMIN_PASSWORD` | — | 上述管理員密碼（僅在帳號不存在時使用） |
 | `UWURLS_REGISTRATION` | 讀取設定表 | 覆寫註冊模式 `open\|invite\|closed` |
 | `UWURLS_SECURE_COOKIES` | 依 `BASE_URL` 判斷 | 強制 Cookie `Secure` |
 | `UWURLS_TRUST_PROXY` | `false` | 信任 `X-Forwarded-For` / `X-Forwarded-Proto` |

@@ -199,7 +199,7 @@ target is still met.
 | FR-REDIR-2 | Redirect type | Supports 301 / 302 (default) / 307 / 308 |
 | FR-REDIR-3 | Click recording | Written asynchronously (`tokio::spawn`) to `clicks` and `url_daily_stats`, never blocking the redirect |
 | FR-REDIR-4 | User-agent parsing | Parses device_type / browser / os; bot user agents are flagged with `is_bot = 1` |
-| FR-REDIR-5 | Privacy | Only `ip_hash = HMAC(secret, ip)` and `visitor_hash = HMAC(secret, ip + ua + date)` are stored; **the raw IP is never stored** |
+| FR-REDIR-5 | Privacy | Only `ip_hash = HMAC(secret, ip)` and `visitor_hash = HMAC(secret, "{ip_hash}\|{user_agent}\|{day}")` (the HMAC is taken over the already-hashed IP, not the raw address) are stored; **the raw IP is never stored** |
 | FR-REDIR-6 | Unique visitors | The first click for a given `visitor_hash` on a given URL is recorded with `is_unique = 1` |
 | FR-REDIR-7 | Cache control | Password pages / 410 / 404 are `no-store`; 302/307 redirects are `private, no-store`; 301/308 redirects are `private, max-age=300` (permanent redirects may be cached briefly; everything else is uncached to keep click counts accurate) |
 | FR-REDIR-8 | Analytics switch | When `analytics_enabled = false`, no click is written |
@@ -288,7 +288,7 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 | FR-BOT-3 | Enablement | All four conditions must hold at once: provider ≠ `none`, both keys non-empty, and the switch for the relevant form (`on_register`, `on_login` or `on_create`) is `true` |
 | FR-BOT-4 | Verification | The server issues a form-encoded HTTPS POST (`secret`, `response`, plus `remoteip` when the client address can be determined) to the provider's siteverify endpoint — Cloudflare `https://challenges.cloudflare.com/turnstile/v0/siteverify`, Google `https://www.google.com/recaptcha/api/siteverify` — with a 5-second timeout, through `ureq` 2 over rustls with webpki-roots |
 | FR-BOT-5 | Fail closed | Any failure (timeout, non-2xx status, unparsable response) rejects the request |
-| FR-BOT-6 | Coverage | Enforced on the web registration form, the web sign-in form, the web create-short-link form, `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (JSON field `captcha_token`; a failure returns 400 `captcha_failed`) |
+| FR-BOT-6 | Coverage | Enforced on the web registration form, the web sign-in form, the web create-short-link form, `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (JSON field `captcha_token`; a failure returns 400 `captcha_failed`). The session-cookie form of `POST /api/v1/urls` is covered by FR-BOT-7 |
 | FR-BOT-7 | API token routes | `POST /api/v1/urls` is exempt from captcha **only** when it carries an API token (`Authorization: Bearer uw_...`). A session-cookie call is a browser session and is subject to `on_create`; it accepts an optional `captcha_token` |
 | FR-BOT-8 | Admin UI | The secret key field is write-only: the stored value is never rendered back, and submitting the field empty keeps the current value |
 
@@ -452,7 +452,7 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/urls` | Query parameters: `q, tag, status, page, per_page, sort(created_at\|clicks)` |
+| GET | `/api/v1/urls` | Query parameters: `q, tag, status, page, per_page, sort(created_at\|clicks\|slug\|updated\|expires)` |
 | POST | `/api/v1/urls` | `{target_url, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?, captcha_token?}`; API-token calls are captcha-exempt, session-cookie calls honour `on_create` |
 | GET | `/api/v1/urls/{id}` | Single link (with `short_url`, `is_expired`, `has_password`) |
 | PATCH | `/api/v1/urls/{id}` | Partial update; `password: null` clears the password; `expires_at: null` clears the expiry |
@@ -481,7 +481,7 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 | GET | `/api/v1/admin/urls` | Site-wide link list |
 | PATCH | `/api/v1/admin/urls/{id}` | Force disable/enable/delete |
 | GET | `/api/v1/admin/invites` | Invite code list |
-| POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?}` → 201 `{code: "inv_...", invite}` |
+| POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?}` → 201 `{code: "K7M2QPX4RT", invite}` (a 10-character code with no prefix) |
 | DELETE | `/api/v1/admin/invites/{id}` | Revoke → 204 |
 | GET | `/api/v1/admin/settings` | Site settings |
 | PUT | `/api/v1/admin/settings` | Update settings (whitelisted keys) |
@@ -496,8 +496,8 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 | GET | `/health` | `{status, version, database, uptime_seconds}` |
 | GET | `/app/lang/{code}` | Set the `uwurls_lang` cookie and 302 to `next`, or to `/app` when `next` is missing or not a same-site relative path |
 | GET | `/{slug}` | Redirect (302 and friends), password page (HTML), or a 410/404 page |
-| POST | `/{slug}/unlock` | Form or JSON `{password}`; on success 303 → `/{slug}` |
-| GET | `/api/v1/public/urls/{slug}` | Public metadata: `{slug, has_password, is_expired, title?}` (**never includes the target**) |
+| POST | `/{slug}/unlock` | Form or JSON `{password}`; on success a JSON request returns 200 `{ok, redirect}` and a form request 303 → `/{slug}` |
+| GET | `/api/v1/public/urls/{slug}` | Public metadata: `{slug, has_password, is_expired, state, title?}` (**never includes the target**) |
 
 ---
 
@@ -510,10 +510,9 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 | `UWURLS_DATABASE_URL` | `sqlite:///data/uwurls.db?mode=rwc` | SQLite connection string |
 | `UWURLS_DATA_DIR` | Directory containing the database | Where an auto-generated secret is stored |
 | `UWURLS_HEALTHCHECK_URL` | Derived from `UWURLS_BIND` | Target URL for `uwurls healthcheck` |
-| `UWURLS_SECRET` | Auto-generated and persisted | HMAC key for sessions/unlock cookies/IP hashing (at least 16 characters; auto-generated keys are 44-character base64) |
-| `UWURLS_SECRET_FILE` | `<data dir>/secret.key` | Where an auto-generated secret is stored |
+| `UWURLS_SECRET` | Auto-generated and persisted | HMAC key for sessions/unlock cookies/IP hashing (at least 16 characters; auto-generated keys are 44-character base64, written to `secret.key` in the data directory) |
 | `UWURLS_ADMIN_EMAIL` | — | Admin email to create/upgrade at startup |
-| `UWURLS_ADMIN_PASSWORD` | — | Password for that admin (used only on first creation) |
+| `UWURLS_ADMIN_PASSWORD` | — | Password for that admin (only used when the account does not exist yet) |
 | `UWURLS_REGISTRATION` | Read from the settings table | Override the registration mode `open\|invite\|closed` |
 | `UWURLS_SECURE_COOKIES` | Derived from `BASE_URL` | Force the cookie `Secure` flag |
 | `UWURLS_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` / `X-Forwarded-Proto` |
