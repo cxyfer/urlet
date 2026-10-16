@@ -126,6 +126,20 @@ async fn language_route_sets_a_cookie_and_redirects() {
 }
 
 #[tokio::test]
+async fn language_cookie_is_secure_when_configured() {
+    let app = TestApp::spawn_with(|config| config.secure_cookies = true).await;
+    let response = app.get("/app/lang/en").await;
+    let raw = response
+        .headers
+        .get_all(header::SET_COOKIE)
+        .into_iter()
+        .filter_map(|value| value.to_str().ok())
+        .find(|value| value.starts_with("uwurls_lang="))
+        .expect("set-cookie header");
+    assert!(raw.contains("; Secure"));
+}
+
+#[tokio::test]
 async fn language_route_honours_a_safe_next_target() {
     let app = TestApp::spawn().await;
     let response = app.get("/app/lang/zh-Hant?next=%2Fapp%2Faccount").await;
