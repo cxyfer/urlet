@@ -1,107 +1,205 @@
-# uwurls 部署指南
+# uwurls deployment guide
 
-## 1. 系統需求
+**English** | [繁體中文](zh-TW/DEPLOYMENT.md)
 
-| 項目 | 最低 | 建議 |
-|------|------|------|
+## 1. Requirements
+
+| Item | Minimum | Recommended |
+|------|---------|-------------|
 | CPU | 1 vCPU | 2 vCPU |
-| 記憶體 | 128 MB | 256 MB |
-| 磁碟 | 100 MB + 資料 | 1 GB |
-| Docker | 24.x | 最新版 |
-| Docker Compose | 2.24（TLS overlay 需要 `!override`） | 最新版 |
+| Memory | 128 MB | 256 MB |
+| Disk | 100 MB + data | 1 GB |
+| Docker | 24.x | Latest |
+| Docker Compose | 2.24 (`!override` is required by the TLS overlay) | Latest |
 
-不需要外部資料庫、Redis 或反向代理。單一容器即可對外服務（建議前面加一層 TLS）。
+No external database, Redis or reverse proxy is needed. A single container can serve traffic on
+its own (putting a TLS terminator in front of it is recommended).
 
-## 2. 快速部署（HTTP）
+## 2. Quick start (HTTP)
 
 ```bash
 git clone <this repo> uwurls && cd uwurls
 cp .env.example .env
 ```
 
-編輯 `.env`：
+Edit `.env`:
 
 ```env
-UWURLS_BASE_URL=https://s.example.com      # 對外網址，會用來產生短網址
-UWURLS_PORT=8080                            # 主機對應的連接埠
+UWURLS_BASE_URL=https://s.example.com      # public URL, used to build short links
+UWURLS_PORT=8080                            # host port to publish
 UWURLS_ADMIN_EMAIL=admin@example.com
-UWURLS_ADMIN_PASSWORD=<強密碼>
-UWURLS_REGISTRATION=invite                  # 可選：open / invite / closed
+UWURLS_ADMIN_PASSWORD=<strong password>
+UWURLS_REGISTRATION=invite                  # optional: open / invite / closed
 ```
 
-啟動：
+Start it:
 
 ```bash
 docker compose up -d --build
 docker compose logs -f uwurls
 ```
 
-驗證：
+Verify:
 
 ```bash
 curl -fsS http://localhost:8080/health
 docker compose exec uwurls /usr/local/bin/uwurls healthcheck
 ```
 
-## 3. 加上自動 HTTPS（Caddy）
+## 3. Automatic HTTPS (Caddy)
 
 ```bash
 export UWURLS_DOMAIN=s.example.com
 docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
 ```
 
-- 先把 `s.example.com` 的 A/AAAA 記錄指向主機，Caddy 會自動申請與續期憑證。
-- overlay 會把 uwurls 的連接埠對外關閉（僅 compose 網路內可見），並自動設定
-  `UWURLS_BASE_URL`、`UWURLS_SECURE_COOKIES=true`、`UWURLS_TRUST_PROXY=true`。
-- 憑證存放在 `uwurls-caddy-data` volume。
+- Point the A/AAAA record for `s.example.com` at this host first; Caddy obtains and renews the
+  certificate automatically.
+- The overlay stops publishing the uwurls port (it is only reachable inside the compose network)
+  and sets `UWURLS_BASE_URL`, `UWURLS_SECURE_COOKIES=true` and `UWURLS_TRUST_PROXY=true` for you.
+- Certificates live in the `uwurls-caddy-data` volume.
 
-若使用既有的 Nginx/Traefik，請自行反向代理到 `127.0.0.1:8080` 並設定：
+If you already run Nginx or Traefik, reverse proxy to `127.0.0.1:8080` yourself and set:
 
 ```env
 UWURLS_BASE_URL=https://s.example.com
 UWURLS_SECURE_COOKIES=true
-UWURLS_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-* 時才開啟
+UWURLS_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-Forwarded-*
 ```
 
-## 4. 設定參考
+## 4. Configuration reference
 
-| 變數 | 預設 | 說明 |
-|------|------|------|
-| `UWURLS_BASE_URL` | `http://localhost:8080` | 對外網址；用於產生短網址、CSRF 同源檢查、Cookie `Secure` 判斷 |
-| `UWURLS_BIND` | `0.0.0.0:8080` | 監聽位址 |
-| `UWURLS_DATABASE_URL` | `sqlite:///data/uwurls.db?mode=rwc` | SQLite 連線字串 |
-| `UWURLS_DATA_DIR` | 資料庫所在目錄 | 自動產生密鑰的存放位置 |
-| `UWURLS_SECRET` | 自動產生 | HMAC 密鑰（至少 16 字元，建議 32+；自動產生的為 44 字元 base64）；**更換會讓所有 Session 與解鎖 Cookie 失效** |
-| `UWURLS_ADMIN_EMAIL` / `UWURLS_ADMIN_PASSWORD` | — | 啟動時建立或升級管理員 |
-| `UWURLS_REGISTRATION` | 讀取設定表 | 覆寫註冊模式：`open` / `invite` / `closed` |
-| `UWURLS_SECURE_COOKIES` | 依 `BASE_URL` 判斷 | 強制 Cookie `Secure` |
-| `UWURLS_TRUST_PROXY` | `false` | 信任 `X-Forwarded-For` / `X-Forwarded-Proto` |
-| `UWURLS_SESSION_TTL_HOURS` | `168` | Session 有效期 |
-| `UWURLS_UNLOCK_TTL_MINUTES` | `30` | 短網址解鎖 Cookie 有效期 |
-| `UWURLS_DEFAULT_SLUG_LENGTH` | 讀取設定表 | 覆寫自動 slug 長度（4–16） |
-| `UWURLS_LOG` | `info` | tracing 過濾器，例如 `uwurls=debug,tower=warn` |
-| `UWURLS_LOG_FORMAT` | `compact` | `compact` 或 `json` |
-| `UWURLS_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | `uwurls healthcheck` 的目標 |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `UWURLS_BASE_URL` | `http://localhost:8080` | Public URL; used to build short links, for the CSRF same-origin check and to decide whether cookies are `Secure` |
+| `UWURLS_BIND` | `0.0.0.0:8080` | Listen address |
+| `UWURLS_DATABASE_URL` | `sqlite:///data/uwurls.db?mode=rwc` | SQLite connection string |
+| `UWURLS_DATA_DIR` | Directory holding the database | Where the auto-generated secret is written |
+| `UWURLS_SECRET` | Auto-generated | HMAC secret (at least 16 characters, 32+ recommended; the generated one is 44 characters of base64); **changing it invalidates every session and unlock cookie** |
+| `UWURLS_ADMIN_EMAIL` / `UWURLS_ADMIN_PASSWORD` | — | Create or promote the administrator at startup |
+| `UWURLS_REGISTRATION` | Read from the settings table | Override the registration mode: `open` / `invite` / `closed` |
+| `UWURLS_SECURE_COOKIES` | Derived from `BASE_URL` | Force the `Secure` cookie flag |
+| `UWURLS_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` / `X-Forwarded-Proto` |
+| `UWURLS_SESSION_TTL_HOURS` | `168` | Session lifetime |
+| `UWURLS_UNLOCK_TTL_MINUTES` | `30` | Lifetime of the short link unlock cookie |
+| `UWURLS_DEFAULT_SLUG_LENGTH` | Read from the settings table | Override the generated slug length (4–16) |
+| `UWURLS_CAPTCHA_PROVIDER` | `none` | Bot verification provider: `none` / `turnstile` / `recaptcha` |
+| `UWURLS_CAPTCHA_SITE_KEY` | Empty | Public site key rendered into the widget |
+| `UWURLS_CAPTCHA_SECRET_KEY` | Empty | Secret key used for server-side verification (server only; the admin UI never echoes it back) |
+| `UWURLS_CAPTCHA_ON_REGISTER` | `false` | Apply bot verification to the registration form |
+| `UWURLS_CAPTCHA_ON_CREATE` | `false` | Apply bot verification to the create-short-link form |
+| `UWURLS_LOG` | `info` | tracing filter, for example `uwurls=debug,tower=warn` |
+| `UWURLS_LOG_FORMAT` | `compact` | `compact` or `json` |
+| `UWURLS_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | Target of `uwurls healthcheck` |
 
-站台層級設定（站名、註冊模式、配額、預設轉址類型、統計開關、點擊保留天數）
-在 **Admin → Settings** 調整，會存進資料庫並即時生效。
+Instance-level settings (site name, registration mode, quota, default redirect type, analytics
+switch, click retention) are edited in **Admin → Settings**; they are stored in the database and
+take effect immediately. A non-empty environment variable always overrides the value stored
+there.
 
-## 5. 資料與備份
+## 5. Bot verification (CAPTCHA)
 
-所有狀態都在 `/data`（volume `uwurls-data`）：
+uwurls can require a CAPTCHA on the two public forms that create state: the web registration form
+and the web create-short-link form. Verification is disabled by default.
+
+### Supported providers
+
+| Provider | Value | Notes |
+|----------|-------|-------|
+| Disabled | `none` | Default. No widget is rendered and nothing is verified |
+| Cloudflare Turnstile | `turnstile` | Privacy-friendly, free tier, usually invisible to the visitor |
+| Google reCAPTCHA v2 | `recaptcha` | The "I'm not a robot" checkbox |
+
+### Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `UWURLS_CAPTCHA_PROVIDER` | `none` | `none`, `turnstile` or `recaptcha` |
+| `UWURLS_CAPTCHA_SITE_KEY` | Empty | Public site key |
+| `UWURLS_CAPTCHA_SECRET_KEY` | Empty | Secret key, server side only |
+| `UWURLS_CAPTCHA_ON_REGISTER` | `false` | Verify the registration form |
+| `UWURLS_CAPTCHA_ON_CREATE` | `false` | Verify the create-short-link form |
+
+Verification becomes active for a form only when **all four** conditions hold: the provider is
+not `none`, the site key is non-empty, the secret key is non-empty, and the matching `ON_*`
+switch is `true`. Setting a provider without keys, or keys without a provider, silently leaves
+verification off.
+
+Failure is **closed**: a missing, malformed, expired or already-used token — including a timeout
+or any non-2xx response from the provider — rejects the submission. On the web forms the visitor
+sees a validation error; `POST /api/v1/auth/register` returns `400` with
+`error.code = "captcha_failed"`.
+
+### Getting the keys
+
+**Cloudflare Turnstile**
+
+1. Sign in to the Cloudflare dashboard and open **Turnstile**.
+2. Choose **Add widget**, name it, and add the hostname(s) visitors will use to reach uwurls
+   (for example `s.example.com`; add `localhost` as well if you want to test locally).
+3. Pick a widget mode (Managed is a good default) and create the widget.
+4. Copy the **Site Key** and the **Secret Key**.
+
+**Google reCAPTCHA v2**
+
+1. Open the reCAPTCHA admin console and register a new site.
+2. Select **reCAPTCHA v2** → **"I'm not a robot" Checkbox**.
+3. Add the domain(s) of your instance.
+4. Copy the **Site key** and the **Secret key**.
+
+### Configuring it
+
+In `.env` (docker compose):
+
+```env
+UWURLS_CAPTCHA_PROVIDER=turnstile
+UWURLS_CAPTCHA_SITE_KEY=0x4AAAAAAA...
+UWURLS_CAPTCHA_SECRET_KEY=0x4AAAAAAA...
+UWURLS_CAPTCHA_ON_REGISTER=true
+UWURLS_CAPTCHA_ON_CREATE=true
+```
+
+Then `docker compose up -d` to recreate the container.
+
+The same values can be entered in the admin UI under **Admin → Settings**, which takes effect
+without a restart. The secret key is write-only there: the stored value is never displayed, and
+leaving the field blank keeps it as it is. Remember that a non-empty environment variable wins
+over the admin setting, so configure each value in exactly one place.
+
+### `remoteip` behind a reverse proxy
+
+Server-side verification sends the visitor's IP address as `remoteip` so the provider can score
+the request. uwurls resolves that address exactly like the rate limiter does:
+
+- `UWURLS_TRUST_PROXY=false` (the default) — the address is the direct peer, which is the proxy
+  itself when one sits in front of uwurls. Every visitor then looks like the same client to the
+  provider, and only the token's own signals are used for scoring.
+- `UWURLS_TRUST_PROXY=true` — `X-Real-IP` is preferred, falling back to the rightmost entry of
+  `X-Forwarded-For`. The shipped `deploy/Caddyfile` sets
+  `header_up X-Real-IP {remote_host}`, so Caddy passes the real visitor address.
+- When no address can be determined, `remoteip` is omitted; both provider APIs treat it as
+  optional, so verification still works.
+
+Only enable `UWURLS_TRUST_PROXY` when the proxy is guaranteed to overwrite `X-Real-IP` /
+`X-Forwarded-For`; otherwise a client can forge its address and also evade the rate limits.
+
+## 6. Data and backups
+
+All state lives in `/data` (the `uwurls-data` volume):
 
 ```
-/data/uwurls.db         # 主要資料庫
+/data/uwurls.db         # main database
 /data/uwurls.db-wal     # write-ahead log
 /data/uwurls.db-shm
-/data/secret.key        # 未設定 UWURLS_SECRET 時自動產生的密鑰（0600）
+/data/secret.key        # auto-generated secret when UWURLS_SECRET is unset (0600)
 ```
 
-### 備份
+### Backup
 
-SQLite 處於 WAL 模式，直接 `cp` 主檔可能漏掉還在 WAL 裡的交易。兩種安全做法：
+SQLite runs in WAL mode, so copying the main file on its own can miss transactions that are still
+in the WAL. Two safe approaches:
 
-**方法 A（主機有 `sqlite3`，不需停機）**
+**Option A (host has `sqlite3`, no downtime)**
 
 ```bash
 VOL=$(docker volume inspect -f '{{ .Mountpoint }}' uwurls-data)
@@ -109,21 +207,22 @@ sudo sqlite3 "$VOL/uwurls.db" ".backup '/tmp/uwurls-$(date +%F).db'"
 mv /tmp/uwurls-$(date +%F).db ./backups/
 ```
 
-`.backup` 使用 SQLite 的線上備份 API，會取得一致的快照。
+`.backup` uses the SQLite online backup API and produces a consistent snapshot.
 
-**方法 B（沒有 `sqlite3`）**
+**Option B (no `sqlite3`)**
 
 ```bash
-docker compose stop uwurls          # 正常關閉會 checkpoint WAL
+docker compose stop uwurls          # a clean shutdown checkpoints the WAL
 docker run --rm -v uwurls-data:/data -v "$PWD":/backup alpine \
   cp /data/uwurls.db "/backup/uwurls-$(date +%F).db"
 docker compose start uwurls
 ```
 
-別忘了 `secret.key`：若你依賴自動產生的密鑰，備份它（或改用 `UWURLS_SECRET` 環境變數），
-否則還原後所有 Session 與解鎖 Cookie 都會失效。
+Do not forget `secret.key`: if you rely on the auto-generated secret, back it up (or switch to the
+`UWURLS_SECRET` environment variable), otherwise every session and unlock cookie is invalidated
+after a restore.
 
-### 還原
+### Restore
 
 ```bash
 docker compose down
@@ -132,68 +231,77 @@ docker run --rm -v uwurls-data:/data -v "$PWD":/backup alpine \
 docker compose up -d
 ```
 
-### 升級
+### Upgrading
 
 ```bash
 git pull
-docker compose up -d --build      # 啟動時自動套用遷移
+docker compose up -d --build      # migrations are applied at startup
 ```
 
-遷移是向前相容的累加檔案（`migrations/`），已套用的檔案有 checksum 保護，
-被修改時啟動會直接失敗而不是默默分歧。升級前建議先備份。
+Migrations are forward-only additive files (`migrations/`), and applied files are checksum
+protected: editing one makes startup fail instead of silently diverging. Back up before
+upgrading.
 
-## 6. 資源與硬碟用量
+## 7. Storage and disk usage
 
-| 資料 | 成長速度 |
-|------|----------|
-| `urls` | 每筆約 300 bytes |
-| `clicks` | 每筆約 150 bytes（可用 `click_retention_days` 自動清理） |
-| `url_daily_stats` | 每個短網址每天 1 列 |
-| `audit_logs` | 每筆約 200 bytes，自動保留 180 天 |
-| `sessions` | 過期或撤銷後 1 天內清除 |
-| `login_attempts` | 保留 30 天 |
+| Data | Growth |
+|------|--------|
+| `urls` | About 300 bytes per row |
+| `clicks` | About 150 bytes per row (can be pruned with `click_retention_days`) |
+| `url_daily_stats` | One row per short link per day |
+| `audit_logs` | About 200 bytes per row, retained for 180 days |
+| `sessions` | Removed within a day of expiring or being revoked |
+| `login_attempts` | Retained for 30 days |
 
-10 萬次點擊約佔 15 MB。若長期不清理，記得設定 `click_retention_days`。
+100,000 clicks take roughly 15 MB. If you never prune, set `click_retention_days`.
 
-## 7. 反向代理注意事項
+## 8. Reverse proxy notes
 
-- 一定要設定 `UWURLS_BASE_URL` 為使用者實際看到的網址，否則短網址會指向錯誤的網域。
-- 只有在代理**保證覆寫** `X-Forwarded-For` / `X-Real-IP` 時才開啟 `UWURLS_TRUST_PROXY`，
-  否則客戶端可以偽造 IP 繞過速率限制。程式優先採用 `X-Real-IP`（代理自行設定），
-  其次取 `X-Forwarded-For` 最右側的位址，因此附加式代理也安全；
-  隨附的 `deploy/Caddyfile` 已設定 `header_up X-Real-IP {remote_host}`。
-- 需要傳遞 `Host`、`X-Forwarded-For`、`X-Forwarded-Proto`；Caddy 會自動處理。
+- Always set `UWURLS_BASE_URL` to the URL users actually see, otherwise short links point at the
+  wrong domain.
+- Only enable `UWURLS_TRUST_PROXY` when the proxy is **guaranteed to overwrite**
+  `X-Forwarded-For` / `X-Real-IP`; otherwise clients can forge their IP and bypass the rate
+  limits. The application prefers `X-Real-IP` (set by the proxy itself) and otherwise takes the
+  rightmost entry of `X-Forwarded-For`, so appending proxies are safe too. The shipped
+  `deploy/Caddyfile` already sets `header_up X-Real-IP {remote_host}`.
+- `Host`, `X-Forwarded-For` and `X-Forwarded-Proto` must be forwarded; Caddy handles this
+  automatically.
 
-## 8. 監控
+## 9. Monitoring
 
-- 健康檢查：`GET /health`（200 = 正常，503 = 資料庫異常）
-- 容器 `HEALTHCHECK` 已內建，使用 `uwurls healthcheck`（映像檔不需要 curl）
-- 日誌輸出到 stdout；`UWURLS_LOG_FORMAT=json` 可搭配 Loki/CloudWatch 之類的收集器
-- 每個請求都有 `x-request-id` 回應標頭，並以相同 id 寫入日誌
-- 管理後台 **Admin → Overview** 可看使用者數、短網址數、點擊總量、資料庫大小
+- Health check: `GET /health` (200 = healthy, 503 = database problem)
+- The container ships a `HEALTHCHECK` that runs `uwurls healthcheck` (the image needs no curl)
+- Logs go to stdout; `UWURLS_LOG_FORMAT=json` pairs well with a collector such as Loki or
+  CloudWatch
+- Every request carries an `x-request-id` response header, and the same id is written to the log
+- **Admin → Overview** in the admin UI shows the user count, short link count, total clicks and
+  database size
 
-## 9. 疑難排解
+## 10. Troubleshooting
 
-| 症狀 | 原因與處理 |
-|------|-----------|
-| 啟動即失敗並顯示 migration checksum 不符 | `migrations/` 中已套用的檔案被修改；請還原該檔案或改用新的遷移檔 |
-| 登入後馬上被登出 | `UWURLS_BASE_URL` 與實際網址不一致，或 `UWURLS_SECURE_COOKIES=true` 卻用 HTTP 存取 |
-| 短網址指向 `http://localhost:8080` | 沒設定 `UWURLS_BASE_URL` |
-| 容器啟動後 `/health` 回 503 | volume 權限問題：`/data` 必須可寫（容器以 uid 10001 執行） |
-| 速率限制誤擋（NAT 後多個使用者） | 拉長限制或改用 API Token；限制是每 IP 計算 |
-| 登入回 429 但密碼正確 | 帳號被暫時鎖定（15 分鐘內 30 次失敗）。等待視窗滑過，或 `sqlite3 /data/uwurls.db "DELETE FROM login_attempts"` 立即解除 |
-| 忘記管理員密碼後想用 Token 存取 | 重設密碼會撤銷該帳號所有 API Token（安全性設計），請重新建立 |
-| 忘記管理員密碼 | 設定 `UWURLS_ADMIN_EMAIL` 為該帳號並重啟；或 `sqlite3` 直接更新，或建立新管理員後停用舊帳號 |
-| 短網址已過期想復原 | 到 `/app/urls/{id}` 清除或延長到期時間；資料未被刪除 |
-| 刪除短網址後想重用同一個 slug | 刻意不允許（避免舊連結被劫持）；請改用新 slug |
+| Symptom | Cause and fix |
+|---------|---------------|
+| Startup fails with a migration checksum mismatch | A file in `migrations/` that was already applied has been edited; restore it or add a new migration instead |
+| Signed out immediately after signing in | `UWURLS_BASE_URL` does not match the real URL, or `UWURLS_SECURE_COOKIES=true` while browsing over HTTP |
+| Short links point at `http://localhost:8080` | `UWURLS_BASE_URL` is not set |
+| `/health` returns 503 after the container starts | Volume permission problem: `/data` must be writable (the container runs as uid 10001) |
+| Rate limits hit legitimate users (many users behind NAT) | Loosen the limits or switch those clients to API tokens; limits are counted per IP |
+| Login returns 429 even with the correct password | The account is temporarily locked (30 failures within 15 minutes). Wait for the window to slide past, or run `sqlite3 /data/uwurls.db "DELETE FROM login_attempts"` to clear it immediately |
+| The CAPTCHA widget never appears | All four conditions must hold: a provider other than `none`, both keys, and the matching `ON_*` switch set to `true` |
+| Every submission fails with `captcha_failed` | The secret key does not belong to the configured provider, or the widget's hostname list does not include the domain users visit |
+| Want token access after forgetting the admin password | Resetting a password revokes every API token for that account (by design); create a new token afterwards |
+| Forgot the admin password | Set `UWURLS_ADMIN_EMAIL` to that account and restart; or update it directly with `sqlite3`, or create a new administrator and disable the old account |
+| A short link expired and you want it back | Open `/app/urls/{id}` and clear or extend the expiry; the data was never deleted |
+| Want to reuse a slug after deleting a short link | Deliberately not allowed (so old links cannot be hijacked); pick a new slug |
 
-## 10. 安全檢查清單
+## 11. Security checklist
 
-- [ ] `UWURLS_BASE_URL` 使用 `https://`
-- [ ] `UWURLS_ADMIN_PASSWORD` 為強密碼，且登入後於 `/app/account` 更換
-- [ ] 設定 `UWURLS_SECRET`（至少 32 個隨機字元）或確保自動產生的 `secret.key`（0600）已備份
-- [ ] 對外只暴露 80/443（由 Caddy 或既有代理終結 TLS）
-- [ ] 確認 `UWURLS_TRUST_PROXY` 的設定與代理行為一致
-- [ ] 註冊模式設為 `invite` 或 `closed`（除非真的要開放註冊）
-- [ ] 已規劃 `click_retention_days` 與備份排程
-- [ ] 定期 `docker compose pull && docker compose up -d --build` 更新
+- [ ] `UWURLS_BASE_URL` uses `https://`
+- [ ] `UWURLS_ADMIN_PASSWORD` is a strong password, changed at `/app/account` after the first sign-in
+- [ ] `UWURLS_SECRET` is set (at least 32 random characters), or the auto-generated `secret.key` (0600) is backed up
+- [ ] Only 80/443 are exposed publicly (Caddy or your existing proxy terminates TLS)
+- [ ] `UWURLS_TRUST_PROXY` matches the actual proxy behavior
+- [ ] The registration mode is `invite` or `closed` (unless you really want open registration)
+- [ ] `click_retention_days` and a backup schedule are planned
+- [ ] `docker compose pull && docker compose up -d --build` runs regularly
+- [ ] Bot verification is enabled on registration if the instance is reachable by the public internet
