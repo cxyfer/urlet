@@ -379,14 +379,15 @@ impl CaptchaGuard {
         let provider = self.provider.as_str();
 
         // Each verification occupies a blocking thread, so the number in flight
-        // is bounded. A saturated limiter fails closed instead of queueing: the
-        // alternative is an unbounded pile of waiting requests.
-        let _permit = match VERIFY_PERMITS.try_acquire() {
-            Ok(permit) => permit,
-            Err(_) => {
-                tracing::warn!(provider, "captcha verification is saturated");
-                return Err(CaptchaError::Unavailable);
-            }
+        // is bounded. A saturated queue waits briefly rather than being rejected
+        // at once — eight slow provider calls must not lock every legitimate
+        // visitor out — but the wait is bounded: past the deadline the request
+        // fails closed instead of piling up without limit.
+        let Ok(Ok(_permit)) =
+            tokio::time::timeout(VERIFY_QUEUE_TIMEOUT, VERIFY_PERMITS.acquire()).await
+        else {
+            tracing::warn!(provider, "captcha verification is saturated");
+            return Err(CaptchaError::Unavailable);
         };
 
         // `ureq` is blocking: keep it off the async runtime.
@@ -601,6 +602,9 @@ fn build_agent(allow_plaintext: bool) -> ureq::Agent {
 /// submissions from exhausting the blocking pool. The per-flow rate limiters
 /// bound how quickly the queue can fill.
 const MAX_CONCURRENT_VERIFICATIONS: usize = 8;
+
+/// How long a verification waits for a free slot before failing closed.
+const VERIFY_QUEUE_TIMEOUT: Duration = Duration::from_secs(2);
 
 static VERIFY_PERMITS: tokio::sync::Semaphore =
     tokio::sync::Semaphore::const_new(MAX_CONCURRENT_VERIFICATIONS);
@@ -821,6 +825,42 @@ mod tests {
             .verify(Some("garbage"), None, Some("s.example.com"))
             .await
             .is_ok());
+    }
+
+    /// The queue is bounded, but it does wait: a slot is preferred over an
+    /// instant rejection, and the deadline keeps the wait finite.
+    ///
+    /// Holds every permit for the duration, so no other test in this binary may
+    /// call `verify` with a token while it runs (none does today).
+    #[tokio::test]
+    async fn a_saturated_queue_waits_briefly_then_fails_closed() {
+        let held = VERIFY_PERMITS
+            .acquire_many(MAX_CONCURRENT_VERIFICATIONS as u32)
+            .await
+            .expect("every permit is available");
+        let guard = CaptchaGuard::new(
+            CaptchaProvider::Turnstile,
+            "site",
+            "secret",
+            "http://127.0.0.1:1/siteverify",
+            "s.example.com",
+        );
+
+        let started = std::time::Instant::now();
+        assert_eq!(
+            guard.verify(Some("token"), None, None).await,
+            Err(CaptchaError::Unavailable)
+        );
+        let waited = started.elapsed();
+        assert!(
+            waited >= VERIFY_QUEUE_TIMEOUT,
+            "a free slot is waited for, not skipped: {waited:?}"
+        );
+        assert!(
+            waited < VERIFY_QUEUE_TIMEOUT * 4,
+            "the wait is bounded: {waited:?}"
+        );
+        drop(held);
     }
 
     #[tokio::test]
