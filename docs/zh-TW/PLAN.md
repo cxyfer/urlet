@@ -179,13 +179,13 @@
 2. `src/middleware/locale.rs`：由 `uwurls_lang` cookie 或 `Accept-Language` 決定當前語言（cookie 優先），透過 task-local context 提供給 handler 與錯誤頁面，並據以輸出 `<html lang>`，同時為 HTML 回應加上 `Content-Language` 與 `Vary: Accept-Language, Cookie`。
 3. `GET /app/lang/{code}?next=<path>`：設定 cookie（`Path=/`、`SameSite=Lax`、`Max-Age` 一年、非 HttpOnly、`UWURLS_SECURE_COOKIES=true` 時加 `Secure`）後回 302；`next` 只接受同站相對路徑，其餘（含未帶 `next`）回退 `/app`；無法辨識的 `code` 視為 `en`。
 4. `src/services/captcha.rs`：Cloudflare Turnstile 與 Google reCAPTCHA v2 的供應商抽象層，支援非空環境變數覆蓋後台設定，以表單編碼搭配 5 秒逾時、透過 `ureq` 2（rustls + webpki-roots，不需 OpenSSL）對供應商 siteverify 端點發出 HTTPS POST，失敗一律拒絕（逾時／非 2xx／無法解析）。測試位於 `tests/captcha.rs`。
-5. 於網頁註冊、登入與建立短網址表單，以及 `POST /api/v1/auth/register`、`POST /api/v1/auth/login`（JSON 欄位 `captcha_token`，失敗回 400 `captcha_failed`）套用驗證碼；`POST /api/v1/urls` 走 API Token 認證，不套用。
+5. 於網頁註冊、登入與建立短網址表單，以及 `POST /api/v1/auth/register`、`POST /api/v1/auth/login`（JSON 欄位 `captcha_token`，失敗回 400 `captcha_failed`）套用驗證碼；`POST /api/v1/urls` 僅對 Session Cookie 呼叫套用，帶 `Authorization: Bearer uw_...` 者豁免，以維持自動化流程可用。
 6. 管理後台設定：新增 `captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、`captcha_on_login`、`captcha_on_create` 六個 key，各有一個對應的 `UWURLS_CAPTCHA_*` 環境變數（含 `UWURLS_CAPTCHA_ON_LOGIN`），非空時覆蓋表中值；secret key 欄位為唯寫（留白送出維持原值）。
 7. `GET /` 導覽首頁（`src/routes/pages/home.rs` + `templates/landing.html`）：hero、功能亮點、登入與註冊入口、語言切換、頁尾，已登入者顯示進入儀表板的入口；移除 302 至 `/app`。
 8. 測試：語言協商（`q=` 權重、回退英文）、cookie 切換與 `next` 驗證、API JSON 維持英文、驗證碼啟用條件矩陣、註冊／登入／建立時的驗證碼失敗關閉、`GET /` 回 200。
 9. 文件：更新 `docs/SPEC.md` 與中文鏡像 `docs/zh-TW/SPEC.md`（FR 表、路由清單、環境變數、設定 key）、兩份 `PLAN.md`、兩份 README、`docs/API.md`、`docs/DEPLOYMENT.md`、其 `docs/zh-TW/` 鏡像與 `.env.example`。
 
-**驗收**：`GET /` 對未登入與已登入使用者皆回 200 且不再轉址；`Accept-Language` 協商與語言 cookie 可切換介面，而 JSON API 回應維持英文；驗證碼僅在 provider ≠ `none`、兩把 key 非空、對應開關（`on_register`、`on_login` 或 `on_create`）為 true 時啟用，且逾時／非 2xx／解析失敗時在註冊、登入與建立流程一律拒絕；API Token 認證的端點不套用驗證碼；後台 secret key 永不回顯；`cargo test`、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過。
+**驗收**：`GET /` 對未登入與已登入使用者皆回 200 且不再轉址；`Accept-Language` 協商與語言 cookie 可切換介面，而 JSON API 回應維持英文；驗證碼僅在 provider ≠ `none`、兩把 key 非空、對應開關（`on_register`、`on_login` 或 `on_create`）為 true 時啟用，且逾時／非 2xx／解析失敗時在註冊、登入與建立流程一律拒絕；`POST /api/v1/urls` 對 Session Cookie 呼叫套用驗證碼，帶 `Authorization: Bearer uw_...` 者維持豁免；後台 secret key 永不回顯；`cargo test`、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過。
 
 ---
 

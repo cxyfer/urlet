@@ -62,8 +62,9 @@
 `captcha_token` 是網頁註冊表單上驗證元件的 token，只在註冊流程啟用防機器人驗證時檢查，
 否則會忽略此欄位。詳見[防機器人驗證](#防機器人驗證)。
 
-> `POST /api/v1/urls` 使用 Session Cookie 或 API Token 認證，**不套用**防機器人驗證，
-> 自動化流程與 CI 不受影響。
+> `POST /api/v1/urls` **只有在使用 API Token（`Authorization: Bearer uw_...`）認證時**才不套用
+> 防機器人驗證，因此自動化流程與 CI 不受影響。使用 **Session Cookie** 認證者屬於瀏覽器工作階段，
+> 會受「建立短網址」開關約束，需在 `captcha_token` 帶入 widget token。
 
 ### `POST /api/v1/auth/login`
 
@@ -160,12 +161,15 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
   "password": "linkpass",
   "expires_at": "2030-06-30 12:00",
   "max_clicks": 500,
-  "redirect_type": 302
+  "redirect_type": 302,
+  "captcha_token": "0.abc..."
 }
 ```
 
 `201` → `UrlDto`。規則：
 
+- `captcha_token` 只在「使用 **Session Cookie** 認證」且「建立短網址」的防機器人驗證已啟用時才會讀取；
+  以 `Bearer` Token 呼叫時會被忽略。驗證失敗回 `400` 且 `error.code = "captcha_failed"`
 - `target_url` 必填；只接受 `http`/`https`；未寫 scheme 的裸網域會自動補 `https://`
 - `slug` 可省略（自動產生 7 字元 base62）；僅允許 `[A-Za-z0-9_-]`，長度 1–64，且不得為保留字
 - `expires_at` 必須是未來時間；`max_clicks` ≥ 1
@@ -345,7 +349,7 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | 網頁建立短網址表單（`POST /app/urls`） | 建立流程啟用時套用 |
 | `POST /api/v1/auth/register` | 註冊流程啟用時套用；以 `captcha_token` 傳入驗證元件的 token；失敗回 `400` 且 `error.code = "captcha_failed"` |
 | `POST /api/v1/auth/login` | 登入流程啟用時套用；以 `captcha_token` 傳入驗證元件的 token；失敗回 `400` 且 `error.code = "captcha_failed"` |
-| `POST /api/v1/urls` | **不套用**，以 API Token 或 Session Cookie 認證 |
+| `POST /api/v1/urls` | **僅限 API Token 豁免** —— 帶 `Authorization: Bearer uw_...` 時不套用；使用 Session Cookie 者受「建立短網址」開關約束，可帶 optional `captcha_token` |
 
 ---
 

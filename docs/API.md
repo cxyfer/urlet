@@ -64,8 +64,10 @@ invite code, `400` `captcha_failed` when bot verification is enabled and rejects
 It is only checked when bot verification is enabled for registration; otherwise the field is
 ignored. See [Bot verification](#bot-verification).
 
-> `POST /api/v1/urls` authenticates with a session cookie or an API token and is **never**
-> subject to bot verification, so automation and CI pipelines are unaffected.
+> `POST /api/v1/urls` is exempt from bot verification **only when it authenticates with an API
+> token** (`Authorization: Bearer uw_...`), so automation and CI pipelines are unaffected. A
+> request authenticated with a **session cookie** is a browser session and is subject to the
+> link-creation switch; send the widget token in `captcha_token`.
 
 ### `POST /api/v1/auth/login`
 
@@ -165,12 +167,16 @@ Query parameters:
   "password": "linkpass",
   "expires_at": "2030-06-30 12:00",
   "max_clicks": 500,
-  "redirect_type": 302
+  "redirect_type": 302,
+  "captcha_token": "0.abc..."
 }
 ```
 
 `201` → `UrlDto`. Rules:
 
+- `captcha_token` is only read when the request is authenticated with a **session cookie** and
+  bot verification is enabled for link creation; a `Bearer` token call ignores it. A failed
+  check returns `400` with `error.code = "captcha_failed"`
 - `target_url` is required; only `http`/`https` are accepted, and a bare domain without a scheme
   is given a `https://` prefix
 - `slug` may be omitted (a 7-character base62 slug is generated); only `[A-Za-z0-9_-]` is
@@ -360,7 +366,7 @@ or any non-2xx response from the provider — rejects the submission.
 | Web create-short-link form (`POST /app/urls`) | Applies when enabled for link creation |
 | `POST /api/v1/auth/register` | Applies when enabled for registration; send the widget token in `captcha_token`; failure returns `400` with `error.code = "captcha_failed"` |
 | `POST /api/v1/auth/login` | Applies when enabled for sign-in; send the widget token in `captcha_token`; failure returns `400` with `error.code = "captcha_failed"` |
-| `POST /api/v1/urls` | **Not applied** — it authenticates with an API token or session cookie |
+| `POST /api/v1/urls` | **API tokens only** — exempt when the request carries `Authorization: Bearer uw_...`; a session-cookie call is subject to the link-creation switch and takes an optional `captcha_token` |
 
 ---
 

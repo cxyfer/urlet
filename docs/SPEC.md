@@ -289,7 +289,7 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 | FR-BOT-4 | Verification | The server issues a form-encoded HTTPS POST (`secret`, `response`, plus `remoteip` when the client address can be determined) to the provider's siteverify endpoint — Cloudflare `https://challenges.cloudflare.com/turnstile/v0/siteverify`, Google `https://www.google.com/recaptcha/api/siteverify` — with a 5-second timeout, through `ureq` 2 over rustls with webpki-roots |
 | FR-BOT-5 | Fail closed | Any failure (timeout, non-2xx status, unparsable response) rejects the request |
 | FR-BOT-6 | Coverage | Enforced on the web registration form, the web sign-in form, the web create-short-link form, `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (JSON field `captcha_token`; a failure returns 400 `captcha_failed`) |
-| FR-BOT-7 | API token routes | `POST /api/v1/urls` authenticates with an API token and is not subject to captcha |
+| FR-BOT-7 | API token routes | `POST /api/v1/urls` is exempt from captcha **only** when it carries an API token (`Authorization: Bearer uw_...`). A session-cookie call is a browser session and is subject to `on_create`; it accepts an optional `captcha_token` |
 | FR-BOT-8 | Admin UI | The secret key field is write-only: the stored value is never rendered back, and submitting the field empty keeps the current value |
 
 ---
@@ -453,7 +453,7 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/v1/urls` | Query parameters: `q, tag, status, page, per_page, sort(created_at\|clicks)` |
-| POST | `/api/v1/urls` | `{target_url, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?}`; API token authentication, captcha not applied |
+| POST | `/api/v1/urls` | `{target_url, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?, captcha_token?}`; API-token calls are captcha-exempt, session-cookie calls honour `on_create` |
 | GET | `/api/v1/urls/{id}` | Single link (with `short_url`, `is_expired`, `has_password`) |
 | PATCH | `/api/v1/urls/{id}` | Partial update; `password: null` clears the password; `expires_at: null` clears the expiry |
 | DELETE | `/api/v1/urls/{id}` | Soft delete → 204 |
@@ -629,7 +629,7 @@ v1.1 additions (this batch):
 - [ ] Captcha is enabled only when provider ≠ none, both keys are non-empty, and the matching switch (`on_register`, `on_login` or `on_create`) is true; a non-empty environment variable overrides the stored setting
 - [ ] Captcha verification fails closed on timeout, non-2xx status, or an unparsable response, and is enforced on web register, web sign-in, web create, `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (400 `captcha_failed`)
 - [ ] The siteverify call is the only outbound HTTP request, goes through `ureq` 2 over rustls + webpki-roots (no OpenSSL), and is off by default
-- [ ] Captcha is not applied to `POST /api/v1/urls`, and the admin secret-key field is write-only
+- [ ] `POST /api/v1/urls` is captcha-exempt only for API-token calls (a session-cookie call honours `on_create`), and the admin secret-key field is write-only
 - [ ] `GET /` returns 200 as a landing/navigation page for anonymous and signed-in visitors, and no longer redirects to `/app`
 - [ ] `cargo test` (245 tests), `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are clean, `scripts/smoke.sh` passes all 81 end-to-end checks, and the container image builds and runs under musl (§3.3)
 
