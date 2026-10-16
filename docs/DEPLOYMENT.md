@@ -87,6 +87,7 @@ UWURLS_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-For
 | `UWURLS_CAPTCHA_SITE_KEY` | Empty | Public site key rendered into the widget |
 | `UWURLS_CAPTCHA_SECRET_KEY` | Empty | Secret key used for server-side verification (server only; the admin UI never echoes it back) |
 | `UWURLS_CAPTCHA_ON_REGISTER` | `false` | Apply bot verification to the registration form |
+| `UWURLS_CAPTCHA_ON_LOGIN` | `false` | Apply bot verification to the sign-in form |
 | `UWURLS_CAPTCHA_ON_CREATE` | `false` | Apply bot verification to the create-short-link form |
 | `UWURLS_LOG` | `info` | tracing filter, for example `uwurls=debug,tower=warn` |
 | `UWURLS_LOG_FORMAT` | `compact` | `compact` or `json` |
@@ -99,8 +100,10 @@ there.
 
 ## 5. Bot verification (CAPTCHA)
 
-uwurls can require a CAPTCHA on the two public forms that create state: the web registration form
-and the web create-short-link form. Verification is disabled by default.
+uwurls can require a CAPTCHA on the three public forms that create state: the web registration
+form, the web sign-in form, and the web create-short-link form. The JSON API endpoints
+`POST /api/v1/auth/register` and `POST /api/v1/auth/login` are covered as well; they take the
+widget token in the optional `captcha_token` field. Verification is disabled by default.
 
 ### Supported providers
 
@@ -118,17 +121,19 @@ and the web create-short-link form. Verification is disabled by default.
 | `UWURLS_CAPTCHA_SITE_KEY` | Empty | Public site key |
 | `UWURLS_CAPTCHA_SECRET_KEY` | Empty | Secret key, server side only |
 | `UWURLS_CAPTCHA_ON_REGISTER` | `false` | Verify the registration form |
+| `UWURLS_CAPTCHA_ON_LOGIN` | `false` | Verify the sign-in form |
 | `UWURLS_CAPTCHA_ON_CREATE` | `false` | Verify the create-short-link form |
 
 Verification becomes active for a form only when **all four** conditions hold: the provider is
 not `none`, the site key is non-empty, the secret key is non-empty, and the matching `ON_*`
-switch is `true`. Setting a provider without keys, or keys without a provider, silently leaves
-verification off.
+switch (`UWURLS_CAPTCHA_ON_REGISTER`, `UWURLS_CAPTCHA_ON_LOGIN` or `UWURLS_CAPTCHA_ON_CREATE`) is
+`true`. Setting a provider without keys, or keys without a provider, silently leaves verification
+off.
 
 Failure is **closed**: a missing, malformed, expired or already-used token — including a timeout
 or any non-2xx response from the provider — rejects the submission. On the web forms the visitor
-sees a validation error; `POST /api/v1/auth/register` returns `400` with
-`error.code = "captcha_failed"`.
+sees a validation error; `POST /api/v1/auth/register` and `POST /api/v1/auth/login` return `400`
+with `error.code = "captcha_failed"` when the matching switch is enabled.
 
 ### Getting the keys
 
@@ -156,10 +161,13 @@ UWURLS_CAPTCHA_PROVIDER=turnstile
 UWURLS_CAPTCHA_SITE_KEY=0x4AAAAAAA...
 UWURLS_CAPTCHA_SECRET_KEY=0x4AAAAAAA...
 UWURLS_CAPTCHA_ON_REGISTER=true
+UWURLS_CAPTCHA_ON_LOGIN=true
 UWURLS_CAPTCHA_ON_CREATE=true
 ```
 
-Then `docker compose up -d` to recreate the container.
+The shipped `docker-compose.yml` passes all six `UWURLS_CAPTCHA_*` variables through to the
+container, so setting them in `.env` is enough — no compose edit is needed. Then
+`docker compose up -d` to recreate the container.
 
 The same values can be entered in the admin UI under **Admin → Settings**, which takes effect
 without a restart. The secret key is write-only there: the stored value is never displayed, and
@@ -288,7 +296,7 @@ upgrading.
 | Rate limits hit legitimate users (many users behind NAT) | Loosen the limits or switch those clients to API tokens; limits are counted per IP |
 | Login returns 429 even with the correct password | The account is temporarily locked (30 failures within 15 minutes). Wait for the window to slide past, or run `sqlite3 /data/uwurls.db "DELETE FROM login_attempts"` to clear it immediately |
 | The CAPTCHA widget never appears | All four conditions must hold: a provider other than `none`, both keys, and the matching `ON_*` switch set to `true` |
-| Every submission fails with `captcha_failed` | The secret key does not belong to the configured provider, or the widget's hostname list does not include the domain users visit |
+| Every submission fails with `captcha_failed` | The secret key does not belong to the configured provider, the widget's hostname list does not include the domain users visit, or an API client forgot to send the widget token as `captcha_token` |
 | Want token access after forgetting the admin password | Resetting a password revokes every API token for that account (by design); create a new token afterwards |
 | Forgot the admin password | Set `UWURLS_ADMIN_EMAIL` to that account and restart; or update it directly with `sqlite3`, or create a new administrator and disable the old account |
 | A short link expired and you want it back | Open `/app/urls/{id}` and clear or extend the expiry; the data was never deleted |
@@ -304,4 +312,4 @@ upgrading.
 - [ ] The registration mode is `invite` or `closed` (unless you really want open registration)
 - [ ] `click_retention_days` and a backup schedule are planned
 - [ ] `docker compose pull && docker compose up -d --build` runs regularly
-- [ ] Bot verification is enabled on registration if the instance is reachable by the public internet
+- [ ] Bot verification is enabled on registration and sign-in if the instance is reachable by the public internet

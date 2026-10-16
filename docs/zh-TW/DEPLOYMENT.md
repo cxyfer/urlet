@@ -85,6 +85,7 @@ UWURLS_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-
 | `UWURLS_CAPTCHA_SITE_KEY` | 空 | 公開 site key，會渲染進驗證元件 |
 | `UWURLS_CAPTCHA_SECRET_KEY` | 空 | 伺服器端驗證用的密鑰（只存在於伺服器端；後台介面不會回顯） |
 | `UWURLS_CAPTCHA_ON_REGISTER` | `false` | 註冊表單是否套用防機器人驗證 |
+| `UWURLS_CAPTCHA_ON_LOGIN` | `false` | 登入表單是否套用防機器人驗證 |
 | `UWURLS_CAPTCHA_ON_CREATE` | `false` | 建立短網址表單是否套用防機器人驗證 |
 | `UWURLS_LOG` | `info` | tracing 過濾器，例如 `uwurls=debug,tower=warn` |
 | `UWURLS_LOG_FORMAT` | `compact` | `compact` 或 `json` |
@@ -96,8 +97,9 @@ UWURLS_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-
 
 ## 5. 防機器人驗證（CAPTCHA）
 
-uwurls 可以要求兩個會產生資料的公開表單通過防機器人驗證：網頁註冊表單與網頁建立短網址表單。
-預設關閉。
+uwurls 可以要求三個會產生資料的公開表單通過防機器人驗證：網頁註冊表單、網頁登入表單與
+網頁建立短網址表單。JSON API 的 `POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`
+也涵蓋在內，兩者以選填欄位 `captcha_token` 接收驗證元件的權杖。預設關閉。
 
 ### 支援的供應商
 
@@ -115,15 +117,18 @@ uwurls 可以要求兩個會產生資料的公開表單通過防機器人驗證�
 | `UWURLS_CAPTCHA_SITE_KEY` | 空 | 公開 site key |
 | `UWURLS_CAPTCHA_SECRET_KEY` | 空 | 密鑰，只存在於伺服器端 |
 | `UWURLS_CAPTCHA_ON_REGISTER` | `false` | 驗證註冊表單 |
+| `UWURLS_CAPTCHA_ON_LOGIN` | `false` | 驗證登入表單 |
 | `UWURLS_CAPTCHA_ON_CREATE` | `false` | 驗證建立短網址表單 |
 
 四個條件**全部**成立時，該表單才會啟用驗證：provider 不是 `none`、site key 非空、
-secret key 非空，以及對應的 `ON_*` 開關為 `true`。
+secret key 非空，以及對應的 `ON_*` 開關（`UWURLS_CAPTCHA_ON_REGISTER`、
+`UWURLS_CAPTCHA_ON_LOGIN` 或 `UWURLS_CAPTCHA_ON_CREATE`）為 `true`。
 只設定 provider 而沒有金鑰，或只有金鑰而沒有 provider，都會讓驗證維持關閉。
 
 驗證失敗一律**拒絕**（fail closed）：token 缺少、格式錯誤、逾期或已使用過，
 以及逾時或供應商回應非 2xx，都會拒絕該次提交。網頁表單會顯示驗證錯誤訊息；
-`POST /api/v1/auth/register` 則回 `400` 且 `error.code = "captcha_failed"`。
+對應開關啟用時，`POST /api/v1/auth/register` 與 `POST /api/v1/auth/login` 則回 `400`
+且 `error.code = "captcha_failed"`。
 
 ### 取得金鑰
 
@@ -151,10 +156,13 @@ UWURLS_CAPTCHA_PROVIDER=turnstile
 UWURLS_CAPTCHA_SITE_KEY=0x4AAAAAAA...
 UWURLS_CAPTCHA_SECRET_KEY=0x4AAAAAAA...
 UWURLS_CAPTCHA_ON_REGISTER=true
+UWURLS_CAPTCHA_ON_LOGIN=true
 UWURLS_CAPTCHA_ON_CREATE=true
 ```
 
-接著執行 `docker compose up -d` 重建容器。
+隨附的 `docker-compose.yml` 會把六個 `UWURLS_CAPTCHA_*` 變數直接傳進容器，
+因此只要在 `.env` 設定即可，不需要修改 compose 檔。接著執行
+`docker compose up -d` 重建容器。
 
 同樣的值也可以在管理後台 **Admin → Settings** 輸入，不需要重啟即生效。
 密鑰在後台是唯寫的：不會回顯已儲存的值，留白則維持原值。
@@ -273,7 +281,7 @@ docker compose up -d --build      # 啟動時自動套用遷移
 | 速率限制誤擋（NAT 後多個使用者） | 拉長限制或改用 API Token；限制是每 IP 計算 |
 | 登入回 429 但密碼正確 | 帳號被暫時鎖定（15 分鐘內 30 次失敗）。等待視窗滑過，或 `sqlite3 /data/uwurls.db "DELETE FROM login_attempts"` 立即解除 |
 | 驗證元件完全沒出現 | 四個條件都要成立：provider 不是 `none`、兩把金鑰都非空、對應的 `ON_*` 為 `true` |
-| 每次提交都回 `captcha_failed` | 密鑰不屬於目前設定的供應商，或元件的網域清單沒有包含使用者實際連到的網域 |
+| 每次提交都回 `captcha_failed` | 密鑰不屬於目前設定的供應商、元件的網域清單沒有包含使用者實際連到的網域，或 API 用戶端忘了以 `captcha_token` 帶上驗證元件的權杖 |
 | 忘記管理員密碼後想用 Token 存取 | 重設密碼會撤銷該帳號所有 API Token（安全性設計），請重新建立 |
 | 忘記管理員密碼 | 設定 `UWURLS_ADMIN_EMAIL` 為該帳號並重啟；或 `sqlite3` 直接更新，或建立新管理員後停用舊帳號 |
 | 短網址已過期想復原 | 到 `/app/urls/{id}` 清除或延長到期時間；資料未被刪除 |
@@ -289,4 +297,4 @@ docker compose up -d --build      # 啟動時自動套用遷移
 - [ ] 註冊模式設為 `invite` 或 `closed`（除非真的要開放註冊）
 - [ ] 已規劃 `click_retention_days` 與備份排程
 - [ ] 定期 `docker compose pull && docker compose up -d --build` 更新
-- [ ] 若實例可從公網連線，已為註冊流程啟用防機器人驗證
+- [ ] 若實例可從公網連線，已為註冊與登入流程啟用防機器人驗證

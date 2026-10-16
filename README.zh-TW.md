@@ -21,7 +21,7 @@
 | 🔑 API Token | `Authorization: Bearer uw_...`，可設到期與撤銷 |
 | 🛠 管理後台 | 使用者管理、全站短網址、邀請碼、站台設定、稽核日誌 |
 | 🌐 多語系介面 | 介面提供 English / 繁體中文 / 简体中文 切換；初次訪問依瀏覽器 `Accept-Language` 自動選擇，無法辨識時預設英文 |
-| 🤖 防機器人驗證 | 可透過環境變數或管理後台啟用 Cloudflare Turnstile 或 Google reCAPTCHA v2，套用於註冊與建立短網址表單 |
+| 🤖 防機器人驗證 | 可透過環境變數或管理後台啟用 Cloudflare Turnstile 或 Google reCAPTCHA v2，套用於註冊、登入與建立短網址表單 |
 | 🐳 部署 | 單一容器 + named volume；附 Caddy 自動 HTTPS overlay |
 | 🪶 輕量 | 二進位檔與容器映像為數 MB、RSS 數 MB、轉址 P95 低於 1 毫秒（約略值，說明見下） |
 
@@ -162,6 +162,9 @@ bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 - 開放轉址防護：目標僅允許 `http`/`https`，`javascript:`/`data:`/`file:` 一律拒絕
 - 隱私：不存原始 IP，只存 HMAC 後的 `ip_hash` 與每日輪替的 `visitor_hash`
 - 速率限制：登入（每 IP 與每帳號兩層）、註冊、解鎖、建立短網址、改密碼
+- 防機器人驗證：可選 Turnstile 或 reCAPTCHA v2，套用於註冊、登入與建立短網址，
+  並以 `UWURLS_CAPTCHA_ON_REGISTER`、`UWURLS_CAPTCHA_ON_LOGIN`、
+  `UWURLS_CAPTCHA_ON_CREATE` 逐表單開關
 - 帳號鎖定：同一帳號 15 分鐘內 30 次失敗即暫時拒絕登入（持久化，重啟不重置）
 - 反向代理：優先信任代理設定的 `X-Real-IP`，其次取 `X-Forwarded-For` 最右側
 - 密碼雜湊在阻塞執行緒池中進行，並限制同時最多 4 個 Argon2 計算

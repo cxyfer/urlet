@@ -22,7 +22,7 @@ service, no frontend build step.
 | 🔑 API tokens | `Authorization: Bearer uw_...`, with optional expiry and revocation |
 | 🛠 Admin panel | User management, all site links, invite codes, site settings, audit log |
 | 🌐 Localized UI | English, Traditional Chinese, and Simplified Chinese; the first visit follows the browser's `Accept-Language` header and falls back to English |
-| 🤖 Bot protection | Cloudflare Turnstile or Google reCAPTCHA v2, enabled through environment variables or the admin panel; applies to the registration and link creation forms |
+| 🤖 Bot protection | Cloudflare Turnstile or Google reCAPTCHA v2, enabled through environment variables or the admin panel; applies to the registration, sign-in and link creation forms |
 | 🐳 Deployment | Single container plus a named volume; optional Caddy overlay for automatic HTTPS |
 | 🪶 Lightweight | A few megabytes for the binary and the container image, a few megabytes of RSS, and sub-millisecond redirect latency at P95 (approximate — see the note below) |
 
@@ -175,6 +175,9 @@ Chinese translations of these documents live under `docs/zh-TW/`.
   `visitor_hash`
 - Rate limiting: sign-in (per IP and per account), registration, unlock, link creation,
   password change
+- Bot verification: optional Turnstile or reCAPTCHA v2 on registration, sign-in and link
+  creation, toggled per form with `UWURLS_CAPTCHA_ON_REGISTER`, `UWURLS_CAPTCHA_ON_LOGIN` and
+  `UWURLS_CAPTCHA_ON_CREATE`
 - Account lockout: 30 failed sign-ins for the same account within 15 minutes temporarily
   blocks it (persisted, so a restart does not reset the counter)
 - Reverse proxy: the proxy's `X-Real-IP` is trusted first, otherwise the rightmost
