@@ -464,5 +464,7 @@
   "admin.settings.captcha_state.missing_keys": "未套用：缺少網站金鑰與密鑰。",
   "admin.settings.captcha_state.missing_site_key": "未套用：缺少網站金鑰。",
   "admin.settings.captcha_state.missing_secret_key": "未套用：缺少密鑰。",
-  "admin.settings.captcha_state.no_flow": "未套用：尚未勾選任何流程。"
+  "admin.settings.captcha_state.no_flow": "未套用：尚未勾選任何流程。",
+  "admin.settings.captcha_allowed_hostnames": "其他允許的主機名稱",
+  "admin.settings.captcha_allowed_hostnames_hint": "若你的實例同時以其他主機名稱提供服務，請把那些主機名稱填在這裡（以逗號分隔）。否則在那些主機上解出的驗證會被拒絕。"
 }

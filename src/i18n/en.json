@@ -464,5 +464,7 @@
   "admin.settings.captcha_state.missing_keys": "Not applied: both the site key and the secret key are missing.",
   "admin.settings.captcha_state.missing_site_key": "Not applied: the site key is missing.",
   "admin.settings.captcha_state.missing_secret_key": "Not applied: the secret key is missing.",
-  "admin.settings.captcha_state.no_flow": "Not applied: no flow is protected yet."
+  "admin.settings.captcha_state.no_flow": "Not applied: no flow is protected yet.",
+  "admin.settings.captcha_allowed_hostnames": "Additional allowed hostnames",
+  "admin.settings.captcha_allowed_hostnames_hint": "If this instance is also served under other hostnames, list them here (comma separated). Otherwise a verification solved on those hostnames is rejected."
 }

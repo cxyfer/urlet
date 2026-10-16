@@ -1070,7 +1070,8 @@ async fn an_admin_can_configure_bot_protection() {
             "/app/admin/settings",
             &settings_form(
                 "captcha_provider=recaptcha&captcha_site_key=public-site-key\
-                 &captcha_secret_key=top-secret-value&captcha_on_login=on",
+                 &captcha_secret_key=top-secret-value&captcha_on_login=on\
+                 &captcha_allowed_hostnames=S.Example.com,links.example.com",
             ),
             &cookie,
         ))
@@ -1085,6 +1086,11 @@ async fn an_admin_can_configure_bot_protection() {
     assert!(settings.captcha_on_login());
     assert!(!settings.captcha_on_register());
     assert!(!settings.captcha_on_create());
+    assert_eq!(
+        settings.captcha_allowed_hostnames(),
+        "s.example.com,links.example.com",
+        "the allowlist is stored canonicalised"
+    );
 
     // The secret never reaches a browser or the admin API, and the page reports
     // that the configuration is actually in effect.
@@ -1095,6 +1101,17 @@ async fn an_admin_can_configure_bot_protection() {
     assert!(
         page.body
             .contains("Active: the guarded flows show a challenge."),
+        "{}",
+        page.body
+    );
+    // The allowlist round-trips through the form.
+    assert!(
+        page.body.contains("s.example.com,links.example.com"),
+        "{}",
+        page.body
+    );
+    assert!(
+        page.body.contains("Additional allowed hostnames"),
         "{}",
         page.body
     );
@@ -1170,6 +1187,18 @@ async fn an_admin_can_configure_bot_protection() {
         "{}",
         page.body
     );
+
+    // An unusable allowlist entry is refused, and nothing in that batch lands.
+    let kept = app.state.settings.captcha_allowed_hostnames();
+    let refused = app
+        .send(post_form_as(
+            "/app/admin/settings",
+            &settings_form("captcha_allowed_hostnames=https://links.example.com"),
+            &cookie,
+        ))
+        .await;
+    assert_redirect(&refused, "/app/admin/settings?err=invalid");
+    assert_eq!(app.state.settings.captcha_allowed_hostnames(), kept);
 
     // The JSON API can clear the secret; the page then says which key is gone.
     let wiped = app

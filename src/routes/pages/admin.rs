@@ -178,6 +178,8 @@ pub struct SettingsValues {
     pub captcha_site_key: String,
     /// Whether a secret is stored. The secret itself is never rendered.
     pub captcha_secret_configured: bool,
+    /// Comma separated hostnames the provider may report, `base_host` excluded.
+    pub captcha_allowed_hostnames: String,
     pub captcha_on_register: bool,
     pub captcha_on_login: bool,
     pub captcha_on_create: bool,
@@ -288,6 +290,9 @@ pub struct SettingsForm {
     /// Write only: an empty field keeps the stored secret.
     #[serde(default)]
     pub captcha_secret_key: Option<String>,
+    /// Echoed back, so an empty field clears the allowlist.
+    #[serde(default)]
+    pub captcha_allowed_hostnames: Option<String>,
     #[serde(default)]
     pub captcha_on_register: Option<String>,
     #[serde(default)]
@@ -700,6 +705,9 @@ pub async fn update_settings(
     {
         values.push(("captcha_secret_key".to_string(), secret));
     }
+    if let Some(hostnames) = payload.captcha_allowed_hostnames {
+        values.push(("captcha_allowed_hostnames".to_string(), hostnames));
+    }
     // An unchecked box is simply absent from the body, so absence means "off".
     for (key, checked) in [
         ("captcha_on_register", payload.captcha_on_register.is_some()),
@@ -1076,6 +1084,7 @@ pub fn settings_values(settings: &Settings) -> SettingsValues {
         captcha_provider: settings.captcha_provider().as_str().to_string(),
         captcha_site_key: settings.captcha_site_key(),
         captcha_secret_configured: settings.captcha_secret_configured(),
+        captcha_allowed_hostnames: settings.captcha_allowed_hostnames(),
         captcha_on_register: settings.captcha_on_register(),
         captcha_on_login: settings.captcha_on_login(),
         captcha_on_create: settings.captcha_on_create(),

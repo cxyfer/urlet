@@ -89,6 +89,13 @@
                     {{ lang.t("admin.settings.captcha_secret_hint") }}
                 </span>
             </div>
+            <div class="field">
+                <label class="label" for="captcha_allowed_hostnames">{{ lang.t("admin.settings.captcha_allowed_hostnames") }}</label>
+                <input class="input" type="text" id="captcha_allowed_hostnames" name="captcha_allowed_hostnames"
+                       value="{{ values.captcha_allowed_hostnames }}" autocomplete="off"
+                       placeholder="links.example.com, go.example.com">
+                <span class="hint">{{ lang.t("admin.settings.captcha_allowed_hostnames_hint") }}</span>
+            </div>
         </div>
 
         <label class="checkbox">

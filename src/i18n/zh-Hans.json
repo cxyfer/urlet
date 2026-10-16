@@ -464,5 +464,7 @@
   "admin.settings.captcha_state.missing_keys": "未应用：缺少站点密钥与密钥。",
   "admin.settings.captcha_state.missing_site_key": "未应用：缺少站点密钥。",
   "admin.settings.captcha_state.missing_secret_key": "未应用：缺少密钥。",
-  "admin.settings.captcha_state.no_flow": "未应用：尚未勾选任何流程。"
+  "admin.settings.captcha_state.no_flow": "未应用：尚未勾选任何流程。",
+  "admin.settings.captcha_allowed_hostnames": "其他允许的主机名",
+  "admin.settings.captcha_allowed_hostnames_hint": "若你的实例同时以其他主机名提供服务，请把那些主机名填在这里（以逗号分隔）。否则在那些主机名上解出的验证会被拒绝。"
 }
