@@ -18,6 +18,19 @@
 -- == domains ----------------------------------------------------------------
 UPDATE domains SET hostname = rtrim(lower(trim(hostname)), '.');
 
+-- Match `services::domains::normalize_host`: a trailing dot before a port and a
+-- default port are not part of the stored hostname. Without this, a v2 database
+-- seeded from `URLET_BASE_URL=https://example.com:443` would keep
+-- `example.com:443`, while the new bootstrap inserts `example.com`; URLs would
+-- stay attached to the old row and every existing link would 404.
+UPDATE domains SET hostname = replace(hostname, '.:', ':')
+ WHERE hostname LIKE '%.:%';
+UPDATE domains SET hostname = substr(hostname, 1, length(hostname) - 4)
+ WHERE hostname LIKE '%:443';
+UPDATE domains SET hostname = substr(hostname, 1, length(hostname) - 3)
+ WHERE hostname LIKE '%:80';
+UPDATE domains SET hostname = rtrim(hostname, '.');
+
 ALTER TABLE domains ADD COLUMN status TEXT NOT NULL DEFAULT 'active'
     CHECK (status IN ('pending', 'active', 'disabled'));
 ALTER TABLE domains ADD COLUMN source TEXT NOT NULL DEFAULT 'ui'

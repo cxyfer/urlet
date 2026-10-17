@@ -474,4 +474,126 @@ mod tests {
         pool.close().await;
         let _ = std::fs::remove_dir_all(&dir);
     }
+    #[tokio::test]
+    async fn normalizes_default_ports_in_migrated_domains() {
+        let dir = std::env::temp_dir().join(format!(
+            "urlet-migrate-default-ports-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = format!("{}/default-ports.db", dir.display());
+        let options = test_options(&path);
+        let pool = test_pool(&options).await;
+
+        run_until(&pool, &options, "0002_clicks_indexes")
+            .await
+            .expect("v2 schema");
+
+        let now = now_iso();
+        sqlx::query(
+            "INSERT INTO users (email, email_normalized, password_hash, created_at, updated_at)
+             VALUES ('ports@example.com', 'ports@example.com', 'hash', ?, ?)",
+        )
+        .bind(&now)
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("user");
+        let user_id: i64 =
+            sqlx::query_scalar("SELECT id FROM users WHERE email = 'ports@example.com'")
+                .fetch_one(&pool)
+                .await
+                .expect("user id");
+
+        // v2 seeded the canonical row from URLET_BASE_URL without normalising
+        // an explicit default port.
+        sqlx::query(
+            "INSERT INTO domains (hostname, is_default, is_verified, created_at)
+             VALUES ('s.example.com.:443', 1, 1, ?)",
+        )
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("canonical domain");
+        sqlx::query(
+            "INSERT INTO domains (hostname, is_default, is_verified, created_at)
+             VALUES ('b.example.com:80', 0, 1, ?)",
+        )
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("extra domain");
+        let canonical_old: i64 =
+            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = 's.example.com.:443'")
+                .fetch_one(&pool)
+                .await
+                .expect("old canonical id");
+        let extra_old: i64 =
+            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = 'b.example.com:80'")
+                .fetch_one(&pool)
+                .await
+                .expect("old extra id");
+
+        sqlx::query(
+            "INSERT INTO urls (user_id, domain_id, slug, target_url, created_at, updated_at)
+             VALUES (?, NULL, 'promo', 'https://example.com/a', ?, ?)",
+        )
+        .bind(user_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("url with null domain");
+        sqlx::query(
+            "INSERT INTO urls (user_id, domain_id, slug, target_url, created_at, updated_at)
+             VALUES (?, ?, 'other', 'https://example.com/b', ?, ?)",
+        )
+        .bind(user_id)
+        .bind(extra_old)
+        .bind(&now)
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("url on extra domain");
+
+        run(&pool, &options).await.expect("upgrade");
+
+        let canonical: i64 =
+            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = 's.example.com'")
+                .fetch_one(&pool)
+                .await
+                .expect("normalised canonical");
+        assert_eq!(
+            canonical, canonical_old,
+            "canonical row is renamed in place"
+        );
+        let extra: i64 =
+            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = 'b.example.com'")
+                .fetch_one(&pool)
+                .await
+                .expect("normalised extra");
+        assert_eq!(extra, extra_old, "extra row is renamed in place");
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM domains")
+            .fetch_one(&pool)
+            .await
+            .expect("domain count");
+        assert_eq!(count, 2, "no duplicate canonical row was inserted");
+
+        let backfilled: i64 = sqlx::query_scalar("SELECT domain_id FROM urls WHERE slug = 'promo'")
+            .fetch_one(&pool)
+            .await
+            .expect("back-filled domain");
+        assert_eq!(
+            backfilled, canonical,
+            "NULL domain still points at the renamed row"
+        );
+        let extra_url: i64 = sqlx::query_scalar("SELECT domain_id FROM urls WHERE slug = 'other'")
+            .fetch_one(&pool)
+            .await
+            .expect("extra url domain");
+        assert_eq!(extra_url, extra, "extra URL keeps its renamed domain");
+
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
