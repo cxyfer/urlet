@@ -16,7 +16,10 @@
 </main>
 {% endblock %}
 <footer class="site">
-    <span>{{ site_name }} — {{ lang.t("footer.tagline") }}</span>
+    <div class="footer-brandrow">
+        <span class="footer-brand"><span class="footer-dot" aria-hidden="true"></span>{{ site_name }}</span>
+        <span class="footer-meta">{{ lang.t("footer.tagline") }}</span>
+    </div>
     {% block footer_lang %}{% include "partials/lang_switcher.html" %}{% endblock %}
 </footer>
 <script src="/assets/app.js" defer></script>
