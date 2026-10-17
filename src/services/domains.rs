@@ -67,18 +67,18 @@ pub fn raw_host_key(host: &str) -> String {
     if let Some(rest) = trimmed.strip_prefix('[') {
         if let Some(end) = rest.find(']') {
             let host_part = &trimmed[..end + 2];
-            let port = trimmed[end + 2..].strip_prefix(':');
-            return match port {
-                None => host_part.to_string(),
-                Some(port) if port.chars().all(|c| c.is_ascii_digit()) => {
-                    match port.parse::<u16>() {
-                        Ok(80 | 443) => host_part.to_string(),
-                        Ok(0) => trimmed,
-                        Ok(port) => format!("{host_part}:{port}"),
-                        Err(_) => trimmed,
-                    }
-                }
-                Some(_) => trimmed,
+            let suffix = &trimmed[end + 2..];
+            if suffix.is_empty() {
+                return host_part.to_string();
+            }
+            let Some(port) = suffix.strip_prefix(':') else {
+                return trimmed;
+            };
+            return match port.parse::<u16>() {
+                Ok(80 | 443) => host_part.to_string(),
+                Ok(0) => trimmed,
+                Ok(port) => format!("{host_part}:{port}"),
+                Err(_) => trimmed,
             };
         }
         return trimmed;
@@ -177,6 +177,26 @@ fn parse_host(raw: &str) -> std::result::Result<String, HostError> {
         Some(port) => format!("{host}:{port}"),
         None => host.to_string(),
     })
+}
+
+/// Resolve a user supplied hostname, including an opaque canonical host that
+/// `validate_domain_hostname` rejects (IPv6 literal or underscore service name).
+/// Only an existing active domain is accepted.
+pub async fn find_active_by_input(
+    pool: &SqlitePool,
+    raw: &str,
+) -> std::result::Result<Option<Domain>, sqlx::Error> {
+    if let Ok(hostname) = validate_domain_hostname(raw) {
+        if let Some(domain) = domain_db::find_by_hostname(pool, &hostname).await? {
+            if domain.is_active() {
+                return Ok(Some(domain));
+            }
+        }
+    }
+    let key = raw_host_key(raw);
+    Ok(domain_db::find_by_hostname(pool, &key)
+        .await?
+        .filter(Domain::is_active))
 }
 
 /// Domain management for the admin UI and API.

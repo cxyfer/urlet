@@ -4,7 +4,10 @@ mod common;
 
 use axum::body::Body;
 use axum::http::{header, HeaderValue, Request, StatusCode};
-use common::{delete_as, patch_json_as, post_form_with_host, TestApp};
+use common::{
+    delete_as, patch_json_as, patch_json_with_host_as, post_form_with_host, post_json_with_host_as,
+    TestApp,
+};
 use serde_json::{json, Value};
 
 const ADMIN_PASSWORD: &str = "supersecret";
@@ -1170,4 +1173,131 @@ async fn demoted_opaque_canonical_host_still_resolves_old_links() {
         common::send_router(router, request).await.status,
         StatusCode::NOT_FOUND
     );
+}
+
+#[tokio::test]
+async fn opaque_canonical_hosts_accept_link_domains() {
+    for host in ["[::1]:8080", "urlet_app:8080"] {
+        let app = TestApp::spawn_with(|config| {
+            config.base_host = host.to_string();
+        })
+        .await;
+
+        let registered = app
+            .post_json_with_host(
+                "/api/v1/auth/register",
+                json!({
+                    "email": format!(
+                        "owner-{}@example.com",
+                        host.replace(['[', ']', ':'], "-")
+                    ),
+                    "password": "supersecret",
+                }),
+                host,
+            )
+            .await;
+        assert_eq!(
+            registered.status,
+            StatusCode::CREATED,
+            "{}",
+            registered.body
+        );
+        let cookie = registered.session_cookie().expect("session cookie");
+
+        let created = app
+            .send(post_json_with_host_as(
+                "/api/v1/urls",
+                json!({
+                    "target_url": "https://example.com/api",
+                    "slug": "api1",
+                    "domain": host,
+                }),
+                &cookie,
+                host,
+            ))
+            .await;
+        assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+        let created = created.json();
+        assert_eq!(created["domain"], host);
+        assert_eq!(created["short_url"], format!("http://{host}/api1"));
+        let id = created["id"].as_i64().expect("id");
+
+        let updated = app
+            .send(patch_json_with_host_as(
+                &format!("/api/v1/urls/{id}"),
+                json!({ "title": "edited", "domain": host }),
+                &cookie,
+                host,
+            ))
+            .await;
+        assert_eq!(updated.status, StatusCode::OK, "{}", updated.body);
+        assert_eq!(updated.json()["title"], "edited");
+
+        let public = app
+            .get_with_host(&format!("/api/v1/public/urls/api1?domain={host}"), host)
+            .await;
+        assert_eq!(public.status, StatusCode::OK, "{}", public.body);
+        assert_eq!(public.json()["domain"], host);
+
+        // The rendered HTML forms submit the same opaque hostname; both the
+        // create and edit paths must accept it.
+        let form_body =
+            format!("target_url=https%3A%2F%2Fexample.com%2Fform&slug=form1&domain={host}");
+        let form_create = app
+            .send(post_form_with_host(
+                "/app/urls",
+                &form_body,
+                Some(&cookie),
+                Some(&format!("http://{host}")),
+                host,
+            ))
+            .await;
+        assert_eq!(
+            form_create.status,
+            StatusCode::SEE_OTHER,
+            "{}",
+            form_create.body
+        );
+        let location = form_create.header("location").expect("location");
+        assert!(!location.contains("err="), "{location}");
+        let form_id = location
+            .split(['?', '#'])
+            .next()
+            .expect("path")
+            .rsplit('/')
+            .next()
+            .expect("id");
+
+        let detail = app
+            .get_with_host_as(&format!("/app/urls/{form_id}"), host, &cookie)
+            .await;
+        assert_eq!(detail.status, StatusCode::OK, "{}", detail.body);
+        assert!(detail.body.contains("form1"), "{}", detail.body);
+
+        let edit_body =
+            format!("target_url=https%3A%2F%2Fexample.com%2Fedited&domain={host}&title=Edited");
+        let form_edit = app
+            .send(post_form_with_host(
+                &format!("/app/urls/{form_id}"),
+                &edit_body,
+                Some(&cookie),
+                Some(&format!("http://{host}")),
+                host,
+            ))
+            .await;
+        assert_eq!(
+            form_edit.status,
+            StatusCode::SEE_OTHER,
+            "{}",
+            form_edit.body
+        );
+        let edit_location = form_edit.header("location").expect("location");
+        assert!(!edit_location.contains("err="), "{edit_location}");
+        let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = ?")
+            .bind(form_id.parse::<i64>().expect("numeric id"))
+            .fetch_one(&app.state.db)
+            .await
+            .expect("target");
+        assert_eq!(target, "https://example.com/edited");
+    }
 }

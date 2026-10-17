@@ -47,10 +47,13 @@ WITH step1 AS (
 ), normalized AS (
     SELECT id,
            CASE
+             WHEN h LIKE '[%' AND instr(h, ']') > 0
+              AND length(h) > instr(h, ']')
+              AND substr(h, instr(h, ']') + 1, 1) <> ':'
+             THEN h
              WHEN port_text IS NULL THEN rtrim(host_text, '.')
              WHEN port_text <> ''
               AND port_text NOT GLOB '*[^0-9]*'
-              AND length(port_text) <= 5
               AND CAST(port_text AS INTEGER) BETWEEN 1 AND 65535
              THEN CASE
                     WHEN CAST(port_text AS INTEGER) IN (80, 443)

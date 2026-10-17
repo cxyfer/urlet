@@ -830,6 +830,23 @@ mod tests {
             .await
             .expect("urls on kept domain");
         assert_eq!(urls, 2, "both URLs point at the surviving domain");
+        let default: i64 = sqlx::query_scalar("SELECT is_default FROM domains WHERE id = ?")
+            .bind(kept)
+            .fetch_one(&pool)
+            .await
+            .expect("default flag");
+        assert_eq!(default, 1, "the default row is the survivor");
+        let verified: i64 = sqlx::query_scalar("SELECT is_verified FROM domains WHERE id = ?")
+            .bind(kept)
+            .fetch_one(&pool)
+            .await
+            .expect("verified flag");
+        assert_eq!(verified, 1);
+        let violations = sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(&pool)
+            .await
+            .expect("foreign key check");
+        assert!(violations.is_empty());
 
         pool.close().await;
         let _ = std::fs::remove_dir_all(&dir);

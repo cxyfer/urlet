@@ -330,6 +330,23 @@ fn canonical_base_host(raw: &str) -> Option<String> {
     {
         return None;
     }
+
+    if let Some(rest) = trimmed.strip_prefix('[') {
+        let end = rest.find(']')?;
+        let address = &trimmed[1..end + 1];
+        if address.parse::<std::net::Ipv6Addr>().is_err() {
+            return None;
+        }
+        let suffix = &trimmed[end + 2..];
+        if !suffix.is_empty() {
+            let port = suffix.strip_prefix(':')?;
+            match port.parse::<u16>() {
+                Ok(port) if port > 0 => {}
+                _ => return None,
+            }
+        }
+    }
+
     Some(crate::services::domains::raw_host_key(trimmed))
 }
 
@@ -465,6 +482,8 @@ mod tests {
         assert_eq!(canonical_base_host("例え.jp"), None);
         assert_eq!(canonical_base_host("bad host"), None);
         assert_eq!(canonical_base_host("example.com:99999"), None);
+        assert_eq!(canonical_base_host("[not-ipv6]"), None);
+        assert_eq!(canonical_base_host("[::1]:99999"), None);
     }
 
     #[test]

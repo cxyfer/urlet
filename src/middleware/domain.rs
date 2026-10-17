@@ -84,7 +84,10 @@ pub async fn domain_gate(
     }
 
     let domain = match host.as_deref() {
-        Some(host) => state.domains.lookup(host),
+        Some(host) => state
+            .domains
+            .lookup(host)
+            .or_else(|| raw_host.and_then(|raw| state.domains.lookup_raw(raw))),
         None => raw_host.and_then(|raw| state.domains.lookup_raw(raw)),
     };
     let Some(domain) = domain else {

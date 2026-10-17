@@ -353,14 +353,15 @@ impl UrlContext<'_> {
             .filter(|value| !value.is_empty())
         {
             Some(raw) => {
-                let hostname = domain_service::validate_domain_hostname(raw)
-                    .map_err(|err| AppError::validation("domain", err.message()))?;
-                if hostname.eq_ignore_ascii_case(&current_domain.hostname) {
-                    // A link on a domain that has since been disabled can still
-                    // be edited; keeping the current domain is not a move.
+                if domain_service::raw_host_key(raw)
+                    .eq_ignore_ascii_case(&domain_service::raw_host_key(&current_domain.hostname))
+                {
+                    // A link on a domain that has since been disabled (or an
+                    // opaque canonical host) can still be edited; keeping the
+                    // current domain is not a move.
                     current_domain.clone()
                 } else {
-                    self.resolve_domain(Some(&hostname)).await?
+                    self.resolve_domain(Some(raw)).await?
                 }
             }
             None => current_domain,
@@ -540,12 +541,9 @@ impl UrlContext<'_> {
                 .ok_or_else(|| AppError::internal("no active default domain"));
         };
 
-        let hostname = domain_service::validate_domain_hostname(raw)
-            .map_err(|err| AppError::validation("domain", err.message()))?;
-        domain_db::find_by_hostname(self.pool, &hostname)
+        domain_service::find_active_by_input(self.pool, raw)
             .await
             .map_err(AppError::from)?
-            .filter(Domain::is_active)
             .ok_or_else(|| AppError::validation("domain", "unknown or inactive domain"))
     }
 

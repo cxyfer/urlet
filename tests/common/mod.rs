@@ -82,6 +82,10 @@ impl TestApp {
         self.send(post_json_with_host(uri, body, host)).await
     }
 
+    pub async fn get_with_host_as(&self, uri: &str, host: &str, cookie: &str) -> TestResponse {
+        self.send(get_with_host_as(uri, host, cookie)).await
+    }
+
     /// Insert a domain directly and reload the registry.
     ///
     /// Tests that only exercise routing use this; the admin API has its own
@@ -292,6 +296,24 @@ pub fn post_json(uri: &str, body: Value) -> Request<Body> {
 pub fn post_json_with_host(uri: &str, body: Value, host: &str) -> Request<Body> {
     base_request_with_host("POST", uri, host)
         .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.to_string()))
+        .expect("request")
+}
+
+pub fn post_json_with_host_as(uri: &str, body: Value, cookie: &str, host: &str) -> Request<Body> {
+    base_request_with_host("POST", uri, host)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, cookie)
+        .header(header::ORIGIN, format!("http://{host}"))
+        .body(Body::from(body.to_string()))
+        .expect("request")
+}
+
+pub fn patch_json_with_host_as(uri: &str, body: Value, cookie: &str, host: &str) -> Request<Body> {
+    base_request_with_host("PATCH", uri, host)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, cookie)
+        .header(header::ORIGIN, format!("http://{host}"))
         .body(Body::from(body.to_string()))
         .expect("request")
 }

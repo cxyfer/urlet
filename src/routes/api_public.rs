@@ -46,14 +46,9 @@ pub async fn show(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        Some(raw) => {
-            let hostname = domain_service::validate_domain_hostname(raw)
-                .map_err(|err| ApiError(AppError::validation("domain", err.message())))?;
-            domains::find_by_hostname(&state.db, &hostname)
-                .await?
-                .filter(|domain| domain.is_active())
-                .ok_or_else(|| ApiError(AppError::not_found()))?
-        }
+        Some(raw) => domain_service::find_active_by_input(&state.db, raw)
+            .await?
+            .ok_or_else(|| ApiError(AppError::not_found()))?,
         None => domains::active_default(&state.db)
             .await?
             .ok_or_else(|| ApiError(AppError::not_found()))?,
