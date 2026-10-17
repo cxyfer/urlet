@@ -796,3 +796,125 @@ async fn links_require_an_active_domain_and_move_conflicts_return_409() {
         StatusCode::FOUND
     );
 }
+
+#[tokio::test]
+async fn changing_the_canonical_host_retires_the_previous_system_domain() {
+    let app = TestApp::spawn().await;
+    let admin = register_admin(&app).await;
+
+    // Existing link on the original canonical host.
+    let old_link = create_url(
+        &app,
+        &admin,
+        json!({ "target_url": "https://example.com/old", "slug": "old" }),
+    )
+    .await;
+    assert_eq!(old_link["domain"], "localhost:8080");
+
+    // Simulate the next boot after URLET_BASE_URL changed to new.example.com.
+    urlet::db::domains::ensure_canonical(&app.state.db, "new.example.com")
+        .await
+        .expect("new canonical");
+    app.reload_domains().await;
+
+    let old_source: String =
+        sqlx::query_scalar("SELECT source FROM domains WHERE hostname = 'localhost:8080'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("old source");
+    assert_eq!(old_source, "ui");
+    let old_status: String =
+        sqlx::query_scalar("SELECT status FROM domains WHERE hostname = 'localhost:8080'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("old status");
+    assert_eq!(old_status, "active", "old links keep resolving");
+    let old_default: i64 =
+        sqlx::query_scalar("SELECT is_default FROM domains WHERE hostname = 'localhost:8080'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("old default");
+    assert_eq!(old_default, 0, "default moved to the new canonical host");
+
+    let new_source: String =
+        sqlx::query_scalar("SELECT source FROM domains WHERE hostname = 'new.example.com'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("new source");
+    assert_eq!(new_source, "system");
+    let new_default: i64 =
+        sqlx::query_scalar("SELECT is_default FROM domains WHERE hostname = 'new.example.com'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("new default");
+    assert_eq!(new_default, 1);
+    let systems: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM domains WHERE source = 'system'")
+        .fetch_one(&app.state.db)
+        .await
+        .expect("system count");
+    assert_eq!(
+        systems, 1,
+        "only the current canonical host stays protected"
+    );
+
+    // New links follow the transferred default, and the old link still works on
+    // its original host.
+    let new_link = create_url(
+        &app,
+        &admin,
+        json!({ "target_url": "https://example.com/new", "slug": "new" }),
+    )
+    .await;
+    assert_eq!(new_link["domain"], "new.example.com");
+    assert_eq!(app.get("/old").await.status, StatusCode::FOUND);
+    assert_eq!(
+        app.get_with_host("/old", "new.example.com").await.status,
+        StatusCode::NOT_FOUND
+    );
+
+    // An explicitly selected non-system default must win over the new canonical.
+    let extra_id = app.add_domain("extra.example.com", "active").await;
+    app.set_default_domain(extra_id).await;
+    urlet::db::domains::ensure_canonical(&app.state.db, "third.example.com")
+        .await
+        .expect("third canonical");
+    app.reload_domains().await;
+
+    let extra_default: i64 =
+        sqlx::query_scalar("SELECT is_default FROM domains WHERE hostname = 'extra.example.com'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("extra default");
+    assert_eq!(extra_default, 1, "explicit non-system default preserved");
+    let new_source: String =
+        sqlx::query_scalar("SELECT source FROM domains WHERE hostname = 'new.example.com'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("old canonical source");
+    assert_eq!(new_source, "ui");
+    let third_source: String =
+        sqlx::query_scalar("SELECT source FROM domains WHERE hostname = 'third.example.com'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("third source");
+    assert_eq!(third_source, "system");
+    let third_default: i64 =
+        sqlx::query_scalar("SELECT is_default FROM domains WHERE hostname = 'third.example.com'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("third default");
+    assert_eq!(third_default, 0);
+    let systems: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM domains WHERE source = 'system'")
+        .fetch_one(&app.state.db)
+        .await
+        .expect("system count");
+    assert_eq!(systems, 1);
+
+    let defaulted = create_url(
+        &app,
+        &admin,
+        json!({ "target_url": "https://example.com/defaulted", "slug": "defaulted" }),
+    )
+    .await;
+    assert_eq!(defaulted["domain"], "extra.example.com");
+}

@@ -128,7 +128,9 @@ Canonical host 保留完整應用（`/`、`/app`、`/api/v1`）。額外網域�
 - 用 `URLET_DOMAINS=go.example.com,links.example.com` 預先加入，或從 `/app/admin/domains` 新增。
 - 後台新增的網域是 `pending`。先把 DNS 指向此實例、把 hostname 加進 Caddy site label（或你的
   反向代理），確認 `https://<domain>/health` 可用後，再按「啟用」。
-- Canonical 網域不可停用或刪除；目前的預設網域必須先換掉，才能停用或刪除。
+- Canonical 網域不可停用或刪除；目前的預設網域必須先換掉，才能停用或刪除。若 `URLET_BASE_URL`
+  改變，下次啟動會把舊 canonical 網域降級為一般管理網域（既有連結繼續可用），並在舊網域原本是
+  預設時把預設轉移到新 canonical 網域。
 - 所有網域必須和 `URLET_BASE_URL` 使用相同 scheme，不要混用 http 與 https。
 - 反向代理必須保留原始的 `Host` header；本版本不信任 `X-Forwarded-Host`。
 - `URLET_DOMAINS` 只補缺少：在後台停用 seed 網域後，重啟不會被改回 active。在有設定

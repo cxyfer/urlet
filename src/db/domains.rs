@@ -312,6 +312,19 @@ pub async fn ensure_canonical(pool: &SqlitePool, hostname: &str) -> Result<i64, 
             .fetch_optional(&mut *tx)
             .await?;
 
+    // A URLET_BASE_URL change creates a new canonical row. If the previous
+    // canonical row was the default, the default has to move with it; otherwise
+    // new links keep pointing at the old hostname.
+    let previous_system_default: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM domains
+          WHERE source = 'system' AND is_default = 1
+            AND hostname <> ? COLLATE NOCASE
+          LIMIT 1",
+    )
+    .bind(hostname)
+    .fetch_optional(&mut *tx)
+    .await?;
+
     let id = match existing {
         Some(id) => {
             sqlx::query(
@@ -346,6 +359,39 @@ pub async fn ensure_canonical(pool: &SqlitePool, hostname: &str) -> Result<i64, 
             result.last_insert_rowid()
         }
     };
+
+    if previous_system_default.is_some() {
+        // Preserve an explicitly selected non-system default: in that case
+        // `previous_system_default` is None and this branch is skipped.
+        sqlx::query("UPDATE domains SET is_default = 0 WHERE is_default = 1")
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("UPDATE domains SET is_default = 1 WHERE id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    // Old canonical rows stay active so their existing links keep working, but
+    // they become ordinary UI domains that an administrator can disable or
+    // delete. Only the current canonical host remains `source = 'system'`.
+    let demoted = sqlx::query(
+        "UPDATE domains
+            SET source = 'ui', updated_at = ?
+          WHERE source = 'system' AND hostname <> ? COLLATE NOCASE",
+    )
+    .bind(&now)
+    .bind(hostname)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if demoted > 0 {
+        tracing::info!(
+            hostname = %hostname,
+            demoted,
+            "retired the previous canonical domain"
+        );
+    }
 
     // A default domain that was disabled manually must not block new links.
     sqlx::query("UPDATE domains SET is_default = 0 WHERE is_default = 1 AND status <> 'active'")

@@ -136,7 +136,9 @@ redirected to the canonical host and `/api` returns 404. Each domain has its own
   to the Caddy site label (or your reverse proxy), verify `https://<domain>/health`, then press
   **Activate**.
 - The canonical domain cannot be disabled or deleted. The current default domain must be replaced
-  before it can be disabled or deleted.
+  before it can be disabled or deleted. If `URLET_BASE_URL` changes, the previous canonical domain
+  is demoted to ordinary admin management on the next boot (its links keep working) and the default
+  moves to the new canonical domain when the old one held it.
 - All domains must use the same scheme as `URLET_BASE_URL`; do not mix http and https domains.
 - The reverse proxy must preserve the original `Host` header. `X-Forwarded-Host` is not trusted in
   this version.

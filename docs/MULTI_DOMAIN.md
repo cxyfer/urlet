@@ -132,7 +132,10 @@ working `sqlite_sequence`.
 - Actions: add (`pending`), activate, disable, set default, delete.
 - Rules:
   - canonical (`source = system`) is always active and cannot be disabled or
-    deleted;
+    deleted. If `URLET_BASE_URL` changes, bootstrap creates the new canonical
+    row, transfers the default when the previous system row held it, and demotes
+    the previous system row to `ui`; its links keep resolving until an
+    administrator disables it;
   - `pending`/`disabled` domains cannot be default;
   - the current default cannot be disabled or deleted until another active domain
     is made default;
