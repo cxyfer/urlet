@@ -32,9 +32,12 @@ permissions:
 
 concurrency:
   # One release at a time across all tags: a slow older build must never finish
-  # after a newer one and move the moving tags backwards.
+  # after a newer one and move the moving tags backwards. `queue: max` keeps up
+  # to 100 pending releases instead of replacing the second pending one, so a
+  # burst of tags still publishes every exact version.
   group: release-image
   cancel-in-progress: false
+  queue: max
 
 env:
   REGISTRY: ghcr.io

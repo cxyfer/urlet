@@ -47,8 +47,10 @@ publishes to its own namespace.
 5. **Only the newest stable tag moves `X`, `X.Y` and `latest`.** A maintenance or backport release
    older than the newest stable version publishes only its exact tag. The workflow compares
    against all fetched tags before building.
-6. **Release runs are serialized.** A single `release-image` concurrency group means a slow older
-   build cannot finish after a newer one and move the moving tags backwards.
+6. **Release runs are serialized and queued.** A single `release-image` concurrency group with
+   `queue: max` keeps up to 100 pending releases, so a burst of tags still publishes every exact
+   version and a slow older build cannot finish after a newer one and move the moving tags
+   backwards.
 7. **Do not rebuild an old tag with moving tags enabled.** That would point `latest` (and `X`,
    `X.Y`) back at the old version. Use the default (exact version only) for old tags; the
    newest-stable guard also blocks it, but the default makes the intent explicit.
