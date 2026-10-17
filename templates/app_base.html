@@ -4,23 +4,27 @@
 {% block footer_lang %}{% endblock %}
 
 {% block body %}
-<div class="topbar">
+<div class="topbar topbar-app">
     <div class="topbar-inner">
         <a class="brand" href="/app">{{ chrome.site_name }}<span>.</span></a>
-        <nav class="nav">
+        <nav class="nav nav-main">
             <a href="/app" {% if chrome.active == "dashboard" %}class="active"{% endif %}>{{ lang.t("nav.links") }}</a>
             <a href="/app/account" {% if chrome.active == "account" %}class="active"{% endif %}>{{ lang.t("nav.account") }}</a>
             {% if chrome.is_admin %}
             <a href="/app/admin" {% if chrome.active == "admin" %}class="active"{% endif %}>{{ lang.t("nav.admin") }}</a>
             {% endif %}
-            {% include "partials/lang_switcher.html" %}
-            <span class="muted small">{{ chrome.email }}</span>
-            <form method="post" action="/app/logout">
-                <button class="btn btn-ghost btn-sm" type="submit">{{ lang.t("nav.sign_out") }}</button>
-            </form>
         </nav>
+        <div class="nav-tools">
+            {% include "partials/lang_switcher.html" %}
+            <span class="muted small user-email">{{ chrome.email }}</span>
+            <form method="post" action="/app/logout">
+                <button class="btn btn-outline btn-sm" type="submit">{{ lang.t("nav.sign_out") }}</button>
+            </form>
+        </div>
     </div>
 </div>
+
+{% block band %}{% endblock %}
 
 <main class="wrap">
     {% match chrome.flash %}

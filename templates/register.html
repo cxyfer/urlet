@@ -3,58 +3,73 @@
 {% block title %}{{ lang.t("auth.register.title") }} — {{ site_name }}{% endblock %}
 
 {% block body %}
-<div class="wrap-narrow">
-    <h1 class="center">{{ site_name }}</h1>
+<div class="auth-page">
+    <div class="auth-frame">
+        <div class="auth-sheet">
+            <div class="auth-crest" aria-hidden="true">
+                <svg viewBox="0 0 96 48" fill="none" stroke="currentColor" stroke-width="1" focusable="false">
+                    <path d="M8 44a40 40 0 0 1 80 0"/>
+                    <path d="M18 44a30 30 0 0 1 60 0" opacity=".7"/>
+                    <path d="M28 44a20 20 0 0 1 40 0" opacity=".45"/>
+                    <path d="M48 44H8M48 44l34.6-20M48 44l20-34.6M48 44V4M48 44 28 9.4M48 44 13.4 24" opacity=".5"/>
+                    <path d="M48 40l4 4-4 4-4-4z" fill="currentColor" stroke="none"/>
+                </svg>
+            </div>
+            <p class="kicker kicker--center" aria-hidden="true">◆ MMXXVI ◆</p>
+            <h1><a href="/">{{ site_name }}</a></h1>
+            <div class="rule-diamond" aria-hidden="true"></div>
 
-    <div class="card">
-        {% if !registration_open %}
-        <div class="alert alert-warn">
-            {{ lang.t("auth.register.closed") }}
+            <div class="auth-card">
+                {% if !registration_open %}
+                <div class="alert alert-warn">
+                    {{ lang.t("auth.register.closed") }}
+                </div>
+                {% endif %}
+
+                {% match error %}
+                {% when Some with (message) %}
+                <div class="alert alert-error">{{ message }}</div>
+                {% when None %}
+                {% endmatch %}
+
+                {% if registration_open %}
+                <form method="post" action="/app/register">
+                    <input type="hidden" name="next" value="{{ next }}">
+                    <div class="field">
+                        <label class="label" for="email">{{ lang.t("common.email") }}</label>
+                        <input class="input" type="email" id="email" name="email" value="{{ email }}"
+                               autocomplete="username" required autofocus>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="display_name">{{ lang.t("auth.register.display_name") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
+                        <input class="input" type="text" id="display_name" name="display_name"
+                               value="{{ display_name }}" maxlength="60">
+                    </div>
+                    <div class="field">
+                        <label class="label" for="password">{{ lang.t("common.password") }}</label>
+                        <input class="input" type="password" id="password" name="password"
+                               autocomplete="new-password" minlength="8" required>
+                        <span class="hint">{{ lang.t("auth.register.password_hint") }}</span>
+                    </div>
+                    {% if invite_required %}
+                    <div class="field">
+                        <label class="label" for="invite_code">{{ lang.t("auth.register.invite_code") }}</label>
+                        <input class="input" type="text" id="invite_code" name="invite_code"
+                               value="{{ invite_code }}" required>
+                        <span class="hint">{{ lang.t("auth.register.invite_hint") }}</span>
+                    </div>
+                    {% endif %}
+                    {% include "partials/captcha.html" %}
+                    <button class="btn btn-primary btn-block" type="submit">{{ lang.t("auth.register.submit") }}</button>
+                </form>
+                {% endif %}
+
+                <hr>
+                <p class="center small muted">
+                    {{ lang.t("auth.register.have_account") }} <a href="/app/login">{{ lang.t("auth.register.sign_in") }}</a>
+                </p>
+            </div>
         </div>
-        {% endif %}
-
-        {% match error %}
-        {% when Some with (message) %}
-        <div class="alert alert-error">{{ message }}</div>
-        {% when None %}
-        {% endmatch %}
-
-        {% if registration_open %}
-        <form method="post" action="/app/register">
-            <input type="hidden" name="next" value="{{ next }}">
-            <div class="field">
-                <label class="label" for="email">{{ lang.t("common.email") }}</label>
-                <input class="input" type="email" id="email" name="email" value="{{ email }}"
-                       autocomplete="username" required autofocus>
-            </div>
-            <div class="field">
-                <label class="label" for="display_name">{{ lang.t("auth.register.display_name") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
-                <input class="input" type="text" id="display_name" name="display_name"
-                       value="{{ display_name }}" maxlength="60">
-            </div>
-            <div class="field">
-                <label class="label" for="password">{{ lang.t("common.password") }}</label>
-                <input class="input" type="password" id="password" name="password"
-                       autocomplete="new-password" minlength="8" required>
-                <span class="hint">{{ lang.t("auth.register.password_hint") }}</span>
-            </div>
-            {% if invite_required %}
-            <div class="field">
-                <label class="label" for="invite_code">{{ lang.t("auth.register.invite_code") }}</label>
-                <input class="input" type="text" id="invite_code" name="invite_code"
-                       value="{{ invite_code }}" required>
-                <span class="hint">{{ lang.t("auth.register.invite_hint") }}</span>
-            </div>
-            {% endif %}
-            {% include "partials/captcha.html" %}
-            <button class="btn btn-primary btn-block" type="submit">{{ lang.t("auth.register.submit") }}</button>
-        </form>
-        {% endif %}
-
-        <hr>
-        <p class="center small muted">
-            {{ lang.t("auth.register.have_account") }} <a href="/app/login">{{ lang.t("auth.register.sign_in") }}</a>
-        </p>
     </div>
 </div>
 {% endblock %}

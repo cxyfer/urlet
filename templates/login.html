@@ -3,43 +3,58 @@
 {% block title %}{{ lang.t("auth.login.title") }} — {{ site_name }}{% endblock %}
 
 {% block body %}
-<div class="wrap-narrow">
-    <h1 class="center">{{ site_name }}</h1>
-    <p class="center muted">{{ lang.t("auth.login.subtitle") }}</p>
-
-    <div class="card">
-        {% match notice %}
-        {% when Some with (message) %}
-        <div class="alert alert-ok">{{ message }}</div>
-        {% when None %}
-        {% endmatch %}
-
-        {% match error %}
-        {% when Some with (message) %}
-        <div class="alert alert-error">{{ message }}</div>
-        {% when None %}
-        {% endmatch %}
-
-        <form method="post" action="/app/login">
-            <input type="hidden" name="next" value="{{ next }}">
-            <div class="field">
-                <label class="label" for="email">{{ lang.t("common.email") }}</label>
-                <input class="input" type="email" id="email" name="email" value="{{ email }}"
-                       autocomplete="username" required autofocus>
+<div class="auth-page">
+    <div class="auth-frame">
+        <div class="auth-sheet">
+            <div class="auth-crest" aria-hidden="true">
+                <svg viewBox="0 0 96 48" fill="none" stroke="currentColor" stroke-width="1" focusable="false">
+                    <path d="M8 44a40 40 0 0 1 80 0"/>
+                    <path d="M18 44a30 30 0 0 1 60 0" opacity=".7"/>
+                    <path d="M28 44a20 20 0 0 1 40 0" opacity=".45"/>
+                    <path d="M48 44H8M48 44l34.6-20M48 44l20-34.6M48 44V4M48 44 28 9.4M48 44 13.4 24" opacity=".5"/>
+                    <path d="M48 40l4 4-4 4-4-4z" fill="currentColor" stroke="none"/>
+                </svg>
             </div>
-            <div class="field">
-                <label class="label" for="password">{{ lang.t("common.password") }}</label>
-                <input class="input" type="password" id="password" name="password"
-                       autocomplete="current-password" required>
-            </div>
-            {% include "partials/captcha.html" %}
-            <button class="btn btn-primary btn-block" type="submit">{{ lang.t("auth.login.submit") }}</button>
-        </form>
+            <p class="kicker kicker--center" aria-hidden="true">◆ MMXXVI ◆</p>
+            <h1><a href="/">{{ site_name }}</a></h1>
+            <div class="rule-diamond" aria-hidden="true"></div>
+            <p class="center muted">{{ lang.t("auth.login.subtitle") }}</p>
 
-        <hr>
-        <p class="center small muted">
-            {{ lang.t("auth.login.no_account") }} <a href="/app/register">{{ lang.t("auth.login.create_one") }}</a>
-        </p>
+            <div class="auth-card">
+                {% match notice %}
+                {% when Some with (message) %}
+                <div class="alert alert-ok">{{ message }}</div>
+                {% when None %}
+                {% endmatch %}
+
+                {% match error %}
+                {% when Some with (message) %}
+                <div class="alert alert-error">{{ message }}</div>
+                {% when None %}
+                {% endmatch %}
+
+                <form method="post" action="/app/login">
+                    <input type="hidden" name="next" value="{{ next }}">
+                    <div class="field">
+                        <label class="label" for="email">{{ lang.t("common.email") }}</label>
+                        <input class="input" type="email" id="email" name="email" value="{{ email }}"
+                               autocomplete="username" required autofocus>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="password">{{ lang.t("common.password") }}</label>
+                        <input class="input" type="password" id="password" name="password"
+                               autocomplete="current-password" required>
+                    </div>
+                    {% include "partials/captcha.html" %}
+                    <button class="btn btn-primary btn-block" type="submit">{{ lang.t("auth.login.submit") }}</button>
+                </form>
+
+                <hr>
+                <p class="center small muted">
+                    {{ lang.t("auth.login.no_account") }} <a href="/app/register">{{ lang.t("auth.login.create_one") }}</a>
+                </p>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}

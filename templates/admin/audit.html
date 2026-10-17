@@ -2,27 +2,30 @@
 
 {% block title %}{{ lang.t("admin.audit.title") }} — {{ site_name }}{% endblock %}
 
+{% block band %}{% include "admin/tabs.html" %}{% endblock %}
+
 {% block content %}
-{% include "admin/tabs.html" %}
+<header class="page-head">
+    <div class="page-head-main">
+        <p class="kicker" aria-hidden="true">№ 06 · MMXXVI</p>
+        <h1>{{ lang.t("admin.audit.heading") }}</h1>
+        <div class="head-rule" aria-hidden="true"></div>
+    </div>
+    <p class="page-note">{{ count_label }}</p>
+</header>
 
-<div class="row between">
-    <h1>{{ lang.t("admin.audit.heading") }}</h1>
-    <span class="muted small">{{ count_label }}</span>
-</div>
-
-<form method="get" action="/app/admin/audit" class="row mt">
-    <input class="input" type="search" name="action" value="{{ action }}" placeholder="{{ lang.t("admin.audit.action_placeholder") }}"
-           style="max-width: 240px;">
+<form method="get" action="/app/admin/audit" class="filter-bar">
+    <input class="input" type="search" name="action" value="{{ action }}" placeholder="{{ lang.t("admin.audit.action_placeholder") }}">
     <input class="input" type="search" name="target_type" value="{{ target_type }}"
-           placeholder="{{ lang.t("admin.audit.target_placeholder") }}" style="max-width: 220px;">
+           placeholder="{{ lang.t("admin.audit.target_placeholder") }}">
     <button class="btn" type="submit">{{ lang.t("common.filter") }}</button>
     <a class="btn btn-ghost" href="/app/admin/audit">{{ lang.t("common.reset") }}</a>
 </form>
 
-<div class="card card-flush mt">
+<section class="panel">
     {% if entries.len() > 0 %}
     <div class="table-wrap">
-        <table class="table">
+        <table class="table table-xwide">
             <thead>
                 <tr><th>{{ lang.t("common.when") }}</th><th>{{ lang.t("admin.audit.action") }}</th><th>{{ lang.t("admin.audit.actor") }}</th><th>{{ lang.t("admin.audit.target") }}</th><th>{{ lang.t("admin.audit.details") }}</th></tr>
             </thead>
@@ -53,5 +56,5 @@
     {% else %}
     <p class="empty">{{ lang.t("admin.audit.empty") }}</p>
     {% endif %}
-</div>
+</section>
 {% endblock %}

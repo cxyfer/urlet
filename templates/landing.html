@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{# The landing page carries the switcher in the top bar, like the signed-in pages. #}
+{# The landing page carries the single switcher in the top bar, like the signed-in pages. #}
 {% block footer_lang %}{% endblock %}
 
 {% block title %}{{ site_name }} — {{ lang.t("landing.meta.title") }}{% endblock %}
@@ -10,7 +10,7 @@
 {% endblock %}
 
 {% block body %}
-<div class="topbar">
+<div class="topbar topbar-public">
     <div class="topbar-inner">
         {% if signed_in %}
         <a class="brand" href="/app">{{ site_name }}<span>.</span></a>
@@ -20,16 +20,16 @@
         <nav class="nav">
             {% include "partials/lang_switcher.html" %}
             {% if signed_in %}
-            <a href="/app">{{ lang.t("landing.nav.dashboard") }}</a>
-            <span class="muted small">{{ email }}</span>
+            <a class="nav-link" href="/app">{{ lang.t("landing.nav.dashboard") }}</a>
+            <span class="muted small user-email">{{ email }}</span>
             <form method="post" action="/app/logout">
-                <button class="btn btn-ghost btn-sm" type="submit">{{ lang.t("nav.sign_out") }}</button>
+                <button class="btn btn-outline btn-sm" type="submit">{{ lang.t("nav.sign_out") }}</button>
             </form>
             {% endif %}
         </nav>
         {% if !signed_in %}
         {# Kept outside `.nav` so the primary button keeps its own colours. #}
-        <div class="row">
+        <div class="topbar-auth">
             <a class="btn btn-ghost btn-sm" href="/app/login">{{ lang.t("landing.nav.sign_in") }}</a>
             <a class="btn btn-primary btn-sm" href="/app/register">{{ lang.t("landing.nav.create_account") }}</a>
         </div>
@@ -37,50 +37,168 @@
     </div>
 </div>
 
-<main class="wrap">
-    <section class="landing-hero">
-        <h1>{{ site_name }}</h1>
-        <p class="landing-tagline">{{ lang.t("landing.tagline") }}</p>
-        <p class="muted">{{ lang.t("landing.subtitle") }}</p>
-        <div class="row landing-cta">
-            {% if signed_in %}
-            <a class="btn btn-primary" href="/app">{{ lang.t("landing.cta.dashboard") }}</a>
-            {% else %}
-            <a class="btn btn-primary" href="/app/register">{{ lang.t("landing.cta.create_account") }}</a>
-            <a class="btn btn-ghost" href="/app/login">{{ lang.t("landing.cta.sign_in") }}</a>
-            {% endif %}
+<main class="wrap landing-wrap">
+    <section class="hero">
+        <div class="hero-frame">
+            <div class="hero-side hero-side--left" aria-hidden="true">
+                <svg viewBox="0 0 190 300" fill="none" stroke="currentColor" stroke-width="1" focusable="false">
+                    <path d="M25 150a70 70 0 0 1 140 0"/>
+                    <path d="M43 150a52 52 0 0 1 104 0" opacity=".7"/>
+                    <path d="M61 150a34 34 0 0 1 68 0" opacity=".45"/>
+                    <path d="M95 150 25 150M95 150l60.6-35M95 150l35-60.6M95 150V80M95 150 60 89.4M95 150 34.4 115" opacity=".55"/>
+                    <path d="M95 145l5 5-5 5-5-5z" fill="currentColor" stroke="none"/>
+                    <path d="M95 198v20H42v28h106v-20h-36" opacity=".75"/>
+                    <path d="M95 198l5 5-5 5-5-5z" fill="currentColor" stroke="none"/>
+                    <circle cx="42" cy="246" r="2.4"/>
+                    <circle cx="148" cy="246" r="2.4"/>
+                    <path d="M112 226l4 4-4 4-4-4z" fill="currentColor" stroke="none"/>
+                    <path d="M20 286h150" opacity=".45"/>
+                    <path d="M45 286l3-3 3 3-3 3zM145 286l3-3 3 3-3 3z" fill="currentColor" stroke="none" opacity=".8"/>
+                </svg>
+            </div>
+            <div class="hero-side hero-side--right" aria-hidden="true">
+                <svg viewBox="0 0 190 300" fill="none" stroke="currentColor" stroke-width="1" focusable="false">
+                    <path d="M25 150a70 70 0 0 1 140 0"/>
+                    <path d="M43 150a52 52 0 0 1 104 0" opacity=".7"/>
+                    <path d="M61 150a34 34 0 0 1 68 0" opacity=".45"/>
+                    <path d="M95 150 25 150M95 150l60.6-35M95 150l35-60.6M95 150V80M95 150 60 89.4M95 150 34.4 115" opacity=".55"/>
+                    <path d="M95 145l5 5-5 5-5-5z" fill="currentColor" stroke="none"/>
+                    <path d="M95 198v20H42v28h106v-20h-36" opacity=".75"/>
+                    <path d="M95 198l5 5-5 5-5-5z" fill="currentColor" stroke="none"/>
+                    <circle cx="42" cy="246" r="2.4"/>
+                    <circle cx="148" cy="246" r="2.4"/>
+                    <path d="M112 226l4 4-4 4-4-4z" fill="currentColor" stroke="none"/>
+                    <path d="M20 286h150" opacity=".45"/>
+                    <path d="M45 286l3-3 3 3-3 3zM145 286l3-3 3 3-3 3z" fill="currentColor" stroke="none" opacity=".8"/>
+                </svg>
+            </div>
+            <div class="hero-inner">
+                <div class="crown" aria-hidden="true"></div>
+                <p class="hero-issue" aria-hidden="true">№ 01 · MMXXVI</p>
+                <h1>{{ site_name }}</h1>
+                <div class="rule-diamond" aria-hidden="true"></div>
+                <p class="landing-tagline">{{ lang.t("landing.tagline") }}</p>
+                <p class="landing-sub">{{ lang.t("landing.subtitle") }}</p>
+                <div class="landing-cta">
+                    {% if signed_in %}
+                    <a class="btn btn-primary" href="/app">{{ lang.t("landing.cta.dashboard") }}</a>
+                    {% else %}
+                    <a class="btn btn-primary" href="/app/register">{{ lang.t("landing.cta.create_account") }}</a>
+                    <a class="btn btn-outline" href="/app/login">{{ lang.t("landing.cta.sign_in") }}</a>
+                    {% endif %}
+                </div>
+                <p class="hero-seal" aria-hidden="true">◆ ◆ ◆</p>
+            </div>
         </div>
     </section>
 
+    <div class="circuit-divider" aria-hidden="true">
+        <svg viewBox="0 0 860 30" fill="none" stroke="currentColor" stroke-width="1" focusable="false">
+            <path d="M0 15h352M370 15h50M440 15h50M506 15h354" opacity=".55"/>
+            <path d="M356 15l6-6 6 6-6 6z" fill="currentColor" stroke="none"/>
+            <path d="M430 15l10-10 10 10-10 10z" fill="currentColor" stroke="none"/>
+            <path d="M494 15l6-6 6 6-6 6z" fill="currentColor" stroke="none"/>
+            <circle cx="80" cy="15" r="1.8"/>
+            <circle cx="780" cy="15" r="1.8"/>
+            <path d="M150 15l3-3 3 3-3 3zM704 15l3-3 3 3-3 3z" fill="currentColor" stroke="none" opacity=".7"/>
+        </svg>
+    </div>
+
     <section class="mt-2" aria-labelledby="landing-highlights">
-        <h2 class="center" id="landing-highlights">{{ lang.t("landing.features.heading") }}</h2>
-        <p class="center muted">{{ lang.t("landing.features.subtitle") }}</p>
-        <div class="grid landing-grid mt">
-            <article class="card landing-feature">
+        <header class="section-head">
+            <p class="kicker kicker--center" aria-hidden="true">F · 06</p>
+            <h2 id="landing-highlights">{{ lang.t("landing.features.heading") }}</h2>
+            <p class="muted">{{ lang.t("landing.features.subtitle") }}</p>
+        </header>
+        <div class="landing-grid">
+            <article class="plaque landing-feature">
+                <div class="feature-top">
+                    <span class="feature-index" aria-hidden="true">01</span>
+                    <svg class="feature-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true" focusable="false">
+                        <path d="M16 3 29 16 16 29 3 16Z"/>
+                        <path d="M16 9.5 22.5 16 16 22.5 9.5 16Z" opacity=".65"/>
+                        <circle cx="16" cy="16" r="1.6" fill="currentColor" stroke="none"/>
+                    </svg>
+                </div>
                 <h3>{{ lang.t("landing.feature.accounts.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.accounts.body") }}</p>
+                <p>{{ lang.t("landing.feature.accounts.body") }}</p>
             </article>
-            <article class="card landing-feature">
+            <article class="plaque landing-feature">
+                <div class="feature-top">
+                    <span class="feature-index" aria-hidden="true">02</span>
+                    <svg class="feature-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true" focusable="false">
+                        <rect x="4" y="6" width="12" height="12"/>
+                        <rect x="16" y="14" width="12" height="12"/>
+                        <path d="M16 12h6v2M10 18v6h6" opacity=".65"/>
+                        <circle cx="24" cy="8" r="1.5" fill="currentColor" stroke="none"/>
+                    </svg>
+                </div>
                 <h3>{{ lang.t("landing.feature.links.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.links.body") }}</p>
+                <p>{{ lang.t("landing.feature.links.body") }}</p>
             </article>
-            <article class="card landing-feature">
+            <article class="plaque landing-feature">
+                <div class="feature-top">
+                    <span class="feature-index" aria-hidden="true">03</span>
+                    <svg class="feature-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true" focusable="false">
+                        <path d="M16 3 27 7v9c0 6-5.5 10-11 13C10 26 5 22 5 16V7Z"/>
+                        <path d="M16 9.5 21 16l-5 6.5L11 16Z" opacity=".65"/>
+                        <circle cx="16" cy="16" r="1.4" fill="currentColor" stroke="none"/>
+                    </svg>
+                </div>
                 <h3>{{ lang.t("landing.feature.protection.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.protection.body") }}</p>
+                <p>{{ lang.t("landing.feature.protection.body") }}</p>
             </article>
-            <article class="card landing-feature">
+            <article class="plaque landing-feature">
+                <div class="feature-top">
+                    <span class="feature-index" aria-hidden="true">04</span>
+                    <svg class="feature-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true" focusable="false">
+                        <path d="M4 27h24" opacity=".7"/>
+                        <rect x="6" y="18" width="4" height="9"/>
+                        <rect x="13" y="13" width="4" height="14"/>
+                        <rect x="20" y="7" width="4" height="20"/>
+                        <path d="M8 15V9M15 10V6M22 4V2" opacity=".5"/>
+                    </svg>
+                </div>
                 <h3>{{ lang.t("landing.feature.analytics.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.analytics.body") }}</p>
+                <p>{{ lang.t("landing.feature.analytics.body") }}</p>
             </article>
-            <article class="card landing-feature">
+            <article class="plaque landing-feature">
+                <div class="feature-top">
+                    <span class="feature-index" aria-hidden="true">05</span>
+                    <svg class="feature-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true" focusable="false">
+                        <path d="M5 8l11 7 11-7"/>
+                        <path d="M5 15l11 7 11-7" opacity=".72"/>
+                        <path d="M5 22l11 7 11-7" opacity=".45"/>
+                        <path d="M16 4v3" opacity=".6"/>
+                    </svg>
+                </div>
                 <h3>{{ lang.t("landing.feature.operations.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.operations.body") }}</p>
+                <p>{{ lang.t("landing.feature.operations.body") }}</p>
             </article>
-            <article class="card landing-feature">
+            <article class="plaque landing-feature">
+                <div class="feature-top">
+                    <span class="feature-index" aria-hidden="true">06</span>
+                    <svg class="feature-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true" focusable="false">
+                        <path d="M4 9h10v9h7V6h7"/>
+                        <path d="M4 23h7v-5" opacity=".6"/>
+                        <circle cx="4" cy="9" r="1.5" fill="currentColor" stroke="none"/>
+                        <circle cx="28" cy="6" r="1.5" fill="currentColor" stroke="none"/>
+                        <circle cx="21" cy="18" r="1.5" fill="currentColor" stroke="none"/>
+                        <path d="M21 18h7" opacity=".45"/>
+                    </svg>
+                </div>
                 <h3>{{ lang.t("landing.feature.platform.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.platform.body") }}</p>
+                <p>{{ lang.t("landing.feature.platform.body") }}</p>
             </article>
         </div>
     </section>
 </main>
+{% endblock %}
+
+{% block footer %}
+<footer class="landing-footer">
+    <a class="brand" href="/">{{ site_name }}<span>.</span></a>
+    <p>{{ lang.t("footer.tagline") }}</p>
+    <span class="footer-glyphs" aria-hidden="true">◆ ◆ ◆</span>
+</footer>
 {% endblock %}

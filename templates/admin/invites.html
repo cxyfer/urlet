@@ -2,15 +2,19 @@
 
 {% block title %}{{ lang.t("admin.invites.title") }} — {{ site_name }}{% endblock %}
 
-{% block content %}
-{% include "admin/tabs.html" %}
+{% block band %}{% include "admin/tabs.html" %}{% endblock %}
 
-<div class="row between">
-    <h1>{{ lang.t("admin.invites.heading") }}</h1>
+{% block content %}
+<header class="page-head">
+    <div class="page-head-main">
+        <p class="kicker" aria-hidden="true">№ 04 · MMXXVI</p>
+        <h1>{{ lang.t("admin.invites.heading") }}</h1>
+        <div class="head-rule" aria-hidden="true"></div>
+    </div>
     <span class="badge {% if registration_mode == "invite" %}badge-accent{% endif %}">
         {{ lang.t("admin.invites.registration") }} {{ registration_mode_label }}
     </span>
-</div>
+</header>
 
 {% if registration_mode != "invite" %}
 <div class="alert alert-info">
@@ -30,29 +34,35 @@
 {% when None %}
 {% endmatch %}
 
-<div class="card mt">
-    <h2>{{ lang.t("admin.invites.create") }}</h2>
-    <form method="post" action="/app/admin/invites" class="row">
-        <div class="field" style="flex: 2 1 220px; margin-bottom: 0;">
+<section class="panel mt">
+    <div class="panel-head">
+        <div class="panel-head-main">
+            <p class="kicker" aria-hidden="true">F · 01</p>
+            <h2>{{ lang.t("admin.invites.create") }}</h2>
+        </div>
+    </div>
+    <div class="panel-rule" aria-hidden="true"></div>
+    <form method="post" action="/app/admin/invites" class="control-row">
+        <div class="field field--wide">
             <label class="label" for="note">{{ lang.t("common.note") }}</label>
             <input class="input" type="text" id="note" name="note" placeholder="{{ lang.t("admin.invites.note_placeholder") }}">
         </div>
-        <div class="field" style="flex: 0 1 130px; margin-bottom: 0;">
+        <div class="field field--narrow">
             <label class="label" for="max_uses">{{ lang.t("admin.invites.max_uses") }}</label>
             <input class="input" type="number" id="max_uses" name="max_uses" min="1" value="1">
         </div>
-        <div class="field" style="flex: 1 1 190px; margin-bottom: 0;">
+        <div class="field">
             <label class="label" for="expires_at">{{ lang.t("common.expires_at") }}</label>
             <input class="input" type="text" id="expires_at" name="expires_at" placeholder="{{ lang.t("common.password_placeholder") }}">
         </div>
         <button class="btn btn-primary" type="submit">{{ lang.t("admin.invites.create") }}</button>
     </form>
-</div>
+</section>
 
-<div class="card card-flush mt">
+<section class="panel mt">
     {% if invites.len() > 0 %}
     <div class="table-wrap">
-        <table class="table">
+        <table class="table table-wide">
             <thead>
                 <tr><th>{{ lang.t("common.prefix") }}</th><th>{{ lang.t("common.note") }}</th><th>{{ lang.t("admin.invites.uses") }}</th><th>{{ lang.t("common.expires") }}</th><th>{{ lang.t("common.status") }}</th><th>{{ lang.t("common.created") }}</th><th></th></tr>
             </thead>
@@ -85,5 +95,5 @@
     {% else %}
     <p class="empty">{{ lang.t("admin.invites.empty") }}</p>
     {% endif %}
-</div>
+</section>
 {% endblock %}
