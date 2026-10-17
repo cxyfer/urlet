@@ -2733,6 +2733,40 @@ dl.meta dd {
     }
 }
 
+/* The admin index reflows into a numbered 3 x 2 grid on narrow screens so all
+   six sections and the active state stay visible without horizontal scrolling. */
+@media (max-width: 760px) {
+    .admin-tabs-wrap .tabs {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-auto-rows: minmax(0, 1fr);
+        overflow: visible;
+        -webkit-mask-image: none;
+        mask-image: none;
+    }
+
+    .admin-tabs-wrap .tabs a {
+        border-right: 1px solid var(--hair);
+        border-bottom: 1px solid var(--hair);
+        padding: 12px 10px;
+        align-items: baseline;
+        justify-content: flex-start;
+        gap: 7px;
+        min-height: 52px;
+        font-size: 0.8rem;
+        line-height: 1.25;
+        white-space: normal;
+    }
+
+    .admin-tabs-wrap .tabs a:nth-child(3n) {
+        border-right: 0;
+    }
+
+    .admin-tabs-wrap .tabs a.active {
+        padding-bottom: 10px;
+    }
+}
+
 /* --------------------------------------------------------- 29 reduced motion */
 @media (prefers-reduced-motion: reduce) {
     html {
