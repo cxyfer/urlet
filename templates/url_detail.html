@@ -3,42 +3,51 @@
 {% block title %}{{ url.slug }} — {{ chrome.site_name }}{% endblock %}
 
 {% block content %}
-<div class="row between mt">
-    <div>
-        <h1 class="mono">{{ url.slug }}</h1>
-        <p class="muted small">
-            <span id="short-url">{{ url.short_url }}</span>
+<div class="page-head">
+    <div class="page-head-main">
+        <div class="page-kicker" aria-hidden="true">
+            <span class="k-index">02</span>
+            <span class="k-rule"></span>
+            <span>///</span>
+        </div>
+        <h1 class="slug-title">{{ url.slug }}</h1>
+        <div class="detail-links">
+            <span class="short-url" id="short-url">{{ url.short_url }}</span>
             <button class="btn btn-sm" type="button" data-copy="#short-url">{{ lang.t("common.copy") }}</button>
             <a class="btn btn-sm" href="/{{ url.slug }}" target="_blank" rel="noopener">{{ lang.t("common.open") }}</a>
-        </p>
+        </div>
     </div>
-    <div class="row">
-        <span class="badge {{ url.state_class }}">{{ url.state_label }}</span>
+    <div class="page-head-side">
+        <span class="badge stamp {{ url.state_class }}">{{ url.state_label }}</span>
         <a class="btn btn-ghost" href="/app">{{ lang.t("url_detail.back") }}</a>
     </div>
 </div>
 
-<div class="grid grid-4 mt">
+<div class="stats-grid">
     <div class="stat">
+        <span class="stat-index" aria-hidden="true">01</span>
         <div class="stat-label">{{ lang.t("dashboard.stat.total_clicks") }}</div>
         <div class="stat-value">{{ summary.total_clicks }}</div>
     </div>
-    <div class="stat">
+    <div class="stat stat-blue">
+        <span class="stat-index" aria-hidden="true">02</span>
         <div class="stat-label">{{ lang.t("dashboard.stat.unique_visitors") }}</div>
         <div class="stat-value">{{ summary.unique_clicks }}</div>
     </div>
-    <div class="stat">
+    <div class="stat stat-acid">
+        <span class="stat-index" aria-hidden="true">03</span>
         <div class="stat-label">{{ lang.t("url_detail.stat.human_clicks") }}</div>
         <div class="stat-value">{{ summary.human_clicks }}</div>
     </div>
     <div class="stat">
+        <span class="stat-index" aria-hidden="true">04</span>
         <div class="stat-label">{{ lang.t("dashboard.stat.bot_clicks") }}</div>
         <div class="stat-value">{{ summary.bot_clicks }}</div>
     </div>
 </div>
 
 {% if url.state == "expired" || url.state == "limit_reached" %}
-<div class="alert alert-warn">
+<div class="alert alert-warn mt">
     {{ lang.t("url_detail.expired_notice") }}
     <form method="post" action="/app/urls/{{ url.id }}/extend" class="row mt">
         <button class="btn btn-sm" type="submit" name="days" value="30">{{ lang.t("url_detail.extend.days30") }}</button>
@@ -49,29 +58,36 @@
 </div>
 {% endif %}
 
-<div class="card mt">
-    <div class="row between">
+<section class="panel chart-panel mt">
+    <div class="panel-bar">
         <h2>{{ lang.t("url_detail.chart.heading") }}</h2>
-        <div class="row small muted">
+        <div class="range">
             <a class="btn btn-sm {% if days == 7 %}btn-primary{% endif %}" href="/app/urls/{{ url.id }}?days=7">{{ lang.t("url_detail.chart.range_7d") }}</a>
             <a class="btn btn-sm {% if days == 30 %}btn-primary{% endif %}" href="/app/urls/{{ url.id }}?days=30">{{ lang.t("url_detail.chart.range_30d") }}</a>
             <a class="btn btn-sm {% if days == 90 %}btn-primary{% endif %}" href="/app/urls/{{ url.id }}?days=90">{{ lang.t("url_detail.chart.range_90d") }}</a>
         </div>
     </div>
-    {% if daily_total > 0 %}
-    {{ chart|safe }}
-    <div class="chart-axis">
-        <span>{{ days_label }}</span>
-        <span class="hint">{{ chart_legend }}</span>
-        <span>{{ lang.t("url_detail.chart.today") }}</span>
+    <div class="panel-body">
+        {% if daily_total > 0 %}
+        <div class="chart-screen">
+            {{ chart|safe }}
+        </div>
+        <div class="chart-axis">
+            <span>{{ days_label }}</span>
+            <span class="hint">{{ chart_legend }}</span>
+            <span>{{ lang.t("url_detail.chart.today") }}</span>
+        </div>
+        {% else %}
+        <div class="empty">
+            <span class="empty-glyph" aria-hidden="true">∅</span>
+            <p>{{ lang.t("url_detail.chart.empty") }}</p>
+        </div>
+        {% endif %}
     </div>
-    {% else %}
-    <p class="empty">{{ lang.t("url_detail.chart.empty") }}</p>
-    {% endif %}
-</div>
+</section>
 
-<div class="grid grid-2 mt">
-    <div class="card">
+<div class="breakdown-grid mt">
+    <div class="card breakdown-card">
         <h3>{{ lang.t("url_detail.referrers.heading") }}</h3>
         {% if referrers.len() > 0 %}
         <div class="bar-list">
@@ -88,7 +104,7 @@
         {% endif %}
     </div>
 
-    <div class="card">
+    <div class="card breakdown-card">
         <h3>{{ lang.t("url_detail.devices.heading") }}</h3>
         {% if devices.len() > 0 %}
         <div class="bar-list">
@@ -105,7 +121,7 @@
         {% endif %}
     </div>
 
-    <div class="card">
+    <div class="card breakdown-card">
         <h3>{{ lang.t("url_detail.browsers.heading") }}</h3>
         {% if browsers.len() > 0 %}
         <div class="bar-list">
@@ -122,7 +138,7 @@
         {% endif %}
     </div>
 
-    <div class="card">
+    <div class="card breakdown-card">
         <h3>{{ lang.t("url_detail.os.heading") }}</h3>
         {% if operating_systems.len() > 0 %}
         <div class="bar-list">
@@ -140,102 +156,120 @@
     </div>
 </div>
 
-<div class="card mt">
-    <h2>{{ lang.t("url_detail.settings.heading") }}</h2>
-    <form method="post" action="/app/urls/{{ url.id }}">
-        <div class="grid grid-2">
-            <div class="field">
-                <label class="label" for="target_url">{{ lang.t("dashboard.new.destination") }}</label>
-                <input class="input" type="text" id="target_url" name="target_url" value="{{ url.target_url }}" required>
+<section class="panel settings-panel mt">
+    <div class="panel-bar">
+        <h2>{{ lang.t("url_detail.settings.heading") }}</h2>
+        <span class="bar-tag" aria-hidden="true">///</span>
+    </div>
+    <div class="panel-body">
+        <form method="post" action="/app/urls/{{ url.id }}">
+            <div class="form-grid">
+                <div class="field">
+                    <label class="label" for="target_url">{{ lang.t("dashboard.new.destination") }}</label>
+                    <input class="input" type="text" id="target_url" name="target_url" value="{{ url.target_url }}" required>
+                </div>
+                <div class="field">
+                    <label class="label" for="slug">{{ lang.t("common.slug") }}</label>
+                    <input class="input" type="text" id="slug" name="slug" value="{{ url.slug }}" maxlength="64">
+                    <span class="hint">{{ lang.t("url_detail.settings.slug_hint") }}</span>
+                </div>
+                <div class="field">
+                    <label class="label" for="title">{{ lang.t("dashboard.new.title") }}</label>
+                    <input class="input" type="text" id="title" name="title" maxlength="200"
+                           value="{% match url.title %}{% when Some with (title) %}{{ title }}{% when None %}{% endmatch %}">
+                </div>
+                <div class="field">
+                    <label class="label" for="tags">{{ lang.t("dashboard.new.tags") }}</label>
+                    <input class="input" type="text" id="tags" name="tags" value="{{ tags_csv }}">
+                </div>
+                <div class="field">
+                    <label class="label" for="password">{{ lang.t("url_detail.settings.new_password") }}</label>
+                    <input class="input" type="password" id="password" name="password"
+                           autocomplete="new-password" minlength="4" placeholder="{{ lang.t("url_detail.settings.password_placeholder") }}">
+                    <label class="check">
+                        <input type="checkbox" name="clear_password" value="on">
+                        <span class="check-box" aria-hidden="true"></span>
+                        <span class="check-text">{{ lang.t("url_detail.settings.remove_password") }}</span>
+                    </label>
+                    {% if url.has_password %}<span class="hint">{{ lang.t("url_detail.settings.password_protected") }}</span>{% endif %}
+                </div>
+                <div class="field">
+                    <label class="label" for="expires_at">{{ lang.t("common.expires_at") }}</label>
+                    <input class="input" type="text" id="expires_at" name="expires_at"
+                           value="{% match url.expires_at %}{% when Some with (value) %}{{ value }}{% when None %}{% endmatch %}"
+                           placeholder="{{ lang.t("common.password_placeholder") }}">
+                    <label class="check">
+                        <input type="checkbox" name="clear_expiry" value="on">
+                        <span class="check-box" aria-hidden="true"></span>
+                        <span class="check-text">{{ lang.t("url_detail.settings.no_expiry") }}</span>
+                    </label>
+                </div>
+                <div class="field">
+                    <label class="label" for="max_clicks">{{ lang.t("dashboard.advanced.max_clicks") }}</label>
+                    <input class="input" type="number" id="max_clicks" name="max_clicks" min="1"
+                           value="{% match url.max_clicks %}{% when Some with (limit) %}{{ limit }}{% when None %}{% endmatch %}">
+                    <label class="check">
+                        <input type="checkbox" name="clear_max_clicks" value="on">
+                        <span class="check-box" aria-hidden="true"></span>
+                        <span class="check-text">{{ lang.t("url_detail.settings.unlimited") }}</span>
+                    </label>
+                </div>
+                <div class="field">
+                    <label class="label" for="redirect_type">{{ lang.t("dashboard.advanced.redirect_type") }}</label>
+                    <select class="select" id="redirect_type" name="redirect_type">
+                        <option value="302" {% if url.redirect_type == 302 %}selected{% endif %}>{{ lang.t("dashboard.redirect.302") }}</option>
+                        <option value="301" {% if url.redirect_type == 301 %}selected{% endif %}>{{ lang.t("dashboard.redirect.301") }}</option>
+                        <option value="307" {% if url.redirect_type == 307 %}selected{% endif %}>{{ lang.t("dashboard.redirect.307") }}</option>
+                        <option value="308" {% if url.redirect_type == 308 %}selected{% endif %}>{{ lang.t("dashboard.redirect.308") }}</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label class="label" for="status">{{ lang.t("common.status") }}</label>
+                    <select class="select" id="status" name="status">
+                        <option value="active" {% if url.state != "disabled" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
+                        <option value="disabled" {% if url.state == "disabled" %}selected{% endif %}>{{ lang.t("common.disabled") }}</option>
+                    </select>
+                </div>
             </div>
-            <div class="field">
-                <label class="label" for="slug">{{ lang.t("common.slug") }}</label>
-                <input class="input" type="text" id="slug" name="slug" value="{{ url.slug }}" maxlength="64">
-                <span class="hint">{{ lang.t("url_detail.settings.slug_hint") }}</span>
+
+            <div class="form-footer mt">
+                <button class="btn btn-primary" type="submit">{{ lang.t("url_detail.save") }}</button>
             </div>
-            <div class="field">
-                <label class="label" for="title">{{ lang.t("dashboard.new.title") }}</label>
-                <input class="input" type="text" id="title" name="title" maxlength="200"
-                       value="{% match url.title %}{% when Some with (title) %}{{ title }}{% when None %}{% endmatch %}">
-            </div>
-            <div class="field">
-                <label class="label" for="tags">{{ lang.t("dashboard.new.tags") }}</label>
-                <input class="input" type="text" id="tags" name="tags" value="{{ tags_csv }}">
-            </div>
+        </form>
+
+        <div class="danger-strip">
+            <form method="post" action="/app/urls/{{ url.id }}/delete">
+                <button class="btn btn-danger" type="submit"
+                        data-confirm="{{ lang.t("url_detail.delete_confirm") }}">
+                    {{ lang.t("url_detail.delete") }}
+                </button>
+            </form>
         </div>
+    </div>
+</section>
 
-        <div class="grid grid-2">
-            <div class="field">
-                <label class="label" for="password">{{ lang.t("url_detail.settings.new_password") }}</label>
-                <input class="input" type="password" id="password" name="password"
-                       autocomplete="new-password" minlength="4" placeholder="{{ lang.t("url_detail.settings.password_placeholder") }}">
-                <label class="checkbox">
-                    <input type="checkbox" name="clear_password" value="on">
-                    {{ lang.t("url_detail.settings.remove_password") }}
-                </label>
-                {% if url.has_password %}<span class="hint">{{ lang.t("url_detail.settings.password_protected") }}</span>{% endif %}
-            </div>
-            <div class="field">
-                <label class="label" for="expires_at">{{ lang.t("common.expires_at") }}</label>
-                <input class="input" type="text" id="expires_at" name="expires_at"
-                       value="{% match url.expires_at %}{% when Some with (value) %}{{ value }}{% when None %}{% endmatch %}"
-                       placeholder="{{ lang.t("common.password_placeholder") }}">
-                <label class="checkbox">
-                    <input type="checkbox" name="clear_expiry" value="on">
-                    {{ lang.t("url_detail.settings.no_expiry") }}
-                </label>
-            </div>
-            <div class="field">
-                <label class="label" for="max_clicks">{{ lang.t("dashboard.advanced.max_clicks") }}</label>
-                <input class="input" type="number" id="max_clicks" name="max_clicks" min="1"
-                       value="{% match url.max_clicks %}{% when Some with (limit) %}{{ limit }}{% when None %}{% endmatch %}">
-                <label class="checkbox">
-                    <input type="checkbox" name="clear_max_clicks" value="on">
-                    {{ lang.t("url_detail.settings.unlimited") }}
-                </label>
-            </div>
-            <div class="field">
-                <label class="label" for="redirect_type">{{ lang.t("dashboard.advanced.redirect_type") }}</label>
-                <select class="select" id="redirect_type" name="redirect_type">
-                    <option value="302" {% if url.redirect_type == 302 %}selected{% endif %}>{{ lang.t("dashboard.redirect.302") }}</option>
-                    <option value="301" {% if url.redirect_type == 301 %}selected{% endif %}>{{ lang.t("dashboard.redirect.301") }}</option>
-                    <option value="307" {% if url.redirect_type == 307 %}selected{% endif %}>{{ lang.t("dashboard.redirect.307") }}</option>
-                    <option value="308" {% if url.redirect_type == 308 %}selected{% endif %}>{{ lang.t("dashboard.redirect.308") }}</option>
-                </select>
-                <label class="label" for="status">{{ lang.t("common.status") }}</label>
-                <select class="select" id="status" name="status">
-                    <option value="active" {% if url.state != "disabled" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
-                    <option value="disabled" {% if url.state == "disabled" %}selected{% endif %}>{{ lang.t("common.disabled") }}</option>
-                </select>
-            </div>
-        </div>
-
-        <div class="row row-end mt">
-            <button class="btn btn-primary" type="submit">{{ lang.t("url_detail.save") }}</button>
-        </div>
-    </form>
-
-    <hr>
-    <form method="post" action="/app/urls/{{ url.id }}/delete" class="row row-end">
-        <button class="btn btn-danger" type="submit"
-                data-confirm="{{ lang.t("url_detail.delete_confirm") }}">
-            {{ lang.t("url_detail.delete") }}
-        </button>
-    </form>
-</div>
-
-<div class="card card-flush mt">
-    <h2 style="padding: 1rem 1rem 0;">{{ lang.t("url_detail.clicks.heading") }}</h2>
+<section class="panel clicks-panel">
+    <div class="panel-bar">
+        <h2>{{ lang.t("url_detail.clicks.heading") }}</h2>
+        <span class="bar-tag" aria-hidden="true">///</span>
+    </div>
     {% if clicks.len() > 0 %}
-    <div class="table-wrap">
-        <table class="table">
+    <div class="table-wrap" tabindex="0" role="region" aria-label="{{ lang.t("url_detail.clicks.heading") }}">
+        <table class="table table-md">
             <thead>
-                <tr><th>{{ lang.t("common.when") }}</th><th>{{ lang.t("url_detail.clicks.referrer") }}</th><th>{{ lang.t("url_detail.clicks.device") }}</th><th>{{ lang.t("url_detail.clicks.browser") }}</th><th>{{ lang.t("url_detail.clicks.os") }}</th><th>{{ lang.t("url_detail.clicks.type") }}</th></tr>
+                <tr>
+                    <th scope="col">{{ lang.t("common.when") }}</th>
+                    <th scope="col">{{ lang.t("url_detail.clicks.referrer") }}</th>
+                    <th scope="col">{{ lang.t("url_detail.clicks.device") }}</th>
+                    <th scope="col">{{ lang.t("url_detail.clicks.browser") }}</th>
+                    <th scope="col">{{ lang.t("url_detail.clicks.os") }}</th>
+                    <th scope="col">{{ lang.t("url_detail.clicks.type") }}</th>
+                </tr>
             </thead>
             <tbody>
                 {% for click in clicks %}
                 <tr>
-                    <td class="small">{{ click.when }}</td>
+                    <td class="small nowrap">{{ click.when }}</td>
                     <td class="truncate">{{ click.referrer }}</td>
                     <td>{{ click.device }}</td>
                     <td>{{ click.browser }}</td>
@@ -247,7 +281,10 @@
         </table>
     </div>
     {% else %}
-    <p class="empty">{{ lang.t("dashboard.chart.empty") }}</p>
+    <div class="empty">
+        <span class="empty-glyph" aria-hidden="true">∅</span>
+        <p>{{ lang.t("dashboard.chart.empty") }}</p>
+    </div>
     {% endif %}
-</div>
+</section>
 {% endblock %}

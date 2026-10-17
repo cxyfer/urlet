@@ -3,213 +3,257 @@
 {% block title %}{{ lang.t("nav.links") }} — {{ chrome.site_name }}{% endblock %}
 
 {% block content %}
-<div class="row between mt">
-    <div>
+<div class="page-head">
+    <div class="page-head-main">
+        <div class="page-kicker" aria-hidden="true">
+            <span class="k-index">01</span>
+            <span class="k-rule"></span>
+            <span>///</span>
+        </div>
         <h1>{{ lang.t("dashboard.heading") }}</h1>
-        <p class="muted small">
-            {{ usage }}
-        </p>
+    </div>
+    <div class="page-head-side">
+        <span class="page-chip page-chip-acid dash-usage">{{ usage }}</span>
     </div>
 </div>
 
-<div class="grid grid-4 mt">
+<div class="stats-grid">
     <div class="stat">
+        <span class="stat-index" aria-hidden="true">01</span>
         <div class="stat-label">{{ lang.t("dashboard.stat.links") }}</div>
         <div class="stat-value">{{ overview.links }}</div>
     </div>
-    <div class="stat">
+    <div class="stat stat-acid">
+        <span class="stat-index" aria-hidden="true">02</span>
         <div class="stat-label">{{ lang.t("dashboard.stat.active") }}</div>
         <div class="stat-value">{{ overview.active_links }}</div>
     </div>
     <div class="stat">
+        <span class="stat-index" aria-hidden="true">03</span>
         <div class="stat-label">{{ lang.t("dashboard.stat.expired") }}</div>
         <div class="stat-value">{{ overview.expired_links }}</div>
     </div>
-    <div class="stat">
+    <div class="stat stat-blue">
+        <span class="stat-index" aria-hidden="true">04</span>
         <div class="stat-label">{{ lang.t("dashboard.stat.total_clicks") }}</div>
         <div class="stat-value">{{ overview.total_clicks }}</div>
     </div>
     <div class="stat">
+        <span class="stat-index" aria-hidden="true">05</span>
         <div class="stat-label">{{ lang.t("dashboard.stat.unique_visitors") }}</div>
         <div class="stat-value">{{ overview.unique_clicks }}</div>
     </div>
     <div class="stat">
+        <span class="stat-index" aria-hidden="true">06</span>
         <div class="stat-label">{{ lang.t("dashboard.stat.last_7_days") }}</div>
         <div class="stat-value">{{ overview.clicks_7d }}</div>
     </div>
     <div class="stat">
+        <span class="stat-index" aria-hidden="true">07</span>
         <div class="stat-label">{{ lang.t("dashboard.stat.last_30_days") }}</div>
         <div class="stat-value">{{ overview.clicks_30d }}</div>
     </div>
     <div class="stat">
+        <span class="stat-index" aria-hidden="true">08</span>
         <div class="stat-label">{{ lang.t("dashboard.stat.bot_clicks") }}</div>
         <div class="stat-value">{{ overview.bot_clicks }}</div>
-        <div class="small muted">{{ overview.bot_share }}{{ lang.t("dashboard.bot_share") }}</div>
+        <div class="stat-note">{{ overview.bot_share }}{{ lang.t("dashboard.bot_share") }}</div>
     </div>
 </div>
 
-<div class="card mt">
-    <h2>{{ lang.t("dashboard.new.heading") }}</h2>
-    <form method="post" action="/app/urls">
-        <div class="grid grid-2">
-            <div class="field">
-                <label class="label" for="target_url">{{ lang.t("dashboard.new.destination") }}</label>
-                <input class="input" type="text" id="target_url" name="target_url"
-                       placeholder="{{ lang.t("dashboard.new.destination_placeholder") }}" required>
-                <span class="hint">{{ lang.t("dashboard.new.destination_hint") }}</span>
-            </div>
-            <div class="field">
-                <label class="label" for="slug">{{ lang.t("dashboard.new.slug") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
-                <input class="input" type="text" id="slug" name="slug" maxlength="64"
-                       placeholder="{{ lang.t("dashboard.new.slug_placeholder") }}">
-                <span class="hint">{{ lang.t("dashboard.new.slug_hint") }}</span>
-            </div>
+<div class="dash-primary">
+    <section class="panel composer">
+        <div class="panel-bar">
+            <h2>{{ lang.t("dashboard.new.heading") }}</h2>
+            <span class="bar-tag" aria-hidden="true">+</span>
         </div>
+        <div class="panel-body">
+            <form method="post" action="/app/urls">
+                <div class="form-grid">
+                    <div class="field">
+                        <label class="label" for="target_url">{{ lang.t("dashboard.new.destination") }}</label>
+                        <input class="input" type="text" id="target_url" name="target_url"
+                               placeholder="{{ lang.t("dashboard.new.destination_placeholder") }}" required>
+                        <span class="hint">{{ lang.t("dashboard.new.destination_hint") }}</span>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="slug">{{ lang.t("dashboard.new.slug") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
+                        <input class="input" type="text" id="slug" name="slug" maxlength="64"
+                               placeholder="{{ lang.t("dashboard.new.slug_placeholder") }}">
+                        <span class="hint">{{ lang.t("dashboard.new.slug_hint") }}</span>
+                    </div>
+                </div>
 
-        <div class="grid grid-2">
-            <div class="field">
-                <label class="label" for="title">{{ lang.t("dashboard.new.title") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
-                <input class="input" type="text" id="title" name="title" maxlength="200">
-            </div>
-            <div class="field">
-                <label class="label" for="tags">{{ lang.t("dashboard.new.tags") }} <span class="muted">{{ lang.t("dashboard.new.tags_suffix") }}</span></label>
-                <input class="input" type="text" id="tags" name="tags" placeholder="{{ lang.t("dashboard.new.tags_placeholder") }}">
-            </div>
+                <div class="form-grid">
+                    <div class="field">
+                        <label class="label" for="title">{{ lang.t("dashboard.new.title") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
+                        <input class="input" type="text" id="title" name="title" maxlength="200">
+                    </div>
+                    <div class="field">
+                        <label class="label" for="tags">{{ lang.t("dashboard.new.tags") }} <span class="muted">{{ lang.t("dashboard.new.tags_suffix") }}</span></label>
+                        <input class="input" type="text" id="tags" name="tags" placeholder="{{ lang.t("dashboard.new.tags_placeholder") }}">
+                    </div>
+                </div>
+
+                <details class="advanced">
+                    <summary>{{ lang.t("dashboard.advanced.summary") }}</summary>
+                    <div class="advanced-body">
+                        <div class="form-grid">
+                            <div class="field">
+                                <label class="label" for="password">{{ lang.t("dashboard.advanced.link_password") }}</label>
+                                <input class="input" type="password" id="password" name="password"
+                                       autocomplete="new-password" minlength="4">
+                                <span class="hint">{{ lang.t("dashboard.advanced.link_password_hint") }}</span>
+                            </div>
+                            <div class="field">
+                                <label class="label" for="expires_at">{{ lang.t("common.expires_at") }}</label>
+                                <input class="input" type="text" id="expires_at" name="expires_at"
+                                       placeholder="{{ lang.t("common.password_placeholder") }}">
+                                <span class="hint">{{ lang.t("dashboard.advanced.expires_hint") }}</span>
+                            </div>
+                            <div class="field">
+                                <label class="label" for="max_clicks">{{ lang.t("dashboard.advanced.max_clicks") }}</label>
+                                <input class="input" type="number" id="max_clicks" name="max_clicks" min="1">
+                                <span class="hint">{{ lang.t("dashboard.advanced.max_clicks_hint") }}</span>
+                            </div>
+                            <div class="field">
+                                <label class="label" for="redirect_type">{{ lang.t("dashboard.advanced.redirect_type") }}</label>
+                                <select class="select" id="redirect_type" name="redirect_type">
+                                    <option value="{{ default_redirect_type }}">{{ default_redirect_type }} ({{ lang.t("dashboard.redirect.instance_default") }})</option>
+                                    <option value="301">{{ lang.t("dashboard.redirect.301") }}</option>
+                                    <option value="302">{{ lang.t("dashboard.redirect.302") }}</option>
+                                    <option value="307">{{ lang.t("dashboard.redirect.307") }}</option>
+                                    <option value="308">{{ lang.t("dashboard.redirect.308") }}</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+
+                {% include "partials/captcha.html" %}
+
+                <div class="submit-row">
+                    <button class="btn btn-primary" type="submit">{{ lang.t("dashboard.create") }}</button>
+                </div>
+            </form>
         </div>
+    </section>
 
-        <details class="advanced">
-            <summary>{{ lang.t("dashboard.advanced.summary") }}</summary>
-            <div class="grid grid-2 mt">
-                <div class="field">
-                    <label class="label" for="password">{{ lang.t("dashboard.advanced.link_password") }}</label>
-                    <input class="input" type="password" id="password" name="password"
-                           autocomplete="new-password" minlength="4">
-                    <span class="hint">{{ lang.t("dashboard.advanced.link_password_hint") }}</span>
-                </div>
-                <div class="field">
-                    <label class="label" for="expires_at">{{ lang.t("common.expires_at") }}</label>
-                    <input class="input" type="text" id="expires_at" name="expires_at"
-                           placeholder="{{ lang.t("common.password_placeholder") }}">
-                    <span class="hint">{{ lang.t("dashboard.advanced.expires_hint") }}</span>
-                </div>
-                <div class="field">
-                    <label class="label" for="max_clicks">{{ lang.t("dashboard.advanced.max_clicks") }}</label>
-                    <input class="input" type="number" id="max_clicks" name="max_clicks" min="1">
-                    <span class="hint">{{ lang.t("dashboard.advanced.max_clicks_hint") }}</span>
-                </div>
-                <div class="field">
-                    <label class="label" for="redirect_type">{{ lang.t("dashboard.advanced.redirect_type") }}</label>
-                    <select class="select" id="redirect_type" name="redirect_type">
-                        <option value="{{ default_redirect_type }}">{{ default_redirect_type }} ({{ lang.t("dashboard.redirect.instance_default") }})</option>
-                        <option value="301">{{ lang.t("dashboard.redirect.301") }}</option>
-                        <option value="302">{{ lang.t("dashboard.redirect.302") }}</option>
-                        <option value="307">{{ lang.t("dashboard.redirect.307") }}</option>
-                        <option value="308">{{ lang.t("dashboard.redirect.308") }}</option>
-                    </select>
-                </div>
-            </div>
-        </details>
-
-        {% include "partials/captcha.html" %}
-
-        <div class="row row-end mt">
-            <button class="btn btn-primary" type="submit">{{ lang.t("dashboard.create") }}</button>
+    <section class="panel chart-panel">
+        <div class="panel-bar">
+            <h2>{{ lang.t("dashboard.chart.heading") }}</h2>
+            <span class="bar-tag" aria-hidden="true">14D</span>
         </div>
-    </form>
-</div>
-
-<div class="card mt">
-    <h2>{{ lang.t("dashboard.chart.heading") }}</h2>
-    {% if overview.total_clicks > 0 %}
-    {{ chart|safe }}
-    <div class="chart-axis">
-        <span>{{ lang.t("dashboard.chart.from") }}</span>
-        <span class="hint">{{ lang.t("dashboard.chart.legend") }}</span>
-        <span>{{ lang.t("dashboard.chart.today") }}</span>
-    </div>
-    {% else %}
-    <p class="empty">{{ lang.t("dashboard.chart.empty") }}</p>
-    {% endif %}
+        <div class="panel-body">
+            {% if overview.total_clicks > 0 %}
+            <div class="chart-screen">
+                {{ chart|safe }}
+            </div>
+            <div class="chart-axis">
+                <span>{{ lang.t("dashboard.chart.from") }}</span>
+                <span class="hint">{{ lang.t("dashboard.chart.legend") }}</span>
+                <span>{{ lang.t("dashboard.chart.today") }}</span>
+            </div>
+            {% else %}
+            <div class="empty">
+                <span class="empty-glyph" aria-hidden="true">∅</span>
+                <p>{{ lang.t("dashboard.chart.empty") }}</p>
+            </div>
+            {% endif %}
+        </div>
+    </section>
 </div>
 
 {% if overview.top_links.len() > 0 %}
-<div class="card mt">
-    <h2>{{ lang.t("dashboard.top.heading") }}</h2>
-    <div class="table-wrap">
-        <table class="table">
+<section class="panel dash-table">
+    <div class="panel-bar">
+        <h2>{{ lang.t("dashboard.top.heading") }}</h2>
+        <span class="bar-tag" aria-hidden="true">///</span>
+    </div>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="{{ lang.t("dashboard.top.heading") }}">
+        <table class="table table-sm table-top">
             <thead>
-                <tr><th>{{ lang.t("common.slug") }}</th><th>{{ lang.t("common.destination") }}</th><th>{{ lang.t("common.clicks") }}</th></tr>
+                <tr>
+                    <th scope="col">{{ lang.t("common.slug") }}</th>
+                    <th scope="col">{{ lang.t("common.destination") }}</th>
+                    <th scope="col" class="num">{{ lang.t("common.clicks") }}</th>
+                </tr>
             </thead>
             <tbody>
                 {% for link in overview.top_links %}
                 <tr>
-                    <td><a href="/app/urls/{{ link.id }}">{{ link.slug }}</a></td>
-                    <td class="truncate">{{ link.target_url }}</td>
-                    <td>{{ link.click_count }}</td>
+                    <td><a class="mono" href="/app/urls/{{ link.id }}">{{ link.slug }}</a></td>
+                    <td class="truncate cell-dest" title="{{ link.target_url }}">{{ link.target_url }}</td>
+                    <td class="num">{{ link.click_count }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-</div>
+</section>
 {% endif %}
 
-<div class="card card-flush mt">
-    <div style="padding: 1rem 1rem 0;">
-        <form method="get" action="/app" class="row">
-            <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ lang.t("dashboard.search.placeholder") }}"
-                   style="max-width: 260px;">
-            <select class="select" name="tag" style="max-width: 180px;">
-                <option value="">{{ lang.t("dashboard.tags.all") }}</option>
-                {% for item in tags %}
-                <option value="{{ item.name }}" {% if item.name == tag %}selected{% endif %}>
-                    {{ item.name }} ({{ item.url_count }})
-                </option>
-                {% endfor %}
-            </select>
-            <select class="select" name="status" style="max-width: 150px;">
-                <option value="" {% if status == "" %}selected{% endif %}>{{ lang.t("common.any_status") }}</option>
-                <option value="active" {% if status == "active" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
-                <option value="disabled" {% if status == "disabled" %}selected{% endif %}>{{ lang.t("common.disabled") }}</option>
-            </select>
-            <select class="select" name="sort" style="max-width: 170px;">
-                <option value="" {% if sort == "" %}selected{% endif %}>{{ lang.t("dashboard.sort.newest") }}</option>
-                <option value="clicks" {% if sort == "clicks" %}selected{% endif %}>{{ lang.t("dashboard.sort.clicks") }}</option>
-                <option value="slug" {% if sort == "slug" %}selected{% endif %}>{{ lang.t("dashboard.sort.slug") }}</option>
-                <option value="updated" {% if sort == "updated" %}selected{% endif %}>{{ lang.t("dashboard.sort.updated") }}</option>
-                <option value="expires" {% if sort == "expires" %}selected{% endif %}>{{ lang.t("dashboard.sort.expires") }}</option>
-            </select>
-            <button class="btn" type="submit">{{ lang.t("common.filter") }}</button>
-            <a class="btn btn-ghost" href="/app">{{ lang.t("common.reset") }}</a>
-        </form>
+<section class="panel dash-table filter-panel">
+    <div class="panel-bar">
+        <h2>{{ lang.t("nav.links") }}</h2>
+        <span class="bar-tag" aria-hidden="true">///</span>
     </div>
 
+    <form method="get" action="/app" class="toolbar">
+        <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ lang.t("dashboard.search.placeholder") }}"
+               aria-label="{{ lang.t("dashboard.search.placeholder") }}">
+        <select class="select" name="tag" aria-label="{{ lang.t("dashboard.tags.all") }}">
+            <option value="">{{ lang.t("dashboard.tags.all") }}</option>
+            {% for item in tags %}
+            <option value="{{ item.name }}" {% if item.name == tag %}selected{% endif %}>
+                {{ item.name }} ({{ item.url_count }})
+            </option>
+            {% endfor %}
+        </select>
+        <select class="select" name="status" aria-label="{{ lang.t("common.status") }}">
+            <option value="" {% if status == "" %}selected{% endif %}>{{ lang.t("common.any_status") }}</option>
+            <option value="active" {% if status == "active" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
+            <option value="disabled" {% if status == "disabled" %}selected{% endif %}>{{ lang.t("common.disabled") }}</option>
+        </select>
+        <select class="select" name="sort" aria-label="{{ lang.t("dashboard.sort.newest") }}">
+            <option value="" {% if sort == "" %}selected{% endif %}>{{ lang.t("dashboard.sort.newest") }}</option>
+            <option value="clicks" {% if sort == "clicks" %}selected{% endif %}>{{ lang.t("dashboard.sort.clicks") }}</option>
+            <option value="slug" {% if sort == "slug" %}selected{% endif %}>{{ lang.t("dashboard.sort.slug") }}</option>
+            <option value="updated" {% if sort == "updated" %}selected{% endif %}>{{ lang.t("dashboard.sort.updated") }}</option>
+            <option value="expires" {% if sort == "expires" %}selected{% endif %}>{{ lang.t("dashboard.sort.expires") }}</option>
+        </select>
+        <button class="btn" type="submit">{{ lang.t("common.filter") }}</button>
+        <a class="btn btn-ghost" href="/app">{{ lang.t("common.reset") }}</a>
+    </form>
+
     {% if urls.len() > 0 %}
-    <div class="table-wrap mt">
-        <table class="table">
+    <div class="table-wrap" tabindex="0" role="region" aria-label="{{ lang.t("nav.links") }}">
+        <table class="table table-wide">
             <thead>
                 <tr>
-                    <th>{{ lang.t("dashboard.table.short_link") }}</th>
-                    <th>{{ lang.t("common.destination") }}</th>
-                    <th>{{ lang.t("dashboard.new.tags") }}</th>
-                    <th>{{ lang.t("common.clicks") }}</th>
-                    <th>{{ lang.t("common.state") }}</th>
-                    <th>{{ lang.t("common.expiry") }}</th>
-                    <th></th>
+                    <th scope="col">{{ lang.t("dashboard.table.short_link") }}</th>
+                    <th scope="col">{{ lang.t("common.destination") }}</th>
+                    <th scope="col">{{ lang.t("dashboard.new.tags") }}</th>
+                    <th scope="col" class="num">{{ lang.t("common.clicks") }}</th>
+                    <th scope="col">{{ lang.t("common.state") }}</th>
+                    <th scope="col">{{ lang.t("common.expiry") }}</th>
+                    <th scope="col"><span class="sr-only">{{ lang.t("common.actions") }}</span></th>
                 </tr>
             </thead>
             <tbody>
                 {% for url in urls %}
                 <tr>
                     <td>
-                        <span class="mono" id="short-{{ url.id }}">{{ url.short_url }}</span>
-                        <div class="row" style="gap: .25rem;">
+                        <div class="short-link">
+                            <span class="mono" id="short-{{ url.id }}">{{ url.short_url }}</span>
+                        </div>
+                        <div class="row cell-actions">
                             <button class="btn btn-sm" type="button" data-copy="#short-{{ url.id }}">{{ lang.t("common.copy") }}</button>
                             <a class="btn btn-sm" href="/{{ url.slug }}" target="_blank" rel="noopener">{{ lang.t("common.open") }}</a>
                         </div>
                     </td>
                     <td>
-                        <div class="truncate" title="{{ url.target_url }}">{{ url.target_display }}</div>
+                        <div class="truncate cell-dest" title="{{ url.target_url }}">{{ url.target_display }}</div>
                         {% match url.title %}
                         {% when Some with (title) %}<div class="small muted">{{ title }}</div>
                         {% when None %}{% endmatch %}
@@ -217,12 +261,12 @@
                     </td>
                     <td>
                         {% for item in url.tags %}
-                        <span class="badge">{{ item }}</span>
+                        <span class="badge tag">{{ item }}</span>
                         {% endfor %}
                     </td>
-                    <td>
-                        {{ url.click_count }}
-                        <div class="small muted">{{ url.unique_click_count }} {{ lang.t("common.unique") }}</div>
+                    <td class="num">
+                        <div class="num-main">{{ url.click_count }}</div>
+                        <div class="num-sub">{{ url.unique_click_count }} {{ lang.t("common.unique") }}</div>
                     </td>
                     <td><span class="badge {{ url.state_class }}">{{ url.state_label }}</span></td>
                     <td class="small">
@@ -233,7 +277,7 @@
                         {% when Some with (limit) %}<div class="muted">{{ lang.t("common.max_prefix") }} {{ limit }}</div>
                         {% when None %}{% endmatch %}
                     </td>
-                    <td class="nowrap">
+                    <td class="nowrap cell-actions">
                         <a class="btn btn-sm" href="/app/urls/{{ url.id }}">{{ lang.t("common.edit") }}</a>
                     </td>
                 </tr>
@@ -256,7 +300,10 @@
     {% endif %}
 
     {% else %}
-    <p class="empty">{{ lang.t("dashboard.empty") }}</p>
+    <div class="empty">
+        <span class="empty-glyph" aria-hidden="true">∅</span>
+        <p>{{ lang.t("dashboard.empty") }}</p>
+    </div>
     {% endif %}
-</div>
+</section>
 {% endblock %}

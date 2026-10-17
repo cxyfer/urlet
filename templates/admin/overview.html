@@ -5,56 +5,78 @@
 {% block content %}
 {% include "admin/tabs.html" %}
 
-<div class="row between">
-    <h1>{{ lang.t("admin.overview.heading") }}</h1>
-    <span class="muted small">v{{ stats.version }} · {{ lang.t("admin.overview.up") }} {{ stats.uptime }}</span>
+<div class="page-head admin-head">
+    <div class="page-head-main">
+        <div class="page-kicker" aria-hidden="true">
+            <span class="k-index">01</span>
+            <span class="k-rule"></span>
+            <span>/// SYS</span>
+        </div>
+        <h1>{{ lang.t("admin.overview.heading") }}</h1>
+    </div>
+    <div class="page-head-side">
+        <span class="page-chip">v{{ stats.version }} · {{ lang.t("admin.overview.up") }} {{ stats.uptime }}</span>
+    </div>
 </div>
 
-<div class="grid grid-4 mt">
+<div class="stats-grid admin-stats">
     <div class="stat">
+        <span class="stat-index" aria-hidden="true">01</span>
         <div class="stat-label">{{ lang.t("admin.overview.stat.users") }}</div>
         <div class="stat-value">{{ stats.users }}</div>
     </div>
-    <div class="stat">
+    <div class="stat stat-acid">
+        <span class="stat-index" aria-hidden="true">02</span>
         <div class="stat-label">{{ lang.t("admin.overview.stat.admins") }}</div>
         <div class="stat-value">{{ stats.admins }}</div>
     </div>
     <div class="stat">
+        <span class="stat-index" aria-hidden="true">03</span>
         <div class="stat-label">{{ lang.t("admin.overview.stat.links") }}</div>
         <div class="stat-value">{{ stats.links }}</div>
     </div>
     <div class="stat">
+        <span class="stat-index" aria-hidden="true">04</span>
         <div class="stat-label">{{ lang.t("admin.overview.stat.expired_links") }}</div>
         <div class="stat-value">{{ stats.expired_links }}</div>
     </div>
-    <div class="stat">
+    <div class="stat stat-blue">
+        <span class="stat-index" aria-hidden="true">05</span>
         <div class="stat-label">{{ lang.t("admin.overview.stat.total_clicks") }}</div>
         <div class="stat-value">{{ stats.total_clicks }}</div>
     </div>
     <div class="stat">
+        <span class="stat-index" aria-hidden="true">06</span>
         <div class="stat-label">{{ lang.t("admin.overview.stat.unique_visitors") }}</div>
         <div class="stat-value">{{ stats.unique_clicks }}</div>
     </div>
     <div class="stat">
+        <span class="stat-index" aria-hidden="true">07</span>
         <div class="stat-label">{{ lang.t("admin.overview.stat.bot_clicks") }}</div>
         <div class="stat-value">{{ stats.bot_clicks }}</div>
     </div>
     <div class="stat">
+        <span class="stat-index" aria-hidden="true">08</span>
         <div class="stat-label">{{ lang.t("admin.overview.stat.active_invites") }}</div>
         <div class="stat-value">{{ stats.active_invites }}</div>
     </div>
 </div>
 
-<div class="card mt">
-    <h2>{{ lang.t("admin.overview.instance") }}</h2>
-    <dl class="meta">
-        <dt>{{ lang.t("admin.overview.registration") }}</dt><dd>{{ stats.registration_mode }}</dd>
-        <dt>{{ lang.t("admin.overview.database_size") }}</dt><dd>{{ stats.database_size }}</dd>
-        <dt>{{ lang.t("admin.overview.uptime") }}</dt><dd>{{ stats.uptime }}</dd>
-        <dt>{{ lang.t("admin.overview.version") }}</dt><dd>{{ stats.version }}</dd>
-    </dl>
-    <p class="hint mt">
-        {{ lang.t("admin.overview.retention_hint")|safe }}
-    </p>
-</div>
+<section class="panel admin-spec-panel">
+    <div class="panel-bar">
+        <h2>{{ lang.t("admin.overview.instance") }}</h2>
+        <span class="bar-tag" aria-hidden="true">///</span>
+    </div>
+    <div class="panel-body">
+        <dl class="spec">
+            <dt>{{ lang.t("admin.overview.registration") }}</dt><dd>{{ stats.registration_mode }}</dd>
+            <dt>{{ lang.t("admin.overview.database_size") }}</dt><dd>{{ stats.database_size }}</dd>
+            <dt>{{ lang.t("admin.overview.uptime") }}</dt><dd>{{ stats.uptime }}</dd>
+            <dt>{{ lang.t("admin.overview.version") }}</dt><dd>{{ stats.version }}</dd>
+        </dl>
+        <p class="hint">
+            {{ lang.t("admin.overview.retention_hint")|safe }}
+        </p>
+    </div>
+</section>
 {% endblock %}
