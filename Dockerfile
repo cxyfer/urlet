@@ -16,11 +16,18 @@ WORKDIR /src
 # Dependency layer: build with stub sources so `cargo build` only compiles the
 # dependency graph. Rebuilt only when Cargo.toml / Cargo.lock change.
 #
+# The root package version is pinned to a constant first. Every release bumps it,
+# and the version of the crate being built is not a dependency, so leaving it in
+# the cache key would recompile the whole graph (axum, sqlx, argon2, rustls...)
+# on every single release for no reason. The real manifest is restored below.
+#
 # Every artifact of the stub crate must be removed afterwards: `COPY` preserves
 # the source mtimes from the build context, so a stale `liburlet*.rlib` would
 # look newer than the real sources and cargo would happily reuse it.
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir -p src \
+RUN sed -i 's/^version = ".*"/version = "0.0.0"/' Cargo.toml \
+    && sed -i '/^name = "urlet"$/,/^version = / s/^version = ".*"/version = "0.0.0"/' Cargo.lock \
+    && mkdir -p src \
     && echo 'fn main() {}' > src/main.rs \
     && echo '' > src/lib.rs \
     && cargo build --release --locked \
@@ -30,10 +37,12 @@ RUN mkdir -p src \
               target/release/deps/liburlet* \
               target/release/.fingerprint/urlet-*
 
-# Application layer.
+# Application layer. The manifest is copied again to undo the version pin above
+# (and to pick up any dependency change); cargo then rebuilds only this crate.
 COPY migrations ./migrations
 COPY templates ./templates
 COPY src ./src
+COPY Cargo.toml Cargo.lock ./
 RUN cargo build --release --locked \
     && strip target/release/urlet \
     && adduser -D -H -u 10001 urlet \
