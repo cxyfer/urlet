@@ -2418,6 +2418,21 @@ dl.meta dt:last-of-type, dl.meta dd:last-of-type { border-bottom: 0; }
 
 @media (max-width: 700px) {
     .wrap { padding: 1.15rem 1rem 2rem; }
+    /* Admin tabs wrap into a visible 3 x 2 grid instead of scrolling away. */
+    .tabs::after { display: none; }
+    .tabs-scroll {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: .3rem;
+        overflow-x: visible;
+        padding-bottom: 0;
+    }
+    .tabs a {
+        justify-content: center;
+        padding: .4rem .3rem;
+        font-size: .8rem;
+        white-space: nowrap;
+    }
     .stat-grid,
     .vitals,
     .culture { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
