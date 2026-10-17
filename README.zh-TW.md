@@ -177,8 +177,8 @@ bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 發布採標籤驅動，完整規則見 [`RELEASING.md`](RELEASING.md)（[中文版](docs/zh-TW/RELEASING.md)），
 建立標籤前請先閱讀。簡要流程：更新 [`Cargo.toml`](Cargo.toml) 的 `version`、同步
 `Cargo.lock`、提交，然後推送 annotated 的 `vX.Y.Z` 標籤。workflow 會驗證標籤、建置
-`linux/amd64` 與 `linux/arm64`，並以 semver 標籤發布 `ghcr.io/cxyfer/uwurls`。GitHub Release
-之後由人工撰寫；預發布版不會移動 `latest`。
+`linux/amd64` 與 `linux/arm64`，並以 semver 標籤發布 `ghcr.io/cxyfer/uwurls`。只有最新正式版會
+移動 `X`、`X.Y` 與 `latest`；預發布版不會。GitHub Release 之後由人工撰寫。
 
 若只想重建既有標籤，請從 *Actions → Release container image → Run workflow* 手動執行
 （除非是最新正式版本，否則不要開啟浮動標籤）。

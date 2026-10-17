@@ -3,7 +3,8 @@ name: Release container image
 # Publishing a version = pushing a `v*` tag. The workflow then:
 #   1. checks the tag matches the version in Cargo.toml,
 #   2. builds a multi-arch image (linux/amd64 + linux/arm64) with Buildx, and
-#   3. pushes it to the GitHub Container Registry.
+#   3. pushes it to the GitHub Container Registry, moving X, X.Y and latest
+#      only when the tag is the newest stable release.
 #
 # The GitHub release itself is still published by hand, so its notes are yours.
 # Manual runs (workflow_dispatch) rebuild an existing tag; by default they push
@@ -30,7 +31,9 @@ permissions:
   packages: write
 
 concurrency:
-  group: release-image-${{ inputs.tag || github.ref_name }}
+  # One release at a time across all tags: a slow older build must never finish
+  # after a newer one and move the moving tags backwards.
+  group: release-image
   cancel-in-progress: false
 
 env:
@@ -44,6 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.release.outputs.tag }}
+      is_latest: ${{ steps.latest.outputs.is_latest }}
     steps:
       - name: Resolve the release tag
         id: release
@@ -62,6 +66,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ steps.release.outputs.tag }}
+          # All tags are needed to decide whether this release is the newest
+          # stable one and may therefore move X, X.Y and latest.
+          fetch-depth: 0
 
       - name: Check that Cargo.toml matches the tag
         env:
@@ -83,6 +90,25 @@ jobs:
           # the image build much later. Catch it here instead.
           cargo metadata --locked --format-version 1 >/dev/null
           echo "Cargo.lock matches Cargo.toml"
+
+      - name: Determine whether this is the newest stable release
+        id: latest
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Only stable tags (no -rc/-beta suffix) can move X, X.Y and latest.
+          latest=$(git tag --list 'v*' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V \
+            | tail -n 1 || true)
+          if [[ "$TAG" == "$latest" ]]; then
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+            echo "$TAG is the newest stable release; moving tags will be updated"
+          else
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+            echo "$TAG is not the newest stable release (newest: ${latest:-none}); only the exact version will be pushed"
+          fi
 
   # ------------------------------------------------------------------- publish
   publish:
@@ -117,9 +143,9 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=semver,pattern={{version}},value=${{ needs.validate.outputs.tag }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.validate.outputs.tag }},enable=${{ (github.event_name == 'push' || inputs.update_moving_tags) && !contains(needs.validate.outputs.tag, '-') }}
-            type=semver,pattern={{major}},value=${{ needs.validate.outputs.tag }},enable=${{ (github.event_name == 'push' || inputs.update_moving_tags) && !contains(needs.validate.outputs.tag, '-') }}
-            type=raw,value=latest,enable=${{ (github.event_name == 'push' || inputs.update_moving_tags) && !contains(needs.validate.outputs.tag, '-') }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.validate.outputs.tag }},enable=${{ needs.validate.outputs.is_latest == 'true' && (github.event_name == 'push' || inputs.update_moving_tags) }}
+            type=semver,pattern={{major}},value=${{ needs.validate.outputs.tag }},enable=${{ needs.validate.outputs.is_latest == 'true' && (github.event_name == 'push' || inputs.update_moving_tags) }}
+            type=raw,value=latest,enable=${{ needs.validate.outputs.is_latest == 'true' && (github.event_name == 'push' || inputs.update_moving_tags) }}
           flavor: |
             latest=false
 

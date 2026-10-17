@@ -21,10 +21,11 @@ manual on purpose (see [Rules](#rules)).
 
 | Release | Tags pushed | Notes |
 |---------|-------------|-------|
-| `v1.2.3` | `1.2.3`, `1.2`, `1`, `latest` | Stable release |
+| `v1.2.3` (newest stable) | `1.2.3`, `1.2`, `1`, `latest` | Stable release |
+| `v1.2.4` (older than newest) | `1.2.4` | Only the exact tag; moving tags stay on the newest release |
 | `v1.2.3-rc.1` | `1.2.3-rc.1` | Pre-release: never gets moving tags |
 | Manual rebuild, defaults | `1.2.3` | Exact version only |
-| Manual rebuild + “update moving tags” | `1.2.3`, `1.2`, `1`, `latest` | Stable tags only |
+| Manual rebuild + “update moving tags” | `1.2.3`, `1.2`, `1`, `latest` | Only when `1.2.3` is the newest stable tag |
 
 The full image name is `ghcr.io/cxyfer/uwurls`. It is derived from `github.repository`, so a fork
 publishes to its own namespace.
@@ -43,15 +44,21 @@ publishes to its own namespace.
    `master` before the tag.
 4. **Never move or reuse a published tag.** The tag is the immutable identity of an image.
    Publish a new patch version instead.
-5. **Do not rebuild an old tag with moving tags enabled.** That would point `latest` (and `X`,
-   `X.Y`) back at the old version. Use the default (exact version only) for old tags.
-6. **Pre-releases never get `latest`.** Use suffixes such as `-rc.1`, `-beta.1`, `-alpha.1`.
-7. **The GitHub Release is manual.** Write the notes yourself after the image is published.
-8. **GHCR visibility is a repository setting.** A private repository produces a private package.
-   Authenticate with `docker login ghcr.io` (token scope `read:packages`) or make the package
-   public.
-9. **The `image:` value in [docker-compose.yml](docker-compose.yml) is only a local build tag.**
-   Updating it is cosmetic; published images always come from the workflow.
+5. **Only the newest stable tag moves `X`, `X.Y` and `latest`.** A maintenance or backport release
+   older than the newest stable version publishes only its exact tag. The workflow compares
+   against all fetched tags before building.
+6. **Release runs are serialized.** A single `release-image` concurrency group means a slow older
+   build cannot finish after a newer one and move the moving tags backwards.
+7. **Do not rebuild an old tag with moving tags enabled.** That would point `latest` (and `X`,
+   `X.Y`) back at the old version. Use the default (exact version only) for old tags; the
+   newest-stable guard also blocks it, but the default makes the intent explicit.
+8. **Pre-releases never get `latest`.** Use suffixes such as `-rc.1`, `-beta.1`, `-alpha.1`.
+9. **The GitHub Release is manual.** Write the notes yourself after the image is published.
+10. **GHCR visibility is a repository setting.** A private repository produces a private package.
+    Authenticate with `docker login ghcr.io` (token scope `read:packages`) or make the package
+    public.
+11. **The `image:` value in [docker-compose.yml](docker-compose.yml) is only a local build tag.**
+    Updating it is cosmetic; published images always come from the workflow.
 
 ## Release checklist
 
@@ -133,7 +140,8 @@ If anonymous `docker compose pull` should work, open the package page and set
 
 - `tag`: the existing tag to rebuild (for example `v1.2.3`).
 - `update_moving_tags`: leave **off** unless you are rebuilding the **newest stable** release and
-  want `X`, `X.Y` and `latest` to follow the new digest.
+  want `X`, `X.Y` and `latest` to follow the new digest. The newest-stable guard rejects moving
+  tags for older releases.
 
 Typical uses: a base-image CVE fix or a runner/toolchain change without a new application version.
 

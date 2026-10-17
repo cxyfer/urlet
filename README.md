@@ -187,8 +187,9 @@ and never touch your development data.
 Releases are tag-driven and governed by [`RELEASING.md`](RELEASING.md) — read it before tagging.
 In short: bump `version` in [`Cargo.toml`](Cargo.toml), refresh `Cargo.lock`, commit, then push
 an annotated `vX.Y.Z` tag. The workflow validates the tag, builds `linux/amd64` and
-`linux/arm64`, and publishes `ghcr.io/cxyfer/uwurls` with semver tags. The GitHub Release is
-written by hand afterwards; pre-releases never move `latest`.
+`linux/arm64`, and publishes `ghcr.io/cxyfer/uwurls` with semver tags. Only the newest stable
+release moves `X`, `X.Y` and `latest`; pre-releases never do. The GitHub Release is written by
+hand afterwards.
 
 To rebuild an existing tag, run *Actions → Release container image → Run workflow* (moving tags
 off unless it is the newest stable release).
