@@ -10,7 +10,7 @@
         <div class="slug-bar">
             <span class="slug-value" id="short-url">{{ url.short_url }}</span>
             <button class="btn btn-sm btn-sage" type="button" data-copy="#short-url">{{ lang.t("common.copy") }}</button>
-            <a class="btn btn-sm btn-ghost" href="/{{ url.slug }}" target="_blank" rel="noopener">{{ lang.t("common.open") }}</a>
+            <a class="btn btn-sm btn-ghost" href="{{ url.short_url }}" target="_blank" rel="noopener">{{ lang.t("common.open") }}</a>
         </div>
     </div>
     <div class="page-head-side">
@@ -179,6 +179,15 @@
             <div class="field">
                 <label class="label" for="target_url">{{ lang.t("dashboard.new.destination") }}</label>
                 <input class="input" type="text" id="target_url" name="target_url" value="{{ url.target_url }}" required>
+            </div>
+            <div class="field">
+                <label class="label" for="domain">{{ lang.t("url_detail.settings.domain") }}</label>
+                <select class="select" id="domain" name="domain">
+                    {% for domain in domains %}
+                    <option value="{{ domain.hostname }}" {% if domain.hostname == current_domain %}selected{% endif %}>{{ domain.hostname }}</option>
+                    {% endfor %}
+                </select>
+                <span class="hint">{{ lang.t("url_detail.settings.domain_hint") }}</span>
             </div>
             <div class="field">
                 <label class="label" for="slug">{{ lang.t("common.slug") }}</label>

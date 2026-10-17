@@ -3,6 +3,18 @@
 # Caddy obtains and renews a Let's Encrypt certificate for URLET_DOMAIN and
 # forwards everything to the urlet container. The app is told to trust the
 # X-Forwarded-* headers through URLET_TRUST_PROXY=true.
+#
+# Multi-domain deployments: list every extra redirect-only hostname in the same
+# site label and set URLET_DOMAINS to the same list, for example:
+#
+#   s.example.com, go.example.com, links.example.com {
+#       ... same body ...
+#   }
+#
+# Domains added later from /app/admin/domains need a matching site label here;
+# edit this file and reload Caddy:
+#   docker compose -f docker-compose.yml -f docker-compose.tls.yml exec caddy \
+#       caddy reload --config /etc/caddy/Caddyfile
 
 {$URLET_DOMAIN} {
 	encode zstd gzip

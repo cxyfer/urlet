@@ -30,6 +30,10 @@ pub mod action {
     pub const ADMIN_PASSWORD_RESET: &str = "admin.password_reset";
     pub const ADMIN_URL_UPDATED: &str = "admin.url_updated";
     pub const ADMIN_SETTINGS_UPDATED: &str = "admin.settings_updated";
+    pub const DOMAIN_CREATED: &str = "domain.created";
+    pub const DOMAIN_UPDATED: &str = "domain.updated";
+    pub const DOMAIN_DELETED: &str = "domain.deleted";
+    pub const DOMAIN_DEFAULT_CHANGED: &str = "domain.default_changed";
 }
 
 /// Target types used in audit entries.
@@ -39,6 +43,7 @@ pub mod target {
     pub const TOKEN: &str = "api_token";
     pub const INVITE: &str = "invite";
     pub const SETTINGS: &str = "settings";
+    pub const DOMAIN: &str = "domain";
 }
 
 /// Builder for an audit entry.

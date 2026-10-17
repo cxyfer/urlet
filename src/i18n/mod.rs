@@ -646,6 +646,7 @@ mod tests {
         "dashboard.new.destination_placeholder",
         "dashboard.new.tags_placeholder",
         "account.tokens.name_placeholder",
+        "admin.domains.hostname_placeholder",
     ];
 
     #[test]

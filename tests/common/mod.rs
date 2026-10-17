@@ -74,6 +74,66 @@ impl TestApp {
         self.send(post_json_as(uri, body, cookie)).await
     }
 
+    pub async fn get_with_host(&self, uri: &str, host: &str) -> TestResponse {
+        self.send(get_with_host(uri, host)).await
+    }
+
+    pub async fn post_json_with_host(&self, uri: &str, body: Value, host: &str) -> TestResponse {
+        self.send(post_json_with_host(uri, body, host)).await
+    }
+
+    /// Insert a domain directly and reload the registry.
+    ///
+    /// Tests that only exercise routing use this; the admin API has its own
+    /// lifecycle tests.
+    pub async fn add_domain(&self, hostname: &str, status: &str) -> i64 {
+        let now = urlet::services::time::now_iso();
+        let verified = if status == "active" { 1 } else { 0 };
+        sqlx::query(
+            "INSERT INTO domains
+                 (hostname, is_default, is_verified, created_by, created_at, status, source, updated_at)
+             VALUES (?, 0, ?, NULL, ?, ?, 'ui', ?)
+             ON CONFLICT(hostname) DO NOTHING",
+        )
+        .bind(hostname)
+        .bind(verified)
+        .bind(&now)
+        .bind(status)
+        .bind(&now)
+        .execute(&self.state.db)
+        .await
+        .expect("insert domain");
+        let id: i64 =
+            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = ? COLLATE NOCASE")
+                .bind(hostname)
+                .fetch_one(&self.state.db)
+                .await
+                .expect("domain id");
+        self.reload_domains().await;
+        id
+    }
+
+    pub async fn set_default_domain(&self, id: i64) {
+        sqlx::query("UPDATE domains SET is_default = 0 WHERE is_default = 1")
+            .execute(&self.state.db)
+            .await
+            .expect("clear default");
+        sqlx::query("UPDATE domains SET is_default = 1 WHERE id = ?")
+            .bind(id)
+            .execute(&self.state.db)
+            .await
+            .expect("set default");
+        self.reload_domains().await;
+    }
+
+    pub async fn reload_domains(&self) {
+        self.state
+            .domains
+            .reload(&self.state.db)
+            .await
+            .expect("reload domains");
+    }
+
     /// Register a user and return `(cookie, user_json)`.
     pub async fn register(&self, email: &str, password: &str) -> (String, Value) {
         let response = self
@@ -180,14 +240,31 @@ pub fn unique_dir() -> PathBuf {
 }
 
 fn base_request(method: &str, uri: &str) -> axum::http::request::Builder {
+    base_request_with_host(method, uri, "localhost:8080")
+}
+
+fn base_request_with_host(method: &str, uri: &str, host: &str) -> axum::http::request::Builder {
     Request::builder()
         .method(method)
         .uri(uri)
-        .header(header::HOST, "localhost:8080")
+        .header(header::HOST, host)
 }
 
 pub fn get(uri: &str) -> Request<Body> {
     base_request("GET", uri)
+        .body(Body::empty())
+        .expect("request")
+}
+
+pub fn get_with_host(uri: &str, host: &str) -> Request<Body> {
+    base_request_with_host("GET", uri, host)
+        .body(Body::empty())
+        .expect("request")
+}
+
+pub fn get_with_host_as(uri: &str, host: &str, cookie: &str) -> Request<Body> {
+    base_request_with_host("GET", uri, host)
+        .header(header::COOKIE, cookie)
         .body(Body::empty())
         .expect("request")
 }
@@ -204,6 +281,31 @@ pub fn post_json(uri: &str, body: Value) -> Request<Body> {
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(body.to_string()))
         .expect("request")
+}
+
+pub fn post_json_with_host(uri: &str, body: Value, host: &str) -> Request<Body> {
+    base_request_with_host("POST", uri, host)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.to_string()))
+        .expect("request")
+}
+
+pub fn post_form_with_host(
+    uri: &str,
+    body: &str,
+    cookie: Option<&str>,
+    origin: Option<&str>,
+    host: &str,
+) -> Request<Body> {
+    let mut builder = base_request_with_host("POST", uri, host)
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded");
+    if let Some(cookie) = cookie {
+        builder = builder.header(header::COOKIE, cookie);
+    }
+    if let Some(origin) = origin {
+        builder = builder.header(header::ORIGIN, origin);
+    }
+    builder.body(Body::from(body.to_string())).expect("request")
 }
 
 pub fn post_json_as(uri: &str, body: Value, cookie: &str) -> Request<Body> {

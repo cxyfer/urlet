@@ -20,7 +20,8 @@ service, no frontend build step.
 | 📊 Click analytics | Daily trends, referrer domains, device/browser/OS breakdown, recent clicks |
 | 🧩 Tags | Filter and group links by tag, with usage counts |
 | 🔑 API tokens | `Authorization: Bearer ur_...`, with optional expiry and revocation |
-| 🛠 Admin panel | User management, all site links, invite codes, site settings, audit log |
+| 🌐 Multi-domain | Add extra domains in the admin panel; each domain has its own slug namespace and serves redirects only |
+| 🛠 Admin panel | User management, all site links, domains, invite codes, site settings, audit log |
 | 🌐 Localized UI | English, Traditional Chinese, and Simplified Chinese; the first visit follows the browser's `Accept-Language` header and falls back to English |
 | 🤖 Bot protection | Cloudflare Turnstile or Google reCAPTCHA v2, enabled through environment variables or the admin panel; applies to the registration, sign-in and link creation forms |
 | 🐳 Deployment | Single container plus a named volume; published multi-arch images on GHCR; optional Caddy overlay for automatic HTTPS |
@@ -175,7 +176,7 @@ urlet/
 cargo test                 # unit + integration tests (285)
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-bash scripts/smoke.sh      # end-to-end acceptance run against the real binary (81 checks)
+bash scripts/smoke.sh      # end-to-end acceptance run against the real binary
 bash scripts/demo.sh       # build a demo site and write screenshots to .tmp/demo/shots
 ```
 

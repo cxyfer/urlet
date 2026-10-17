@@ -143,6 +143,7 @@ impl Default for OkResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct UrlDto {
     pub id: i64,
+    pub domain: String,
     pub slug: String,
     pub short_url: String,
     pub target_url: String,
@@ -169,12 +170,13 @@ pub struct UrlDto {
 }
 
 impl UrlDto {
-    pub fn new(url: &Url, base_url: &str, tags: Vec<String>) -> Self {
+    pub fn new(url: &Url, domain: &str, scheme: &str, tags: Vec<String>) -> Self {
         let state = url.state();
         Self {
             id: url.id,
+            domain: domain.to_string(),
             slug: url.slug.clone(),
-            short_url: format!("{}/{}", base_url.trim_end_matches('/'), url.slug),
+            short_url: format!("{scheme}://{domain}/{}", url.slug),
             target_url: url.target_url.clone(),
             title: url.title.clone(),
             notes: url.notes.clone(),

@@ -97,6 +97,7 @@ URLET_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-Forw
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `URLET_BASE_URL` | `http://localhost:8080` | Public URL; used to build short links, for the CSRF same-origin check and to decide whether cookies are `Secure` |
+| `URLET_DOMAINS` | Empty | Extra redirect-only hostnames, comma separated. Inserted as active on first boot; never overrides an existing status. Every domain must use the same http/https scheme as `URLET_BASE_URL` and needs DNS + TLS |
 | `URLET_BIND` | `0.0.0.0:8080` | Listen address |
 | `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite connection string |
 | `URLET_DATA_DIR` | Directory holding the database | Where the auto-generated secret is written |
@@ -118,6 +119,32 @@ URLET_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-Forw
 | `URLET_LOG` | `info` | tracing filter, for example `urlet=debug,tower=warn` |
 | `URLET_LOG_FORMAT` | `compact` | `compact` or `json` |
 | `URLET_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | Target of `urlet healthcheck` |
+
+### Multi-domain deployments
+
+> **Upgrading from 1.2 or older:** back up the SQLite database first. The multi-domain migration
+> (`0003_multi_domain`) rebuilds the `urls` table so the slug namespace becomes per domain; the
+> migration is tested to preserve clicks, tags and daily stats, but a backup is the only rollback.
+
+The canonical host keeps the application (`/`, `/app`, `/api/v1`). Extra domains are
+redirect-only: `/{slug}` and `/{slug}/unlock` work, `/` shows a small landing page, `/app` is
+redirected to the canonical host and `/api` returns 404. Each domain has its own slug namespace.
+
+- Seed extra domains with `URLET_DOMAINS=go.example.com,links.example.com`, or add them from
+  `/app/admin/domains`.
+- Domains added in the admin UI start as `pending`. Point DNS at this instance, add the hostname
+  to the Caddy site label (or your reverse proxy), verify `https://<domain>/health`, then press
+  **Activate**.
+- The canonical domain cannot be disabled or deleted. The current default domain must be replaced
+  before it can be disabled or deleted.
+- All domains must use the same scheme as `URLET_BASE_URL`; do not mix http and https domains.
+- The reverse proxy must preserve the original `Host` header. `X-Forwarded-Host` is not trusted in
+  this version.
+- `URLET_DOMAINS` is insert-only: disabling a seeded domain in the UI survives a restart. When the
+  variable is set, removing a hostname from it detaches that domain to ordinary admin management on
+  the next boot (status, links and default are preserved); it is not deleted automatically.
+  Docker Compose always passes the variable, so an empty `URLET_DOMAINS` is treated as an explicit
+  empty list.
 
 Three further variables are read by the compose files, not by the urlet binary:
 

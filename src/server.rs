@@ -37,25 +37,60 @@ pub fn build_router(state: AppState) -> Router {
         .fallback(routes::not_found)
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
+            middleware::csrf::csrf_protect,
+        ))
+        // Host policy sits inside security headers / request logging (so its
+        // 404s and 308s are still logged and hardened) but outside CSRF (so an
+        // extra domain is rejected before any form parsing).
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::domain::domain_gate,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
             middleware::security::security_headers,
         ))
         .layer(axum::middleware::from_fn(middleware::request_id))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            middleware::csrf::csrf_protect,
-        ))
         // Outermost: every handler, and every error response rendered by
         // `AppError::into_response`, runs with the request language installed.
         .layer(axum::middleware::from_fn(middleware::locale::locale))
         .with_state(state)
 }
 
-/// Idempotent start-up work: default domain, settings and bootstrap admin.
+/// Idempotent start-up work: domains, settings and bootstrap admin.
 pub async fn bootstrap(state: &AppState) -> Result<()> {
     let host = state.config.base_host.clone();
-    db::domains::ensure_default(&state.db, &host)
+    db::domains::ensure_canonical(&state.db, &host)
         .await
-        .map_err(|err| AppError::internal(format!("cannot seed default domain: {err}")))?;
+        .map_err(|err| AppError::internal(format!("cannot seed canonical domain: {err}")))?;
+
+    let seeded = db::domains::seed_env(&state.db, &state.config.extra_domains)
+        .await
+        .map_err(|err| AppError::internal(format!("cannot seed URLET_DOMAINS: {err}")))?;
+    if seeded > 0 {
+        tracing::info!(seeded, "seeded extra domains from URLET_DOMAINS");
+    }
+
+    if state.config.extra_domains_declared {
+        let detached = db::domains::detach_env(&state.db, &state.config.extra_domains)
+            .await
+            .map_err(|err| {
+                AppError::internal(format!("cannot detach removed URLET_DOMAINS: {err}"))
+            })?;
+        if detached > 0 {
+            tracing::info!(
+                detached,
+                "detached domains that are no longer listed in URLET_DOMAINS"
+            );
+        }
+    }
+
+    state
+        .domains
+        .reload(&state.db)
+        .await
+        .map_err(|err| AppError::internal(format!("cannot load domains: {err}")))?;
+
     db::settings::ensure_defaults(&state.db)
         .await
         .map_err(|err| AppError::internal(format!("cannot seed settings: {err}")))?;

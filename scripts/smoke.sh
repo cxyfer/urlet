@@ -72,6 +72,7 @@ start_server() {
     URLET_DATA_DIR="$DATA" \
     URLET_BIND="127.0.0.1:$PORT" \
     URLET_BASE_URL="$BASE" \
+    URLET_DOMAINS="go.example.com" \
     URLET_LOG=warn \
     "$BIN" serve >> "$DATA/server.log" 2>&1 &
     SERVER_PID=$!
@@ -166,6 +167,27 @@ check "the other user cannot delete it" "404" \
     "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES_B" -X DELETE \
      -H "origin: $BASE" "$BASE/api/v1/urls/$LINK_ID")"
 
+# ----------------------------------------------------------- multi-domain
+echo
+echo "multi-domain"
+GO_LINK=$(create_link '{"target_url":"https://example.com/go","slug":"go-demo","domain":"go.example.com"}')
+contains "a link is created on the extra domain" '"domain":"go.example.com"' "$GO_LINK"
+contains "the short url uses the extra domain" '"short_url":"http://go.example.com/go-demo"' "$GO_LINK"
+check "the extra domain redirects" "302" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: go.example.com' "$BASE/go-demo")"
+check "the extra redirect points at the target" "https://example.com/go" \
+    "$(curl -s -o /dev/null -w '%{redirect_url}' -H 'Host: go.example.com' "$BASE/go-demo")"
+contains "the extra root is the small landing page" "short link service" \
+    "$(curl -s -H 'Host: go.example.com' "$BASE/")"
+check "extra /app redirects to the canonical host" "308" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: go.example.com' "$BASE/app")"
+check "extra /api is rejected" "404" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: go.example.com' "$BASE/api/v1/domains")"
+check "an unknown host is rejected" "404" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: unknown.example.com' "$BASE/go-demo")"
+check "health still works on an unknown host" "200" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: unknown.example.com' "$BASE/health")"
+
 # --------------------------------------------------------------- redirect
 echo
 echo "redirects and click tracking"
@@ -207,7 +229,7 @@ check "correct password unlocks" "200" "$(echo "$UNLOCK" | tail -1)"
 check "the unlocked link redirects" "302" \
     "$(curl -s -o /dev/null -w '%{http_code}' -b "$DATA/unlock.txt" "$BASE/vault")"
 check "the unlock cookie is scoped and HttpOnly" "yes" \
-    "$(grep -q 'urlet_unlock_vault' "$DATA/unlock.txt" && echo yes || echo no)"
+    "$(grep -Eq 'urlet_unlock_[0-9a-f]+_vault' "$DATA/unlock.txt" && echo yes || echo no)"
 check "a form submission also unlocks" "303" "$(curl -s -o /dev/null -w '%{http_code}' \
     -X POST "$BASE/vault/unlock" -H 'content-type: application/x-www-form-urlencoded' \
     -H "origin: $BASE" -d 'password=linkpass')"

@@ -9,6 +9,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::db::audit::{AuditFilter, AuditLog};
+use crate::db::domains::{Domain, DomainWithCount};
 use crate::db::invites::Invite;
 use crate::db::urls::{AdminUrlFilter, UrlSort};
 use crate::db::users::{User, UserFilter};
@@ -17,6 +18,7 @@ use crate::error::{ApiError, AppError};
 use crate::middleware::auth::{ClientInfo, CurrentUser};
 use crate::routes::dto::{Page, Pagination, UrlDto, UserDto};
 use crate::services::admin::{self, AdminContext, SystemStats};
+use crate::services::domains::DomainContext;
 use crate::state::AppState;
 
 /// Query for the admin user listing.
@@ -146,6 +148,72 @@ impl InviteDto {
     }
 }
 
+/// Domain representation for the administrative API.
+#[derive(Debug, Clone, Serialize)]
+pub struct AdminDomainDto {
+    pub id: i64,
+    pub hostname: String,
+    pub status: String,
+    pub source: String,
+    pub is_default: bool,
+    pub is_verified: bool,
+    pub link_count: i64,
+    pub created_at: String,
+    pub updated_at: Option<String>,
+    pub can_activate: bool,
+    pub can_disable: bool,
+    pub can_delete: bool,
+}
+
+impl AdminDomainDto {
+    fn from_domain(domain: &Domain, link_count: i64) -> Self {
+        Self {
+            id: domain.id,
+            hostname: domain.hostname.clone(),
+            status: domain.status.clone(),
+            source: domain.source.clone(),
+            is_default: domain.is_default(),
+            is_verified: domain.is_verified == 1,
+            link_count,
+            created_at: domain.created_at.clone(),
+            updated_at: domain.updated_at.clone(),
+            can_activate: !domain.is_active(),
+            can_disable: domain.is_active() && !domain.is_system() && !domain.is_default(),
+            can_delete: domain.is_ui() && !domain.is_default() && link_count == 0,
+        }
+    }
+
+    fn from_count(domain: &DomainWithCount) -> Self {
+        Self {
+            id: domain.id,
+            hostname: domain.hostname.clone(),
+            status: domain.status.clone(),
+            source: domain.source.clone(),
+            is_default: domain.is_default(),
+            is_verified: domain.is_verified == 1,
+            link_count: domain.link_count,
+            created_at: domain.created_at.clone(),
+            updated_at: domain.updated_at.clone(),
+            can_activate: !domain.is_active(),
+            can_disable: domain.is_active() && !domain.is_system() && !domain.is_default(),
+            can_delete: domain.is_ui() && !domain.is_default() && domain.link_count == 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateDomainPayload {
+    pub hostname: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct UpdateDomainPayload {
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub is_default: Option<bool>,
+}
+
 /// Audit entry with parsed metadata.
 #[derive(Debug, Clone, Serialize)]
 pub struct AuditDto {
@@ -187,6 +255,124 @@ pub struct CreatedInviteResponse {
     /// Plain invite code — returned exactly once.
     pub code: String,
     pub invite: InviteDto,
+}
+
+/// `GET /api/v1/admin/domains`
+pub async fn list_domains(
+    State(state): State<AppState>,
+    CurrentUser { user, .. }: CurrentUser,
+) -> Result<Json<Vec<AdminDomainDto>>, ApiError> {
+    require_admin(&user)?;
+    let rows = DomainContext {
+        pool: &state.db,
+        actor: &user,
+        ip_hash: None,
+    }
+    .list()
+    .await?;
+    Ok(Json(rows.iter().map(AdminDomainDto::from_count).collect()))
+}
+
+/// `POST /api/v1/admin/domains`
+pub async fn create_domain(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    CurrentUser { user, .. }: CurrentUser,
+    Json(payload): Json<CreateDomainPayload>,
+) -> Result<Response, ApiError> {
+    require_admin(&user)?;
+    let domain = DomainContext {
+        pool: &state.db,
+        actor: &user,
+        ip_hash: client.ip_hash.as_deref(),
+    }
+    .create(&payload.hostname)
+    .await?;
+    reload_domains(&state).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(AdminDomainDto::from_domain(&domain, 0)),
+    )
+        .into_response())
+}
+
+/// `PATCH /api/v1/admin/domains/{id}`
+pub async fn update_domain(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    CurrentUser { user, .. }: CurrentUser,
+    Path(id): Path<i64>,
+    Json(payload): Json<UpdateDomainPayload>,
+) -> Result<Json<AdminDomainDto>, ApiError> {
+    require_admin(&user)?;
+
+    if payload.is_default == Some(true) && payload.status.as_deref() == Some("disabled") {
+        return Err(ApiError(AppError::validation(
+            "is_default",
+            "a domain cannot be disabled and made default in one request",
+        )));
+    }
+    if payload.is_default == Some(false) {
+        return Err(ApiError(AppError::validation(
+            "is_default",
+            "choose another domain to replace the default",
+        )));
+    }
+
+    let context = DomainContext {
+        pool: &state.db,
+        actor: &user,
+        ip_hash: client.ip_hash.as_deref(),
+    };
+
+    let mut domain = match payload.status.as_deref() {
+        Some("active") => context.activate(id).await?,
+        Some("disabled") => context.disable(id).await?,
+        Some(other) => {
+            return Err(ApiError(AppError::validation(
+                "status",
+                format!("unsupported status '{other}'"),
+            )))
+        }
+        None => crate::db::domains::find_by_id(&state.db, id)
+            .await?
+            .ok_or_else(|| ApiError(AppError::not_found()))?,
+    };
+
+    if payload.is_default == Some(true) {
+        domain = context.set_default(id).await?;
+    }
+
+    reload_domains(&state).await?;
+    let links = crate::db::domains::link_count(&state.db, id).await?;
+    Ok(Json(AdminDomainDto::from_domain(&domain, links)))
+}
+
+/// `DELETE /api/v1/admin/domains/{id}`
+pub async fn delete_domain(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    CurrentUser { user, .. }: CurrentUser,
+    Path(id): Path<i64>,
+) -> Result<Response, ApiError> {
+    require_admin(&user)?;
+    DomainContext {
+        pool: &state.db,
+        actor: &user,
+        ip_hash: client.ip_hash.as_deref(),
+    }
+    .delete(id)
+    .await?;
+    reload_domains(&state).await?;
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+async fn reload_domains(state: &AppState) -> Result<(), ApiError> {
+    state
+        .domains
+        .reload(&state.db)
+        .await
+        .map_err(|err| ApiError(AppError::internal(format!("cannot reload domains: {err}"))))
 }
 
 /// `GET /api/v1/admin/users`
@@ -318,7 +504,12 @@ pub async fn list_urls(
                 .into_iter()
                 .map(|tag| tag.name)
                 .collect();
-            UrlDto::new(row, &state.config.base_url, names)
+            UrlDto::new(
+                row,
+                &state.domain_hostname(row.domain_id),
+                &state.config.base_scheme,
+                names,
+            )
         })
         .collect();
 
@@ -350,7 +541,12 @@ pub async fn update_url(
         .into_iter()
         .map(|tag| tag.name)
         .collect();
-    Ok(Json(UrlDto::new(&url, &state.config.base_url, names)))
+    Ok(Json(UrlDto::new(
+        &url,
+        &state.domain_hostname(url.domain_id),
+        &state.config.base_scheme,
+        names,
+    )))
 }
 
 /// `DELETE /api/v1/admin/urls/{id}`

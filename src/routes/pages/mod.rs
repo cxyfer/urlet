@@ -83,6 +83,11 @@ pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
             "invite_revoked" => "flash.ok.invite_revoked",
             "user" => "flash.ok.user",
             "user_deleted" => "flash.ok.user_deleted",
+            "domain_created" => "flash.ok.domain_created",
+            "domain_activated" => "flash.ok.domain_activated",
+            "domain_disabled" => "flash.ok.domain_disabled",
+            "domain_default" => "flash.ok.domain_default",
+            "domain_deleted" => "flash.ok.domain_deleted",
             _ => return None,
         };
         return Some(Flash {
@@ -110,6 +115,13 @@ pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
             "password_rules" => "flash.err.password_rules",
             "tags" => "flash.err.tags",
             "captcha" => "flash.err.captcha",
+            "domain" => "flash.err.domain",
+            "domain_invalid" => "flash.err.domain_invalid",
+            "domain_conflict" => "flash.err.domain_conflict",
+            "domain_in_use" => "flash.err.domain_in_use",
+            "domain_system" => "flash.err.domain_system",
+            "domain_env" => "flash.err.domain_env",
+            "domain_default" => "flash.err.domain_default",
             _ => return None,
         };
         return Some(Flash {
@@ -405,6 +417,14 @@ pub fn router() -> Router<AppState> {
             get(admin::invites_page).post(admin::create_invite),
         )
         .route("/admin/invites/{id}/delete", post(admin::revoke_invite))
+        .route(
+            "/admin/domains",
+            get(admin::domains_page).post(admin::create_domain),
+        )
+        .route("/admin/domains/{id}/activate", post(admin::activate_domain))
+        .route("/admin/domains/{id}/disable", post(admin::disable_domain))
+        .route("/admin/domains/{id}/default", post(admin::default_domain))
+        .route("/admin/domains/{id}/delete", post(admin::delete_domain))
         .route(
             "/admin/settings",
             get(admin::settings_page).post(admin::update_settings),

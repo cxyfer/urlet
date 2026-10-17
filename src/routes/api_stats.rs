@@ -67,7 +67,12 @@ pub async fn stats(
         .collect();
 
     Ok(Json(UrlStatsDto {
-        url: UrlDto::new(&url, &state.config.base_url, tag_names),
+        url: UrlDto::new(
+            &url,
+            &state.domain_hostname(url.domain_id),
+            &state.config.base_scheme,
+            tag_names,
+        ),
         summary: summary_dto(&summary),
         daily: chart::fill_days(&series, days),
         referrers: dimensions(referrers),

@@ -31,7 +31,7 @@
 | 401 | `unauthorized` | Not authenticated, token revoked, wrong password |
 | 403 | `forbidden` | Insufficient permission, CSRF rejection, registration closed, quota exhausted |
 | 404 | `not_found` | Resource does not exist (including resources that belong to someone else) |
-| 409 | `conflict` | Uniqueness conflict (email, slug) |
+| 409 | `conflict` | Uniqueness conflict (email, slug on a domain, domain hostname) |
 | 410 | `gone` | Short link expired or reached its click limit |
 | 422 | `validation_error` | Field validation failed; `details.field` names the offending field |
 | 429 | `rate_limited` | Rate limited; the response carries a `Retry-After` header |
@@ -160,6 +160,7 @@ Query parameters:
 ```json
 {
   "target_url": "example.com/path",
+  "domain": "go.example.com",
   "slug": "promo",
   "title": "Launch",
   "notes": "internal note",
@@ -179,8 +180,12 @@ Query parameters:
   check returns `400` with `error.code = "captcha_failed"`
 - `target_url` is required; only `http`/`https` are accepted, and a bare domain without a scheme
   is given a `https://` prefix
+- `domain` may be omitted (the current default domain is used). A supplied hostname must be an
+  active domain, otherwise the request fails with `422`; the slug namespace is per domain, so
+  the same slug can exist on two domains
 - `slug` may be omitted (a 7-character base62 slug is generated); only `[A-Za-z0-9_-]` is
-  allowed, length 1–64, and reserved words are rejected
+  allowed, length 1–64, and reserved words are rejected. A slug already used **on the selected
+  domain** returns `409`
 - `expires_at` must be in the future; `max_clicks` ≥ 1
 - `redirect_type` ∈ {301, 302, 307, 308}
 - Exceeding the `max_urls_per_user` quota → `403`
@@ -194,10 +199,12 @@ Query parameters:
 Partial update: **fields that are absent stay unchanged, while an explicit `null` clears them**.
 
 ```json
-{ "title": "New title", "password": null, "max_clicks": null, "tags": ["new"], "status": "disabled" }
+{ "title": "New title", "domain": "links.example.com", "password": null, "max_clicks": null, "tags": ["new"], "status": "disabled" }
 ```
 
-`200` → the updated `UrlDto`. An empty object → `400`.
+`200` → the updated `UrlDto`. An empty object → `400`. Moving a link to another active domain
+re-checks the slug there and returns `409` on a collision. A link on a since-disabled domain can
+still be edited as long as it is not moved.
 
 ### `DELETE /api/v1/urls/{id}`
 
@@ -231,6 +238,7 @@ and analytics data is kept.
 ```json
 {
   "id": 1,
+  "domain": "s.example.com",
   "slug": "promo",
   "short_url": "https://s.example.com/promo",
   "target_url": "https://example.com/landing",
@@ -307,12 +315,21 @@ Accepts `application/json` or `application/x-www-form-urlencoded`:
 - Wrong password → JSON `401`; forms re-render the password page (`401`)
 - Rate limited → `429`
 
-### `GET /api/v1/public/urls/{slug}`
+### `GET /api/v1/public/urls/{slug}?domain=<hostname>`
 
-Public metadata without the target URL:
+Public metadata without the target URL. Without `domain` the default domain is used, which keeps
+callers that predate multi-domain working for links on the default domain.
 
 ```json
-{ "slug": "promo", "title": "Launch", "has_password": true, "is_expired": false, "state": "active" }
+{ "domain": "go.example.com", "slug": "promo", "title": "Launch", "has_password": true, "is_expired": false, "state": "active" }
+```
+
+### `GET /api/v1/domains`
+
+Authenticated users can list the active domains available for new links:
+
+```json
+[ { "hostname": "s.example.com", "is_default": true }, { "hostname": "go.example.com", "is_default": false } ]
 ```
 
 ---
@@ -385,6 +402,10 @@ Every `/api/v1/admin/**` endpoint returns `403 forbidden` for non-administrators
 | PATCH | `/admin/users/{id}` | `{ "role"?, "status"?, "display_name"? }` |
 | POST | `/admin/users/{id}/password` | `{ "new_password": "..." }` → `204`, revokes every session for that account |
 | DELETE | `/admin/users/{id}` | `204`, soft-deletes the account and all of its short links |
+| GET | `/admin/domains` | Every domain with link counts, status and source |
+| POST | `/admin/domains` | `{ "hostname": "go.example.com" }` → `201`, created as `pending` |
+| PATCH | `/admin/domains/{id}` | `{ "status"?: "active"\|"disabled", "is_default"?: true }` |
+| DELETE | `/admin/domains/{id}` | `204`; only a zero-link UI domain that is not the default |
 | GET | `/admin/urls?q=&status=&user_id=&page=` | Every short link on the instance |
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |

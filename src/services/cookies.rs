@@ -5,6 +5,7 @@
 //! `Secure`).
 
 use axum::http::HeaderMap;
+use sha2::{Digest, Sha256};
 
 /// Name of the session cookie.
 pub const SESSION_COOKIE: &str = "urlet_session";
@@ -46,9 +47,17 @@ pub fn get_all(headers: &HeaderMap) -> Vec<(String, String)> {
     pairs
 }
 
-/// Name of the unlock cookie for a slug.
-pub fn unlock_cookie_name(slug: &str) -> String {
-    format!("{UNLOCK_PREFIX}{slug}")
+/// Name of the unlock cookie for a `(domain, slug)` pair.
+///
+/// A short hash of the hostname keeps the name inside the cookie-name length
+/// limits while still distinguishing the same slug on different domains.
+pub fn unlock_cookie_name(domain: &str, slug: &str) -> String {
+    let digest = Sha256::digest(domain.to_ascii_lowercase().as_bytes());
+    let tag: String = digest[..6]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    format!("{UNLOCK_PREFIX}{tag}_{}", slug.to_ascii_lowercase())
 }
 
 /// Build a `Set-Cookie` value.
@@ -126,7 +135,16 @@ mod tests {
     }
 
     #[test]
-    fn unlock_cookie_names_are_slug_scoped() {
-        assert_eq!(unlock_cookie_name("aB3xK9z"), "urlet_unlock_aB3xK9z");
+    fn unlock_cookie_names_are_domain_and_slug_scoped() {
+        let first = unlock_cookie_name("a.example.com", "Promo");
+        let second = unlock_cookie_name("b.example.com", "promo");
+        assert!(first.starts_with("urlet_unlock_"));
+        assert!(first.ends_with("_promo"));
+        assert_ne!(first, second, "same slug on another domain differs");
+        assert_eq!(
+            first,
+            unlock_cookie_name("A.EXAMPLE.COM", "PROMO"),
+            "hostname and slug are case-insensitive"
+        );
     }
 }

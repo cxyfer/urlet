@@ -21,6 +21,7 @@ use crate::routes::pages::{
     UrlRow,
 };
 use crate::services::captcha::CaptchaFlow;
+use crate::services::domains::DomainOption;
 use crate::services::ratelimit::limits;
 use crate::services::urls::{CreateInput, UpdateInput, UrlContext};
 use crate::services::{chart, time};
@@ -42,6 +43,10 @@ pub struct UrlDetailPage {
     pub clicks: Vec<ClickRow>,
     pub tags_csv: String,
     pub days: i64,
+    /// Domains selectable in the edit form.
+    pub domains: Vec<DomainOption>,
+    /// Hostname the link currently uses.
+    pub current_domain: String,
     /// Localised "30 days ago" label of the chart axis.
     pub days_label: String,
     /// Localised "42 clicks in this window; grey segments are bots" legend.
@@ -111,6 +116,8 @@ pub struct DetailQuery {
 pub struct CreateForm {
     pub target_url: String,
     #[serde(default)]
+    pub domain: Option<String>,
+    #[serde(default)]
     pub slug: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
@@ -145,6 +152,8 @@ pub struct ExtendForm {
 pub struct UpdateForm {
     #[serde(default)]
     pub target_url: Option<String>,
+    #[serde(default)]
+    pub domain: Option<String>,
     #[serde(default)]
     pub slug: Option<String>,
     #[serde(default)]
@@ -245,6 +254,7 @@ pub async fn create(
     let outcome = context
         .create(CreateInput {
             target_url: payload.target_url,
+            domain: payload.domain,
             slug: payload.slug,
             title: payload.title,
             notes: None,
@@ -315,7 +325,27 @@ pub async fn detail(
         .map(|tag| tag.name)
         .collect();
 
-    let dto = UrlDto::new(&url, &state.config.base_url, tag_names.clone());
+    let current_domain = state.domain_hostname(url.domain_id);
+    let mut domains = state.domains.active_options();
+    if !domains
+        .iter()
+        .any(|domain| domain.hostname == current_domain)
+    {
+        // Keep a link on a disabled domain editable without moving it.
+        domains.insert(
+            0,
+            DomainOption {
+                hostname: current_domain.clone(),
+                is_default: false,
+            },
+        );
+    }
+    let dto = UrlDto::new(
+        &url,
+        &current_domain,
+        &state.config.base_scheme,
+        tag_names.clone(),
+    );
     let lang = i18n::current();
     let daily_total: i64 = daily.iter().map(|point| point.clicks).sum();
     let page = UrlDetailPage {
@@ -340,6 +370,8 @@ pub async fn detail(
             .collect(),
         tags_csv: tag_names.join(", "),
         days,
+        domains,
+        current_domain,
         days_label: i18n::format(
             lang,
             "url_detail.chart.days_ago",
@@ -418,6 +450,7 @@ pub async fn update(
             &existing,
             UpdateInput {
                 target_url: payload.target_url,
+                domain: payload.domain,
                 slug: payload.slug,
                 title: Some(payload.title.clone()),
                 notes: Some(payload.notes.clone()),
@@ -572,6 +605,7 @@ pub fn error_code(err: &AppError) -> &'static str {
         AppError::Validation { field, .. } => match *field {
             "expires_at" => "expiry",
             "slug" => "slug",
+            "domain" => "domain",
             "target_url" => "target",
             "password" => "password_rules",
             "tags" => "tags",

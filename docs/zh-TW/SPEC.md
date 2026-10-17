@@ -253,9 +253,11 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | `/app` | 儀表板 | 統計卡片、每日趨勢圖、網址列表（搜尋/篩選/分頁）、建立表單 |
 | `/app/urls/{id}` | 網址詳情 | 編輯表單、QR 免（Non-Goal）、統計圖表、最近點擊、刪除 |
 | `/app/account` | 帳號 | 個人資料、修改密碼、Session 清單、API Token 管理 |
-| `/app/admin` | 管理後台 | 使用者、全站網址、邀請碼、設定、稽核日誌 |
+| `/app/admin` | 管理後台 | 使用者、全站網址、網域、邀請碼、設定、稽核日誌 |
+| `/app/admin/domains` | 網域管理 | 新增、啟用、停用、設為預設、刪除網域 |
 | `/app/lang/{code}` | 語言切換 | 設定 `urlet_lang` cookie 並 302 至 `next`（未帶時轉往 `/app`） |
 | `/{slug}` | 轉址 / 密碼頁 / 410 / 404 | 公開 |
+| 額外網域 | 僅轉址 | `/` 顯示簡單首頁、`/{slug}` 轉址、`/app` 308 回 canonical、`/api` 回 404 |
 
 **UI 技術**：Askama 模板 + 手寫 CSS（含 `prefers-color-scheme` 深色模式）+ 約 150 行原生 JS
 （複製到剪貼簿、確認對話框、表單增強）。**不使用**任何前端框架或 CDN 資源（CSP 可嚴格限制為 `'self'`）。
@@ -376,19 +378,21 @@ login_attempts (稽核用)
 4. **枚舉**：以 `TEXT + CHECK` 約束，保留未來擴充彈性（SQLite 無原生 ENUM）。
 5. **布林**：`INTEGER 0/1`。
 6. **彙總表**：`url_daily_stats` 為統計查詢的加速層，寫入時 upsert。
-7. **保留擴充欄位**：`api_tokens.scopes`、`urls.notes`、`domains` 表、`audit_logs.metadata`。
+7. **保留擴充欄位**：`api_tokens.scopes`、`urls.notes`、`audit_logs.metadata`。
 
-### 6.3 DDL（`migrations/0001_init.sql` 摘要）
+> 多網域支援已實作；完整設計、路由矩陣與 migration 說明見 [`docs/zh-TW/MULTI_DOMAIN.md`](MULTI_DOMAIN.md)。
 
-> 完整且唯一真實來源為 `migrations/0001_init.sql`；以下為結構摘要。
+### 6.3 DDL（migration 摘要）
+
+> 完整真實來源為 migration 檔（`0001_init.sql`，多網域變更另見 `0003_multi_domain.sql`）；以下為結構摘要。
 
 | 表 | 主要欄位 | 用途 |
 |----|----------|------|
 | `users` | id, email, email_normalized(UNIQUE), password_hash, display_name, role, status, email_verified_at, last_login_at, created_at, updated_at, deleted_at | 使用者 |
 | `sessions` | id, user_id, token_hash(UNIQUE), user_agent, ip_hash, created_at, last_seen_at, expires_at, revoked_at | 登入狀態 |
 | `api_tokens` | id, user_id, name, token_prefix, token_hash(UNIQUE), scopes, last_used_at, expires_at, created_at, revoked_at | API 憑證 |
-| `domains` | id, hostname(UNIQUE), is_default, is_verified, created_by, created_at | 多網域預留（v1 僅預設網域） |
-| `urls` | id, user_id, domain_id, slug(UNIQUE), target_url, title, notes, password_hash, expires_at, max_clicks, click_count, unique_click_count, redirect_type, status, is_custom_slug, last_clicked_at, created_at, updated_at, deleted_at | 短網址 |
+| `domains` | id, hostname(UNIQUE, NOCASE), is_default, is_verified, status, source, created_by, created_at, updated_at | Canonical/system、`URLET_DOMAINS`/env 與管理員/UI 網域；`pending`/`active`/`disabled` |
+| `urls` | id, user_id, domain_id(NOT NULL), slug, target_url, title, notes, password_hash, expires_at, max_clicks, click_count, unique_click_count, redirect_type, status, is_custom_slug, last_clicked_at, created_at, updated_at, deleted_at, UNIQUE(domain_id,slug) | 短網址；slug 命名空間以網域為單位 |
 | `tags` | id, user_id, name, color, created_at, UNIQUE(user_id,name) | 標籤 |
 | `url_tags` | url_id, tag_id (PK) | 標籤關聯 |
 | `clicks` | id, url_id, clicked_at, ip_hash, visitor_hash, user_agent, referrer, referrer_host, country_code, device_type, browser, os, is_bot, is_unique, password_protected | 點擊明細 |
@@ -403,7 +407,7 @@ login_attempts (稽核用)
 
 | 索引 | 目的 |
 |------|------|
-| `urls(slug)` UNIQUE | 轉址查詢（最熱路徑） |
+| `urls(domain_id, slug)` UNIQUE | 轉址查詢（最熱路徑；slug 以網域為命名空間） |
 | `urls(user_id, created_at DESC)` | 我的網址列表 |
 | `urls(expires_at) WHERE expires_at IS NOT NULL` | 過期清理/篩選 |
 | `clicks(url_id, clicked_at DESC)` | 單一網址統計 |
@@ -423,7 +427,7 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 - `settings`（v1.1 驗證碼 key）：`captcha_provider=none`、`captcha_site_key=`（空）、
   `captcha_secret_key=`（空）、`captcha_on_register=false`、`captcha_on_login=false`、
   `captcha_on_create=false`、`captcha_allowed_hostnames=`（空）。非空的環境變數會覆蓋表中值（FR-BOT-2）。
-- `domains`：啟動時依 `URLET_BASE_URL` 的 host 插入/更新預設網域（`is_default=1`）。
+- `domains`：啟動時依 `URLET_BASE_URL` 的 host 插入/更新 canonical 網域（`source=system`，永遠 active）。只有在沒有任何預設網域時才會設為預設，讓管理員可以改選其他預設。`URLET_DOMAINS` 只插入缺少的網域（`active`/`env`），不改既有資料。
 
 ---
 
@@ -447,9 +451,10 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 | 方法 | 路徑 | 說明 |
 |------|------|------|
 | GET | `/api/v1/urls` | 查詢參數：`q, tag, status, page, per_page, sort(created_at\|clicks\|slug\|updated\|expires)` |
-| POST | `/api/v1/urls` | `{target_url, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?, captcha_token?}`；API Token 呼叫豁免驗證碼，Session Cookie 呼叫受 `on_create` 約束 |
+| POST | `/api/v1/urls` | `{target_url, domain?, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?, captcha_token?}`；API Token 呼叫豁免驗證碼，Session Cookie 呼叫受 `on_create` 約束 |
+| GET | `/api/v1/domains` | 建立短網址時可選的 active 網域 |
 | GET | `/api/v1/urls/{id}` | 單筆（含 `short_url`、`is_expired`、`has_password`） |
-| PATCH | `/api/v1/urls/{id}` | 部分更新；`password: null` 清除密碼；`expires_at: null` 清除過期 |
+| PATCH | `/api/v1/urls/{id}` | 部分更新；`domain` 可搬移連結；`password: null` 清除密碼；`expires_at: null` 清除過期 |
 | DELETE | `/api/v1/urls/{id}` | 軟刪除 → 204 |
 | GET | `/api/v1/urls/{id}/stats?days=30` | 每日趨勢 + 維度分佈 + 摘要 |
 | GET | `/api/v1/urls/{id}/clicks?page=1` | 點擊明細（分頁） |
@@ -491,7 +496,7 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 | GET | `/app/lang/{code}` | 設定 `urlet_lang` cookie 並 302 至 `next`；`next` 未帶或不是同站相對路徑時轉往 `/app` |
 | GET | `/{slug}` | 轉址（302 等）或密碼頁（HTML）或 410/404 頁 |
 | POST | `/{slug}/unlock` | 表單或 JSON `{password}`；成功時 JSON 回 200 `{ok, redirect}`、表單 303 → `/{slug}` |
-| GET | `/api/v1/public/urls/{slug}` | 公開中介資料：`{slug, has_password, is_expired, state, title?}`（**不含 target**） |
+| GET | `/api/v1/public/urls/{slug}?domain=<hostname>` | 公開中介資料：`{domain, slug, has_password, is_expired, state, title?}`（**不含 target**）；省略 `domain` 時使用預設網域 |
 
 ---
 
@@ -500,7 +505,8 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 | 變數 | 預設 | 說明 |
 |------|------|------|
 | `URLET_BIND` | `0.0.0.0:8080` | 監聽位址 |
-| `URLET_BASE_URL` | `http://localhost:8080` | 對外網址（用於產生短網址、CSRF 同源檢查、Cookie Secure 判斷） |
+| `URLET_BASE_URL` | `http://localhost:8080` | Canonical 對外網址（用於產生短網址、CSRF 同源檢查、Cookie Secure 判斷） |
+| `URLET_DOMAINS` | 空 | 額外網域（僅轉址），逗號分隔；第一次啟動插入為 `active`，不覆寫既有資料 |
 | `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite 連線字串 |
 | `URLET_DATA_DIR` | 資料庫所在目錄 | 自動產生密鑰的存放位置 |
 | `URLET_HEALTHCHECK_URL` | 由 `URLET_BIND` 推導 | `urlet healthcheck` 的目標 URL |
@@ -540,7 +546,7 @@ urlet/
 ├── docker-compose.tls.yml        # 可選：Caddy 自動 HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql
+├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql  migrations/0003_multi_domain.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama 模板（base、app_base、landing.html + 各頁面 + admin/）
@@ -549,9 +555,9 @@ urlet/
 │   ├── assets/{app.css,app.js,favicon.svg}
 │   ├── i18n/{mod.rs,en.json,zh-Hant.json,zh-Hans.json}
 │   ├── db/{mod,migrate,users,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
-│   ├── services/{auth,urls,admin,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
-│   ├── middleware/{mod,auth,csrf,security,locale}.rs
-│   └── routes/{mod,api,api_auth,api_urls,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract}.rs
+│   ├── services/{auth,urls,admin,domains,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
+│   ├── middleware/{mod,auth,csrf,domain,security,locale}.rs
+│   └── routes/{mod,api,api_auth,api_urls,api_domains,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract}.rs
 │       └── pages/{mod,auth,dashboard,urls,account,admin,home}.rs
 └── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs,i18n.rs,captcha.rs}
 ```
@@ -599,9 +605,9 @@ urlet 不對外暴露連接埠，由 Caddy 反向代理。
 v1.0：
 
 - [x] `cargo build --release` 成功，二進位 **4.2 MB** ≤ 15 MB
-- [x] `cargo test` 全綠：**178** 項（單元 93 + 整合 84 + 二進位 1）
+- [x] `cargo test` 全綠（單元 + 整合 + 二進位）
 - [x] `cargo clippy --all-targets -- -D warnings` 與 `cargo fmt --check` 無警告
-- [x] `scripts/smoke.sh` 對真實二進位 **81** 項全數通過（含密碼保護、過期、所有權隔離、CSRF、邀請碼、重啟持久化）
+- [x] `scripts/smoke.sh` 對真實二進位全數通過（含密碼保護、過期、所有權隔離、CSRF、邀請碼、重啟持久化）
 - [x] `docker compose config` 通過（base 與 TLS overlay 皆以 Docker Compose 27.4 驗證）
 - [x] `docker build` 成功，映像 **13.2 MB**；`docker compose up -d` 後容器狀態 `healthy`
 - [x] 容器內以 uid 10001 執行、根檔案系統唯讀、`cap_drop: ALL`；資料僅寫入 `/data` volume
@@ -625,7 +631,7 @@ v1.1 新增項目（本批次）：
 - [ ] siteverify 是系統唯一的對外 HTTP 請求，透過 `ureq` 2 + rustls + webpki-roots（不需 OpenSSL）發出，且預設關閉
 - [ ] `POST /api/v1/urls` 僅在 API Token 呼叫時豁免驗證碼（Session Cookie 呼叫受 `on_create` 約束）；後台 secret key 欄位為唯寫
 - [ ] `GET /` 對未登入與已登入使用者皆回 200 的導覽首頁，不再 302 至 `/app`
-- [ ] `cargo test`（245 個測試）、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過，`scripts/smoke.sh` 81 項端對端檢查全過，且容器映像可在 musl 下建置並執行（§3.3）
+- [ ] `cargo test`（完整測試套件）、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過，`scripts/smoke.sh` 端對端檢查全過，且容器映像可在 musl 下建置並執行（§3.3）
 
 ---
 
@@ -633,7 +639,6 @@ v1.1 新增項目（本批次）：
 
 | 功能 | 已預留 |
 |------|--------|
-| 多網域 / 自訂網域 | `domains` 表 + `urls.domain_id` |
 | 使用者群組與細緻權限 | `api_tokens.scopes`、`users.role` 可擴充為 `groups` 表 |
 | 密碼重設 / Email 驗證 | `users.email_verified_at`、可新增 `password_resets` |
 | GeoIP 國家統計 | `clicks.country_code` 已存在，只需加入解析器 |

@@ -92,6 +92,7 @@ URLET_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-*
 | 變數 | 預設 | 說明 |
 |------|------|------|
 | `URLET_BASE_URL` | `http://localhost:8080` | 對外網址；用於產生短網址、CSRF 同源檢查、Cookie `Secure` 判斷 |
+| `URLET_DOMAINS` | 空 | 額外網域（僅轉址），以逗號分隔。第一次啟動時插入為 active；不會覆寫既有狀態。所有網域必須和 `URLET_BASE_URL` 使用相同 http/https scheme，且需要 DNS 與 TLS |
 | `URLET_BIND` | `0.0.0.0:8080` | 監聽位址 |
 | `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite 連線字串 |
 | `URLET_DATA_DIR` | 資料庫所在目錄 | 自動產生密鑰的存放位置 |
@@ -113,6 +114,27 @@ URLET_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-*
 | `URLET_LOG` | `info` | tracing 過濾器，例如 `urlet=debug,tower=warn` |
 | `URLET_LOG_FORMAT` | `compact` | `compact` 或 `json` |
 | `URLET_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | `urlet healthcheck` 的目標 |
+
+### 多網域部署
+
+> **從 1.2 或更舊版本升級：** 請先備份 SQLite 資料庫。多網域 migration
+> （`0003_multi_domain`）會重建 `urls` 表，把 slug 命名空間改為以網域為單位；migration 已測試
+> 會保留 clicks、tags 與每日統計，但備份是唯一的回滾方式。
+
+Canonical host 保留完整應用（`/`、`/app`、`/api/v1`）。額外網域只做轉址：`/{slug}` 與
+`/{slug}/unlock` 可用，`/` 顯示簡單品牌頁，`/app` 導回 canonical，`/api` 回 404。每個網域有
+自己的 slug 命名空間。
+
+- 用 `URLET_DOMAINS=go.example.com,links.example.com` 預先加入，或從 `/app/admin/domains` 新增。
+- 後台新增的網域是 `pending`。先把 DNS 指向此實例、把 hostname 加進 Caddy site label（或你的
+  反向代理），確認 `https://<domain>/health` 可用後，再按「啟用」。
+- Canonical 網域不可停用或刪除；目前的預設網域必須先換掉，才能停用或刪除。
+- 所有網域必須和 `URLET_BASE_URL` 使用相同 scheme，不要混用 http 與 https。
+- 反向代理必須保留原始的 `Host` header；本版本不信任 `X-Forwarded-Host`。
+- `URLET_DOMAINS` 只補缺少：在後台停用 seed 網域後，重啟不會被改回 active。在有設定
+  `URLET_DOMAINS` 的前提下，把 hostname 從環境變數移除後，下次啟動會 detach 成一般管理網域
+  （保留狀態、連結與預設），不會自動刪除。Docker Compose 一律會傳入此變數，因此空的
+  `URLET_DOMAINS` 會被視為明確的空清單。
 
 另外三個變數由 compose 檔讀取，urlet 二進位檔本身不會讀取：
 

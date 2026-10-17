@@ -9,6 +9,7 @@ use axum::Form;
 use serde::Deserialize;
 
 use crate::db::audit::AuditFilter;
+use crate::db::domains::DomainWithCount;
 use crate::db::invites::Invite;
 use crate::db::urls::{self, AdminUrlFilter, UrlSort};
 use crate::db::users::{User, UserFilter};
@@ -24,6 +25,7 @@ use crate::routes::pages::{
 };
 use crate::services::admin::{self, AdminContext};
 use crate::services::captcha::CaptchaProvider;
+use crate::services::domains::DomainContext;
 use crate::services::settings::Settings;
 use crate::services::time;
 use crate::state::AppState;
@@ -122,6 +124,78 @@ pub struct AdminUrlRow {
     pub url: UrlRow,
     pub owner: String,
     pub owner_id: i64,
+}
+
+/// Domains page.
+#[derive(Debug, Template)]
+#[template(path = "admin/domains.html")]
+pub struct DomainsPage {
+    pub site_name: String,
+    pub section: &'static str,
+    pub chrome: Chrome,
+    pub domains: Vec<DomainRow>,
+    pub lang: Lang,
+}
+
+/// One row of the domain table.
+#[derive(Debug, Clone)]
+pub struct DomainRow {
+    pub id: i64,
+    pub hostname: String,
+    pub status: String,
+    pub status_label: String,
+    pub status_class: &'static str,
+    pub is_default: bool,
+    pub source_label: String,
+    pub source_note: Option<&'static str>,
+    pub link_count: i64,
+    pub created: String,
+    pub can_activate: bool,
+    pub can_disable: bool,
+    pub can_default: bool,
+    pub can_delete: bool,
+}
+
+impl DomainRow {
+    fn new(domain: &DomainWithCount, lang: Lang) -> Self {
+        let (status_key, status_class) = if domain.is_active() {
+            ("admin.domains.status.active", "badge-ok")
+        } else if domain.is_pending() {
+            ("admin.domains.status.pending", "badge-warn")
+        } else {
+            ("admin.domains.status.disabled", "badge-muted")
+        };
+        let source_key = if domain.is_system() {
+            "admin.domains.source.system"
+        } else if domain.is_env() {
+            "admin.domains.source.env"
+        } else {
+            "admin.domains.source.ui"
+        };
+        let source_note = if domain.is_system() {
+            Some("admin.domains.note.system")
+        } else if domain.is_env() {
+            Some("admin.domains.note.env")
+        } else {
+            None
+        };
+        Self {
+            id: domain.id,
+            hostname: domain.hostname.clone(),
+            status: domain.status.clone(),
+            status_label: lang.t(status_key).to_string(),
+            status_class,
+            is_default: domain.is_default(),
+            source_label: lang.t(source_key).to_string(),
+            source_note,
+            link_count: domain.link_count,
+            created: time::humanize_lang(lang, &domain.created_at),
+            can_activate: !domain.is_active(),
+            can_disable: domain.is_active() && !domain.is_system() && !domain.is_default(),
+            can_default: domain.is_active() && !domain.is_default(),
+            can_delete: domain.is_ui() && !domain.is_default() && domain.link_count == 0,
+        }
+    }
 }
 
 /// Invites page.
@@ -490,7 +564,12 @@ pub async fn urls_page(
             .map(|tag| tag.name)
             .collect();
         url_rows.push(AdminUrlRow {
-            url: UrlRow::new(&UrlDto::new(row, &state.config.base_url, names)),
+            url: UrlRow::new(&UrlDto::new(
+                row,
+                &state.domain_hostname(row.domain_id),
+                &state.config.base_scheme,
+                names,
+            )),
             owner,
             owner_id: row.user_id,
         });
@@ -628,6 +707,211 @@ pub async fn revoke_invite(
             }
         },
     )
+}
+
+/// Form for adding a domain.
+#[derive(Debug, Deserialize)]
+pub struct DomainForm {
+    pub hostname: String,
+}
+
+/// `GET /app/admin/domains`
+pub async fn domains_page(
+    State(state): State<AppState>,
+    MaybeUser(current): MaybeUser,
+    Query(query): Query<AdminQuery>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/domains")).into_response());
+    };
+    render_domains(
+        &state,
+        &current.user,
+        flash_from_query(query.ok.as_deref(), query.err.as_deref()),
+    )
+    .await
+}
+
+/// `POST /app/admin/domains`
+pub async fn create_domain(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    MaybeUser(current): MaybeUser,
+    form: std::result::Result<Form<DomainForm>, FormRejection>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/domains")).into_response());
+    };
+    let Ok(Form(payload)) = form else {
+        return Ok(redirect_err("/app/admin/domains", "domain_invalid").into_response());
+    };
+
+    let outcome = domain_context(&state, &client, &current.user)
+        .create(&payload.hostname)
+        .await;
+    Ok(match outcome {
+        Ok(_) => {
+            reload_domain_cache(&state).await?;
+            redirect_ok("/app/admin/domains", "domain_created").into_response()
+        }
+        Err(err) => redirect_err("/app/admin/domains", domain_error_code(&err)).into_response(),
+    })
+}
+
+/// `POST /app/admin/domains/{id}/activate`
+pub async fn activate_domain(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    MaybeUser(current): MaybeUser,
+    Path(id): Path<i64>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/domains")).into_response());
+    };
+    Ok(
+        match domain_context(&state, &client, &current.user)
+            .activate(id)
+            .await
+        {
+            Ok(_) => {
+                reload_domain_cache(&state).await?;
+                redirect_ok("/app/admin/domains", "domain_activated").into_response()
+            }
+            Err(err) => redirect_err("/app/admin/domains", domain_error_code(&err)).into_response(),
+        },
+    )
+}
+
+/// `POST /app/admin/domains/{id}/disable`
+pub async fn disable_domain(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    MaybeUser(current): MaybeUser,
+    Path(id): Path<i64>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/domains")).into_response());
+    };
+    Ok(
+        match domain_context(&state, &client, &current.user)
+            .disable(id)
+            .await
+        {
+            Ok(_) => {
+                reload_domain_cache(&state).await?;
+                redirect_ok("/app/admin/domains", "domain_disabled").into_response()
+            }
+            Err(err) => redirect_err("/app/admin/domains", domain_error_code(&err)).into_response(),
+        },
+    )
+}
+
+/// `POST /app/admin/domains/{id}/default`
+pub async fn default_domain(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    MaybeUser(current): MaybeUser,
+    Path(id): Path<i64>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/domains")).into_response());
+    };
+    Ok(
+        match domain_context(&state, &client, &current.user)
+            .set_default(id)
+            .await
+        {
+            Ok(_) => {
+                reload_domain_cache(&state).await?;
+                redirect_ok("/app/admin/domains", "domain_default").into_response()
+            }
+            Err(err) => redirect_err("/app/admin/domains", domain_error_code(&err)).into_response(),
+        },
+    )
+}
+
+/// `POST /app/admin/domains/{id}/delete`
+pub async fn delete_domain(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    MaybeUser(current): MaybeUser,
+    Path(id): Path<i64>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/domains")).into_response());
+    };
+    Ok(
+        match domain_context(&state, &client, &current.user)
+            .delete(id)
+            .await
+        {
+            Ok(()) => {
+                reload_domain_cache(&state).await?;
+                redirect_ok("/app/admin/domains", "domain_deleted").into_response()
+            }
+            Err(err) => redirect_err("/app/admin/domains", domain_error_code(&err)).into_response(),
+        },
+    )
+}
+
+async fn render_domains(
+    state: &AppState,
+    user: &User,
+    flash: Option<crate::routes::pages::Flash>,
+) -> Result<Response, AppError> {
+    let lang = i18n::current();
+    let domains = crate::db::domains::list_with_counts(&state.db)
+        .await
+        .map_err(AppError::from)?
+        .iter()
+        .map(|domain| DomainRow::new(domain, lang))
+        .collect();
+    render(
+        DomainsPage {
+            section: "domains",
+            site_name: state.settings.site_name(),
+            chrome: Chrome::new(state, user, "admin", flash),
+            domains,
+            lang,
+        },
+        StatusCode::OK,
+    )
+}
+
+fn domain_context<'a>(
+    state: &'a AppState,
+    client: &'a ClientInfo,
+    user: &'a User,
+) -> DomainContext<'a> {
+    DomainContext {
+        pool: &state.db,
+        actor: user,
+        ip_hash: client.ip_hash.as_deref(),
+    }
+}
+
+async fn reload_domain_cache(state: &AppState) -> Result<(), AppError> {
+    state
+        .domains
+        .reload(&state.db)
+        .await
+        .map_err(|err| AppError::internal(format!("cannot reload domains: {err}")))
+}
+
+fn domain_error_code(err: &AppError) -> &'static str {
+    match err {
+        AppError::Validation {
+            field: "domain", ..
+        } => "domain_invalid",
+        AppError::NotFound => "not_found",
+        AppError::Conflict(message) if message.contains("canonical") => "domain_system",
+        AppError::Conflict(message) if message.contains("URLET_DOMAINS") => "domain_env",
+        AppError::Conflict(message) if message.contains("default") => "domain_default",
+        AppError::Conflict(message) if message.contains("link") => "domain_in_use",
+        AppError::Conflict(_) => "domain_conflict",
+        AppError::RateLimited { .. } => "rate_limited",
+        _ => "invalid",
+    }
 }
 
 /// `GET /app/admin/settings`

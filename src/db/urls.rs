@@ -8,7 +8,7 @@ use crate::services::time;
 pub struct Url {
     pub id: i64,
     pub user_id: i64,
-    pub domain_id: Option<i64>,
+    pub domain_id: i64,
     pub slug: String,
     pub target_url: String,
     pub title: Option<String>,
@@ -100,7 +100,7 @@ impl Url {
 #[derive(Debug, Clone)]
 pub struct NewUrl {
     pub user_id: i64,
-    pub domain_id: Option<i64>,
+    pub domain_id: i64,
     pub slug: String,
     pub target_url: String,
     pub title: Option<String>,
@@ -168,28 +168,61 @@ pub async fn find_owned(
     .await
 }
 
-/// Find a live link by slug. The column is `COLLATE NOCASE`, so this is
-/// case-insensitive and still uses the unique index.
-pub async fn find_by_slug(pool: &SqlitePool, slug: &str) -> Result<Option<Url>, sqlx::Error> {
-    sqlx::query_as::<_, Url>(&format!("{SELECT} WHERE slug = ? AND deleted_at IS NULL"))
-        .bind(slug)
-        .fetch_optional(pool)
-        .await
+/// Find a live link by `(domain_id, slug)`. `slug` is `COLLATE NOCASE`, so this
+/// is case-insensitive and uses the `(domain_id, slug)` unique index.
+pub async fn find_by_domain_slug(
+    pool: &SqlitePool,
+    domain_id: i64,
+    slug: &str,
+) -> Result<Option<Url>, sqlx::Error> {
+    sqlx::query_as::<_, Url>(&format!(
+        "{SELECT} WHERE domain_id = ? AND slug = ? AND deleted_at IS NULL"
+    ))
+    .bind(domain_id)
+    .bind(slug)
+    .fetch_optional(pool)
+    .await
 }
 
-/// True when the slug is taken (including by soft deleted links, which keep
-/// their slug reserved so old links cannot be hijacked).
-pub async fn slug_taken(pool: &SqlitePool, slug: &str) -> Result<bool, sqlx::Error> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE slug = ?")
-        .bind(slug)
-        .fetch_one(pool)
-        .await?;
+/// True when the slug is taken on `domain_id` (including by soft deleted links,
+/// which keep their slug reserved so old links cannot be hijacked).
+pub async fn slug_taken(
+    pool: &SqlitePool,
+    domain_id: i64,
+    slug: &str,
+) -> Result<bool, sqlx::Error> {
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE domain_id = ? AND slug = ?")
+            .bind(domain_id)
+            .bind(slug)
+            .fetch_one(pool)
+            .await?;
+    Ok(count > 0)
+}
+
+/// Like [`slug_taken`], but ignores one row (used when moving a link or
+/// changing its slug).
+pub async fn slug_taken_excluding(
+    pool: &SqlitePool,
+    domain_id: i64,
+    slug: &str,
+    exclude_id: i64,
+) -> Result<bool, sqlx::Error> {
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM urls WHERE domain_id = ? AND slug = ? AND id <> ?",
+    )
+    .bind(domain_id)
+    .bind(slug)
+    .bind(exclude_id)
+    .fetch_one(pool)
+    .await?;
     Ok(count > 0)
 }
 
 /// Field changes applied by an update.
 #[derive(Debug, Clone, Default)]
 pub struct UrlUpdate {
+    pub domain_id: Option<i64>,
     pub slug: Option<String>,
     pub target_url: Option<String>,
     pub title: Option<Option<String>>,
@@ -204,7 +237,8 @@ pub struct UrlUpdate {
 
 impl UrlUpdate {
     pub fn is_empty(&self) -> bool {
-        self.slug.is_none()
+        self.domain_id.is_none()
+            && self.slug.is_none()
             && self.target_url.is_none()
             && self.title.is_none()
             && self.notes.is_none()
@@ -227,6 +261,10 @@ pub async fn update(
     let mut sql = String::from("UPDATE urls SET updated_at = ?");
     let mut binds: Vec<Bind> = vec![Bind::Text(time::now_iso())];
 
+    if let Some(value) = changes.domain_id {
+        sql.push_str(", domain_id = ?");
+        binds.push(Bind::Int(value));
+    }
     if let Some(value) = &changes.slug {
         sql.push_str(", slug = ?");
         binds.push(Bind::Text(value.clone()));

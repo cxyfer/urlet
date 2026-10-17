@@ -1,7 +1,7 @@
 //! Public redirect routes: `GET /{slug}` and `POST /{slug}/unlock`.
 
 use askama::Template;
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use serde::{Deserialize, Serialize};
@@ -10,6 +10,7 @@ use crate::db::urls::{self, Url, UrlState};
 use crate::error::{AppError, Result};
 use crate::i18n;
 use crate::middleware::auth::ClientInfo;
+use crate::middleware::domain::HostContext;
 use crate::routes::extract::Flexible;
 use crate::services::click::ClickInput;
 use crate::services::cookies;
@@ -53,9 +54,13 @@ pub struct UnlockResponse {
 pub async fn redirect(
     State(state): State<AppState>,
     client: ClientInfo,
+    Extension(host): Extension<HostContext>,
     Path(slug): Path<String>,
 ) -> Result<Response> {
-    let Some(url) = urls::find_by_slug(&state.db, &slug).await? else {
+    let Some(domain) = host.domain.as_ref() else {
+        return Ok(not_found_page(&state));
+    };
+    let Some(url) = urls::find_by_domain_slug(&state.db, domain.id, &slug).await? else {
         return Ok(not_found_page(&state));
     };
 
@@ -72,7 +77,7 @@ pub async fn redirect(
             "link.limit.message",
         )),
         UrlState::Active => {
-            if url.has_password() && !is_unlocked(&state, &client, &url.slug) {
+            if url.has_password() && !is_unlocked(&state, &client, &domain.hostname, &url.slug) {
                 return Ok(password_page(&state, &url.slug, None, StatusCode::OK));
             }
             spawn_click(&state, &client, &url);
@@ -85,10 +90,14 @@ pub async fn redirect(
 pub async fn unlock_link(
     State(state): State<AppState>,
     client: ClientInfo,
+    Extension(host): Extension<HostContext>,
     Path(slug): Path<String>,
     Flexible(payload): Flexible<UnlockPayload>,
 ) -> Result<Response> {
     let wants_json = client.wants_json();
+    let Some(domain) = host.domain.as_ref() else {
+        return Ok(not_found_page(&state));
+    };
     // Reject impossible slugs before they reach the limiter or the database.
     if slug.len() > crate::services::slug::MAX_LEN {
         return Ok(not_found_page(&state));
@@ -98,7 +107,8 @@ pub async fn unlock_link(
         .limiter
         .check(
             &format!(
-                "unlock:{}:{}",
+                "unlock:{}:{}:{}",
+                domain.hostname,
                 slug.to_ascii_lowercase(),
                 client.limiter_key()
             ),
@@ -107,7 +117,7 @@ pub async fn unlock_link(
         )
         .map_err(AppError::rate_limited)?;
 
-    let Some(url) = urls::find_by_slug(&state.db, &slug).await? else {
+    let Some(url) = urls::find_by_domain_slug(&state.db, domain.id, &slug).await? else {
         return Ok(not_found_page(&state));
     };
     match url.state() {
@@ -131,7 +141,7 @@ pub async fn unlock_link(
 
     // A link without a password simply redirects.
     let Some(password_hash) = url.password_hash.as_deref().filter(|hash| !hash.is_empty()) else {
-        return Ok(unlocked_response(&state, &url, wants_json));
+        return Ok(unlocked_response(&url, wants_json));
     };
 
     if !password::verify_async(payload.password.clone(), password_hash.to_string()).await {
@@ -153,11 +163,12 @@ pub async fn unlock_link(
 
     let token = unlock::issue(
         &state.config.secret,
+        &domain.hostname,
         &url.slug,
         state.config.unlock_ttl_minutes,
     );
     let cookie = cookies::build(
-        &unlock::cookie_name(&url.slug),
+        &unlock::cookie_name(&domain.hostname, &url.slug),
         &token,
         state.config.unlock_ttl_minutes * 60,
         client.secure,
@@ -187,7 +198,7 @@ pub async fn unlock_link(
     Ok(response)
 }
 
-fn unlocked_response(state: &AppState, url: &Url, wants_json: bool) -> Response {
+fn unlocked_response(url: &Url, wants_json: bool) -> Response {
     if wants_json {
         (
             StatusCode::OK,
@@ -202,16 +213,15 @@ fn unlocked_response(state: &AppState, url: &Url, wants_json: bool) -> Response 
         if let Ok(value) = HeaderValue::from_str(&format!("/{}", url.slug)) {
             response.headers_mut().insert(header::LOCATION, value);
         }
-        let _ = state;
         response
     }
 }
 
 /// Does the request carry a valid unlock cookie for this slug?
-fn is_unlocked(state: &AppState, client: &ClientInfo, slug: &str) -> bool {
-    let name = unlock::cookie_name(slug);
+fn is_unlocked(state: &AppState, client: &ClientInfo, domain: &str, slug: &str) -> bool {
+    let name = unlock::cookie_name(domain, slug);
     match client.cookie(&name) {
-        Some(token) => unlock::verify(&state.config.secret, slug, token),
+        Some(token) => unlock::verify(&state.config.secret, domain, slug, token),
         None => false,
     }
 }

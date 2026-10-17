@@ -2,7 +2,7 @@
     <div class="console-head">
         <span class="status-dot" aria-hidden="true"></span>
         <span class="console-label">{{ lang.t("nav.admin") }}</span>
-        <span class="console-meta" aria-hidden="true">SYS · 01 / 06</span>
+        <span class="console-meta" aria-hidden="true">SYS · 01 / 07</span>
     </div>
     <div class="tabs">
         <div class="tabs-scroll">
@@ -10,6 +10,7 @@
             <a href="/app/admin/users" {% if section == "users" %}class="active"{% endif %}>{{ lang.t("admin.tabs.users") }}</a>
             <a href="/app/admin/urls" {% if section == "urls" %}class="active"{% endif %}>{{ lang.t("admin.tabs.links") }}</a>
             <a href="/app/admin/invites" {% if section == "invites" %}class="active"{% endif %}>{{ lang.t("admin.tabs.invites") }}</a>
+            <a href="/app/admin/domains" {% if section == "domains" %}class="active"{% endif %}>{{ lang.t("admin.tabs.domains") }}</a>
             <a href="/app/admin/settings" {% if section == "settings" %}class="active"{% endif %}>{{ lang.t("admin.tabs.settings") }}</a>
             <a href="/app/admin/audit" {% if section == "audit" %}class="active"{% endif %}>{{ lang.t("admin.tabs.audit") }}</a>
         </div>

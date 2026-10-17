@@ -19,7 +19,8 @@
 | 📊 點擊分析 | 每日趨勢、來源網域、裝置/瀏覽器/作業系統分佈、最近點擊 |
 | 🧩 標籤 | 依標籤篩選與分類，附使用次數 |
 | 🔑 API Token | `Authorization: Bearer ur_...`，可設到期與撤銷 |
-| 🛠 管理後台 | 使用者管理、全站短網址、邀請碼、站台設定、稽核日誌 |
+| 🌐 多網域 | 可在管理後台新增額外網域；各網域有獨立 slug，僅提供轉址 |
+| 🛠 管理後台 | 使用者管理、全站短網址、網域、邀請碼、站台設定、稽核日誌 |
 | 🌐 多語系介面 | 介面提供 English / 繁體中文 / 简体中文 切換；初次訪問依瀏覽器 `Accept-Language` 自動選擇，無法辨識時預設英文 |
 | 🤖 防機器人驗證 | 可透過環境變數或管理後台啟用 Cloudflare Turnstile 或 Google reCAPTCHA v2，套用於註冊、登入與建立短網址表單 |
 | 🐳 部署 | 單一容器 + named volume；GHCR 提供多架構映像；附 Caddy 自動 HTTPS overlay |
@@ -166,7 +167,7 @@ urlet/
 cargo test                 # 單元 + 整合測試（285 個）
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收（81 項）
+bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收
 bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 ```
 
