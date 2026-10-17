@@ -23,7 +23,7 @@ service, no frontend build step.
 | 🛠 Admin panel | User management, all site links, invite codes, site settings, audit log |
 | 🌐 Localized UI | English, Traditional Chinese, and Simplified Chinese; the first visit follows the browser's `Accept-Language` header and falls back to English |
 | 🤖 Bot protection | Cloudflare Turnstile or Google reCAPTCHA v2, enabled through environment variables or the admin panel; applies to the registration, sign-in and link creation forms |
-| 🐳 Deployment | Single container plus a named volume; optional Caddy overlay for automatic HTTPS |
+| 🐳 Deployment | Single container plus a named volume; published multi-arch images on GHCR; optional Caddy overlay for automatic HTTPS |
 | 🪶 Lightweight | 5.7 MB (glibc) / 5.8 MB (musl) binary, 14.8 MB container image, 8.7 MB RSS after 500 requests, and sub-millisecond redirect latency at P95 (see the note below) |
 
 > The binary and image figures include the embedded locale catalogs and the TLS stack used by the
@@ -53,6 +53,21 @@ docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
 ```
 
 > Requires Docker Compose ≥ 2.24 (the overlay uses the `!override` tag).
+
+### Prebuilt image
+
+Every `v*` tag publishes a multi-arch image (`linux/amd64` and `linux/arm64`) to the GitHub
+Container Registry, so you can run a release without compiling Rust yourself:
+
+```bash
+export UWURLS_IMAGE=ghcr.io/cxyfer/uwurls:latest   # pin a release tag in production
+docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
+```
+
+The overlay removes the local `build` section, so compose pulls the image instead of rebuilding.
+The package may be private; run `docker login ghcr.io` first (a token with `read:packages`), or
+make the package public under *Package settings → Change visibility*. See
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md#21-prebuilt-image) for pinning and upgrades.
 
 ### Running the binary directly
 
@@ -130,9 +145,11 @@ blocklists, webhooks, email delivery. The tables and architecture leave room for
 
 ```
 uwurls/
+├── .github/workflows/release-image.yml  # tag-driven multi-arch image release
 ├── Cargo.toml
 ├── Dockerfile                  # multi-stage build (rust:alpine → alpine)
 ├── docker-compose.yml          # single container + named volume
+├── docker-compose.image.yml    # run a published image instead of building
 ├── docker-compose.tls.yml      # optional: Caddy with automatic HTTPS
 ├── deploy/Caddyfile
 ├── migrations/                 # embedded SQL migrations
@@ -165,12 +182,25 @@ bash scripts/demo.sh       # build a demo site and write screenshots to .tmp/dem
 Rust 1.80 or newer is required. Integration tests use their own temporary SQLite database
 and never touch your development data.
 
+## Releasing
+
+Releases are tag-driven and governed by [`RELEASING.md`](RELEASING.md) — read it before tagging.
+In short: bump `version` in [`Cargo.toml`](Cargo.toml), refresh `Cargo.lock`, commit, then push
+an annotated `vX.Y.Z` tag. The workflow validates the tag, builds `linux/amd64` and
+`linux/arm64`, and publishes `ghcr.io/cxyfer/uwurls` with semver tags. Only the newest stable
+release moves `X`, `X.Y` and `latest`; pre-releases never do. The GitHub Release is written by
+hand afterwards.
+
+To rebuild an existing tag, run *Actions → Release container image → Run workflow* (moving tags
+off unless it is the newest stable release).
+
 ## Documentation
 
 - [`docs/SPEC.md`](docs/SPEC.md) — specification: requirements, data model, API, non-functional requirements
 - [`docs/PLAN.md`](docs/PLAN.md) — phased implementation plan and acceptance criteria
 - [`docs/API.md`](docs/API.md) — JSON API reference
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — deployment, configuration, backup, upgrades, troubleshooting
+- [`RELEASING.md`](RELEASING.md) — release rules: versioning, tag/image rules, checklist, rollback
 
 Chinese translations of these documents live under `docs/zh-TW/`.
 

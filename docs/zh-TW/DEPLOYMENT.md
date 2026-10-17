@@ -10,7 +10,7 @@
 | 記憶體 | 128 MB | 256 MB |
 | 磁碟 | 100 MB + 資料 | 1 GB |
 | Docker | 24.x | 最新版 |
-| Docker Compose | 2.24（TLS overlay 需要 `!override`） | 最新版 |
+| Docker Compose | 2.24（overlay 使用 `!override` / `!reset`） | 最新版 |
 
 不需要外部資料庫、Redis 或反向代理。單一容器即可對外服務（建議前面加一層 TLS）。
 
@@ -48,6 +48,24 @@ docker compose logs -f uwurls
 curl -fsS http://localhost:8080/health
 docker compose exec uwurls /usr/local/bin/uwurls healthcheck
 ```
+
+### 2.1 使用預先建置的映像
+
+每次推送 `v*` 標籤都會發布多架構映像（`linux/amd64`、`linux/arm64`）到 GHCR。若不想在本機
+建置，可直接執行已發布的版本：
+
+```bash
+export UWURLS_IMAGE=ghcr.io/cxyfer/uwurls:1.1.0   # 固定要使用的版本
+docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
+```
+
+- `UWURLS_IMAGE` 預設為 `ghcr.io/cxyfer/uwurls:latest`；正式環境請固定精確版本，不要長期
+  追蹤 `latest`。若使用 `latest`，請在 `up -d` 前先執行 `docker compose -f docker-compose.yml
+  -f docker-compose.image.yml pull`，才會取得較新的版本。
+- overlay 會移除 `build` 設定，因此 compose 只會拉取映像，不會退回本機 Rust 建置。
+- 套件預設為**私有**。請先登入（`docker login ghcr.io`，權杖需具備 `read:packages`），或在
+  *Package settings → Change visibility* 將套件改為公開。
+- 映像以 uid/gid `10001` 執行，與本機建置的映像相同，因此 `/data` volume 的權限設定不變。
 
 ## 3. 加上自動 HTTPS（Caddy）
 
@@ -96,12 +114,13 @@ UWURLS_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-
 | `UWURLS_LOG_FORMAT` | `compact` | `compact` 或 `json` |
 | `UWURLS_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | `uwurls healthcheck` 的目標 |
 
-另外兩個變數由 compose 檔讀取，uwurls 二進位檔本身不會讀取：
+另外三個變數由 compose 檔讀取，uwurls 二進位檔本身不會讀取：
 
 | 變數 | 預設 | 說明 |
 |------|------|------|
 | `UWURLS_PORT` | `8080` | `docker-compose.yml` 對外發布的主機連接埠（容器本身一律監聽 8080） |
 | `UWURLS_DOMAIN` | — | `docker-compose.tls.yml` overlay 申請憑證用的網域；該 overlay 必填 |
+| `UWURLS_IMAGE` | `ghcr.io/cxyfer/uwurls:latest` | `docker-compose.image.yml` overlay 使用的映像（僅在該 overlay 生效） |
 
 站台層級設定（站名、註冊模式、配額、預設轉址類型、統計開關、點擊保留天數）
 在 **Admin → Settings** 調整，會存進資料庫並即時生效。
@@ -271,6 +290,13 @@ git pull
 docker compose up -d --build      # 啟動時自動套用遷移
 ```
 
+使用預先建置的映像時，把 `UWURLS_IMAGE` 改成新版本並重建容器即可：
+
+```bash
+export UWURLS_IMAGE=ghcr.io/cxyfer/uwurls:1.2.0
+docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
+```
+
 遷移是向前相容的累加檔案（`migrations/`），已套用的檔案有 checksum 保護，
 被修改時啟動會直接失敗而不是默默分歧。升級前建議先備份。
 
@@ -331,5 +357,5 @@ docker compose up -d --build      # 啟動時自動套用遷移
 - [ ] 確認 `UWURLS_TRUST_PROXY` 的設定與代理行為一致
 - [ ] 註冊模式設為 `invite` 或 `closed`（除非真的要開放註冊）
 - [ ] 已規劃 `click_retention_days` 與備份排程
-- [ ] 定期 `docker compose pull && docker compose up -d --build` 更新
+- [ ] 有固定的更新流程（本機重建或拉取新的 `UWURLS_IMAGE` 標籤），且每次升級前先備份
 - [ ] 若實例可從公網連線，已為註冊與登入流程啟用防機器人驗證

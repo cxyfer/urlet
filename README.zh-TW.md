@@ -22,7 +22,7 @@
 | 🛠 管理後台 | 使用者管理、全站短網址、邀請碼、站台設定、稽核日誌 |
 | 🌐 多語系介面 | 介面提供 English / 繁體中文 / 简体中文 切換；初次訪問依瀏覽器 `Accept-Language` 自動選擇，無法辨識時預設英文 |
 | 🤖 防機器人驗證 | 可透過環境變數或管理後台啟用 Cloudflare Turnstile 或 Google reCAPTCHA v2，套用於註冊、登入與建立短網址表單 |
-| 🐳 部署 | 單一容器 + named volume；附 Caddy 自動 HTTPS overlay |
+| 🐳 部署 | 單一容器 + named volume；GHCR 提供多架構映像；附 Caddy 自動 HTTPS overlay |
 | 🪶 輕量 | 二進位檔 5.7 MB（glibc）／5.8 MB（musl）、容器映像 14.8 MB、500 次請求後 RSS 8.7 MB、轉址 P95 低於 1 毫秒（說明見下） |
 
 > 二進位檔與映像的數字已包含內嵌語言目錄，以及選用的防機器人驗證所需的 TLS 相依；轉址延遲
@@ -49,6 +49,21 @@ docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
 ```
 
 > 需要 Docker Compose ≥ 2.24（overlay 使用 `!override` 標籤）。
+
+### 使用預先建置的映像
+
+每次推送 `v*` 標籤都會發布多架構映像（`linux/amd64` 與 `linux/arm64`）到 GitHub Container
+Registry，因此不必自己編譯 Rust：
+
+```bash
+export UWURLS_IMAGE=ghcr.io/cxyfer/uwurls:latest   # 正式環境請固定版本標籤
+docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
+```
+
+此 overlay 會移除本機 `build` 設定，改為直接拉取映像。套件可能是私有的，請先執行
+`docker login ghcr.io`（需要具備 `read:packages` 的權杖），或在
+*Package settings → Change visibility* 將套件設為公開。固定版本與升級方式見
+[`docs/zh-TW/DEPLOYMENT.md`](docs/zh-TW/DEPLOYMENT.md#21-使用預先建置的映像)。
 
 ### 直接執行二進位檔
 
@@ -121,9 +136,11 @@ uwurls version | help
 
 ```
 uwurls/
+├── .github/workflows/release-image.yml  # 標籤觸發的多架構映像發布
 ├── Cargo.toml
 ├── Dockerfile                  # 多階段建置（rust:alpine → alpine）
 ├── docker-compose.yml          # 單一容器 + named volume
+├── docker-compose.image.yml    # 使用已發布映像，不在本機建置
 ├── docker-compose.tls.yml      # 可選：Caddy 自動 HTTPS
 ├── deploy/Caddyfile
 ├── migrations/                 # 內嵌 SQL 遷移
@@ -155,12 +172,24 @@ bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 
 需要 Rust 1.80 以上。整合測試使用獨立的臨時 SQLite，不會碰到你的開發資料。
 
+## 發布新版本
+
+發布採標籤驅動，完整規則見 [`RELEASING.md`](RELEASING.md)（[中文版](docs/zh-TW/RELEASING.md)），
+建立標籤前請先閱讀。簡要流程：更新 [`Cargo.toml`](Cargo.toml) 的 `version`、同步
+`Cargo.lock`、提交，然後推送 annotated 的 `vX.Y.Z` 標籤。workflow 會驗證標籤、建置
+`linux/amd64` 與 `linux/arm64`，並以 semver 標籤發布 `ghcr.io/cxyfer/uwurls`。只有最新正式版會
+移動 `X`、`X.Y` 與 `latest`；預發布版不會。GitHub Release 之後由人工撰寫。
+
+若只想重建既有標籤，請從 *Actions → Release container image → Run workflow* 手動執行
+（除非是最新正式版本，否則不要開啟浮動標籤）。
+
 ## 文件
 
 - [`docs/SPEC.md`](docs/SPEC.md) — 規格書：需求、資料模型、API、非功能需求
 - [`docs/PLAN.md`](docs/PLAN.md) — 分階段實作計畫與驗收標準
 - [`docs/API.md`](docs/API.md) — JSON API 參考
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — 部署、設定、備份、升級、疑難排解
+- [`RELEASING.md`](RELEASING.md) — 發布規則：版本、標籤與映像規則、檢查清單、回滾（[中文版](docs/zh-TW/RELEASING.md)）
 
 這些文件的中文版放在 `docs/zh-TW/`。
 
