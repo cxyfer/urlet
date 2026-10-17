@@ -1073,3 +1073,101 @@ async fn bootstrap_detaches_env_domains_when_the_variable_is_empty() {
             .expect("source after detach");
     assert_eq!(source, "ui");
 }
+
+#[tokio::test]
+async fn demoted_opaque_canonical_host_still_resolves_old_links() {
+    let app = TestApp::spawn_with(|config| {
+        config.base_host = "urlet_app:19087".to_string();
+        config.base_url = "http://urlet_app:19087".to_string();
+    })
+    .await;
+
+    let now = urlet::services::time::now_iso();
+    sqlx::query(
+        "INSERT INTO users (email, email_normalized, password_hash, created_at, updated_at)
+         VALUES ('legacy@example.com', 'legacy@example.com', 'hash', ?, ?)",
+    )
+    .bind(&now)
+    .bind(&now)
+    .execute(&app.state.db)
+    .await
+    .expect("user");
+    let user_id: i64 =
+        sqlx::query_scalar("SELECT id FROM users WHERE email = 'legacy@example.com'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("user id");
+    let domain_id: i64 =
+        sqlx::query_scalar("SELECT id FROM domains WHERE hostname = 'urlet_app:19087'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("opaque canonical id");
+    sqlx::query(
+        "INSERT INTO urls (user_id, domain_id, slug, target_url, created_at, updated_at)
+         VALUES (?, ?, 'legacy', 'https://example.com/legacy', ?, ?)",
+    )
+    .bind(user_id)
+    .bind(domain_id)
+    .bind(&now)
+    .bind(&now)
+    .execute(&app.state.db)
+    .await
+    .expect("legacy url");
+
+    // Next boot: a normal DNS canonical host. The old opaque row is demoted to
+    // `ui` but its links must still resolve through the extra-domain path.
+    let mut config = urlet::config::Config::for_tests(&app.dir);
+    config.database_url = app.state.config.database_url.clone();
+    config.base_host = "links.example.com:19087".to_string();
+    config.base_url = "http://links.example.com:19087".to_string();
+    let pool = urlet::db::init(&config).await.expect("database");
+    let settings = urlet::services::settings::Settings::load(&pool, &config)
+        .await
+        .expect("settings");
+    let state = urlet::state::AppState::new(config, pool, settings);
+    urlet::server::bootstrap(&state).await.expect("bootstrap");
+    let router = urlet::server::build_router(state);
+
+    let request = Request::builder()
+        .uri("/legacy")
+        .header(header::HOST, "urlet_app:19087")
+        .body(Body::empty())
+        .expect("request");
+    let response = common::send_router(router.clone(), request).await;
+    assert_eq!(response.status, StatusCode::FOUND, "{}", response.body);
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some("https://example.com/legacy")
+    );
+
+    let request = Request::builder()
+        .uri("/")
+        .header(header::HOST, "urlet_app:19087")
+        .body(Body::empty())
+        .expect("request");
+    let root = common::send_router(router.clone(), request).await;
+    assert_eq!(root.status, StatusCode::OK);
+    assert!(root.body.contains("short link service"), "{}", root.body);
+
+    let request = Request::builder()
+        .uri("/app?x=1")
+        .header(header::HOST, "urlet_app:19087")
+        .body(Body::empty())
+        .expect("request");
+    let app_redirect = common::send_router(router.clone(), request).await;
+    assert_eq!(app_redirect.status, StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(
+        app_redirect.header("location").as_deref(),
+        Some("http://links.example.com:19087/app?x=1")
+    );
+
+    let request = Request::builder()
+        .uri("/api/v1/domains")
+        .header(header::HOST, "urlet_app:19087")
+        .body(Body::empty())
+        .expect("request");
+    assert_eq!(
+        common::send_router(router, request).await.status,
+        StatusCode::NOT_FOUND
+    );
+}

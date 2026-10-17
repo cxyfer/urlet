@@ -152,8 +152,9 @@ working `sqlite_sequence`.
   - `pending`/`disabled` domains cannot be default;
   - the current default cannot be disabled or deleted until another active domain
     is made default;
-  - `source = system|env` domains cannot be deleted from the UI (they would be
-    re-seeded); they can be disabled;
+  - `source = env` domains cannot be deleted from the UI (they would be
+    re-seeded); they can be disabled, and detach to `ui` when removed from
+    `URLET_DOMAINS`. The `system` domain can be neither disabled nor deleted;
   - a `ui` domain can be deleted only when it has no links at all, including
     soft-deleted links.
 - Every mutation is audited (`domain.created`, `domain.updated`,

@@ -31,10 +31,18 @@ WITH step1 AS (
     SELECT id, rtrim(lower(trim(hostname)), '.') AS h FROM domains
 ), parsed AS (
     SELECT id, h,
-           CASE WHEN h LIKE '%:%' AND h NOT LIKE '[%'
-                THEN substr(h, instr(h, ':') + 1) END AS port_text,
-           CASE WHEN h LIKE '%:%' AND h NOT LIKE '[%'
-                THEN substr(h, 1, instr(h, ':') - 1) ELSE h END AS host_text
+           CASE
+             WHEN h LIKE '[%' AND instr(h, ']') > 0 THEN
+               CASE WHEN length(h) > instr(h, ']')
+                     AND substr(h, instr(h, ']') + 1, 1) = ':'
+                    THEN substr(h, instr(h, ']') + 2) END
+             WHEN h LIKE '%:%' THEN substr(h, instr(h, ':') + 1)
+           END AS port_text,
+           CASE
+             WHEN h LIKE '[%' AND instr(h, ']') > 0 THEN substr(h, 1, instr(h, ']'))
+             WHEN h LIKE '%:%' THEN substr(h, 1, instr(h, ':') - 1)
+             ELSE h
+           END AS host_text
       FROM step1
 ), normalized AS (
     SELECT id,

@@ -12,6 +12,12 @@ use crate::services::secret;
 pub enum ConfigError {
     #[error("invalid {name}: {value:?}")]
     Invalid { name: &'static str, value: String },
+    #[error(
+        "URLET_BASE_URL host is not supported: {value:?}; use an ASCII hostname \
+         (punycode for IDN). IPv6 literals and underscore service names are allowed \
+         for the canonical host"
+    )]
+    InvalidBaseHost { value: String },
     #[error("io error on {path}: {source}")]
     Io {
         path: PathBuf,
@@ -140,10 +146,10 @@ impl Config {
         let base_url = env_str("URLET_BASE_URL").unwrap_or_else(|| "http://localhost:8080".into());
         let base_url = base_url.trim().trim_end_matches('/').to_string();
         let (base_scheme, base_host) = split_base_url(&base_url)?;
-        let base_host = canonical_base_host(&base_host).ok_or_else(|| ConfigError::Invalid {
-            name: "URLET_BASE_URL",
-            value: base_url.clone(),
-        })?;
+        let base_host =
+            canonical_base_host(&base_host).ok_or_else(|| ConfigError::InvalidBaseHost {
+                value: base_url.clone(),
+            })?;
         let extra_domains_raw = env_str("URLET_DOMAINS");
         let extra_domains_declared = extra_domains_raw.is_some();
         let extra_domains = parse_extra_domains(extra_domains_raw, &base_host)?;

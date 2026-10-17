@@ -737,4 +737,101 @@ mod tests {
         pool.close().await;
         let _ = std::fs::remove_dir_all(&dir);
     }
+    #[tokio::test]
+    async fn normalizes_bracketed_ipv6_default_ports() {
+        let dir =
+            std::env::temp_dir().join(format!("urlet-migrate-ipv6-ports-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = format!("{}/ipv6-ports.db", dir.display());
+        let options = test_options(&path);
+        let pool = test_pool(&options).await;
+
+        run_until(&pool, &options, "0002_clicks_indexes")
+            .await
+            .expect("v2 schema");
+
+        let now = now_iso();
+        sqlx::query(
+            "INSERT INTO users (email, email_normalized, password_hash, created_at, updated_at)
+             VALUES ('v6@example.com', 'v6@example.com', 'hash', ?, ?)",
+        )
+        .bind(&now)
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("user");
+        let user_id: i64 =
+            sqlx::query_scalar("SELECT id FROM users WHERE email = 'v6@example.com'")
+                .fetch_one(&pool)
+                .await
+                .expect("user id");
+
+        sqlx::query(
+            "INSERT INTO domains (hostname, is_default, is_verified, created_at)
+             VALUES ('[::1]:443', 1, 1, ?)",
+        )
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("IPv6 default");
+        sqlx::query(
+            "INSERT INTO domains (hostname, is_default, is_verified, created_at)
+             VALUES ('[::1]:080', 0, 1, ?)",
+        )
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("IPv6 zero-padded default");
+        let first_id: i64 =
+            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = '[::1]:443'")
+                .fetch_one(&pool)
+                .await
+                .expect("first id");
+        let second_id: i64 =
+            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = '[::1]:080'")
+                .fetch_one(&pool)
+                .await
+                .expect("second id");
+
+        for (slug, domain_id) in [("first", first_id), ("second", second_id)] {
+            sqlx::query(
+                "INSERT INTO urls (user_id, domain_id, slug, target_url, created_at, updated_at)
+                 VALUES (?, ?, ?, 'https://example.com', ?, ?)",
+            )
+            .bind(user_id)
+            .bind(domain_id)
+            .bind(slug)
+            .bind(&now)
+            .bind(&now)
+            .execute(&pool)
+            .await
+            .expect("url");
+        }
+
+        run(&pool, &options).await.expect("upgrade");
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM domains")
+            .fetch_one(&pool)
+            .await
+            .expect("domain count");
+        assert_eq!(count, 1, "IPv6 default-port rows are merged");
+        let hostname: String = sqlx::query_scalar("SELECT hostname FROM domains")
+            .fetch_one(&pool)
+            .await
+            .expect("hostname");
+        assert_eq!(hostname, "[::1]");
+        let kept: i64 = sqlx::query_scalar("SELECT id FROM domains")
+            .fetch_one(&pool)
+            .await
+            .expect("kept id");
+        let urls: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE domain_id = ?")
+            .bind(kept)
+            .fetch_one(&pool)
+            .await
+            .expect("urls on kept domain");
+        assert_eq!(urls, 2, "both URLs point at the surviving domain");
+
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

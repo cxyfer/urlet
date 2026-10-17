@@ -83,7 +83,10 @@ pub async fn domain_gate(
         return next.run(request).await;
     }
 
-    let domain = host.as_deref().and_then(|host| state.domains.lookup(host));
+    let domain = match host.as_deref() {
+        Some(host) => state.domains.lookup(host),
+        None => raw_host.and_then(|raw| state.domains.lookup_raw(raw)),
+    };
     let Some(domain) = domain else {
         return unknown_host_response(&path);
     };

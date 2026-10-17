@@ -170,6 +170,12 @@ impl TestApp {
     }
 }
 
+/// Send one request through an arbitrary router built by a test.
+pub async fn send_router(router: Router, request: Request<Body>) -> TestResponse {
+    let response = router.oneshot(request).await.expect("router call");
+    TestResponse::from_response(response).await
+}
+
 impl Drop for TestApp {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.dir);

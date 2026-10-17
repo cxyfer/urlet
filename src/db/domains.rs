@@ -65,8 +65,9 @@ impl Domain {
         self.source == source::UI
     }
 
-    /// System and environment domains are re-created by boot; the UI must not
-    /// delete them. They can still be disabled.
+    /// System domains are re-asserted by boot and cannot be disabled or
+    /// deleted. Environment domains are re-created if missing and cannot be
+    /// deleted from the UI, but they can be disabled.
     pub fn is_deletable(&self) -> bool {
         self.is_ui() && !self.is_default()
     }

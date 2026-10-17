@@ -61,14 +61,41 @@ pub fn validate_domain_hostname(raw: &str) -> std::result::Result<String, HostEr
 /// domain names, but refusing to start or silently 404ing the whole instance
 /// would be worse. Default ports are stripped, matching `normalize_host`.
 pub fn raw_host_key(host: &str) -> String {
-    let lowered = host.trim().trim_end_matches('.').to_ascii_lowercase();
-    if let Some(stem) = lowered
-        .strip_suffix(":443")
-        .or_else(|| lowered.strip_suffix(":80"))
-    {
-        stem.to_string()
-    } else {
-        lowered
+    let trimmed = host.trim().trim_end_matches('.').to_ascii_lowercase();
+
+    // Bracketed IPv6 literal, optionally followed by a port.
+    if let Some(rest) = trimmed.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            let host_part = &trimmed[..end + 2];
+            let port = trimmed[end + 2..].strip_prefix(':');
+            return match port {
+                None => host_part.to_string(),
+                Some(port) if port.chars().all(|c| c.is_ascii_digit()) => {
+                    match port.parse::<u16>() {
+                        Ok(80 | 443) => host_part.to_string(),
+                        Ok(0) => trimmed,
+                        Ok(port) => format!("{host_part}:{port}"),
+                        Err(_) => trimmed,
+                    }
+                }
+                Some(_) => trimmed,
+            };
+        }
+        return trimmed;
+    }
+
+    let Some((host_part, port)) = trimmed.rsplit_once(':') else {
+        return trimmed;
+    };
+    if host_part.contains(':') || port.is_empty() || !port.chars().all(|c| c.is_ascii_digit()) {
+        return trimmed;
+    }
+    let host_part = host_part.trim_end_matches('.');
+    match port.parse::<u16>() {
+        Ok(80 | 443) => host_part.to_string(),
+        Ok(0) => trimmed,
+        Ok(port) => format!("{host_part}:{port}"),
+        Err(_) => trimmed,
     }
 }
 
@@ -420,6 +447,7 @@ impl From<&Domain> for DomainOption {
 pub struct DomainSnapshot {
     by_id: HashMap<i64, Domain>,
     by_host: HashMap<String, Domain>,
+    by_raw_host: HashMap<String, Domain>,
     default_id: Option<i64>,
     active_hosts: Vec<String>,
     active_domains: Vec<Domain>,
@@ -435,6 +463,7 @@ impl DomainSnapshot {
 
         let mut by_id = HashMap::with_capacity(domains.len());
         let mut by_host = HashMap::with_capacity(domains.len());
+        let mut by_raw_host = HashMap::with_capacity(domains.len());
         let mut default_id = None;
         let mut active_hosts = Vec::new();
         let mut active_domains = Vec::new();
@@ -447,6 +476,7 @@ impl DomainSnapshot {
                 active_hosts.push(domain.hostname.clone());
                 active_domains.push(domain.clone());
             }
+            by_raw_host.insert(raw_host_key(&domain.hostname), domain.clone());
             by_host.insert(domain.hostname.clone(), domain.clone());
             by_id.insert(domain.id, domain);
         }
@@ -455,6 +485,7 @@ impl DomainSnapshot {
         Self {
             by_id,
             by_host,
+            by_raw_host,
             default_id,
             active_hosts,
             active_domains,
@@ -521,6 +552,13 @@ impl DomainRegistry {
     /// Lookup a hostname in any lifecycle state.
     pub fn lookup(&self, host: &str) -> Option<Domain> {
         self.current().by_host.get(host).cloned()
+    }
+
+    /// Lookup an opaque hostname (IPv6 literal / underscore service name) that
+    /// `normalize_host` rejects. Used for a previous canonical host after
+    /// `URLET_BASE_URL` changed and it was demoted to an extra domain.
+    pub fn lookup_raw(&self, host: &str) -> Option<Domain> {
+        self.current().by_raw_host.get(&raw_host_key(host)).cloned()
     }
 
     pub fn get(&self, id: i64) -> Option<Domain> {
@@ -600,7 +638,10 @@ mod tests {
         assert_eq!(raw_host_key("[::1]:8080"), "[::1]:8080");
         assert_eq!(raw_host_key("[::1]:443"), "[::1]");
         assert_eq!(raw_host_key("urlet_app:443"), "urlet_app");
+        assert_eq!(raw_host_key("urlet_app.:443"), "urlet_app");
         assert_eq!(raw_host_key("urlet_app:8080"), "urlet_app:8080");
+        assert_eq!(raw_host_key("[::1]:0443"), "[::1]");
+        assert_eq!(raw_host_key("[::1]:08080"), "[::1]:8080");
     }
 
     #[test]
@@ -612,6 +653,24 @@ mod tests {
         let underscore = DomainRegistry::new("urlet_app:443");
         assert!(underscore.is_canonical("urlet_app"));
         assert!(underscore.is_canonical("URLET_APP:443"));
+
+        let mut domain = Domain {
+            id: 9,
+            hostname: "urlet_app:19087".into(),
+            is_default: 0,
+            is_verified: 1,
+            created_by: None,
+            created_at: "2026-01-01T00:00:00.000Z".into(),
+            status: status::ACTIVE.into(),
+            source: source::UI.into(),
+            updated_at: None,
+        };
+        domain.is_default = 0;
+        let registry = DomainRegistry::new("links.example.com");
+        registry.replace(vec![domain]);
+        assert!(registry.lookup_raw("urlet_app:19087").is_some());
+        assert!(registry.lookup_raw("URLET_APP:19087").is_some());
+        assert!(registry.lookup_raw("urlet_app:19088").is_none());
     }
 
     #[test]

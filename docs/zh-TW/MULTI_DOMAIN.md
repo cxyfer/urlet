@@ -134,7 +134,7 @@ daily stats，再套用 `0003`，檢查列數、外鍵、回填的 domain、per-
   - canonical（`source = system`）永遠 active，不可停用或刪除。若 `URLET_BASE_URL` 改變，bootstrap 會建立新的 canonical row；若舊 system row 是預設，會把預設轉移過去，並把舊 system row 降級為 `ui`。舊連結會繼續解析，直到管理員停用該網域；
   - `pending`/`disabled` 不可設為預設；
   - 目前預設不可停用或刪除，必須先把另一個 active 網域設為預設；
-  - `source = system|env` 不可從 UI 刪除（會被重新 seed），但可停用；把 hostname 從 `URLET_DOMAINS` 移除後，下次啟動會 detach 成 `source = ui`，之後即可正常停用或刪除；
+  - `source = env` 不可從 UI 刪除（會被重新 seed），但可停用；把 hostname 從 `URLET_DOMAINS` 移除後，下次啟動會 detach 成 `source = ui`，之後即可正常停用或刪除。`system` 網域則不可停用、也不可刪除；
   - `ui` 網域只有在完全沒有連結（含 soft-deleted）時才能刪除。
 - 每次變更都寫 audit（`domain.created`、`domain.updated`、
   `domain.deleted`、`domain.default_changed`）並 reload registry。
