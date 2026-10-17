@@ -25,9 +25,11 @@ use sqlx::SqlitePool;
 use crate::config::Config;
 use crate::error::{AppError, Result};
 
-/// Open the pool with the pragmas required for a small, reliable deployment.
-pub async fn connect(config: &Config) -> Result<SqlitePool> {
-    let options = SqliteConnectOptions::from_str(&config.database_url)
+/// Connection options shared by the pool and the dedicated migration
+/// connection. Rebuild migrations need the same path, WAL settings and
+/// `foreign_keys(true)` default as every other connection.
+pub fn connect_options(config: &Config) -> Result<SqliteConnectOptions> {
+    Ok(SqliteConnectOptions::from_str(&config.database_url)
         .map_err(|err| AppError::internal(format!("invalid database url: {err}")))?
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)
@@ -36,8 +38,15 @@ pub async fn connect(config: &Config) -> Result<SqlitePool> {
         .busy_timeout(Duration::from_secs(5))
         // Reclaim WAL disk space after checkpoints instead of keeping the
         // high-water mark forever (SQLite default is unlimited).
-        .pragma("journal_size_limit", "8388608");
+        .pragma("journal_size_limit", "8388608"))
+}
 
+/// Open the pool with the pragmas required for a small, reliable deployment.
+pub async fn connect(config: &Config) -> Result<SqlitePool> {
+    open_pool(connect_options(config)?).await
+}
+
+async fn open_pool(options: SqliteConnectOptions) -> Result<SqlitePool> {
     SqlitePoolOptions::new()
         .max_connections(8)
         .acquire_timeout(Duration::from_secs(10))
@@ -65,7 +74,8 @@ pub async fn checkpoint_wal(pool: &SqlitePool) -> Result<()> {
 
 /// Connect and run migrations.
 pub async fn init(config: &Config) -> Result<SqlitePool> {
-    let pool = connect(config).await?;
-    migrate::run(&pool).await?;
+    let options = connect_options(config)?;
+    let pool = open_pool(options.clone()).await?;
+    migrate::run(&pool, &options).await?;
     Ok(pool)
 }

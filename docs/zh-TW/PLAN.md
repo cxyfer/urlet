@@ -214,4 +214,4 @@
 | 靜態檢查 | 無警告 | `cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 通過 |
 
 上表為 v1.0 的歷史紀錄；v1.1 的最新數字（二進位 5.7 MB glibc／5.8 MB musl、映像 14.8 MB、
-RSS 8.7 MB、冷啟動約 0.1 秒、245 個測試）請見 `docs/SPEC.md` §3.3，不要直接引用上表。
+RSS 8.7 MB、冷啟動約 0.1 秒、完整測試套件）請見 `docs/SPEC.md` §3.3，不要直接引用上表。

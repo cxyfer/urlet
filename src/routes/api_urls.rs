@@ -56,6 +56,9 @@ impl ListQuery {
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreatePayload {
     pub target_url: String,
+    /// Hostname of the target domain; omitted means the default domain.
+    #[serde(default)]
+    pub domain: Option<String>,
     #[serde(default)]
     pub slug: Option<String>,
     #[serde(default)]
@@ -85,6 +88,8 @@ pub struct CreatePayload {
 pub struct UpdatePayload {
     #[serde(default)]
     pub target_url: Option<String>,
+    #[serde(default)]
+    pub domain: Option<String>,
     #[serde(default)]
     pub slug: Option<String>,
     #[serde(default, deserialize_with = "double_option")]
@@ -134,7 +139,12 @@ pub async fn list(
                 .into_iter()
                 .map(|tag| tag.name)
                 .collect();
-            UrlDto::new(row, &state.config.base_url, names)
+            UrlDto::new(
+                row,
+                &state.domain_hostname(row.domain_id),
+                &state.config.base_scheme,
+                names,
+            )
         })
         .collect();
 
@@ -189,6 +199,7 @@ pub async fn create(
     let url = context
         .create(CreateInput {
             target_url: payload.target_url,
+            domain: payload.domain,
             slug: payload.slug,
             title: payload.title,
             notes: payload.notes,
@@ -231,6 +242,7 @@ pub async fn update(
             &existing,
             UpdateInput {
                 target_url: payload.target_url,
+                domain: payload.domain,
                 slug: payload.slug,
                 title: payload.title,
                 notes: payload.notes,
@@ -278,7 +290,12 @@ async fn to_dto(state: &AppState, url: &urls::Url) -> Result<UrlDto, ApiError> {
         .into_iter()
         .map(|tag| tag.name)
         .collect();
-    Ok(UrlDto::new(url, &state.config.base_url, names))
+    Ok(UrlDto::new(
+        url,
+        &state.domain_hostname(url.domain_id),
+        &state.config.base_scheme,
+        names,
+    ))
 }
 
 fn clean(value: &Option<String>) -> Option<String> {

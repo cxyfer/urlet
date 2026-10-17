@@ -103,6 +103,15 @@
                 <span class="hint">{{ lang.t("dashboard.new.destination_hint") }}</span>
             </div>
             <div class="field">
+                <label class="label" for="domain">{{ lang.t("dashboard.new.domain") }}</label>
+                <select class="select" id="domain" name="domain">
+                    {% for domain in domains %}
+                    <option value="{{ domain.hostname }}" {% if domain.is_default %}selected{% endif %}>{{ domain.hostname }}{% if domain.is_default %} · {{ lang.t("dashboard.new.domain_default") }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+                <span class="hint">{{ lang.t("dashboard.new.domain_hint") }}</span>
+            </div>
+            <div class="field">
                 <label class="label" for="slug">{{ lang.t("dashboard.new.slug") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
                 <input class="input" type="text" id="slug" name="slug" maxlength="64"
                        placeholder="{{ lang.t("dashboard.new.slug_placeholder") }}">
@@ -264,7 +273,7 @@
                             <span class="mono" id="short-{{ url.id }}">{{ url.short_url }}</span>
                             <div class="row row-tight">
                                 <button class="btn btn-sm btn-sage" type="button" data-copy="#short-{{ url.id }}">{{ lang.t("common.copy") }}</button>
-                                <a class="btn btn-sm btn-ghost" href="/{{ url.slug }}" target="_blank" rel="noopener">{{ lang.t("common.open") }}</a>
+                                <a class="btn btn-sm btn-ghost" href="{{ url.short_url }}" target="_blank" rel="noopener">{{ lang.t("common.open") }}</a>
                             </div>
                         </div>
                     </td>

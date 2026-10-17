@@ -258,9 +258,11 @@ target is still met.
 | `/app` | Dashboard | Stat cards, daily trend chart, link list (search/filter/pagination), create form |
 | `/app/urls/{id}` | Link detail | Edit form, analytics charts, recent clicks, delete (QR codes are a non-goal) |
 | `/app/account` | Account | Profile, change password, session list, API token management |
-| `/app/admin` | Admin panel | Users, all links, invite codes, settings, audit log |
+| `/app/admin` | Admin panel | Users, all links, domains, invite codes, settings, audit log |
+| `/app/admin/domains` | Domain management | Add, activate, disable, set default and delete domains |
 | `/app/lang/{code}` | Language switch | Sets the `urlet_lang` cookie and 302-redirects to `next` (or to `/app`) |
 | `/{slug}` | Redirect / password page / 410 / 404 | Public |
+| Extra domain | Redirect-only | `/` shows a small landing page, `/{slug}` redirects, `/app` 308s to canonical, `/api` is 404 |
 
 **UI technology**: Askama templates + hand-written CSS (including `prefers-color-scheme` dark mode) +
 roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form enhancements).
@@ -382,19 +384,21 @@ login_attempts (auditing)
 4. **Enums**: `TEXT + CHECK` constraints, which leave room to grow (SQLite has no native ENUM).
 5. **Booleans**: `INTEGER 0/1`.
 6. **Rollup table**: `url_daily_stats` is the acceleration layer for analytics queries, upserted on write.
-7. **Reserved extension columns**: `api_tokens.scopes`, `urls.notes`, the `domains` table, `audit_logs.metadata`.
+7. **Reserved extension columns**: `api_tokens.scopes`, `urls.notes`, `audit_logs.metadata`.
 
-### 6.3 DDL (`migrations/0001_init.sql` summary)
+> Multi-domain support is implemented. The detailed design, routing matrix and migration notes are in [`docs/MULTI_DOMAIN.md`](MULTI_DOMAIN.md).
 
-> The complete and only source of truth is `migrations/0001_init.sql`; the table below is a structural summary.
+### 6.3 DDL (migration summary)
+
+> The complete source of truth is the migration files (`0001_init.sql` plus `0003_multi_domain.sql` for the multi-domain changes); the table below is a structural summary.
 
 | Table | Main columns | Purpose |
 |-------|--------------|---------|
 | `users` | id, email, email_normalized(UNIQUE), password_hash, display_name, role, status, email_verified_at, last_login_at, created_at, updated_at, deleted_at | Users |
 | `sessions` | id, user_id, token_hash(UNIQUE), user_agent, ip_hash, created_at, last_seen_at, expires_at, revoked_at | Login state |
 | `api_tokens` | id, user_id, name, token_prefix, token_hash(UNIQUE), scopes, last_used_at, expires_at, created_at, revoked_at | API credentials |
-| `domains` | id, hostname(UNIQUE), is_default, is_verified, created_by, created_at | Reserved for multi-domain (v1 uses only the default domain) |
-| `urls` | id, user_id, domain_id, slug(UNIQUE), target_url, title, notes, password_hash, expires_at, max_clicks, click_count, unique_click_count, redirect_type, status, is_custom_slug, last_clicked_at, created_at, updated_at, deleted_at | Short links |
+| `domains` | id, hostname(UNIQUE, NOCASE), is_default, is_verified, status, source, created_by, created_at, updated_at | Canonical/system, `URLET_DOMAINS`/env and admin/UI domains; `pending`/`active`/`disabled` |
+| `urls` | id, user_id, domain_id(NOT NULL), slug, target_url, title, notes, password_hash, expires_at, max_clicks, click_count, unique_click_count, redirect_type, status, is_custom_slug, last_clicked_at, created_at, updated_at, deleted_at, UNIQUE(domain_id,slug) | Short links; the slug namespace is per domain |
 | `tags` | id, user_id, name, color, created_at, UNIQUE(user_id,name) | Tags |
 | `url_tags` | url_id, tag_id (PK) | Tag associations |
 | `clicks` | id, url_id, clicked_at, ip_hash, visitor_hash, user_agent, referrer, referrer_host, country_code, device_type, browser, os, is_bot, is_unique, password_protected | Click details |
@@ -409,7 +413,7 @@ login_attempts (auditing)
 
 | Index | Purpose |
 |-------|---------|
-| `urls(slug)` UNIQUE | Redirect lookup (hottest path) |
+| `urls(domain_id, slug)` UNIQUE | Redirect lookup (hottest path; per-domain slug namespace) |
 | `urls(user_id, created_at DESC)` | "My links" listing |
 | `urls(expires_at) WHERE expires_at IS NOT NULL` | Expiry pruning/filtering |
 | `clicks(url_id, clicked_at DESC)` | Per-link analytics |
@@ -431,7 +435,7 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
   `captcha_secret_key=` (empty), `captcha_on_register=false`, `captcha_on_login=false`,
   `captcha_on_create=false`, `captcha_allowed_hostnames=` (empty). A non-empty environment variable
   overrides the stored value (FR-BOT-2).
-- `domains`: at startup the default domain is inserted/updated from the host of `URLET_BASE_URL` (`is_default=1`).
+- `domains`: at startup the canonical domain is inserted/updated from the host of `URLET_BASE_URL` (`source=system`, always active). It is made the default only when no default exists, so an administrator can choose another default. `URLET_DOMAINS` inserts missing domains as `active`/`env`; it never changes an existing row.
 
 ---
 
@@ -455,9 +459,10 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/v1/urls` | Query parameters: `q, tag, status, page, per_page, sort(created_at\|clicks\|slug\|updated\|expires)` |
-| POST | `/api/v1/urls` | `{target_url, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?, captcha_token?}`; API-token calls are captcha-exempt, session-cookie calls honour `on_create` |
+| POST | `/api/v1/urls` | `{target_url, domain?, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?, captcha_token?}`; API-token calls are captcha-exempt, session-cookie calls honour `on_create` |
+| GET | `/api/v1/domains` | Active domains available for new links |
 | GET | `/api/v1/urls/{id}` | Single link (with `short_url`, `is_expired`, `has_password`) |
-| PATCH | `/api/v1/urls/{id}` | Partial update; `password: null` clears the password; `expires_at: null` clears the expiry |
+| PATCH | `/api/v1/urls/{id}` | Partial update; `domain` moves the link; `password: null` clears the password; `expires_at: null` clears the expiry |
 | DELETE | `/api/v1/urls/{id}` | Soft delete → 204 |
 | GET | `/api/v1/urls/{id}/stats?days=30` | Daily trend + dimension breakdown + summary |
 | GET | `/api/v1/urls/{id}/clicks?page=1` | Click details (paginated) |
@@ -499,7 +504,7 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 | GET | `/app/lang/{code}` | Set the `urlet_lang` cookie and 302 to `next`, or to `/app` when `next` is missing or not a same-site relative path |
 | GET | `/{slug}` | Redirect (302 and friends), password page (HTML), or a 410/404 page |
 | POST | `/{slug}/unlock` | Form or JSON `{password}`; on success a JSON request returns 200 `{ok, redirect}` and a form request 303 → `/{slug}` |
-| GET | `/api/v1/public/urls/{slug}` | Public metadata: `{slug, has_password, is_expired, state, title?}` (**never includes the target**) |
+| GET | `/api/v1/public/urls/{slug}?domain=<hostname>` | Public metadata: `{domain, slug, has_password, is_expired, state, title?}` (**never includes the target**); without `domain` the default domain is used |
 
 ---
 
@@ -508,7 +513,8 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `URLET_BIND` | `0.0.0.0:8080` | Listen address |
-| `URLET_BASE_URL` | `http://localhost:8080` | Public base URL (used to build short links, check CSRF same-origin, and decide cookie `Secure`) |
+| `URLET_BASE_URL` | `http://localhost:8080` | Canonical public base URL (used to build short links, check CSRF same-origin, and decide cookie `Secure`) |
+| `URLET_DOMAINS` | Empty | Extra redirect-only hostnames, comma separated; inserted as `active` on first boot and never overriding an existing row |
 | `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite connection string |
 | `URLET_DATA_DIR` | Directory containing the database | Where an auto-generated secret is stored |
 | `URLET_HEALTHCHECK_URL` | Derived from `URLET_BIND` | Target URL for `urlet healthcheck` |
@@ -549,7 +555,7 @@ urlet/
 ├── docker-compose.tls.yml        # optional: Caddy automatic HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql
+├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql  migrations/0003_multi_domain.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama templates (base, app_base, landing.html + pages + admin/)
@@ -558,9 +564,9 @@ urlet/
 │   ├── assets/{app.css,app.js,favicon.svg}
 │   ├── i18n/{mod.rs,en.json,zh-Hant.json,zh-Hans.json}
 │   ├── db/{mod,migrate,users,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
-│   ├── services/{auth,urls,admin,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
-│   ├── middleware/{mod,auth,csrf,security,locale}.rs
-│   └── routes/{mod,api,api_auth,api_urls,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract}.rs
+│   ├── services/{auth,urls,admin,domains,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
+│   ├── middleware/{mod,auth,csrf,domain,security,locale}.rs
+│   └── routes/{mod,api,api_auth,api_urls,api_domains,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract}.rs
 │       └── pages/{mod,auth,dashboard,urls,account,admin,home}.rs
 └── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs,i18n.rs,captcha.rs}
 ```
@@ -608,9 +614,9 @@ urlet port, so Caddy reverse-proxies it.
 v1.0:
 
 - [x] `cargo build --release` succeeds and the binary is **4.2 MB** ≤ 15 MB
-- [x] `cargo test` is all green: **178** items (93 unit + 84 integration + 1 binary)
+- [x] `cargo test` is all green (unit + integration + binary)
 - [x] `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` report no warnings
-- [x] `scripts/smoke.sh` passes all **81** checks against the real binary (including password protection, expiry, ownership isolation, CSRF, invite codes, and restart persistence)
+- [x] `scripts/smoke.sh` passes all checks against the real binary (including password protection, expiry, ownership isolation, CSRF, invite codes, and restart persistence)
 - [x] `docker compose config` passes (both the base file and the TLS overlay verified with Docker Compose 27.4)
 - [x] `docker build` succeeds, the image is **13.2 MB**, and the container reports `healthy` after `docker compose up -d`
 - [x] The container runs as uid 10001 with a read-only root filesystem and `cap_drop: ALL`; data is written only to the `/data` volume
@@ -634,7 +640,7 @@ v1.1 additions (this batch):
 - [ ] The siteverify call is the only outbound HTTP request, goes through `ureq` 2 over rustls + webpki-roots (no OpenSSL), and is off by default
 - [ ] `POST /api/v1/urls` is captcha-exempt only for API-token calls (a session-cookie call honours `on_create`), and the admin secret-key field is write-only
 - [ ] `GET /` returns 200 as a landing/navigation page for anonymous and signed-in visitors, and no longer redirects to `/app`
-- [ ] `cargo test` (245 tests), `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are clean, `scripts/smoke.sh` passes all 81 end-to-end checks, and the container image builds and runs under musl (§3.3)
+- [ ] `cargo test` (the full suite), `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are clean, `scripts/smoke.sh` passes all end-to-end checks, and the container image builds and runs under musl (§3.3)
 
 ---
 
@@ -642,7 +648,6 @@ v1.1 additions (this batch):
 
 | Feature | Already reserved |
 |---------|------------------|
-| Multiple / custom domains | `domains` table + `urls.domain_id` |
 | User groups and fine-grained permissions | `api_tokens.scopes`; `users.role` can grow into a `groups` table |
 | Password reset / email verification | `users.email_verified_at`; a `password_resets` table can be added |
 | GeoIP country analytics | `clicks.country_code` already exists; only a resolver is missing |

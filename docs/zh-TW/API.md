@@ -30,7 +30,7 @@
 | 401 | `unauthorized` | 未認證、Token 失效、密碼錯誤 |
 | 403 | `forbidden` | 權限不足、CSRF 拒絕、註冊關閉、配額用盡 |
 | 404 | `not_found` | 資源不存在（含不屬於你的資源） |
-| 409 | `conflict` | 唯一性衝突（email、slug） |
+| 409 | `conflict` | 唯一性衝突（email、網域上的 slug、網域 hostname） |
 | 410 | `gone` | 短網址已過期或達點擊上限 |
 | 422 | `validation_error` | 欄位驗證失敗，`details.field` 指出欄位 |
 | 429 | `rate_limited` | 速率限制，附 `Retry-After` 標頭 |
@@ -154,6 +154,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 ```json
 {
   "target_url": "example.com/path",
+  "domain": "go.example.com",
   "slug": "promo",
   "title": "Launch",
   "notes": "internal note",
@@ -171,7 +172,8 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 - `captcha_token` 只在「使用 **Session Cookie** 認證」且「建立短網址」的防機器人驗證已啟用時才會讀取；
   以 `Bearer` Token 呼叫時會被忽略。驗證失敗回 `400` 且 `error.code = "captcha_failed"`
 - `target_url` 必填；只接受 `http`/`https`；未寫 scheme 的裸網域會自動補 `https://`
-- `slug` 可省略（自動產生 7 字元 base62）；僅允許 `[A-Za-z0-9_-]`，長度 1–64，且不得為保留字
+- `domain` 可省略（使用目前預設網域）；指定時必須是 active 網域，否則回 `422`；slug 命名空間以網域為單位，同一個 slug 可以存在於兩個網域
+- `slug` 可省略（自動產生 7 字元 base62）；僅允許 `[A-Za-z0-9_-]`，長度 1–64，且不得為保留字；若 slug **在選定網域上**已被使用，回 `409`
 - `expires_at` 必須是未來時間；`max_clicks` ≥ 1
 - `redirect_type` ∈ {301, 302, 307, 308}
 - 超過 `max_urls_per_user` 配額 → `403`
@@ -185,10 +187,10 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 部分更新：**未出現的欄位維持不變，明確傳 `null` 表示清除**。
 
 ```json
-{ "title": "新標題", "password": null, "max_clicks": null, "tags": ["new"], "status": "disabled" }
+{ "title": "新標題", "domain": "links.example.com", "password": null, "max_clicks": null, "tags": ["new"], "status": "disabled" }
 ```
 
-`200` → 更新後的 `UrlDto`。空物件 → `400`。
+`200` → 更新後的 `UrlDto`。空物件 → `400`。把連結搬到另一個 active 網域時，會重新檢查該網域的 slug，衝突回 `409`。若連結目前所在網域已被停用，仍可編輯，只要不搬移網域。
 
 ### `DELETE /api/v1/urls/{id}`
 
@@ -221,6 +223,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 ```json
 {
   "id": 1,
+  "domain": "s.example.com",
   "slug": "promo",
   "short_url": "https://s.example.com/promo",
   "target_url": "https://example.com/landing",
@@ -293,12 +296,20 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 - 密碼錯誤 → JSON `401`；表單則重新渲染密碼頁（`401`）
 - 超過速率限制 → `429`
 
-### `GET /api/v1/public/urls/{slug}`
+### `GET /api/v1/public/urls/{slug}?domain=<hostname>`
 
-公開中介資料，不含目標網址：
+公開中介資料，不含目標網址。省略 `domain` 時使用預設網域，讓多網域之前既有的呼叫對預設網域上的連結仍然有效。
 
 ```json
-{ "slug": "promo", "title": "Launch", "has_password": true, "is_expired": false, "state": "active" }
+{ "domain": "go.example.com", "slug": "promo", "title": "Launch", "has_password": true, "is_expired": false, "state": "active" }
+```
+
+### `GET /api/v1/domains`
+
+已登入使用者可列出建立短網址時可選的 active 網域：
+
+```json
+[ { "hostname": "s.example.com", "is_default": true }, { "hostname": "go.example.com", "is_default": false } ]
 ```
 
 ---
@@ -367,6 +378,10 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | PATCH | `/admin/users/{id}` | `{ "role"?, "status"?, "display_name"? }` |
 | POST | `/admin/users/{id}/password` | `{ "new_password": "..." }` → `204`，撤銷該帳號所有 Session |
 | DELETE | `/admin/users/{id}` | `204`，軟刪除帳號與其所有短網址 |
+| GET | `/admin/domains` | 所有網域，含連結數、狀態與來源 |
+| POST | `/admin/domains` | `{ "hostname": "go.example.com" }` → `201`，建立為 `pending` |
+| PATCH | `/admin/domains/{id}` | `{ "status"?: "active"\|"disabled", "is_default"?: true }` |
+| DELETE | `/admin/domains/{id}` | `204`；僅限沒有連結、非預設的 UI 網域 |
 | GET | `/admin/urls?q=&status=&user_id=&page=` | 全站短網址 |
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |

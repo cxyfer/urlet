@@ -636,9 +636,10 @@ async fn hostname_app(url: &str, allowed_hostnames: Option<&str>) -> TestApp {
 
 /// Registration request with an explicit `Host` header.
 fn register_with_host(token: &str, host: &str) -> axum::http::Request<axum::body::Body> {
+    let email = format!("host-{}@example.com", host.replace([':', '.', '/'], "-"));
     let mut request = post_json(
         "/api/v1/auth/register",
-        api_register_body(&format!("host-{host}@example.com"), Some(token)),
+        api_register_body(&email, Some(token)),
     );
     request.headers_mut().insert(
         axum::http::header::HOST,
@@ -662,7 +663,9 @@ async fn the_reported_hostname_must_be_a_configured_name() {
     ] {
         let mock = MockSiteverify::start(Reply::SuccessWithHostname(accepted.to_string())).await;
         let app = hostname_app(&mock.url, Some("s.example.com")).await;
-        let response = app.send(register_with_host("token", "s.example.com")).await;
+        let response = app
+            .send(register_with_host("token", "app.example.com"))
+            .await;
         assert_eq!(
             response.status,
             AxumStatus::CREATED,
@@ -671,32 +674,41 @@ async fn the_reported_hostname_must_be_a_configured_name() {
         );
     }
 
-    // The request `Host` matches the reported hostname, but neither is
-    // configured: refused.
+    // A reported hostname that is neither `base_host` nor allowlisted is
+    // refused. The request itself uses the canonical host: multi-domain routing
+    // rejects API calls on other hosts before captcha verification.
     let mock =
         MockSiteverify::start(Reply::SuccessWithHostname("other.example.com".to_string())).await;
     let app = hostname_app(&mock.url, Some("s.example.com")).await;
     assert_captcha_error(
-        &app.send(register_with_host("token", "other.example.com"))
+        &app.send(register_with_host("token", "app.example.com"))
             .await,
     );
 
     // Same without any allowlist: `base_host` is the only trusted name.
     let mock = MockSiteverify::start(Reply::SuccessWithHostname("s.example.com".to_string())).await;
     let app = hostname_app(&mock.url, None).await;
-    assert_captcha_error(&app.send(register_with_host("token", "s.example.com")).await);
+    assert_captcha_error(
+        &app.send(register_with_host("token", "app.example.com"))
+            .await,
+    );
 
     // A foreign hostname and a lookalike suffix are refused.
     for foreign in ["evil.example", "s.example.com.evil.example"] {
         let mock = MockSiteverify::start(Reply::SuccessWithHostname(foreign.to_string())).await;
         let app = hostname_app(&mock.url, Some("s.example.com")).await;
-        assert_captcha_error(&app.send(register_with_host("token", "s.example.com")).await);
+        assert_captcha_error(
+            &app.send(register_with_host("token", "app.example.com"))
+                .await,
+        );
     }
 
     // A provider that reports nothing at all keeps working.
     let mock = MockSiteverify::start(Reply::Success).await;
     let app = hostname_app(&mock.url, Some("s.example.com")).await;
-    let response = app.send(register_with_host("token", "s.example.com")).await;
+    let response = app
+        .send(register_with_host("token", "app.example.com"))
+        .await;
     assert_eq!(response.status, AxumStatus::CREATED, "{}", response.body);
 }
 
@@ -708,7 +720,6 @@ async fn the_hostname_allowlist_can_be_configured_at_runtime() {
         let url = mock.url.clone();
         move |config| {
             config.captcha_verify_url = Some(url);
-            config.base_host = "app.example.com".to_string();
         }
     })
     .await;
@@ -729,7 +740,10 @@ async fn the_hostname_allowlist_can_be_configured_at_runtime() {
     assert_eq!(enabled.status, AxumStatus::OK, "{}", enabled.body);
 
     // Without an allowlist the second hostname is refused.
-    assert_captcha_error(&app.send(register_with_host("token", "s.example.com")).await);
+    assert_captcha_error(
+        &app.send(register_with_host("token", "localhost:8080"))
+            .await,
+    );
 
     // Adding it makes the very same token acceptable.
     let updated = app
@@ -745,7 +759,9 @@ async fn the_hostname_allowlist_can_be_configured_at_runtime() {
         "s.example.com,extra.example.com",
         "the stored value is canonicalised"
     );
-    let response = app.send(register_with_host("token", "s.example.com")).await;
+    let response = app
+        .send(register_with_host("token", "localhost:8080"))
+        .await;
     assert_eq!(response.status, AxumStatus::CREATED, "{}", response.body);
 
     // An unusable value is refused, and never reaches the settings.

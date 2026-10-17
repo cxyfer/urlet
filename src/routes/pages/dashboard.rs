@@ -17,6 +17,7 @@ use crate::routes::pages::{
 };
 use crate::services::captcha::CaptchaFlow;
 use crate::services::chart;
+use crate::services::domains::DomainOption;
 use crate::services::time;
 use crate::state::AppState;
 
@@ -41,7 +42,8 @@ pub struct DashboardPage {
     pub quota: i64,
     pub used: i64,
     pub default_redirect_type: i64,
-    pub public_base: String,
+    /// Domains selectable in the create form.
+    pub domains: Vec<DomainOption>,
     /// Provider widget for the create form, or `None` when it is not protected.
     pub captcha: Option<crate::services::captcha::CaptchaWidget>,
     /// Localised "3 of 10 links used" line.
@@ -110,7 +112,12 @@ pub async fn dashboard(
                 .into_iter()
                 .map(|tag| tag.name)
                 .collect();
-            UrlRow::new(&UrlDto::new(row, &state.config.base_url, names))
+            UrlRow::new(&UrlDto::new(
+                row,
+                &state.domain_hostname(row.domain_id),
+                &state.config.base_scheme,
+                names,
+            ))
         })
         .collect();
 
@@ -161,7 +168,7 @@ pub async fn dashboard(
         quota,
         used,
         default_redirect_type: state.settings.default_redirect_type(),
-        public_base: state.config.base_url.clone(),
+        domains: state.domains.active_options(),
         captcha: crate::routes::pages::captcha_widget(&state, CaptchaFlow::Create),
         usage: i18n::format(
             lang,

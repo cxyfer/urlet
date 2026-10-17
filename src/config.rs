@@ -12,6 +12,12 @@ use crate::services::secret;
 pub enum ConfigError {
     #[error("invalid {name}: {value:?}")]
     Invalid { name: &'static str, value: String },
+    #[error(
+        "URLET_BASE_URL host is not supported: {value:?}; use an ASCII hostname \
+         (punycode for IDN). IPv6 literals and underscore service names are allowed \
+         for the canonical host"
+    )]
+    InvalidBaseHost { value: String },
     #[error("io error on {path}: {source}")]
     Io {
         path: PathBuf,
@@ -44,6 +50,12 @@ pub struct Config {
     pub base_url: String,
     pub base_scheme: String,
     pub base_host: String,
+    /// Extra hostnames seeded from `URLET_DOMAINS`. Insert-only; the database
+    /// stays authoritative for lifecycle state after the first boot.
+    pub extra_domains: Vec<String>,
+    /// Whether `URLET_DOMAINS` was present at all. An unset variable must not
+    /// detach existing environment-managed domains during bootstrap.
+    pub extra_domains_declared: bool,
     pub secure_cookies: bool,
     pub database_url: String,
     pub data_dir: PathBuf,
@@ -87,6 +99,8 @@ impl std::fmt::Debug for Config {
             .field("base_url", &self.base_url)
             .field("base_scheme", &self.base_scheme)
             .field("base_host", &self.base_host)
+            .field("extra_domains", &self.extra_domains)
+            .field("extra_domains_declared", &self.extra_domains_declared)
             .field("secure_cookies", &self.secure_cookies)
             .field("database_url", &self.database_url)
             .field("data_dir", &self.data_dir)
@@ -132,6 +146,13 @@ impl Config {
         let base_url = env_str("URLET_BASE_URL").unwrap_or_else(|| "http://localhost:8080".into());
         let base_url = base_url.trim().trim_end_matches('/').to_string();
         let (base_scheme, base_host) = split_base_url(&base_url)?;
+        let base_host =
+            canonical_base_host(&base_host).ok_or_else(|| ConfigError::InvalidBaseHost {
+                value: base_url.clone(),
+            })?;
+        let extra_domains_raw = env_str("URLET_DOMAINS");
+        let extra_domains_declared = extra_domains_raw.is_some();
+        let extra_domains = parse_extra_domains(extra_domains_raw, &base_host)?;
 
         let database_url = env_str("URLET_DATABASE_URL")
             .unwrap_or_else(|| "sqlite:///data/urlet.db?mode=rwc".into());
@@ -167,6 +188,8 @@ impl Config {
             base_url,
             base_scheme,
             base_host,
+            extra_domains,
+            extra_domains_declared,
             secure_cookies,
             database_url,
             data_dir,
@@ -212,6 +235,8 @@ impl Config {
             base_url: "http://localhost:8080".into(),
             base_scheme: "http".into(),
             base_host: "localhost:8080".into(),
+            extra_domains: Vec::new(),
+            extra_domains_declared: false,
             secure_cookies: false,
             database_url: format!("sqlite://{}/test.db?mode=rwc", data_dir.display()),
             data_dir: data_dir.to_path_buf(),
@@ -238,9 +263,14 @@ impl Config {
         }
     }
 
-    /// Absolute URL for a slug, e.g. `https://s.example.com/abc1234`.
+    /// Absolute URL for a slug on the canonical host.
     pub fn short_url(&self, slug: &str) -> String {
         format!("{}/{}", self.base_url, slug)
+    }
+
+    /// Absolute URL for a slug on any managed hostname.
+    pub fn short_url_on(&self, hostname: &str, slug: &str) -> String {
+        format!("{}://{}/{}", self.base_scheme, hostname, slug)
     }
 
     /// Whether the request scheme should be treated as secure.
@@ -277,6 +307,78 @@ fn parse_bool(value: &str) -> bool {
         value.trim().to_ascii_lowercase().as_str(),
         "1" | "true" | "yes" | "on"
     )
+}
+
+/// Canonical stored form of the `URLET_BASE_URL` host.
+///
+/// Normal hostnames use the same rules as request hosts. The canonical host may
+/// also be an IPv6 literal or a Docker-style underscore service name; those are
+/// accepted as an opaque ASCII key so the instance still starts. Unicode
+/// hostnames are rejected instead of silently serving 404s: use their punycode
+/// form in `URLET_BASE_URL`.
+fn canonical_base_host(raw: &str) -> Option<String> {
+    if let Some(host) = crate::services::domains::normalize_host(raw) {
+        return Some(host);
+    }
+    let trimmed = raw.trim();
+    if trimmed.is_empty()
+        || !trimmed.is_ascii()
+        || (!trimmed.starts_with('[') && !trimmed.contains('_'))
+        || trimmed.chars().any(|c| {
+            c.is_control() || c.is_whitespace() || matches!(c, '/' | '\\' | '@' | '#' | '?')
+        })
+    {
+        return None;
+    }
+
+    if let Some(rest) = trimmed.strip_prefix('[') {
+        let end = rest.find(']')?;
+        let address = &trimmed[1..end + 1];
+        if address.parse::<std::net::Ipv6Addr>().is_err() {
+            return None;
+        }
+        let suffix = &trimmed[end + 2..];
+        if !suffix.is_empty() {
+            let port = suffix.strip_prefix(':')?;
+            match port.parse::<u16>() {
+                Ok(port) if port > 0 => {}
+                _ => return None,
+            }
+        }
+    }
+
+    Some(crate::services::domains::raw_host_key(trimmed))
+}
+
+/// Parse `URLET_DOMAINS`: comma separated hostnames, normalised, de-duplicated
+/// and with the canonical host removed.
+fn parse_extra_domains(raw: Option<String>, base_host: &str) -> Result<Vec<String>, ConfigError> {
+    let Some(raw) = raw else {
+        return Ok(Vec::new());
+    };
+    let mut result: Vec<String> = Vec::new();
+    for part in raw.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let host = crate::services::domains::validate_domain_hostname(part).map_err(|_| {
+            ConfigError::Invalid {
+                name: "URLET_DOMAINS",
+                value: raw.clone(),
+            }
+        })?;
+        if host.eq_ignore_ascii_case(base_host) {
+            continue;
+        }
+        if !result
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&host))
+        {
+            result.push(host);
+        }
+    }
+    Ok(result)
 }
 
 /// Split a base URL into `(scheme, host)` without pulling in a URL parser.
@@ -363,6 +465,49 @@ mod tests {
         for falsy in ["0", "false", "no", "off", ""] {
             assert!(!parse_bool(falsy), "{falsy}");
         }
+    }
+
+    #[test]
+    fn canonicalises_operator_supplied_base_hosts() {
+        assert_eq!(
+            canonical_base_host("Example.COM."),
+            Some("example.com".into())
+        );
+        assert_eq!(canonical_base_host(""), None);
+        assert_eq!(canonical_base_host("[::1]:8080"), Some("[::1]:8080".into()));
+        assert_eq!(
+            canonical_base_host("urlet_app:443"),
+            Some("urlet_app".into())
+        );
+        assert_eq!(canonical_base_host("例え.jp"), None);
+        assert_eq!(canonical_base_host("bad host"), None);
+        assert_eq!(canonical_base_host("example.com:99999"), None);
+        assert_eq!(canonical_base_host("[not-ipv6]"), None);
+        assert_eq!(canonical_base_host("[::1]:99999"), None);
+    }
+
+    #[test]
+    fn parses_and_deduplicates_extra_domains() {
+        let parsed = parse_extra_domains(
+            Some("Go.Example.com, go.example.com, links.example.com".into()),
+            "localhost:8080",
+        )
+        .expect("valid list");
+        assert_eq!(parsed, vec!["go.example.com", "links.example.com"]);
+
+        let parsed = parse_extra_domains(
+            Some("localhost:8080, b.example.com".into()),
+            "localhost:8080",
+        )
+        .expect("canonical host is filtered");
+        assert_eq!(parsed, vec!["b.example.com"]);
+
+        assert!(
+            parse_extra_domains(Some("https://bad.example.com".into()), "localhost:8080").is_err()
+        );
+        assert!(parse_extra_domains(Some("".into()), "localhost:8080")
+            .expect("empty")
+            .is_empty());
     }
 
     #[test]

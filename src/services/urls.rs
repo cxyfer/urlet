@@ -2,13 +2,14 @@
 
 use sqlx::SqlitePool;
 
+use crate::db::domains::{self as domain_db, Domain};
 use crate::db::tags;
 use crate::db::urls::{self, NewUrl, Url, UrlState, UrlUpdate};
 use crate::db::users::User;
 use crate::error::{AppError, Result};
 use crate::services::audit::{action, target, Audit};
 use crate::services::settings::Settings;
-use crate::services::{password, slug, target as target_url, time};
+use crate::services::{domains as domain_service, password, slug, target as target_url, time};
 
 /// Maximum tags attached to one link.
 pub const MAX_TAGS: usize = 10;
@@ -33,6 +34,8 @@ pub struct UrlContext<'a> {
 #[derive(Debug, Clone, Default)]
 pub struct CreateInput {
     pub target_url: String,
+    /// Hostname of the link domain; `None` means the current default domain.
+    pub domain: Option<String>,
     pub slug: Option<String>,
     pub title: Option<String>,
     pub notes: Option<String>,
@@ -48,6 +51,8 @@ pub struct CreateInput {
 #[derive(Debug, Clone, Default)]
 pub struct UpdateInput {
     pub target_url: Option<String>,
+    /// Move the link to another active domain.
+    pub domain: Option<String>,
     pub slug: Option<String>,
     pub title: Option<Option<String>>,
     pub notes: Option<Option<String>>,
@@ -239,6 +244,8 @@ impl UrlContext<'_> {
             }
         }
 
+        let domain = self.resolve_domain(input.domain.as_deref()).await?;
+        let domain_id = domain.id;
         let tags = normalize_tags(&input.tags)?;
         let (slug, is_custom) = match input
             .slug
@@ -248,17 +255,18 @@ impl UrlContext<'_> {
         {
             Some(custom) => {
                 let custom = slug::validate(custom)?;
-                if urls::slug_taken(self.pool, &custom)
+                if urls::slug_taken(self.pool, domain_id, &custom)
                     .await
                     .map_err(AppError::from)?
                 {
                     return Err(AppError::conflict(format!(
-                        "the slug '{custom}' is already taken"
+                        "the slug '{custom}' is already taken on {}",
+                        domain.hostname
                     )));
                 }
                 (custom, true)
             }
-            None => (self.allocate_slug().await?, false),
+            None => (self.allocate_slug(domain_id).await?, false),
         };
 
         let expires_at = match input.expires_at.as_deref() {
@@ -282,9 +290,6 @@ impl UrlContext<'_> {
             None => None,
         };
         let password_hash = prepare_password_async(input.password.as_deref()).await?;
-        let domain_id = crate::db::domains::default_id(self.pool)
-            .await
-            .map_err(AppError::from)?;
 
         let url_id = urls::create(
             self.pool,
@@ -316,7 +321,11 @@ impl UrlContext<'_> {
         Audit::new(action::URL_CREATED)
             .actor(self.actor.id, &self.actor.role)
             .target(target::URL, url_id)
-            .metadata(serde_json::json!({ "slug": slug, "custom_slug": is_custom }))
+            .metadata(serde_json::json!({
+                "slug": slug,
+                "domain": domain.hostname,
+                "custom_slug": is_custom
+            }))
             .ip_hash(self.ip_hash.map(str::to_string))
             .record(self.pool)
             .await;
@@ -331,20 +340,63 @@ impl UrlContext<'_> {
         if let Some(raw) = input.target_url.as_deref() {
             changes.target_url = Some(target_url::validate(raw)?);
         }
+
+        let current_domain = domain_db::find_by_id(self.pool, url.domain_id)
+            .await
+            .map_err(AppError::from)?
+            .ok_or_else(|| AppError::internal("link domain is missing"))?;
+
+        let target_domain = match input
+            .domain
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            Some(raw) => {
+                if domain_service::raw_host_key(raw)
+                    .eq_ignore_ascii_case(&domain_service::raw_host_key(&current_domain.hostname))
+                {
+                    // A link on a domain that has since been disabled (or an
+                    // opaque canonical host) can still be edited; keeping the
+                    // current domain is not a move.
+                    current_domain.clone()
+                } else {
+                    self.resolve_domain(Some(raw)).await?
+                }
+            }
+            None => current_domain,
+        };
+
+        let moving = target_domain.id != url.domain_id;
         if let Some(raw) = input.slug.as_deref() {
             let custom = slug::validate(raw)?;
-            if custom != url.slug {
-                if urls::slug_taken(self.pool, &custom)
+            if custom != url.slug || moving {
+                if urls::slug_taken_excluding(self.pool, target_domain.id, &custom, url.id)
                     .await
                     .map_err(AppError::from)?
                 {
                     return Err(AppError::conflict(format!(
-                        "the slug '{custom}' is already taken"
+                        "the slug '{custom}' is already taken on {}",
+                        target_domain.hostname
                     )));
                 }
-                changes.slug = Some(custom);
-                changes.is_custom_slug = Some(true);
+                if custom != url.slug {
+                    changes.slug = Some(custom);
+                    changes.is_custom_slug = Some(true);
+                }
             }
+        } else if moving
+            && urls::slug_taken_excluding(self.pool, target_domain.id, &url.slug, url.id)
+                .await
+                .map_err(AppError::from)?
+        {
+            return Err(AppError::conflict(format!(
+                "the slug '{}' is already taken on {}",
+                url.slug, target_domain.hostname
+            )));
+        }
+        if moving {
+            changes.domain_id = Some(target_domain.id);
         }
         if let Some(raw) = &input.title {
             changes.title = Some(match raw.as_deref() {
@@ -396,7 +448,10 @@ impl UrlContext<'_> {
                 .await
                 .map_err(|err| {
                     if is_unique_violation(&err) {
-                        AppError::conflict("that slug is already taken")
+                        AppError::conflict(format!(
+                            "that slug is already taken on {}",
+                            target_domain.hostname
+                        ))
                     } else {
                         AppError::from(err)
                     }
@@ -416,6 +471,7 @@ impl UrlContext<'_> {
             .target(target::URL, url.id)
             .metadata(serde_json::json!({
                 "slug": url.slug,
+                "domain": target_domain.hostname,
                 "fields": describe_changes(&changes, input.tags.is_some()),
             }))
             .ip_hash(self.ip_hash.map(str::to_string))
@@ -451,12 +507,12 @@ impl UrlContext<'_> {
             .ok_or_else(AppError::not_found)
     }
 
-    /// Allocate a random slug that is not taken yet.
-    async fn allocate_slug(&self) -> Result<String> {
+    /// Allocate a random slug that is not taken yet on `domain_id`.
+    async fn allocate_slug(&self, domain_id: i64) -> Result<String> {
         let length = self.settings.default_slug_length();
         for _ in 0..SLUG_RETRIES {
             let candidate = slug::generate(length);
-            if !urls::slug_taken(self.pool, &candidate)
+            if !urls::slug_taken(self.pool, domain_id, &candidate)
                 .await
                 .map_err(AppError::from)?
             {
@@ -466,7 +522,7 @@ impl UrlContext<'_> {
         // Extremely unlikely; fall back to a longer slug before giving up.
         for _ in 0..SLUG_RETRIES {
             let candidate = slug::generate(length + 4);
-            if !urls::slug_taken(self.pool, &candidate)
+            if !urls::slug_taken(self.pool, domain_id, &candidate)
                 .await
                 .map_err(AppError::from)?
             {
@@ -474,6 +530,21 @@ impl UrlContext<'_> {
             }
         }
         Err(AppError::internal("could not allocate a unique slug"))
+    }
+
+    /// Resolve the requested domain or the current active default.
+    async fn resolve_domain(&self, requested: Option<&str>) -> Result<Domain> {
+        let Some(raw) = requested.map(str::trim).filter(|value| !value.is_empty()) else {
+            return domain_db::active_default(self.pool)
+                .await
+                .map_err(AppError::from)?
+                .ok_or_else(|| AppError::internal("no active default domain"));
+        };
+
+        domain_service::find_active_by_input(self.pool, raw)
+            .await
+            .map_err(AppError::from)?
+            .ok_or_else(|| AppError::validation("domain", "unknown or inactive domain"))
     }
 
     async fn sync_tags(&self, url_id: i64, tags: &[String]) -> Result<()> {
@@ -501,6 +572,9 @@ impl UrlContext<'_> {
 /// Human readable summary of a change set, stored in the audit metadata.
 fn describe_changes(changes: &UrlUpdate, tags_changed: bool) -> Vec<&'static str> {
     let mut fields = Vec::new();
+    if changes.domain_id.is_some() {
+        fields.push("domain");
+    }
     if changes.slug.is_some() {
         fields.push("slug");
     }

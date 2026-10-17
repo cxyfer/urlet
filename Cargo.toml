@@ -3,7 +3,7 @@ name = "urlet"
 version = "1.2.0"
 edition = "2021"
 rust-version = "1.80"
-description = "Lightweight multi-user URL shortener with password protection and expiry"
+description = "Lightweight multi-user URL shortener with password protection, expiry and multi-domain support"
 license = "MIT"
 default-run = "urlet"
 

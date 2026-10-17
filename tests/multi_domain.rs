@@ -1,0 +1,1303 @@
+//! Integration tests for multi-domain support.
+
+mod common;
+
+use axum::body::Body;
+use axum::http::{header, HeaderValue, Request, StatusCode};
+use common::{
+    delete_as, patch_json_as, patch_json_with_host_as, post_form_with_host, post_json_with_host_as,
+    TestApp,
+};
+use serde_json::{json, Value};
+
+const ADMIN_PASSWORD: &str = "supersecret";
+
+async fn register_admin(app: &TestApp) -> String {
+    let (cookie, _) = app.register("admin@example.com", ADMIN_PASSWORD).await;
+    cookie
+}
+
+async fn create_url(app: &TestApp, cookie: &str, payload: Value) -> Value {
+    let response = app.post_json_as("/api/v1/urls", payload, cookie).await;
+    assert_eq!(
+        response.status,
+        StatusCode::CREATED,
+        "create failed: {}",
+        response.body
+    );
+    response.json()
+}
+
+async fn domain_id(app: &TestApp, hostname: &str) -> i64 {
+    sqlx::query_scalar("SELECT id FROM domains WHERE hostname = ? COLLATE NOCASE")
+        .bind(hostname)
+        .fetch_one(&app.state.db)
+        .await
+        .expect("domain id")
+}
+
+#[tokio::test]
+async fn extra_domains_are_redirect_only() {
+    let app = TestApp::spawn().await;
+    app.add_domain("go.example.com", "active").await;
+    let admin = register_admin(&app).await;
+
+    let created = create_url(
+        &app,
+        &admin,
+        json!({
+            "target_url": "https://example.com/extra",
+            "slug": "promo",
+            "domain": "go.example.com",
+        }),
+    )
+    .await;
+    assert_eq!(created["domain"], "go.example.com");
+    assert_eq!(created["short_url"], "http://go.example.com/promo");
+
+    let dashboard = app.get_as("/app", &admin).await;
+    assert_eq!(dashboard.status, StatusCode::OK);
+    assert!(
+        dashboard.body.contains("name=\"domain\""),
+        "{}",
+        dashboard.body
+    );
+    assert!(dashboard.body.contains("go.example.com"));
+    assert!(dashboard.body.contains("http://go.example.com/promo"));
+    let detail = app
+        .get_as(&format!("/app/urls/{}", created["id"]), &admin)
+        .await;
+    assert_eq!(detail.status, StatusCode::OK);
+    assert!(detail.body.contains("name=\"domain\""), "{}", detail.body);
+    assert!(detail.body.contains("go.example.com"));
+    assert!(detail.body.contains("http://go.example.com/promo"));
+
+    let redirect = app.get_with_host("/promo", "go.example.com").await;
+    assert_eq!(redirect.status, StatusCode::FOUND);
+    assert_eq!(
+        redirect.header("location").as_deref(),
+        Some("https://example.com/extra")
+    );
+
+    // A spoofed forwarding header must not affect host routing or redirects.
+    let xfh = Request::builder()
+        .uri("/promo")
+        .header(header::HOST, "go.example.com")
+        .header("x-forwarded-host", "evil.example")
+        .body(Body::empty())
+        .expect("request");
+    let xfh = app.send(xfh).await;
+    assert_eq!(xfh.status, StatusCode::FOUND);
+    assert_eq!(
+        xfh.header("location").as_deref(),
+        Some("https://example.com/extra")
+    );
+
+    // The extra root is the small landing page, not the marketing page.
+    let root = app.get_with_host("/", "go.example.com").await;
+    assert_eq!(root.status, StatusCode::OK);
+    assert!(root.body.contains("short link service"), "{}", root.body);
+    assert!(root.body.contains("http://localhost:8080"));
+    assert!(root.body.contains("noindex"));
+    assert!(!root.body.contains("Create account"));
+
+    // The canonical root keeps the marketing page.
+    let home = app.get("/").await;
+    assert_eq!(home.status, StatusCode::OK);
+    assert!(home.body.contains("Short links for teams"), "{}", home.body);
+
+    // `/app` is redirected to the canonical host, preserving path and query.
+    let app_redirect = app.get_with_host("/app?x=1", "go.example.com").await;
+    assert_eq!(app_redirect.status, StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(
+        app_redirect.header("location").as_deref(),
+        Some("http://localhost:8080/app?x=1")
+    );
+    assert_eq!(
+        app_redirect.header("cache-control").as_deref(),
+        Some("no-store")
+    );
+
+    // State-changing /app requests are rejected, not redirected.
+    let post_app = app
+        .post_json_with_host("/app/login", json!({}), "go.example.com")
+        .await;
+    assert_eq!(post_app.status, StatusCode::NOT_FOUND);
+
+    // The API is canonical-only on an extra domain.
+    let api = app.get_with_host("/api/v1/domains", "go.example.com").await;
+    assert_eq!(api.status, StatusCode::NOT_FOUND);
+    assert_eq!(api.json()["error"]["code"], "not_found");
+
+    // Health checks and assets stay host-agnostic.
+    assert_eq!(
+        app.get_with_host("/health", "go.example.com").await.status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.get_with_host("/assets/app.css", "go.example.com")
+            .await
+            .status,
+        StatusCode::OK
+    );
+
+    // Unknown hosts are invisible, and their 404 still gets the normal
+    // security headers and request id from the outer middleware layers.
+    let unknown = app.get_with_host("/promo", "unknown.example.com").await;
+    assert_eq!(unknown.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        unknown.header("x-content-type-options").as_deref(),
+        Some("nosniff")
+    );
+    assert!(unknown.header("x-request-id").is_some());
+}
+
+#[tokio::test]
+async fn the_same_slug_can_live_on_two_domains() {
+    let app = TestApp::spawn().await;
+    app.add_domain("go.example.com", "active").await;
+    let admin = register_admin(&app).await;
+
+    create_url(
+        &app,
+        &admin,
+        json!({ "target_url": "https://example.com/a", "slug": "promo" }),
+    )
+    .await;
+    create_url(
+        &app,
+        &admin,
+        json!({
+            "target_url": "https://example.com/b",
+            "slug": "promo",
+            "domain": "go.example.com",
+        }),
+    )
+    .await;
+    create_url(
+        &app,
+        &admin,
+        json!({
+            "target_url": "https://example.com/only-b",
+            "slug": "extraonly",
+            "domain": "go.example.com",
+        }),
+    )
+    .await;
+
+    let default = app.get("/promo").await;
+    assert_eq!(default.status, StatusCode::FOUND);
+    assert_eq!(
+        default.header("location").as_deref(),
+        Some("https://example.com/a")
+    );
+
+    let extra = app.get_with_host("/promo", "go.example.com").await;
+    assert_eq!(extra.status, StatusCode::FOUND);
+    assert_eq!(
+        extra.header("location").as_deref(),
+        Some("https://example.com/b")
+    );
+
+    // Public metadata defaults to the default domain and accepts an explicit one.
+    let meta = app.get("/api/v1/public/urls/promo").await;
+    assert_eq!(meta.status, StatusCode::OK);
+    assert_eq!(meta.json()["domain"], "localhost:8080");
+    let meta_extra = app
+        .get("/api/v1/public/urls/promo?domain=go.example.com")
+        .await;
+    assert_eq!(meta_extra.status, StatusCode::OK);
+    assert_eq!(meta_extra.json()["domain"], "go.example.com");
+
+    // A slug that only exists on the extra domain is not visible by default.
+    assert_eq!(
+        app.get("/api/v1/public/urls/extraonly").await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        app.get("/api/v1/public/urls/extraonly?domain=go.example.com")
+            .await
+            .status,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn admin_domain_lifecycle_and_protections() {
+    let app = TestApp::spawn().await;
+    let admin = register_admin(&app).await;
+    let canonical = domain_id(&app, "localhost:8080").await;
+
+    // Add: pending.
+    let created = app
+        .post_json_as(
+            "/api/v1/admin/domains",
+            json!({ "hostname": "go.example.com" }),
+            &admin,
+        )
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let domain = created.json();
+    assert_eq!(domain["status"], "pending");
+    assert_eq!(domain["source"], "ui");
+    let go_id = domain["id"].as_i64().expect("id");
+
+    // Invalid and duplicate hostnames are rejected.
+    assert_eq!(
+        app.post_json_as(
+            "/api/v1/admin/domains",
+            json!({ "hostname": "https://bad.example.com" }),
+            &admin
+        )
+        .await
+        .status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        app.post_json_as(
+            "/api/v1/admin/domains",
+            json!({ "hostname": "go.example.com" }),
+            &admin
+        )
+        .await
+        .status,
+        StatusCode::CONFLICT
+    );
+
+    // Pending cannot be the default, and the status payload is validated.
+    assert_eq!(
+        app.send(patch_json_as(
+            &format!("/api/v1/admin/domains/{go_id}"),
+            json!({ "is_default": true }),
+            &admin,
+        ))
+        .await
+        .status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        app.send(patch_json_as(
+            &format!("/api/v1/admin/domains/{go_id}"),
+            json!({ "status": "nonsense" }),
+            &admin,
+        ))
+        .await
+        .status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+
+    // Activate, then use it.
+    let activated = app
+        .send(patch_json_as(
+            &format!("/api/v1/admin/domains/{go_id}"),
+            json!({ "status": "active" }),
+            &admin,
+        ))
+        .await;
+    assert_eq!(activated.status, StatusCode::OK, "{}", activated.body);
+    assert_eq!(activated.json()["status"], "active");
+    create_url(
+        &app,
+        &admin,
+        json!({
+            "target_url": "https://example.com/go",
+            "slug": "promo",
+            "domain": "go.example.com",
+        }),
+    )
+    .await;
+
+    // The canonical domain cannot be disabled or deleted.
+    assert_eq!(
+        app.send(patch_json_as(
+            &format!("/api/v1/admin/domains/{canonical}"),
+            json!({ "status": "disabled" }),
+            &admin,
+        ))
+        .await
+        .status,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        app.send(delete_as(
+            &format!("/api/v1/admin/domains/{canonical}"),
+            &admin,
+        ))
+        .await
+        .status,
+        StatusCode::CONFLICT
+    );
+
+    // The default domain cannot be disabled until another one replaces it.
+    let defaulted = app
+        .send(patch_json_as(
+            &format!("/api/v1/admin/domains/{go_id}"),
+            json!({ "is_default": true }),
+            &admin,
+        ))
+        .await;
+    assert_eq!(defaulted.status, StatusCode::OK, "{}", defaulted.body);
+    assert_eq!(defaulted.json()["is_default"], true);
+    assert_eq!(
+        app.send(patch_json_as(
+            &format!("/api/v1/admin/domains/{go_id}"),
+            json!({ "status": "disabled" }),
+            &admin,
+        ))
+        .await
+        .status,
+        StatusCode::CONFLICT
+    );
+
+    // Switch back, disable, and check that links stop resolving.
+    assert_eq!(
+        app.send(patch_json_as(
+            &format!("/api/v1/admin/domains/{canonical}"),
+            json!({ "is_default": true }),
+            &admin,
+        ))
+        .await
+        .status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.send(patch_json_as(
+            &format!("/api/v1/admin/domains/{go_id}"),
+            json!({ "status": "disabled" }),
+            &admin,
+        ))
+        .await
+        .status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.get_with_host("/promo", "go.example.com").await.status,
+        StatusCode::NOT_FOUND
+    );
+
+    // Re-activate; the link works again.
+    assert_eq!(
+        app.send(patch_json_as(
+            &format!("/api/v1/admin/domains/{go_id}"),
+            json!({ "status": "active" }),
+            &admin,
+        ))
+        .await
+        .status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.get_with_host("/promo", "go.example.com").await.status,
+        StatusCode::FOUND
+    );
+
+    // A domain with links cannot be deleted.
+    assert_eq!(
+        app.send(delete_as(&format!("/api/v1/admin/domains/{go_id}"), &admin))
+            .await
+            .status,
+        StatusCode::CONFLICT
+    );
+
+    // A zero-link UI domain can be deleted.
+    let temp = app
+        .post_json_as(
+            "/api/v1/admin/domains",
+            json!({ "hostname": "temp.example.com" }),
+            &admin,
+        )
+        .await
+        .json();
+    let temp_id = temp["id"].as_i64().expect("temp id");
+    assert_eq!(
+        app.send(delete_as(
+            &format!("/api/v1/admin/domains/{temp_id}"),
+            &admin,
+        ))
+        .await
+        .status,
+        StatusCode::NO_CONTENT
+    );
+
+    // Unknown ids are 404.
+    assert_eq!(
+        app.send(patch_json_as(
+            "/api/v1/admin/domains/999999",
+            json!({ "status": "active" }),
+            &admin,
+        ))
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn environment_domains_are_active_and_insert_only() {
+    let app = TestApp::spawn_with(|config| {
+        config.extra_domains = vec!["env.example.com".to_string()];
+        config.extra_domains_declared = true;
+    })
+    .await;
+    let admin = register_admin(&app).await;
+
+    assert_eq!(
+        app.get_with_host("/", "env.example.com").await.status,
+        StatusCode::OK
+    );
+
+    let list = app.get_as("/api/v1/admin/domains", &admin).await;
+    assert_eq!(list.status, StatusCode::OK);
+    let domains = list.json();
+    let env = domains
+        .as_array()
+        .expect("array")
+        .iter()
+        .find(|domain| domain["hostname"] == "env.example.com")
+        .expect("env domain");
+    let page = app.get_as("/app/admin/domains", &admin).await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(page.body.contains("env.example.com"), "{}", page.body);
+    assert!(page.body.contains("URLET_DOMAINS"), "{}", page.body);
+    assert_eq!(env["source"], "env");
+    assert_eq!(env["status"], "active");
+    let env_id = env["id"].as_i64().expect("env id");
+
+    // Environment domains can be disabled but not deleted from the UI.
+    assert_eq!(
+        app.send(delete_as(
+            &format!("/api/v1/admin/domains/{env_id}"),
+            &admin,
+        ))
+        .await
+        .status,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        app.send(patch_json_as(
+            &format!("/api/v1/admin/domains/{env_id}"),
+            json!({ "status": "disabled" }),
+            &admin,
+        ))
+        .await
+        .status,
+        StatusCode::OK
+    );
+
+    // A second bootstrap must not re-enable the disabled domain.
+    urlet::server::bootstrap(&app.state)
+        .await
+        .expect("bootstrap again");
+    let status: String = sqlx::query_scalar("SELECT status FROM domains WHERE id = ?")
+        .bind(env_id)
+        .fetch_one(&app.state.db)
+        .await
+        .expect("status");
+    assert_eq!(status, "disabled");
+    assert_eq!(
+        app.get_with_host("/", "env.example.com").await.status,
+        StatusCode::NOT_FOUND
+    );
+
+    // Removing it from URLET_DOMAINS detaches it from env management, after
+    // which an administrator can delete the (zero-link) domain.
+    let detached = urlet::db::domains::detach_env(&app.state.db, &[])
+        .await
+        .expect("detach env domains");
+    assert_eq!(detached, 1);
+    app.reload_domains().await;
+    let source: String = sqlx::query_scalar("SELECT source FROM domains WHERE id = ?")
+        .bind(env_id)
+        .fetch_one(&app.state.db)
+        .await
+        .expect("source");
+    assert_eq!(source, "ui");
+    assert_eq!(
+        app.send(delete_as(
+            &format!("/api/v1/admin/domains/{env_id}"),
+            &admin,
+        ))
+        .await
+        .status,
+        StatusCode::NO_CONTENT
+    );
+}
+
+#[tokio::test]
+async fn changing_the_default_domain_changes_new_links() {
+    let app = TestApp::spawn().await;
+    let admin = register_admin(&app).await;
+
+    let created = app
+        .post_json_as(
+            "/api/v1/admin/domains",
+            json!({ "hostname": "go.example.com" }),
+            &admin,
+        )
+        .await
+        .json();
+    let go_id = created["id"].as_i64().expect("id");
+    assert_eq!(
+        app.send(patch_json_as(
+            &format!("/api/v1/admin/domains/{go_id}"),
+            json!({ "status": "active" }),
+            &admin,
+        ))
+        .await
+        .status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.send(patch_json_as(
+            &format!("/api/v1/admin/domains/{go_id}"),
+            json!({ "is_default": true }),
+            &admin,
+        ))
+        .await
+        .status,
+        StatusCode::OK
+    );
+
+    let link = create_url(
+        &app,
+        &admin,
+        json!({ "target_url": "https://example.com/default", "slug": "defaulted" }),
+    )
+    .await;
+    assert_eq!(link["domain"], "go.example.com");
+    assert_eq!(link["short_url"], "http://go.example.com/defaulted");
+
+    let choices = app.get_as("/api/v1/domains", &admin).await;
+    assert_eq!(choices.status, StatusCode::OK);
+    let choices = choices.json();
+    assert_eq!(choices[0]["hostname"], "go.example.com");
+    assert_eq!(choices[0]["is_default"], true);
+}
+
+#[tokio::test]
+async fn host_names_are_normalised() {
+    let app = TestApp::spawn().await;
+    app.add_domain("go.example.com", "active").await;
+    let admin = register_admin(&app).await;
+    create_url(
+        &app,
+        &admin,
+        json!({
+            "target_url": "https://example.com/normalised",
+            "slug": "promo",
+            "domain": "go.example.com",
+        }),
+    )
+    .await;
+
+    for host in [
+        "GO.EXAMPLE.COM",
+        "go.example.com.",
+        "go.example.com:80",
+        "go.example.com:443",
+    ] {
+        assert_eq!(
+            app.get_with_host("/promo", host).await.status,
+            StatusCode::FOUND,
+            "{host}"
+        );
+    }
+    for host in [
+        "go.example.com:8080",
+        "unknown.example.com",
+        "https://go.example.com",
+    ] {
+        assert_eq!(
+            app.get_with_host("/promo", host).await.status,
+            StatusCode::NOT_FOUND,
+            "{host}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn unlock_cookies_are_bound_to_the_domain() {
+    let app = TestApp::spawn().await;
+    app.add_domain("go.example.com", "active").await;
+    let admin = register_admin(&app).await;
+
+    create_url(
+        &app,
+        &admin,
+        json!({
+            "target_url": "https://example.com/a",
+            "slug": "promo",
+            "password": "linkpass",
+        }),
+    )
+    .await;
+    create_url(
+        &app,
+        &admin,
+        json!({
+            "target_url": "https://example.com/b",
+            "slug": "promo",
+            "password": "linkpass",
+            "domain": "go.example.com",
+        }),
+    )
+    .await;
+
+    let unlocked = app
+        .post_json("/promo/unlock", json!({ "password": "linkpass" }))
+        .await;
+    assert_eq!(unlocked.status, StatusCode::OK);
+    let default_name = urlet::services::unlock::cookie_name("localhost:8080", "promo");
+    let extra_name = urlet::services::unlock::cookie_name("go.example.com", "promo");
+    let cookie = unlocked.cookie_named(&default_name).expect("cookie");
+    assert_eq!(
+        app.get_as("/promo", &cookie).await.status,
+        StatusCode::FOUND
+    );
+
+    // The cookie name alone does not unlock the other domain.
+    let forged = cookie.replace(&default_name, &extra_name);
+    let extra_page = app
+        .send(common::get_with_host_as(
+            "/promo",
+            "go.example.com",
+            &forged,
+        ))
+        .await;
+    assert_eq!(extra_page.status, StatusCode::OK);
+    assert!(extra_page.body.contains("Protected link"));
+
+    // Unlocking on the extra domain issues a domain-bound cookie.
+    let extra_unlock = app
+        .post_json_with_host(
+            "/promo/unlock",
+            json!({ "password": "linkpass" }),
+            "go.example.com",
+        )
+        .await;
+    assert_eq!(extra_unlock.status, StatusCode::OK);
+    let extra_cookie = extra_unlock
+        .cookie_named(&extra_name)
+        .expect("extra unlock cookie");
+    let followed = app
+        .send(common::get_with_host_as(
+            "/promo",
+            "go.example.com",
+            &extra_cookie,
+        ))
+        .await;
+    assert_eq!(followed.status, StatusCode::FOUND);
+    assert_eq!(
+        followed.header("location").as_deref(),
+        Some("https://example.com/b")
+    );
+
+    // The HTML unlock form also works on the extra domain: the gate lets it
+    // through and CSRF sees a matching Host/Origin pair.
+    let form = app
+        .send(post_form_with_host(
+            "/promo/unlock",
+            "password=linkpass",
+            None,
+            Some("http://go.example.com"),
+            "go.example.com",
+        ))
+        .await;
+    assert_eq!(form.status, StatusCode::SEE_OTHER);
+    assert_eq!(form.header("location").as_deref(), Some("/promo"));
+}
+
+#[tokio::test]
+async fn non_admins_cannot_manage_domains() {
+    let app = TestApp::spawn().await;
+    let _admin = register_admin(&app).await;
+    let (user, _) = app.register("user@example.com", ADMIN_PASSWORD).await;
+
+    assert_eq!(
+        app.get_as("/api/v1/admin/domains", &user).await.status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.post_json_as(
+            "/api/v1/admin/domains",
+            json!({ "hostname": "nope.example.com" }),
+            &user
+        )
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
+async fn admin_domains_page_renders() {
+    let app = TestApp::spawn().await;
+    let admin = register_admin(&app).await;
+    assert_eq!(
+        app.post_json_as(
+            "/api/v1/admin/domains",
+            json!({ "hostname": "go.example.com" }),
+            &admin,
+        )
+        .await
+        .status,
+        StatusCode::CREATED
+    );
+
+    let page = app.get_as("/app/admin/domains", &admin).await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(page.body.contains("go.example.com"), "{}", page.body);
+    assert!(page.body.contains("Add domain"), "{}", page.body);
+    assert!(page.body.contains("localhost:8080"), "{}", page.body);
+
+    let (user, _) = app.register("normal@example.com", ADMIN_PASSWORD).await;
+    assert_eq!(
+        app.get_as("/app/admin/domains", &user).await.status,
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
+async fn links_require_an_active_domain_and_move_conflicts_return_409() {
+    let app = TestApp::spawn().await;
+    let admin = register_admin(&app).await;
+    app.add_domain("a.example.com", "active").await;
+    app.add_domain("b.example.com", "active").await;
+    app.add_domain("pending.example.com", "pending").await;
+    app.add_domain("disabled.example.com", "disabled").await;
+
+    for hostname in [
+        "pending.example.com",
+        "disabled.example.com",
+        "unknown.example.com",
+    ] {
+        assert_eq!(
+            app.post_json_as(
+                "/api/v1/urls",
+                json!({
+                    "target_url": "https://example.com",
+                    "slug": "blocked",
+                    "domain": hostname,
+                }),
+                &admin,
+            )
+            .await
+            .status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{hostname}"
+        );
+    }
+
+    let first = create_url(
+        &app,
+        &admin,
+        json!({
+            "target_url": "https://example.com/a",
+            "slug": "promo",
+            "domain": "a.example.com",
+        }),
+    )
+    .await;
+    create_url(
+        &app,
+        &admin,
+        json!({
+            "target_url": "https://example.com/b",
+            "slug": "promo",
+            "domain": "b.example.com",
+        }),
+    )
+    .await;
+
+    // Moving to another domain must not collide with an existing slug.
+    let conflict = app
+        .send(patch_json_as(
+            &format!("/api/v1/urls/{}", first["id"]),
+            json!({ "domain": "b.example.com" }),
+            &admin,
+        ))
+        .await;
+    assert_eq!(conflict.status, StatusCode::CONFLICT, "{}", conflict.body);
+
+    // Changing the slug and moving in one request is allowed.
+    let moved = app
+        .send(patch_json_as(
+            &format!("/api/v1/urls/{}", first["id"]),
+            json!({ "domain": "b.example.com", "slug": "moved" }),
+            &admin,
+        ))
+        .await;
+    assert_eq!(moved.status, StatusCode::OK, "{}", moved.body);
+    assert_eq!(moved.json()["domain"], "b.example.com");
+    assert_eq!(moved.json()["slug"], "moved");
+    assert_eq!(
+        app.get_with_host("/moved", "b.example.com").await.status,
+        StatusCode::FOUND
+    );
+}
+
+#[tokio::test]
+async fn changing_the_canonical_host_retires_the_previous_system_domain() {
+    let app = TestApp::spawn().await;
+    let admin = register_admin(&app).await;
+
+    // Existing link on the original canonical host.
+    let old_link = create_url(
+        &app,
+        &admin,
+        json!({ "target_url": "https://example.com/old", "slug": "old" }),
+    )
+    .await;
+    assert_eq!(old_link["domain"], "localhost:8080");
+
+    // Simulate the next boot after URLET_BASE_URL changed to new.example.com.
+    urlet::db::domains::ensure_canonical(&app.state.db, "new.example.com")
+        .await
+        .expect("new canonical");
+    app.reload_domains().await;
+
+    let old_source: String =
+        sqlx::query_scalar("SELECT source FROM domains WHERE hostname = 'localhost:8080'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("old source");
+    assert_eq!(old_source, "ui");
+    let old_status: String =
+        sqlx::query_scalar("SELECT status FROM domains WHERE hostname = 'localhost:8080'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("old status");
+    assert_eq!(old_status, "active", "old links keep resolving");
+    let old_default: i64 =
+        sqlx::query_scalar("SELECT is_default FROM domains WHERE hostname = 'localhost:8080'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("old default");
+    assert_eq!(old_default, 0, "default moved to the new canonical host");
+
+    let new_source: String =
+        sqlx::query_scalar("SELECT source FROM domains WHERE hostname = 'new.example.com'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("new source");
+    assert_eq!(new_source, "system");
+    let new_default: i64 =
+        sqlx::query_scalar("SELECT is_default FROM domains WHERE hostname = 'new.example.com'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("new default");
+    assert_eq!(new_default, 1);
+    let systems: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM domains WHERE source = 'system'")
+        .fetch_one(&app.state.db)
+        .await
+        .expect("system count");
+    assert_eq!(
+        systems, 1,
+        "only the current canonical host stays protected"
+    );
+
+    // New links follow the transferred default, and the old link still works on
+    // its original host.
+    let new_link = create_url(
+        &app,
+        &admin,
+        json!({ "target_url": "https://example.com/new", "slug": "new" }),
+    )
+    .await;
+    assert_eq!(new_link["domain"], "new.example.com");
+    assert_eq!(app.get("/old").await.status, StatusCode::FOUND);
+    assert_eq!(
+        app.get_with_host("/old", "new.example.com").await.status,
+        StatusCode::NOT_FOUND
+    );
+
+    // An explicitly selected non-system default must win over the new canonical.
+    let extra_id = app.add_domain("extra.example.com", "active").await;
+    app.set_default_domain(extra_id).await;
+    urlet::db::domains::ensure_canonical(&app.state.db, "third.example.com")
+        .await
+        .expect("third canonical");
+    app.reload_domains().await;
+
+    let extra_default: i64 =
+        sqlx::query_scalar("SELECT is_default FROM domains WHERE hostname = 'extra.example.com'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("extra default");
+    assert_eq!(extra_default, 1, "explicit non-system default preserved");
+    let new_source: String =
+        sqlx::query_scalar("SELECT source FROM domains WHERE hostname = 'new.example.com'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("old canonical source");
+    assert_eq!(new_source, "ui");
+    let third_source: String =
+        sqlx::query_scalar("SELECT source FROM domains WHERE hostname = 'third.example.com'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("third source");
+    assert_eq!(third_source, "system");
+    let third_default: i64 =
+        sqlx::query_scalar("SELECT is_default FROM domains WHERE hostname = 'third.example.com'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("third default");
+    assert_eq!(third_default, 0);
+    let systems: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM domains WHERE source = 'system'")
+        .fetch_one(&app.state.db)
+        .await
+        .expect("system count");
+    assert_eq!(systems, 1);
+
+    let defaulted = create_url(
+        &app,
+        &admin,
+        json!({ "target_url": "https://example.com/defaulted", "slug": "defaulted" }),
+    )
+    .await;
+    assert_eq!(defaulted["domain"], "extra.example.com");
+}
+
+#[tokio::test]
+async fn conditional_domain_updates_do_not_leave_a_disabled_default() {
+    let app = TestApp::spawn().await;
+    let _admin = register_admin(&app).await;
+    let go_id = app.add_domain("go.example.com", "active").await;
+    let canonical = domain_id(&app, "localhost:8080").await;
+    app.set_default_domain(go_id).await;
+
+    // The final conditional UPDATE sees that set_default won the race.
+    let changed = urlet::db::domains::disable(&app.state.db, go_id)
+        .await
+        .expect("conditional disable");
+    assert_eq!(changed, 0);
+    let status: String = sqlx::query_scalar("SELECT status FROM domains WHERE id = ?")
+        .bind(go_id)
+        .fetch_one(&app.state.db)
+        .await
+        .expect("status");
+    assert_eq!(status, "active");
+    let is_default: i64 = sqlx::query_scalar("SELECT is_default FROM domains WHERE id = ?")
+        .bind(go_id)
+        .fetch_one(&app.state.db)
+        .await
+        .expect("default");
+    assert_eq!(is_default, 1);
+
+    // Deleting the current default is equally conditional.
+    let deleted = urlet::db::domains::delete(&app.state.db, go_id)
+        .await
+        .expect("conditional delete");
+    assert_eq!(deleted, 0);
+
+    app.set_default_domain(canonical).await;
+    assert_eq!(
+        urlet::db::domains::disable(&app.state.db, go_id)
+            .await
+            .expect("disable after default moved"),
+        1
+    );
+    assert_eq!(
+        urlet::db::domains::delete(&app.state.db, go_id)
+            .await
+            .expect("delete after disable"),
+        1
+    );
+}
+
+#[tokio::test]
+async fn operator_supplied_canonical_hosts_still_serve() {
+    for host in ["[::1]:8080", "urlet_app:8080"] {
+        let app = TestApp::spawn_with(|config| {
+            config.base_host = host.to_string();
+        })
+        .await;
+
+        let home = app.get_with_host("/", host).await;
+        assert_eq!(home.status, StatusCode::OK, "{host}: {}", home.body);
+        assert!(home.body.contains("Short links for teams"), "{host}");
+
+        // The API is reachable on the canonical host (401, not the gate's 404).
+        assert_eq!(
+            app.get_with_host("/api/v1/domains", host).await.status,
+            StatusCode::UNAUTHORIZED,
+            "{host}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn undecodable_host_is_not_canonical() {
+    let app = TestApp::spawn().await;
+    let request = Request::builder()
+        .uri("/")
+        .header(
+            header::HOST,
+            HeaderValue::from_bytes(b"bad\x80host").expect("header value"),
+        )
+        .body(Body::empty())
+        .expect("request");
+    let response = app.send(request).await;
+    assert_eq!(response.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn bootstrap_detaches_env_domains_when_the_variable_is_empty() {
+    let app = TestApp::spawn_with(|config| {
+        config.extra_domains = vec!["env.example.com".to_string()];
+        config.extra_domains_declared = true;
+    })
+    .await;
+    let source: String =
+        sqlx::query_scalar("SELECT source FROM domains WHERE hostname = 'env.example.com'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("source");
+    assert_eq!(source, "env");
+
+    // Re-open the same database as the next boot would, with an explicitly
+    // empty URLET_DOMAINS list. bootstrap() (not detach_env() directly) must
+    // detach the env row.
+    let mut config = urlet::config::Config::for_tests(&app.dir);
+    config.database_url = app.state.config.database_url.clone();
+    config.extra_domains = Vec::new();
+    config.extra_domains_declared = true;
+    let pool = urlet::db::init(&config).await.expect("database");
+    let settings = urlet::services::settings::Settings::load(&pool, &config)
+        .await
+        .expect("settings");
+    let state = urlet::state::AppState::new(config, pool, settings);
+    urlet::server::bootstrap(&state).await.expect("bootstrap");
+
+    let source: String =
+        sqlx::query_scalar("SELECT source FROM domains WHERE hostname = 'env.example.com'")
+            .fetch_one(&state.db)
+            .await
+            .expect("source after detach");
+    assert_eq!(source, "ui");
+}
+
+#[tokio::test]
+async fn demoted_opaque_canonical_host_still_resolves_old_links() {
+    let app = TestApp::spawn_with(|config| {
+        config.base_host = "urlet_app:19087".to_string();
+        config.base_url = "http://urlet_app:19087".to_string();
+    })
+    .await;
+
+    let now = urlet::services::time::now_iso();
+    sqlx::query(
+        "INSERT INTO users (email, email_normalized, password_hash, created_at, updated_at)
+         VALUES ('legacy@example.com', 'legacy@example.com', 'hash', ?, ?)",
+    )
+    .bind(&now)
+    .bind(&now)
+    .execute(&app.state.db)
+    .await
+    .expect("user");
+    let user_id: i64 =
+        sqlx::query_scalar("SELECT id FROM users WHERE email = 'legacy@example.com'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("user id");
+    let domain_id: i64 =
+        sqlx::query_scalar("SELECT id FROM domains WHERE hostname = 'urlet_app:19087'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("opaque canonical id");
+    sqlx::query(
+        "INSERT INTO urls (user_id, domain_id, slug, target_url, created_at, updated_at)
+         VALUES (?, ?, 'legacy', 'https://example.com/legacy', ?, ?)",
+    )
+    .bind(user_id)
+    .bind(domain_id)
+    .bind(&now)
+    .bind(&now)
+    .execute(&app.state.db)
+    .await
+    .expect("legacy url");
+
+    // Next boot: a normal DNS canonical host. The old opaque row is demoted to
+    // `ui` but its links must still resolve through the extra-domain path.
+    let mut config = urlet::config::Config::for_tests(&app.dir);
+    config.database_url = app.state.config.database_url.clone();
+    config.base_host = "links.example.com:19087".to_string();
+    config.base_url = "http://links.example.com:19087".to_string();
+    let pool = urlet::db::init(&config).await.expect("database");
+    let settings = urlet::services::settings::Settings::load(&pool, &config)
+        .await
+        .expect("settings");
+    let state = urlet::state::AppState::new(config, pool, settings);
+    urlet::server::bootstrap(&state).await.expect("bootstrap");
+    let router = urlet::server::build_router(state);
+
+    let request = Request::builder()
+        .uri("/legacy")
+        .header(header::HOST, "urlet_app:19087")
+        .body(Body::empty())
+        .expect("request");
+    let response = common::send_router(router.clone(), request).await;
+    assert_eq!(response.status, StatusCode::FOUND, "{}", response.body);
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some("https://example.com/legacy")
+    );
+
+    let request = Request::builder()
+        .uri("/")
+        .header(header::HOST, "urlet_app:19087")
+        .body(Body::empty())
+        .expect("request");
+    let root = common::send_router(router.clone(), request).await;
+    assert_eq!(root.status, StatusCode::OK);
+    assert!(root.body.contains("short link service"), "{}", root.body);
+
+    let request = Request::builder()
+        .uri("/app?x=1")
+        .header(header::HOST, "urlet_app:19087")
+        .body(Body::empty())
+        .expect("request");
+    let app_redirect = common::send_router(router.clone(), request).await;
+    assert_eq!(app_redirect.status, StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(
+        app_redirect.header("location").as_deref(),
+        Some("http://links.example.com:19087/app?x=1")
+    );
+
+    let request = Request::builder()
+        .uri("/api/v1/domains")
+        .header(header::HOST, "urlet_app:19087")
+        .body(Body::empty())
+        .expect("request");
+    assert_eq!(
+        common::send_router(router, request).await.status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn opaque_canonical_hosts_accept_link_domains() {
+    for host in ["[::1]:8080", "urlet_app:8080"] {
+        let app = TestApp::spawn_with(|config| {
+            config.base_host = host.to_string();
+        })
+        .await;
+
+        let registered = app
+            .post_json_with_host(
+                "/api/v1/auth/register",
+                json!({
+                    "email": format!(
+                        "owner-{}@example.com",
+                        host.replace(['[', ']', ':'], "-")
+                    ),
+                    "password": "supersecret",
+                }),
+                host,
+            )
+            .await;
+        assert_eq!(
+            registered.status,
+            StatusCode::CREATED,
+            "{}",
+            registered.body
+        );
+        let cookie = registered.session_cookie().expect("session cookie");
+
+        let created = app
+            .send(post_json_with_host_as(
+                "/api/v1/urls",
+                json!({
+                    "target_url": "https://example.com/api",
+                    "slug": "api1",
+                    "domain": host,
+                }),
+                &cookie,
+                host,
+            ))
+            .await;
+        assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+        let created = created.json();
+        assert_eq!(created["domain"], host);
+        assert_eq!(created["short_url"], format!("http://{host}/api1"));
+        let id = created["id"].as_i64().expect("id");
+
+        let updated = app
+            .send(patch_json_with_host_as(
+                &format!("/api/v1/urls/{id}"),
+                json!({ "title": "edited", "domain": host }),
+                &cookie,
+                host,
+            ))
+            .await;
+        assert_eq!(updated.status, StatusCode::OK, "{}", updated.body);
+        assert_eq!(updated.json()["title"], "edited");
+
+        let public = app
+            .get_with_host(&format!("/api/v1/public/urls/api1?domain={host}"), host)
+            .await;
+        assert_eq!(public.status, StatusCode::OK, "{}", public.body);
+        assert_eq!(public.json()["domain"], host);
+
+        // The rendered HTML forms submit the same opaque hostname; both the
+        // create and edit paths must accept it.
+        let form_body =
+            format!("target_url=https%3A%2F%2Fexample.com%2Fform&slug=form1&domain={host}");
+        let form_create = app
+            .send(post_form_with_host(
+                "/app/urls",
+                &form_body,
+                Some(&cookie),
+                Some(&format!("http://{host}")),
+                host,
+            ))
+            .await;
+        assert_eq!(
+            form_create.status,
+            StatusCode::SEE_OTHER,
+            "{}",
+            form_create.body
+        );
+        let location = form_create.header("location").expect("location");
+        assert!(!location.contains("err="), "{location}");
+        let form_id = location
+            .split(['?', '#'])
+            .next()
+            .expect("path")
+            .rsplit('/')
+            .next()
+            .expect("id");
+
+        let detail = app
+            .get_with_host_as(&format!("/app/urls/{form_id}"), host, &cookie)
+            .await;
+        assert_eq!(detail.status, StatusCode::OK, "{}", detail.body);
+        assert!(detail.body.contains("form1"), "{}", detail.body);
+
+        let edit_body =
+            format!("target_url=https%3A%2F%2Fexample.com%2Fedited&domain={host}&title=Edited");
+        let form_edit = app
+            .send(post_form_with_host(
+                &format!("/app/urls/{form_id}"),
+                &edit_body,
+                Some(&cookie),
+                Some(&format!("http://{host}")),
+                host,
+            ))
+            .await;
+        assert_eq!(
+            form_edit.status,
+            StatusCode::SEE_OTHER,
+            "{}",
+            form_edit.body
+        );
+        let edit_location = form_edit.header("location").expect("location");
+        assert!(!edit_location.contains("err="), "{edit_location}");
+        let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = ?")
+            .bind(form_id.parse::<i64>().expect("numeric id"))
+            .fetch_one(&app.state.db)
+            .await
+            .expect("target");
+        assert_eq!(target, "https://example.com/edited");
+    }
+}

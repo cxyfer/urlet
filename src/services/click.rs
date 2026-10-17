@@ -14,6 +14,7 @@ use tokio::sync::mpsc;
 
 use crate::config::Config;
 use crate::db::clicks::{self, NewClick};
+use crate::services::domains::DomainRegistry;
 use crate::services::settings::Settings;
 use crate::services::{secret, time, ua};
 
@@ -45,6 +46,7 @@ impl ClickRecorder {
         pool: SqlitePool,
         config: Arc<Config>,
         settings: Arc<Settings>,
+        domains: Arc<DomainRegistry>,
         capacity: usize,
     ) -> Self {
         let (sender, mut receiver) = mpsc::channel::<ClickInput>(capacity.max(1));
@@ -53,7 +55,7 @@ impl ClickRecorder {
                 if !settings.analytics_enabled() {
                     continue;
                 }
-                if let Err(err) = record_inner(&pool, &config, &input).await {
+                if let Err(err) = record_inner(&pool, &config, &domains, &input).await {
                     tracing::warn!(error = %err, url_id = input.url_id, "click recording failed");
                 }
             }
@@ -84,13 +86,14 @@ impl ClickRecorder {
 pub async fn record(
     pool: &SqlitePool,
     config: &Config,
+    domains: &DomainRegistry,
     analytics_enabled: bool,
     input: ClickInput,
 ) {
     if !analytics_enabled {
         return;
     }
-    if let Err(err) = record_inner(pool, config, &input).await {
+    if let Err(err) = record_inner(pool, config, domains, &input).await {
         tracing::warn!(error = %err, url_id = input.url_id, "click recording failed");
     }
 }
@@ -98,6 +101,7 @@ pub async fn record(
 async fn record_inner(
     pool: &SqlitePool,
     config: &Config,
+    domains: &DomainRegistry,
     input: &ClickInput,
 ) -> Result<(), sqlx::Error> {
     let now = time::now();
@@ -105,10 +109,13 @@ async fn record_inner(
     let day = time::to_day(now);
 
     let agent = ua::parse(input.user_agent.as_deref());
-    let referrer_host = ua::referrer_host(
-        input.referrer.as_deref(),
-        &[config.base_host.as_str(), "localhost", "127.0.0.1"],
-    );
+    // A link on one managed domain must not count as an external referrer when
+    // the visitor came from another managed domain.
+    let mut own_hosts: Vec<String> = vec!["localhost".to_string(), "127.0.0.1".to_string()];
+    own_hosts.push(config.base_host.clone());
+    own_hosts.extend(domains.active_hosts());
+    let own_hosts: Vec<&str> = own_hosts.iter().map(String::as_str).collect();
+    let referrer_host = ua::referrer_host(input.referrer.as_deref(), &own_hosts);
 
     // The visitor hash rotates daily and never contains the raw address.
     let visitor_hash = input.ip_hash.as_ref().map(|ip_hash| {

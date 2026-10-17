@@ -3,6 +3,7 @@
 pub mod api;
 pub mod api_admin;
 pub mod api_auth;
+pub mod api_domains;
 pub mod api_public;
 pub mod api_stats;
 pub mod api_tags;

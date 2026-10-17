@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod csrf;
+pub mod domain;
 pub mod locale;
 pub mod security;
 

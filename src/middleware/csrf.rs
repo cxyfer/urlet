@@ -16,6 +16,7 @@ use axum::response::Response;
 use crate::config::Config;
 use crate::error::AppError;
 use crate::services::cookies;
+use crate::services::domains::{normalize_host, raw_host_key};
 use crate::state::AppState;
 
 /// Middleware entry point.
@@ -75,12 +76,13 @@ fn has_form_content_type(headers: &HeaderMap) -> bool {
 
 /// Compare the `Origin`/`Referer` header against the request host.
 pub fn same_origin(headers: &HeaderMap, config: &Config) -> bool {
-    let host = headers
+    let raw_host = headers
         .get(header::HOST)
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default()
         .trim()
         .to_ascii_lowercase();
+    let request_key = host_key(&raw_host);
 
     for name in [header::ORIGIN, header::REFERER] {
         let Some(value) = headers.get(name).and_then(|value| value.to_str().ok()) else {
@@ -89,13 +91,21 @@ pub fn same_origin(headers: &HeaderMap, config: &Config) -> bool {
         let Some(origin_host) = host_of(value) else {
             continue;
         };
-        if (!host.is_empty() && origin_host == host)
-            || origin_host.eq_ignore_ascii_case(&config.base_host)
+        let origin_key = host_key(&origin_host);
+        if (!raw_host.is_empty() && origin_key == request_key)
+            || origin_key == host_key(&config.base_host)
         {
             return true;
         }
     }
     false
+}
+
+/// Normalise both sides of the comparison with the same rules as the host gate:
+/// case, trailing dot and `:80`/`:443` are irrelevant, and the canonical host
+/// may be an IPv6 literal or an underscore service name.
+fn host_key(value: &str) -> String {
+    normalize_host(value).unwrap_or_else(|| raw_host_key(value))
 }
 
 /// Extract the authority component of an absolute URL.
@@ -161,6 +171,30 @@ mod tests {
             ("referer", "https://s.example.com/app/urls"),
         ]);
         assert!(same_origin(&referer, &config()));
+    }
+
+    #[test]
+    fn normalises_default_ports_and_operator_hosts() {
+        let same = headers(&[
+            ("host", "go.example.com:443"),
+            ("origin", "https://go.example.com"),
+        ]);
+        assert!(same_origin(&same, &config()));
+
+        let custom = headers(&[
+            ("host", "go.example.com:8080"),
+            ("origin", "http://go.example.com:8080"),
+        ]);
+        assert!(same_origin(&custom, &config()));
+
+        let mismatch = headers(&[
+            ("host", "go.example.com:8080"),
+            ("origin", "http://go.example.com:9090"),
+        ]);
+        assert!(!same_origin(&mismatch, &config()));
+
+        let underscore = headers(&[("host", "urlet_app:443"), ("origin", "https://urlet_app")]);
+        assert!(same_origin(&underscore, &config()));
     }
 
     #[test]

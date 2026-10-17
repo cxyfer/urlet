@@ -4,7 +4,8 @@ use axum::routing::{delete, get, patch, post};
 use axum::Router;
 
 use crate::routes::{
-    api_admin, api_auth, api_not_found, api_public, api_stats, api_tags, api_tokens, api_urls,
+    api_admin, api_auth, api_domains, api_not_found, api_public, api_stats, api_tags, api_tokens,
+    api_urls,
 };
 use crate::state::AppState;
 
@@ -29,6 +30,8 @@ pub fn router() -> Router<AppState> {
         )
         .route("/urls/{id}/stats", get(api_stats::stats))
         .route("/urls/{id}/clicks", get(api_stats::clicks_log))
+        // active domains available to the signed-in user
+        .route("/domains", get(api_domains::list))
         // tags
         .route("/tags", get(api_tags::list))
         .route("/tags/{id}", delete(api_tags::delete))
@@ -38,6 +41,14 @@ pub fn router() -> Router<AppState> {
         .route("/tokens", get(api_tokens::list).post(api_tokens::create))
         .route("/tokens/{id}", delete(api_tokens::revoke))
         // administration
+        .route(
+            "/admin/domains",
+            get(api_admin::list_domains).post(api_admin::create_domain),
+        )
+        .route(
+            "/admin/domains/{id}",
+            patch(api_admin::update_domain).delete(api_admin::delete_domain),
+        )
         .route("/admin/users", get(api_admin::list_users))
         .route(
             "/admin/users/{id}",
