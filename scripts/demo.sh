@@ -9,10 +9,12 @@ cd "$ROOT"
 PORT=18090
 BASE="http://127.0.0.1:${PORT}"
 DATA="$ROOT/.tmp/demo"
-SHOTS="$DATA/shots"
+# Point SHOTS at docs/screenshots to regenerate the images the README uses:
+#   SHOTS=docs/screenshots ./scripts/demo.sh
+SHOTS="${SHOTS:-$DATA/shots}"
 
 rm -rf "$DATA"
-mkdir -p "$SHOTS"
+mkdir -p "$DATA" "$SHOTS"
 
 UWURLS_DATABASE_URL="sqlite://$DATA/db.sqlite?mode=rwc" \
 UWURLS_DATA_DIR="$DATA" \

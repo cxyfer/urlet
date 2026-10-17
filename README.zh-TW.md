@@ -5,7 +5,7 @@
 **輕量化、自託管的多用戶短網址系統。** 單一 Rust 二進位檔 + 單一 SQLite 檔案，
 一個 `docker compose up -d` 就能上線，不需要外部資料庫、快取服務或前端建置流程。
 
-![Dashboard](docs/screenshots/dashboard.png)
+![Landing page](docs/screenshots/landing.png)
 
 ## 功能
 
@@ -79,17 +79,29 @@ uwurls version | help
 
 ## 畫面
 
-截圖是在多語系介面與新的導覽首頁加入之前拍攝，部分文字標籤可能與目前版本略有差異。
+導覽首頁，以及同一頁在訪客瀏覽器語言被辨識後自動切換的結果：
 
-| 短網址詳情與統計 | 管理後台 |
+| 導覽首頁 | 繁體中文（自動辨識） |
 |---|---|
-| ![URL detail](docs/screenshots/url-detail.png) | ![Admin](docs/screenshots/admin-overview.png) |
+| ![Landing page](docs/screenshots/landing.png) | ![繁體中文介面](docs/screenshots/landing-zh-hant.png) |
+
+登入後：
+
+| 儀表板 | 短網址詳情與統計 |
+|---|---|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![URL detail](docs/screenshots/url-detail.png) |
+
+| 管理後台 | 防機器人驗證設定 |
+|---|---|
+| ![Admin](docs/screenshots/admin-overview.png) | ![防機器人驗證](docs/screenshots/admin-captcha.png) |
 
 | 密碼保護頁 | 已過期連結（可一鍵延長） |
 |---|---|
 | ![Password page](docs/screenshots/password-page.png) | ![Expired link](docs/screenshots/expired-link.png) |
 
 深色模式：![Dark mode](docs/screenshots/dark.png)
+
+重新產生截圖：`SHOTS=docs/screenshots ./scripts/demo.sh`（需要 Playwright 與 Chromium）。
 
 ## 技術選擇
 

@@ -6,7 +6,7 @@
 file: a single `docker compose up -d` and you are live. No external database, no cache
 service, no frontend build step.
 
-![Dashboard](docs/screenshots/dashboard.png)
+![Landing page](docs/screenshots/landing.png)
 
 ## Features
 
@@ -86,18 +86,30 @@ uwurls version | help
 
 ## Screenshots
 
-The screenshots were captured before the localized UI and the new landing page were added,
-so labels may differ slightly from a current build.
+The landing page, and the same page after a visitor's browser language is honoured:
 
-| Link detail and stats | Admin panel |
+| Landing page | Traditional Chinese (automatic) |
 |---|---|
-| ![URL detail](docs/screenshots/url-detail.png) | ![Admin](docs/screenshots/admin-overview.png) |
+| ![Landing page](docs/screenshots/landing.png) | ![Traditional Chinese landing page](docs/screenshots/landing-zh-hant.png) |
+
+Signed in:
+
+| Dashboard | Link detail and stats |
+|---|---|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![URL detail](docs/screenshots/url-detail.png) |
+
+| Admin panel | Bot protection settings |
+|---|---|
+| ![Admin](docs/screenshots/admin-overview.png) | ![Bot protection](docs/screenshots/admin-captcha.png) |
 
 | Password page | Expired link (one-click extend) |
 |---|---|
 | ![Password page](docs/screenshots/password-page.png) | ![Expired link](docs/screenshots/expired-link.png) |
 
 Dark mode: ![Dark mode](docs/screenshots/dark.png)
+
+Regenerate them with `SHOTS=docs/screenshots ./scripts/demo.sh` (needs Playwright and
+Chromium).
 
 ## Technical choices
 
