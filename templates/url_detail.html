@@ -3,22 +3,23 @@
 {% block title %}{{ url.slug }} — {{ chrome.site_name }}{% endblock %}
 
 {% block content %}
-<div class="row between mt">
+<header class="page-head">
     <div>
+        <p class="eyebrow" aria-hidden="true"><span class="status-dot"></span><span class="eyebrow-line"></span></p>
         <h1 class="mono">{{ url.slug }}</h1>
-        <p class="muted small">
+        <p class="page-sub">
             <span id="short-url">{{ url.short_url }}</span>
-            <button class="btn btn-sm" type="button" data-copy="#short-url">{{ lang.t("common.copy") }}</button>
-            <a class="btn btn-sm" href="/{{ url.slug }}" target="_blank" rel="noopener">{{ lang.t("common.open") }}</a>
         </p>
     </div>
-    <div class="row">
+    <div class="page-head-side">
         <span class="badge {{ url.state_class }}">{{ url.state_label }}</span>
+        <button class="btn btn-sm" type="button" data-copy="#short-url">{{ lang.t("common.copy") }}</button>
+        <a class="btn btn-sm" href="/{{ url.slug }}" target="_blank" rel="noopener">{{ lang.t("common.open") }}</a>
         <a class="btn btn-ghost" href="/app">{{ lang.t("url_detail.back") }}</a>
     </div>
-</div>
+</header>
 
-<div class="grid grid-4 mt">
+<div class="stat-grid">
     <div class="stat">
         <div class="stat-label">{{ lang.t("dashboard.stat.total_clicks") }}</div>
         <div class="stat-value">{{ summary.total_clicks }}</div>
@@ -38,21 +39,23 @@
 </div>
 
 {% if url.state == "expired" || url.state == "limit_reached" %}
-<div class="alert alert-warn">
-    {{ lang.t("url_detail.expired_notice") }}
-    <form method="post" action="/app/urls/{{ url.id }}/extend" class="row mt">
-        <button class="btn btn-sm" type="submit" name="days" value="30">{{ lang.t("url_detail.extend.days30") }}</button>
-        <button class="btn btn-sm" type="submit" name="days" value="365">{{ lang.t("url_detail.extend.year1") }}</button>
-        <button class="btn btn-sm" type="submit" name="clicks" value="100">{{ lang.t("url_detail.extend.clicks100") }}</button>
-        <button class="btn btn-sm" type="submit" name="clicks" value="1000">{{ lang.t("url_detail.extend.clicks1000") }}</button>
-    </form>
+<div class="alert alert-warn mt">
+    <div>
+        {{ lang.t("url_detail.expired_notice") }}
+        <form method="post" action="/app/urls/{{ url.id }}/extend" class="row mt">
+            <button class="btn btn-sm" type="submit" name="days" value="30">{{ lang.t("url_detail.extend.days30") }}</button>
+            <button class="btn btn-sm" type="submit" name="days" value="365">{{ lang.t("url_detail.extend.year1") }}</button>
+            <button class="btn btn-sm" type="submit" name="clicks" value="100">{{ lang.t("url_detail.extend.clicks100") }}</button>
+            <button class="btn btn-sm" type="submit" name="clicks" value="1000">{{ lang.t("url_detail.extend.clicks1000") }}</button>
+        </form>
+    </div>
 </div>
 {% endif %}
 
-<div class="card mt">
-    <div class="row between">
-        <h2>{{ lang.t("url_detail.chart.heading") }}</h2>
-        <div class="row small muted">
+<section class="card mt chart-panel" aria-labelledby="detail-chart-heading">
+    <div class="panel-head">
+        <h2 id="detail-chart-heading">{{ lang.t("url_detail.chart.heading") }}</h2>
+        <div class="chart-ranges">
             <a class="btn btn-sm {% if days == 7 %}btn-primary{% endif %}" href="/app/urls/{{ url.id }}?days=7">{{ lang.t("url_detail.chart.range_7d") }}</a>
             <a class="btn btn-sm {% if days == 30 %}btn-primary{% endif %}" href="/app/urls/{{ url.id }}?days=30">{{ lang.t("url_detail.chart.range_30d") }}</a>
             <a class="btn btn-sm {% if days == 90 %}btn-primary{% endif %}" href="/app/urls/{{ url.id }}?days=90">{{ lang.t("url_detail.chart.range_90d") }}</a>
@@ -68,9 +71,9 @@
     {% else %}
     <p class="empty">{{ lang.t("url_detail.chart.empty") }}</p>
     {% endif %}
-</div>
+</section>
 
-<div class="grid grid-2 mt">
+<div class="grid-halves mt">
     <div class="card">
         <h3>{{ lang.t("url_detail.referrers.heading") }}</h3>
         {% if referrers.len() > 0 %}
@@ -140,10 +143,12 @@
     </div>
 </div>
 
-<div class="card mt">
-    <h2>{{ lang.t("url_detail.settings.heading") }}</h2>
+<section class="card mt" aria-labelledby="detail-settings-heading">
+    <div class="panel-head">
+        <h2 id="detail-settings-heading">{{ lang.t("url_detail.settings.heading") }}</h2>
+    </div>
     <form method="post" action="/app/urls/{{ url.id }}">
-        <div class="grid grid-2">
+        <div class="field-grid">
             <div class="field">
                 <label class="label" for="target_url">{{ lang.t("dashboard.new.destination") }}</label>
                 <input class="input" type="text" id="target_url" name="target_url" value="{{ url.target_url }}" required>
@@ -162,9 +167,6 @@
                 <label class="label" for="tags">{{ lang.t("dashboard.new.tags") }}</label>
                 <input class="input" type="text" id="tags" name="tags" value="{{ tags_csv }}">
             </div>
-        </div>
-
-        <div class="grid grid-2">
             <div class="field">
                 <label class="label" for="password">{{ lang.t("url_detail.settings.new_password") }}</label>
                 <input class="input" type="password" id="password" name="password"
@@ -202,6 +204,8 @@
                     <option value="307" {% if url.redirect_type == 307 %}selected{% endif %}>{{ lang.t("dashboard.redirect.307") }}</option>
                     <option value="308" {% if url.redirect_type == 308 %}selected{% endif %}>{{ lang.t("dashboard.redirect.308") }}</option>
                 </select>
+            </div>
+            <div class="field">
                 <label class="label" for="status">{{ lang.t("common.status") }}</label>
                 <select class="select" id="status" name="status">
                     <option value="active" {% if url.state != "disabled" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
@@ -210,7 +214,7 @@
             </div>
         </div>
 
-        <div class="row row-end mt">
+        <div class="form-actions">
             <button class="btn btn-primary" type="submit">{{ lang.t("url_detail.save") }}</button>
         </div>
     </form>
@@ -222,10 +226,12 @@
             {{ lang.t("url_detail.delete") }}
         </button>
     </form>
-</div>
+</section>
 
-<div class="card card-flush mt">
-    <h2 style="padding: 1rem 1rem 0;">{{ lang.t("url_detail.clicks.heading") }}</h2>
+<section class="card mt table-card" aria-labelledby="detail-clicks-heading">
+    <div class="table-toolbar">
+        <h2 id="detail-clicks-heading">{{ lang.t("url_detail.clicks.heading") }}</h2>
+    </div>
     {% if clicks.len() > 0 %}
     <div class="table-wrap">
         <table class="table">
@@ -235,7 +241,7 @@
             <tbody>
                 {% for click in clicks %}
                 <tr>
-                    <td class="small">{{ click.when }}</td>
+                    <td class="small nowrap">{{ click.when }}</td>
                     <td class="truncate">{{ click.referrer }}</td>
                     <td>{{ click.device }}</td>
                     <td>{{ click.browser }}</td>
@@ -249,5 +255,5 @@
     {% else %}
     <p class="empty">{{ lang.t("dashboard.chart.empty") }}</p>
     {% endif %}
-</div>
+</section>
 {% endblock %}

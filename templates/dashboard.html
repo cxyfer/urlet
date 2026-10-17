@@ -3,16 +3,24 @@
 {% block title %}{{ lang.t("nav.links") }} — {{ chrome.site_name }}{% endblock %}
 
 {% block content %}
-<div class="row between mt">
+<header class="page-head">
     <div>
+        <p class="eyebrow" aria-hidden="true"><span class="status-dot"></span><span class="eyebrow-line"></span></p>
         <h1>{{ lang.t("dashboard.heading") }}</h1>
-        <p class="muted small">
-            {{ usage }}
-        </p>
     </div>
-</div>
+    <div class="page-head-side">
+        <div class="quota">
+            <span class="quota-usage">{{ usage }}</span>
+            {% if quota > 0 %}
+            <span class="quota-track" aria-hidden="true">
+                <span class="quota-fill" style="width: {{ used * 100 / quota }}%"></span>
+            </span>
+            {% endif %}
+        </div>
+    </div>
+</header>
 
-<div class="grid grid-4 mt">
+<div class="stat-grid">
     <div class="stat">
         <div class="stat-label">{{ lang.t("dashboard.stat.links") }}</div>
         <div class="stat-value">{{ overview.links }}</div>
@@ -48,10 +56,13 @@
     </div>
 </div>
 
-<div class="card mt">
-    <h2>{{ lang.t("dashboard.new.heading") }}</h2>
+<section class="card mt" aria-labelledby="new-link-heading">
+    <div class="panel-head">
+        <h2 id="new-link-heading">{{ lang.t("dashboard.new.heading") }}</h2>
+        <span class="panel-kicker" aria-hidden="true">01</span>
+    </div>
     <form method="post" action="/app/urls">
-        <div class="grid grid-2">
+        <div class="field-grid">
             <div class="field">
                 <label class="label" for="target_url">{{ lang.t("dashboard.new.destination") }}</label>
                 <input class="input" type="text" id="target_url" name="target_url"
@@ -64,9 +75,6 @@
                        placeholder="{{ lang.t("dashboard.new.slug_placeholder") }}">
                 <span class="hint">{{ lang.t("dashboard.new.slug_hint") }}</span>
             </div>
-        </div>
-
-        <div class="grid grid-2">
             <div class="field">
                 <label class="label" for="title">{{ lang.t("dashboard.new.title") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
                 <input class="input" type="text" id="title" name="title" maxlength="200">
@@ -79,7 +87,7 @@
 
         <details class="advanced">
             <summary>{{ lang.t("dashboard.advanced.summary") }}</summary>
-            <div class="grid grid-2 mt">
+            <div class="field-grid mt">
                 <div class="field">
                     <label class="label" for="password">{{ lang.t("dashboard.advanced.link_password") }}</label>
                     <input class="input" type="password" id="password" name="password"
@@ -112,14 +120,17 @@
 
         {% include "partials/captcha.html" %}
 
-        <div class="row row-end mt">
+        <div class="form-actions">
             <button class="btn btn-primary" type="submit">{{ lang.t("dashboard.create") }}</button>
         </div>
     </form>
-</div>
+</section>
 
-<div class="card mt">
-    <h2>{{ lang.t("dashboard.chart.heading") }}</h2>
+<section class="card mt chart-panel" aria-labelledby="clicks-chart-heading">
+    <div class="panel-head">
+        <h2 id="clicks-chart-heading">{{ lang.t("dashboard.chart.heading") }}</h2>
+        <span class="panel-kicker" aria-hidden="true">02</span>
+    </div>
     {% if overview.total_clicks > 0 %}
     {{ chart|safe }}
     <div class="chart-axis">
@@ -130,11 +141,14 @@
     {% else %}
     <p class="empty">{{ lang.t("dashboard.chart.empty") }}</p>
     {% endif %}
-</div>
+</section>
 
 {% if overview.top_links.len() > 0 %}
-<div class="card mt">
-    <h2>{{ lang.t("dashboard.top.heading") }}</h2>
+<section class="card mt table-card" aria-labelledby="top-links-heading">
+    <div class="table-toolbar">
+        <h2 id="top-links-heading">{{ lang.t("dashboard.top.heading") }}</h2>
+        <span class="panel-kicker" aria-hidden="true">03</span>
+    </div>
     <div class="table-wrap">
         <table class="table">
             <thead>
@@ -143,49 +157,51 @@
             <tbody>
                 {% for link in overview.top_links %}
                 <tr>
-                    <td><a href="/app/urls/{{ link.id }}">{{ link.slug }}</a></td>
+                    <td><a class="mono" href="/app/urls/{{ link.id }}">{{ link.slug }}</a></td>
                     <td class="truncate">{{ link.target_url }}</td>
-                    <td>{{ link.click_count }}</td>
+                    <td class="num">{{ link.click_count }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-</div>
+</section>
 {% endif %}
 
-<div class="card card-flush mt">
-    <div style="padding: 1rem 1rem 0;">
-        <form method="get" action="/app" class="row">
-            <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ lang.t("dashboard.search.placeholder") }}"
-                   style="max-width: 260px;">
-            <select class="select" name="tag" style="max-width: 180px;">
-                <option value="">{{ lang.t("dashboard.tags.all") }}</option>
-                {% for item in tags %}
-                <option value="{{ item.name }}" {% if item.name == tag %}selected{% endif %}>
-                    {{ item.name }} ({{ item.url_count }})
-                </option>
-                {% endfor %}
-            </select>
-            <select class="select" name="status" style="max-width: 150px;">
-                <option value="" {% if status == "" %}selected{% endif %}>{{ lang.t("common.any_status") }}</option>
-                <option value="active" {% if status == "active" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
-                <option value="disabled" {% if status == "disabled" %}selected{% endif %}>{{ lang.t("common.disabled") }}</option>
-            </select>
-            <select class="select" name="sort" style="max-width: 170px;">
-                <option value="" {% if sort == "" %}selected{% endif %}>{{ lang.t("dashboard.sort.newest") }}</option>
-                <option value="clicks" {% if sort == "clicks" %}selected{% endif %}>{{ lang.t("dashboard.sort.clicks") }}</option>
-                <option value="slug" {% if sort == "slug" %}selected{% endif %}>{{ lang.t("dashboard.sort.slug") }}</option>
-                <option value="updated" {% if sort == "updated" %}selected{% endif %}>{{ lang.t("dashboard.sort.updated") }}</option>
-                <option value="expires" {% if sort == "expires" %}selected{% endif %}>{{ lang.t("dashboard.sort.expires") }}</option>
-            </select>
-            <button class="btn" type="submit">{{ lang.t("common.filter") }}</button>
-            <a class="btn btn-ghost" href="/app">{{ lang.t("common.reset") }}</a>
-        </form>
+<section class="card mt table-card" aria-labelledby="all-links-heading">
+    <div class="table-toolbar">
+        <h2 id="all-links-heading">{{ lang.t("nav.links") }}</h2>
+        <span class="panel-kicker" aria-hidden="true">04</span>
     </div>
 
+    <form method="get" action="/app" class="filter-bar">
+        <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ lang.t("dashboard.search.placeholder") }}">
+        <select class="select" name="tag">
+            <option value="">{{ lang.t("dashboard.tags.all") }}</option>
+            {% for item in tags %}
+            <option value="{{ item.name }}" {% if item.name == tag %}selected{% endif %}>
+                {{ item.name }} ({{ item.url_count }})
+            </option>
+            {% endfor %}
+        </select>
+        <select class="select" name="status">
+            <option value="" {% if status == "" %}selected{% endif %}>{{ lang.t("common.any_status") }}</option>
+            <option value="active" {% if status == "active" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
+            <option value="disabled" {% if status == "disabled" %}selected{% endif %}>{{ lang.t("common.disabled") }}</option>
+        </select>
+        <select class="select" name="sort">
+            <option value="" {% if sort == "" %}selected{% endif %}>{{ lang.t("dashboard.sort.newest") }}</option>
+            <option value="clicks" {% if sort == "clicks" %}selected{% endif %}>{{ lang.t("dashboard.sort.clicks") }}</option>
+            <option value="slug" {% if sort == "slug" %}selected{% endif %}>{{ lang.t("dashboard.sort.slug") }}</option>
+            <option value="updated" {% if sort == "updated" %}selected{% endif %}>{{ lang.t("dashboard.sort.updated") }}</option>
+            <option value="expires" {% if sort == "expires" %}selected{% endif %}>{{ lang.t("dashboard.sort.expires") }}</option>
+        </select>
+        <button class="btn" type="submit">{{ lang.t("common.filter") }}</button>
+        <a class="btn btn-ghost" href="/app">{{ lang.t("common.reset") }}</a>
+    </form>
+
     {% if urls.len() > 0 %}
-    <div class="table-wrap mt">
+    <div class="table-wrap">
         <table class="table">
             <thead>
                 <tr>
@@ -202,27 +218,31 @@
                 {% for url in urls %}
                 <tr>
                     <td>
-                        <span class="mono" id="short-{{ url.id }}">{{ url.short_url }}</span>
-                        <div class="row" style="gap: .25rem;">
-                            <button class="btn btn-sm" type="button" data-copy="#short-{{ url.id }}">{{ lang.t("common.copy") }}</button>
-                            <a class="btn btn-sm" href="/{{ url.slug }}" target="_blank" rel="noopener">{{ lang.t("common.open") }}</a>
+                        <div class="short-link">
+                            <span class="mono" id="short-{{ url.id }}">{{ url.short_url }}</span>
+                            <div class="row">
+                                <button class="btn btn-sm" type="button" data-copy="#short-{{ url.id }}">{{ lang.t("common.copy") }}</button>
+                                <a class="btn btn-sm" href="/{{ url.slug }}" target="_blank" rel="noopener">{{ lang.t("common.open") }}</a>
+                            </div>
                         </div>
                     </td>
                     <td>
-                        <div class="truncate" title="{{ url.target_url }}">{{ url.target_display }}</div>
-                        {% match url.title %}
-                        {% when Some with (title) %}<div class="small muted">{{ title }}</div>
-                        {% when None %}{% endmatch %}
-                        {% if url.has_password %}<span class="badge badge-accent">{{ lang.t("dashboard.table.password") }}</span>{% endif %}
+                        <div class="cell-stack">
+                            <div class="truncate" title="{{ url.target_url }}">{{ url.target_display }}</div>
+                            {% match url.title %}
+                            {% when Some with (title) %}<div class="small muted">{{ title }}</div>
+                            {% when None %}{% endmatch %}
+                            {% if url.has_password %}<span class="badge badge-accent">{{ lang.t("dashboard.table.password") }}</span>{% endif %}
+                        </div>
                     </td>
                     <td>
                         {% for item in url.tags %}
-                        <span class="badge">{{ item }}</span>
+                        <span class="tag">{{ item }}</span>
                         {% endfor %}
                     </td>
                     <td>
-                        {{ url.click_count }}
-                        <div class="small muted">{{ url.unique_click_count }} {{ lang.t("common.unique") }}</div>
+                        <span class="num">{{ url.click_count }}</span>
+                        <div class="small muted nowrap">{{ url.unique_click_count }} {{ lang.t("common.unique") }}</div>
                     </td>
                     <td><span class="badge {{ url.state_class }}">{{ url.state_label }}</span></td>
                     <td class="small">
@@ -258,5 +278,5 @@
     {% else %}
     <p class="empty">{{ lang.t("dashboard.empty") }}</p>
     {% endif %}
-</div>
+</section>
 {% endblock %}

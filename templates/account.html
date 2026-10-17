@@ -3,11 +3,18 @@
 {% block title %}{{ lang.t("account.heading") }} — {{ chrome.site_name }}{% endblock %}
 
 {% block content %}
-<h1 class="mt">{{ lang.t("account.heading") }}</h1>
+<header class="page-head">
+    <div>
+        <p class="eyebrow" aria-hidden="true"><span class="status-dot"></span><span class="eyebrow-line"></span></p>
+        <h1>{{ lang.t("account.heading") }}</h1>
+    </div>
+</header>
 
-<div class="grid grid-2 mt">
-    <div class="card">
-        <h2>{{ lang.t("account.profile.heading") }}</h2>
+<div class="grid grid-2">
+    <section class="card">
+        <div class="panel-head">
+            <h2>{{ lang.t("account.profile.heading") }}</h2>
+        </div>
         <form method="post" action="/app/account">
             <div class="field">
                 <label class="label" for="display_name">{{ lang.t("account.profile.display_name") }}</label>
@@ -24,10 +31,12 @@
             <dt>{{ lang.t("common.status") }}</dt><dd>{% if user.status == "active" %}{{ lang.t("admin.users.status.active") }}{% else %}{{ lang.t("admin.users.status.suspended") }}{% endif %}</dd>
             <dt>{{ lang.t("common.created") }}</dt><dd>{{ user.created_at }}</dd>
         </dl>
-    </div>
+    </section>
 
-    <div class="card">
-        <h2>{{ lang.t("account.password.heading") }}</h2>
+    <section class="card">
+        <div class="panel-head">
+            <h2>{{ lang.t("account.password.heading") }}</h2>
+        </div>
         <form method="post" action="/app/account/password">
             <div class="field">
                 <label class="label" for="current_password">{{ lang.t("account.password.current") }}</label>
@@ -42,11 +51,13 @@
             </div>
             <button class="btn btn-primary" type="submit">{{ lang.t("account.password.submit") }}</button>
         </form>
-    </div>
+    </section>
 </div>
 
-<div class="card card-flush mt">
-    <h2 style="padding: 1rem 1rem 0;">{{ lang.t("account.sessions.heading") }}</h2>
+<section class="card mt table-card" aria-labelledby="sessions-heading">
+    <div class="table-toolbar">
+        <h2 id="sessions-heading">{{ lang.t("account.sessions.heading") }}</h2>
+    </div>
     <div class="table-wrap">
         <table class="table">
             <thead>
@@ -55,9 +66,11 @@
             <tbody>
                 {% for session in sessions %}
                 <tr>
-                    <td class="truncate">
-                        {{ session.agent }}
-                        {% if session.current %}<span class="badge badge-accent">{{ lang.t("account.sessions.this_device") }}</span>{% endif %}
+                    <td>
+                        <div class="cell-inline">
+                            <span class="truncate" title="{{ session.agent }}">{{ session.agent }}</span>
+                            {% if session.current %}<span class="badge badge-accent">{{ lang.t("account.sessions.this_device") }}</span>{% endif %}
+                        </div>
                     </td>
                     <td class="small">{{ session.created }}</td>
                     <td class="small">{{ session.last_seen }}</td>
@@ -73,33 +86,37 @@
             </tbody>
         </table>
     </div>
-</div>
+</section>
 
-<div class="card mt">
-    <h2>{{ lang.t("account.tokens.heading") }}</h2>
+<section class="card mt" aria-labelledby="tokens-heading">
+    <div class="panel-head">
+        <h2 id="tokens-heading">{{ lang.t("account.tokens.heading") }}</h2>
+    </div>
     <p class="muted small">
         {{ lang.t("account.tokens.hint")|safe }}
     </p>
 
     {% match new_token %}
     {% when Some with (token) %}
-    <div class="alert alert-info">
-        <strong>{{ lang.t("account.tokens.copy_now") }}</strong> {{ lang.t("account.tokens.copy_once") }}
-        <div class="copy-row mt">
-            <input class="input" id="new-token" type="text" value="{{ token }}" readonly>
-            <button class="btn" type="button" data-copy="#new-token">{{ lang.t("common.copy") }}</button>
+    <div class="alert alert-info mt">
+        <div>
+            <strong>{{ lang.t("account.tokens.copy_now") }}</strong> {{ lang.t("account.tokens.copy_once") }}
+            <div class="copy-row mt">
+                <input class="input" id="new-token" type="text" value="{{ token }}" readonly>
+                <button class="btn" type="button" data-copy="#new-token">{{ lang.t("common.copy") }}</button>
+            </div>
         </div>
     </div>
     {% when None %}
     {% endmatch %}
 
-    <form method="post" action="/app/account/tokens" class="row">
-        <div class="field" style="flex: 1 1 220px; margin-bottom: 0;">
+    <form method="post" action="/app/account/tokens" class="inline-form mt">
+        <div class="field">
             <label class="label" for="name">{{ lang.t("account.tokens.name") }}</label>
             <input class="input" type="text" id="name" name="name" maxlength="{{ max_name_len }}"
                    placeholder="{{ lang.t("account.tokens.name_placeholder") }}" required>
         </div>
-        <div class="field" style="flex: 1 1 200px; margin-bottom: 0;">
+        <div class="field">
             <label class="label" for="expires_at">{{ lang.t("common.expires_at") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
             <input class="input" type="text" id="expires_at" name="expires_at" placeholder="{{ lang.t("common.password_placeholder") }}">
         </div>
@@ -149,5 +166,5 @@
     {% else %}
     <p class="muted small mt">{{ lang.t("account.tokens.empty") }}</p>
     {% endif %}
-</div>
+</section>
 {% endblock %}

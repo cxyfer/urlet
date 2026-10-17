@@ -5,6 +5,8 @@
 
 {% block title %}{{ site_name }} — {{ lang.t("landing.meta.title") }}{% endblock %}
 
+{% block body_class %}page-landing{% endblock %}
+
 {% block head %}
 <meta name="description" content="{{ lang.t("landing.meta.description") }}">
 {% endblock %}
@@ -17,66 +19,191 @@
         {% else %}
         <a class="brand" href="/">{{ site_name }}<span>.</span></a>
         {% endif %}
-        <nav class="nav">
+        <div class="topbar-tools">
             {% include "partials/lang_switcher.html" %}
             {% if signed_in %}
-            <a href="/app">{{ lang.t("landing.nav.dashboard") }}</a>
-            <span class="muted small">{{ email }}</span>
+            <a class="toplink" href="/app">{{ lang.t("landing.nav.dashboard") }}</a>
+            <span class="topbar-user">
+                <span class="avatar avatar-sm" aria-hidden="true">{{ email.chars().next().unwrap_or('·') }}</span>
+                <span class="topbar-email">{{ email }}</span>
+            </span>
             <form method="post" action="/app/logout">
                 <button class="btn btn-ghost btn-sm" type="submit">{{ lang.t("nav.sign_out") }}</button>
             </form>
-            {% endif %}
-        </nav>
-        {% if !signed_in %}
-        {# Kept outside `.nav` so the primary button keeps its own colours. #}
-        <div class="row">
-            <a class="btn btn-ghost btn-sm" href="/app/login">{{ lang.t("landing.nav.sign_in") }}</a>
+            {% else %}
+            <a class="toplink" href="/app/login">{{ lang.t("landing.nav.sign_in") }}</a>
             <a class="btn btn-primary btn-sm" href="/app/register">{{ lang.t("landing.nav.create_account") }}</a>
+            {% endif %}
         </div>
-        {% endif %}
     </div>
 </div>
 
-<main class="wrap">
-    <section class="landing-hero">
-        <h1>{{ site_name }}</h1>
-        <p class="landing-tagline">{{ lang.t("landing.tagline") }}</p>
-        <p class="muted">{{ lang.t("landing.subtitle") }}</p>
-        <div class="row landing-cta">
-            {% if signed_in %}
-            <a class="btn btn-primary" href="/app">{{ lang.t("landing.cta.dashboard") }}</a>
-            {% else %}
-            <a class="btn btn-primary" href="/app/register">{{ lang.t("landing.cta.create_account") }}</a>
-            <a class="btn btn-ghost" href="/app/login">{{ lang.t("landing.cta.sign_in") }}</a>
-            {% endif %}
+<main class="landing-main">
+    <section class="hero">
+        <div class="hero-copy">
+            <p class="hero-eyebrow" aria-hidden="true">
+                <span class="pill-dot"></span>
+                <span class="mono">{{ site_name }}</span>
+                <span class="mono">/ 001</span>
+            </p>
+            <div class="hero-word"><h1>{{ site_name }}</h1></div>
+            <p class="hero-tagline">{{ lang.t("landing.tagline") }}</p>
+            <p class="hero-sub">{{ lang.t("landing.subtitle") }}</p>
+            <div class="hero-cta">
+                {% if signed_in %}
+                <a class="btn btn-primary" href="/app">{{ lang.t("landing.cta.dashboard") }}</a>
+                {% else %}
+                <a class="btn btn-primary" href="/app/register">{{ lang.t("landing.cta.create_account") }}</a>
+                <a class="btn btn-ghost" href="/app/login">{{ lang.t("landing.cta.sign_in") }}</a>
+                {% endif %}
+            </div>
+        </div>
+
+        {# Decorative product mock: abstract bars and numbers only, never data. #}
+        <div class="hero-visual" aria-hidden="true">
+            <div class="mock">
+                <div class="mock-bar">
+                    <span class="mock-lights"><i></i><i></i><i></i></span>
+                    <span class="mock-url mono">{{ site_name }}/a7f3k</span>
+                    <span class="mock-live"><i></i>24</span>
+                </div>
+                <div class="mock-spark">
+                    <svg viewBox="0 0 340 96" preserveAspectRatio="none" focusable="false">
+                        <defs>
+                            <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0" stop-color="#5eead4" stop-opacity=".34"/>
+                                <stop offset=".65" stop-color="#60a5fa" stop-opacity=".10"/>
+                                <stop offset="1" stop-color="#60a5fa" stop-opacity="0"/>
+                            </linearGradient>
+                            <linearGradient id="sparkLine" x1="0" y1="0" x2="1" y2="0">
+                                <stop offset="0" stop-color="#5eead4"/>
+                                <stop offset=".55" stop-color="#60a5fa"/>
+                                <stop offset="1" stop-color="#a78bfa"/>
+                            </linearGradient>
+                        </defs>
+                        <path d="M0 78 L34 66 L68 72 L102 50 L136 58 L170 34 L204 44 L238 22 L272 30 L306 12 L340 20 L340 96 L0 96 Z"
+                              fill="url(#sparkFill)"/>
+                        <path d="M0 78 L34 66 L68 72 L102 50 L136 58 L170 34 L204 44 L238 22 L272 30 L306 12 L340 20"
+                              fill="none" stroke="url(#sparkLine)" stroke-width="1.8"
+                              stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+                        <circle cx="306" cy="12" r="2.6" fill="#a5f3fc"/>
+                        <circle cx="306" cy="12" r="5.6" fill="#5eead4" opacity=".18"/>
+                    </svg>
+                </div>
+                <div class="mock-metrics">
+                    <div class="mock-metric">
+                        <span class="mock-num">12.4k</span>
+                        <span class="mock-track"><span style="width: 82%"></span></span>
+                    </div>
+                    <div class="mock-metric">
+                        <span class="mock-num">6.1k</span>
+                        <span class="mock-track"><span style="width: 54%"></span></span>
+                    </div>
+                    <div class="mock-metric">
+                        <span class="mock-num">2.8k</span>
+                        <span class="mock-track"><span style="width: 31%"></span></span>
+                    </div>
+                </div>
+                <div class="mock-foot">
+                    <span class="mock-dots"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+                    <span class="mock-chips"><span></span><span></span><span></span></span>
+                </div>
+            </div>
         </div>
     </section>
 
-    <section class="mt-2" aria-labelledby="landing-highlights">
-        <h2 class="center" id="landing-highlights">{{ lang.t("landing.features.heading") }}</h2>
-        <p class="center muted">{{ lang.t("landing.features.subtitle") }}</p>
-        <div class="grid landing-grid mt">
-            <article class="card landing-feature">
+    <section aria-labelledby="landing-highlights">
+        <svg class="svg-defs" width="0" height="0" aria-hidden="true" focusable="false">
+            <defs>
+                <linearGradient id="featureGrad" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#5eead4"/>
+                    <stop offset=".52" stop-color="#60a5fa"/>
+                    <stop offset="1" stop-color="#a78bfa"/>
+                </linearGradient>
+            </defs>
+        </svg>
+
+        <div class="section-head">
+            <h2 id="landing-highlights">{{ lang.t("landing.features.heading") }}</h2>
+            <p class="section-sub">{{ lang.t("landing.features.subtitle") }}</p>
+        </div>
+
+        <div class="bento">
+            <article class="card landing-feature feature-wide">
+                <span class="feature-index" aria-hidden="true">01</span>
+                <span class="feature-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="url(#featureGrad)" stroke-width="1.5"
+                         stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                        <circle cx="9" cy="8" r="3.2"/>
+                        <path d="M3.2 19.5a5.8 5.8 0 0 1 11.6 0"/>
+                        <path d="M16 5.4a3.2 3.2 0 0 1 0 6.2"/>
+                        <path d="M17.4 14.4a5.2 5.2 0 0 1 3.4 4.9"/>
+                    </svg>
+                </span>
                 <h3>{{ lang.t("landing.feature.accounts.title") }}</h3>
                 <p class="muted small">{{ lang.t("landing.feature.accounts.body") }}</p>
             </article>
             <article class="card landing-feature">
+                <span class="feature-index" aria-hidden="true">02</span>
+                <span class="feature-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="url(#featureGrad)" stroke-width="1.5"
+                         stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                        <path d="M10.6 13.4a3.6 3.6 0 0 0 5.1 0l2.6-2.6a3.6 3.6 0 0 0-5.1-5.1l-1.2 1.2"/>
+                        <path d="M13.4 10.6a3.6 3.6 0 0 0-5.1 0l-2.6 2.6a3.6 3.6 0 0 0 5.1 5.1l1.2-1.2"/>
+                    </svg>
+                </span>
                 <h3>{{ lang.t("landing.feature.links.title") }}</h3>
                 <p class="muted small">{{ lang.t("landing.feature.links.body") }}</p>
             </article>
             <article class="card landing-feature">
+                <span class="feature-index" aria-hidden="true">03</span>
+                <span class="feature-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="url(#featureGrad)" stroke-width="1.5"
+                         stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                        <path d="M12 3 5 6v5.5c0 4 2.9 7.4 7 8.5 4.1-1.1 7-4.5 7-8.5V6l-7-3Z"/>
+                        <path d="M9.4 11.8 11.2 13.6 15 9.8"/>
+                    </svg>
+                </span>
                 <h3>{{ lang.t("landing.feature.protection.title") }}</h3>
                 <p class="muted small">{{ lang.t("landing.feature.protection.body") }}</p>
             </article>
-            <article class="card landing-feature">
+            <article class="card landing-feature feature-wide">
+                <span class="feature-index" aria-hidden="true">04</span>
+                <span class="feature-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="url(#featureGrad)" stroke-width="1.5"
+                         stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                        <path d="M3.5 20h17"/>
+                        <rect x="5.5" y="11" width="3.2" height="6" rx="1.1"/>
+                        <rect x="10.4" y="6.5" width="3.2" height="10.5" rx="1.1"/>
+                        <rect x="15.3" y="13.5" width="3.2" height="3.5" rx="1.1"/>
+                    </svg>
+                </span>
                 <h3>{{ lang.t("landing.feature.analytics.title") }}</h3>
                 <p class="muted small">{{ lang.t("landing.feature.analytics.body") }}</p>
             </article>
             <article class="card landing-feature">
+                <span class="feature-index" aria-hidden="true">05</span>
+                <span class="feature-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="url(#featureGrad)" stroke-width="1.5"
+                         stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                        <path d="M4 8h7M16 8h4M4 16h4M13 16h7"/>
+                        <circle cx="13.5" cy="8" r="2.2"/>
+                        <circle cx="10.5" cy="16" r="2.2"/>
+                    </svg>
+                </span>
                 <h3>{{ lang.t("landing.feature.operations.title") }}</h3>
                 <p class="muted small">{{ lang.t("landing.feature.operations.body") }}</p>
             </article>
-            <article class="card landing-feature">
+            <article class="card landing-feature feature-wide">
+                <span class="feature-index" aria-hidden="true">06</span>
+                <span class="feature-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="url(#featureGrad)" stroke-width="1.5"
+                         stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                        <circle cx="12" cy="12" r="8"/>
+                        <path d="M4 12h16"/>
+                        <path d="M12 4c2.2 2.2 3.2 5 3.2 8s-1 5.8-3.2 8c-2.2-2.2-3.2-5-3.2-8S9.8 6.2 12 4Z"/>
+                    </svg>
+                </span>
                 <h3>{{ lang.t("landing.feature.platform.title") }}</h3>
                 <p class="muted small">{{ lang.t("landing.feature.platform.body") }}</p>
             </article>

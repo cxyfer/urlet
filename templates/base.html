@@ -8,7 +8,7 @@
     <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
     {% block head %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
 {% block topbar %}{% endblock %}
 {% block body %}
 <main class="wrap">
@@ -16,7 +16,7 @@
 </main>
 {% endblock %}
 <footer class="site">
-    <span>{{ site_name }} — {{ lang.t("footer.tagline") }}</span>
+    <span class="footer-tagline">{{ site_name }} — {{ lang.t("footer.tagline") }}</span>
     {% block footer_lang %}{% include "partials/lang_switcher.html" %}{% endblock %}
 </footer>
 <script src="/assets/app.js" defer></script>

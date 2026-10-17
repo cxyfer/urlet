@@ -5,116 +5,138 @@
 {% block content %}
 {% include "admin/tabs.html" %}
 
-<h1>{{ lang.t("admin.settings.heading") }}</h1>
+<header class="page-head">
+    <div>
+        <p class="eyebrow" aria-hidden="true"><span class="status-dot"></span><span class="eyebrow-line"></span></p>
+        <h1>{{ lang.t("admin.settings.heading") }}</h1>
+    </div>
+    <div class="page-head-side">
+        <span class="console-meta">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span class="mono">{{ lang.t("admin.overview.instance") }}</span>
+        </span>
+    </div>
+</header>
 
 <div class="card mt">
     <form method="post" action="/app/admin/settings">
-        <div class="grid grid-2">
-            <div class="field">
-                <label class="label" for="site_name">{{ lang.t("admin.settings.site_name") }}</label>
-                <input class="input" type="text" id="site_name" name="site_name"
-                       value="{{ values.site_name }}" maxlength="60" required>
+        <section class="form-block">
+            <div class="form-block-head">
+                <h2>{{ lang.t("admin.overview.instance") }}</h2>
             </div>
-            <div class="field">
-                <label class="label" for="registration_mode">{{ lang.t("admin.settings.registration_mode") }}</label>
-                <select class="select" id="registration_mode" name="registration_mode">
-                    <option value="open" {% if values.registration_mode == "open" %}selected{% endif %}>{{ lang.t("admin.settings.mode.open") }}</option>
-                    <option value="invite" {% if values.registration_mode == "invite" %}selected{% endif %}>{{ lang.t("admin.settings.mode.invite") }}</option>
-                    <option value="closed" {% if values.registration_mode == "closed" %}selected{% endif %}>{{ lang.t("admin.settings.mode.closed") }}</option>
-                </select>
+            <div class="field-grid">
+                <div class="field">
+                    <label class="label" for="site_name">{{ lang.t("admin.settings.site_name") }}</label>
+                    <input class="input" type="text" id="site_name" name="site_name"
+                           value="{{ values.site_name }}" maxlength="60" required>
+                </div>
+                <div class="field">
+                    <label class="label" for="registration_mode">{{ lang.t("admin.settings.registration_mode") }}</label>
+                    <select class="select" id="registration_mode" name="registration_mode">
+                        <option value="open" {% if values.registration_mode == "open" %}selected{% endif %}>{{ lang.t("admin.settings.mode.open") }}</option>
+                        <option value="invite" {% if values.registration_mode == "invite" %}selected{% endif %}>{{ lang.t("admin.settings.mode.invite") }}</option>
+                        <option value="closed" {% if values.registration_mode == "closed" %}selected{% endif %}>{{ lang.t("admin.settings.mode.closed") }}</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label class="label" for="default_slug_length">{{ lang.t("admin.settings.slug_length") }}</label>
+                    <input class="input" type="number" id="default_slug_length" name="default_slug_length"
+                           min="4" max="16" value="{{ values.default_slug_length }}" required>
+                    <span class="hint">{{ lang.t("admin.settings.slug_length_hint") }}</span>
+                </div>
+                <div class="field">
+                    <label class="label" for="max_urls_per_user">{{ lang.t("admin.settings.links_per_user") }}</label>
+                    <input class="input" type="number" id="max_urls_per_user" name="max_urls_per_user"
+                           min="0" value="{{ values.max_urls_per_user }}" required>
+                    <span class="hint">{{ lang.t("admin.settings.links_per_user_hint") }}</span>
+                </div>
+                <div class="field">
+                    <label class="label" for="default_redirect_type">{{ lang.t("admin.settings.default_redirect") }}</label>
+                    <select class="select" id="default_redirect_type" name="default_redirect_type">
+                        <option value="302" {% if values.default_redirect_type == 302 %}selected{% endif %}>{{ lang.t("dashboard.redirect.302") }}</option>
+                        <option value="301" {% if values.default_redirect_type == 301 %}selected{% endif %}>{{ lang.t("dashboard.redirect.301") }}</option>
+                        <option value="307" {% if values.default_redirect_type == 307 %}selected{% endif %}>{{ lang.t("dashboard.redirect.307") }}</option>
+                        <option value="308" {% if values.default_redirect_type == 308 %}selected{% endif %}>{{ lang.t("dashboard.redirect.308") }}</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label class="label" for="click_retention_days">{{ lang.t("admin.settings.retention") }}</label>
+                    <input class="input" type="number" id="click_retention_days" name="click_retention_days"
+                           min="0" max="3650" value="{{ values.click_retention_days }}" required>
+                    <span class="hint">{{ lang.t("admin.settings.retention_hint") }}</span>
+                </div>
             </div>
-            <div class="field">
-                <label class="label" for="default_slug_length">{{ lang.t("admin.settings.slug_length") }}</label>
-                <input class="input" type="number" id="default_slug_length" name="default_slug_length"
-                       min="4" max="16" value="{{ values.default_slug_length }}" required>
-                <span class="hint">{{ lang.t("admin.settings.slug_length_hint") }}</span>
-            </div>
-            <div class="field">
-                <label class="label" for="max_urls_per_user">{{ lang.t("admin.settings.links_per_user") }}</label>
-                <input class="input" type="number" id="max_urls_per_user" name="max_urls_per_user"
-                       min="0" value="{{ values.max_urls_per_user }}" required>
-                <span class="hint">{{ lang.t("admin.settings.links_per_user_hint") }}</span>
-            </div>
-            <div class="field">
-                <label class="label" for="default_redirect_type">{{ lang.t("admin.settings.default_redirect") }}</label>
-                <select class="select" id="default_redirect_type" name="default_redirect_type">
-                    <option value="302" {% if values.default_redirect_type == 302 %}selected{% endif %}>{{ lang.t("dashboard.redirect.302") }}</option>
-                    <option value="301" {% if values.default_redirect_type == 301 %}selected{% endif %}>{{ lang.t("dashboard.redirect.301") }}</option>
-                    <option value="307" {% if values.default_redirect_type == 307 %}selected{% endif %}>{{ lang.t("dashboard.redirect.307") }}</option>
-                    <option value="308" {% if values.default_redirect_type == 308 %}selected{% endif %}>{{ lang.t("dashboard.redirect.308") }}</option>
-                </select>
-            </div>
-            <div class="field">
-                <label class="label" for="click_retention_days">{{ lang.t("admin.settings.retention") }}</label>
-                <input class="input" type="number" id="click_retention_days" name="click_retention_days"
-                       min="0" max="3650" value="{{ values.click_retention_days }}" required>
-                <span class="hint">{{ lang.t("admin.settings.retention_hint") }}</span>
-            </div>
-        </div>
 
-        <label class="checkbox">
-            <input type="checkbox" name="analytics_enabled" value="on"
-                   {% if values.analytics_enabled %}checked{% endif %}>
-            {{ lang.t("admin.settings.analytics") }}
-        </label>
+            <label class="checkbox">
+                <input type="checkbox" name="analytics_enabled" value="on"
+                       {% if values.analytics_enabled %}checked{% endif %}>
+                {{ lang.t("admin.settings.analytics") }}
+            </label>
+        </section>
 
-        <h2 class="mt">{{ lang.t("admin.settings.bot_protection") }}</h2>
-        <p class="hint">{{ lang.t("admin.settings.bot_protection_hint") }}</p>
-        {% match values.captcha_state %}
-        {% when Some with (note) %}
-        <p class="hint" data-captcha-state>{{ note }}</p>
-        {% when None %}
-        {% endmatch %}
+        <section class="form-block">
+            <div class="form-block-head">
+                <h2>{{ lang.t("admin.settings.bot_protection") }}</h2>
+                <p class="hint">{{ lang.t("admin.settings.bot_protection_hint") }}</p>
+            </div>
+            {% match values.captcha_state %}
+            {% when Some with (note) %}
+            <p class="hint" data-captcha-state>{{ note }}</p>
+            {% when None %}
+            {% endmatch %}
 
-        <div class="grid grid-2 mt">
-            <div class="field">
-                <label class="label" for="captcha_provider">{{ lang.t("admin.settings.captcha_provider") }}</label>
-                <select class="select" id="captcha_provider" name="captcha_provider">
-                    <option value="none" {% if values.captcha_provider == "none" %}selected{% endif %}>{{ lang.t("admin.settings.captcha_provider.none") }}</option>
-                    <option value="turnstile" {% if values.captcha_provider == "turnstile" %}selected{% endif %}>{{ lang.t("admin.settings.captcha_provider.turnstile") }}</option>
-                    <option value="recaptcha" {% if values.captcha_provider == "recaptcha" %}selected{% endif %}>{{ lang.t("admin.settings.captcha_provider.recaptcha") }}</option>
-                </select>
+            <div class="field-grid mt">
+                <div class="field">
+                    <label class="label" for="captcha_provider">{{ lang.t("admin.settings.captcha_provider") }}</label>
+                    <select class="select" id="captcha_provider" name="captcha_provider">
+                        <option value="none" {% if values.captcha_provider == "none" %}selected{% endif %}>{{ lang.t("admin.settings.captcha_provider.none") }}</option>
+                        <option value="turnstile" {% if values.captcha_provider == "turnstile" %}selected{% endif %}>{{ lang.t("admin.settings.captcha_provider.turnstile") }}</option>
+                        <option value="recaptcha" {% if values.captcha_provider == "recaptcha" %}selected{% endif %}>{{ lang.t("admin.settings.captcha_provider.recaptcha") }}</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label class="label" for="captcha_site_key">{{ lang.t("admin.settings.captcha_site_key") }}</label>
+                    <input class="input" type="text" id="captcha_site_key" name="captcha_site_key"
+                           value="{{ values.captcha_site_key }}" maxlength="200" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label class="label" for="captcha_secret_key">{{ lang.t("admin.settings.captcha_secret_key") }}</label>
+                    <input class="input" type="password" id="captcha_secret_key" name="captcha_secret_key"
+                           value="" maxlength="200" autocomplete="new-password">
+                    <span class="hint">
+                        {% if values.captcha_secret_configured %}{{ lang.t("admin.settings.captcha_secret_set") }}{% else %}{{ lang.t("admin.settings.captcha_secret_unset") }}{% endif %}.
+                        {{ lang.t("admin.settings.captcha_secret_hint") }}
+                    </span>
+                </div>
+                <div class="field">
+                    <label class="label" for="captcha_allowed_hostnames">{{ lang.t("admin.settings.captcha_allowed_hostnames") }}</label>
+                    <input class="input" type="text" id="captcha_allowed_hostnames" name="captcha_allowed_hostnames"
+                           value="{{ values.captcha_allowed_hostnames }}" autocomplete="off"
+                           placeholder="links.example.com, go.example.com">
+                    <span class="hint">{{ lang.t("admin.settings.captcha_allowed_hostnames_hint") }}</span>
+                </div>
             </div>
-            <div class="field">
-                <label class="label" for="captcha_site_key">{{ lang.t("admin.settings.captcha_site_key") }}</label>
-                <input class="input" type="text" id="captcha_site_key" name="captcha_site_key"
-                       value="{{ values.captcha_site_key }}" maxlength="200" autocomplete="off">
-            </div>
-            <div class="field">
-                <label class="label" for="captcha_secret_key">{{ lang.t("admin.settings.captcha_secret_key") }}</label>
-                <input class="input" type="password" id="captcha_secret_key" name="captcha_secret_key"
-                       value="" maxlength="200" autocomplete="new-password">
-                <span class="hint">
-                    {% if values.captcha_secret_configured %}{{ lang.t("admin.settings.captcha_secret_set") }}{% else %}{{ lang.t("admin.settings.captcha_secret_unset") }}{% endif %}.
-                    {{ lang.t("admin.settings.captcha_secret_hint") }}
-                </span>
-            </div>
-            <div class="field">
-                <label class="label" for="captcha_allowed_hostnames">{{ lang.t("admin.settings.captcha_allowed_hostnames") }}</label>
-                <input class="input" type="text" id="captcha_allowed_hostnames" name="captcha_allowed_hostnames"
-                       value="{{ values.captcha_allowed_hostnames }}" autocomplete="off"
-                       placeholder="links.example.com, go.example.com">
-                <span class="hint">{{ lang.t("admin.settings.captcha_allowed_hostnames_hint") }}</span>
-            </div>
-        </div>
 
-        <label class="checkbox">
-            <input type="checkbox" name="captcha_on_register" value="on"
-                   {% if values.captcha_on_register %}checked{% endif %}>
-            {{ lang.t("admin.settings.captcha_on_register") }}
-        </label>
-        <label class="checkbox">
-            <input type="checkbox" name="captcha_on_login" value="on"
-                   {% if values.captcha_on_login %}checked{% endif %}>
-            {{ lang.t("admin.settings.captcha_on_login") }}
-        </label>
-        <label class="checkbox">
-            <input type="checkbox" name="captcha_on_create" value="on"
-                   {% if values.captcha_on_create %}checked{% endif %}>
-            {{ lang.t("admin.settings.captcha_on_create") }}
-        </label>
+            <div class="checkbox-grid">
+                <label class="checkbox">
+                    <input type="checkbox" name="captcha_on_register" value="on"
+                           {% if values.captcha_on_register %}checked{% endif %}>
+                    {{ lang.t("admin.settings.captcha_on_register") }}
+                </label>
+                <label class="checkbox">
+                    <input type="checkbox" name="captcha_on_login" value="on"
+                           {% if values.captcha_on_login %}checked{% endif %}>
+                    {{ lang.t("admin.settings.captcha_on_login") }}
+                </label>
+                <label class="checkbox">
+                    <input type="checkbox" name="captcha_on_create" value="on"
+                           {% if values.captcha_on_create %}checked{% endif %}>
+                    {{ lang.t("admin.settings.captcha_on_create") }}
+                </label>
+            </div>
+        </section>
 
-        <div class="row row-end mt">
+        <div class="form-actions">
             <button class="btn btn-primary" type="submit">{{ lang.t("admin.settings.save") }}</button>
         </div>
     </form>
