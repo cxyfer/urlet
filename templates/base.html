@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{{ site_name }}{% endblock %}</title>
+    <script src="/assets/theme.js"></script>
     <link rel="stylesheet" href="/assets/app.css">
     <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
     {% block head %}{% endblock %}
@@ -16,8 +17,16 @@
 </main>
 {% endblock %}
 <footer class="site">
-    <span>{{ site_name }} — {{ lang.t("footer.tagline") }}</span>
-    {% block footer_lang %}{% include "partials/lang_switcher.html" %}{% endblock %}
+    <div class="footer-brandrow">
+        <span class="footer-brand"><span class="footer-dot" aria-hidden="true"></span>{{ site_name }}</span>
+        <span class="footer-meta">{{ lang.t("footer.tagline") }}</span>
+    </div>
+    {% block footer_tools %}
+    <div class="footer-tools">
+        {% include "partials/theme_toggle.html" %}
+        {% include "partials/lang_switcher.html" %}
+    </div>
+    {% endblock %}
 </footer>
 <script src="/assets/app.js" defer></script>
 </body>

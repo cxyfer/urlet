@@ -23,6 +23,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/healthz", get(routes::health::health))
         .route("/assets/app.css", get(routes::assets::css))
         .route("/assets/app.js", get(routes::assets::js))
+        .route("/assets/theme.js", get(routes::assets::theme_js))
         .route("/assets/favicon.svg", get(routes::assets::favicon))
         .route("/favicon.ico", get(routes::assets::favicon_ico))
         .route("/", get(routes::pages::home::home))

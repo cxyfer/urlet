@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
-{# The landing page carries the switcher in the top bar, like the signed-in pages. #}
-{% block footer_lang %}{% endblock %}
+{# The landing page carries the theme and language controls in the top bar. #}
+{% block footer_tools %}{% endblock %}
 
 {% block title %}{{ site_name }} — {{ lang.t("landing.meta.title") }}{% endblock %}
 
@@ -10,7 +10,7 @@
 {% endblock %}
 
 {% block body %}
-<div class="topbar">
+<div class="topbar landing-topbar">
     <div class="topbar-inner">
         {% if signed_in %}
         <a class="brand" href="/app">{{ site_name }}<span>.</span></a>
@@ -18,68 +18,234 @@
         <a class="brand" href="/">{{ site_name }}<span>.</span></a>
         {% endif %}
         <nav class="nav">
-            {% include "partials/lang_switcher.html" %}
             {% if signed_in %}
-            <a href="/app">{{ lang.t("landing.nav.dashboard") }}</a>
-            <span class="muted small">{{ email }}</span>
+            <span class="nav-pills">
+                <a class="nav-link" href="/app">{{ lang.t("landing.nav.dashboard") }}</a>
+            </span>
+            {% endif %}
+            <span class="nav-tools">
+                {% include "partials/theme_toggle.html" %}
+                {% include "partials/lang_switcher.html" %}
+            </span>
+            {% if signed_in %}
+            <span class="user-chip">
+                <span class="user-avatar" aria-hidden="true">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+                        <circle cx="8" cy="5.5" r="2.6"></circle>
+                        <path d="M3 14c.6-2.7 2.6-4.1 5-4.1s4.4 1.4 5 4.1" stroke-linecap="round"></path>
+                    </svg>
+                </span>
+                <span class="user-email">{{ email }}</span>
+            </span>
             <form method="post" action="/app/logout">
                 <button class="btn btn-ghost btn-sm" type="submit">{{ lang.t("nav.sign_out") }}</button>
             </form>
             {% endif %}
         </nav>
         {% if !signed_in %}
-        {# Kept outside `.nav` so the primary button keeps its own colours. #}
-        <div class="row">
+        <div class="topbar-actions">
             <a class="btn btn-ghost btn-sm" href="/app/login">{{ lang.t("landing.nav.sign_in") }}</a>
-            <a class="btn btn-primary btn-sm" href="/app/register">{{ lang.t("landing.nav.create_account") }}</a>
+            <a class="btn btn-sap btn-sm" href="/app/register">{{ lang.t("landing.nav.create_account") }}</a>
         </div>
         {% endif %}
     </div>
 </div>
 
 <main class="wrap">
-    <section class="landing-hero">
-        <h1>{{ site_name }}</h1>
-        <p class="landing-tagline">{{ lang.t("landing.tagline") }}</p>
-        <p class="muted">{{ lang.t("landing.subtitle") }}</p>
-        <div class="row landing-cta">
-            {% if signed_in %}
-            <a class="btn btn-primary" href="/app">{{ lang.t("landing.cta.dashboard") }}</a>
-            {% else %}
-            <a class="btn btn-primary" href="/app/register">{{ lang.t("landing.cta.create_account") }}</a>
-            <a class="btn btn-ghost" href="/app/login">{{ lang.t("landing.cta.sign_in") }}</a>
-            {% endif %}
+    <section class="hero">
+        <div class="hero-copy">
+            <span class="hero-chip">
+                <span class="status-dot" aria-hidden="true"></span>
+                <span aria-hidden="true">01 · 06 / SYS</span>
+            </span>
+            <h1>{{ site_name }}<span class="hero-dot" aria-hidden="true"></span></h1>
+            <p class="landing-tagline">{{ lang.t("landing.tagline") }}</p>
+            <p class="landing-subtitle">{{ lang.t("landing.subtitle") }}</p>
+            <div class="landing-cta">
+                {% if signed_in %}
+                <a class="btn btn-primary" href="/app">{{ lang.t("landing.cta.dashboard") }}</a>
+                {% else %}
+                <a class="btn btn-primary" href="/app/register">{{ lang.t("landing.cta.create_account") }}</a>
+                <a class="btn btn-sage" href="/app/login">{{ lang.t("landing.cta.sign_in") }}</a>
+                {% endif %}
+            </div>
+            <div class="hero-meta" aria-hidden="true">
+                <span><i></i>01 / 06</span>
+                <span><i class="water"></i>0.94</span>
+                <span><i class="clay"></i>24°</span>
+            </div>
+        </div>
+
+        {# Decorative specimen panel: a petri dish of contours, a growth curve
+           and instrument readouts. Numbers and glyphs only. #}
+        <div class="specimen" aria-hidden="true">
+            <div class="specimen-orb"></div>
+            <svg class="specimen-disc" viewBox="0 0 420 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle class="specimen-glass" cx="210" cy="210" r="196"></circle>
+                <circle class="specimen-ring" cx="210" cy="210" r="178"></circle>
+                <circle class="specimen-ring dashed" cx="210" cy="210" r="156"></circle>
+                <circle class="specimen-ring" cx="210" cy="210" r="132" opacity=".55"></circle>
+
+                <!-- rim ticks -->
+                <g class="specimen-grid">
+                    <path d="M210 14v12M210 394v12M14 210h12M394 210h12"></path>
+                    <path d="M210 22v6M210 392v6M22 210h6M392 210h6" opacity=".6"></path>
+                    <path d="M352 68l8-8M60 352l8-8M352 352l8 8M60 68l8 8" opacity=".45"></path>
+                </g>
+
+                <!-- crosshair grid -->
+                <g class="specimen-grid" opacity=".55">
+                    <path d="M210 32v356M32 210h356"></path>
+                    <path d="M122 92v236M298 92v236M92 122h236M92 298h236" opacity=".5"></path>
+                </g>
+
+                <!-- topographic contours -->
+                <g class="specimen-contour">
+                    <path d="M96 268c12-52 52-92 104-104 42-10 92 2 118 32 18 21 26 52 16 78-12 31-48 50-88 50-48 0-84-18-114-32-18-9-40-9-36-24z"></path>
+                    <path d="M116 262c14-42 46-74 90-84 38-9 80 3 101 28 15 18 20 43 12 63-10 25-41 40-74 40-40 0-72-16-98-27-15-7-34-8-31-20z"></path>
+                    <path d="M140 256c15-32 41-56 76-64 31-7 66 4 82 23 12 14 15 33 8 48-9 19-33 30-59 30-33 0-59-12-81-21-12-5-29-7-26-16z"></path>
+                    <path d="M168 250c14-21 33-36 58-41 23-4 49 5 60 18 8 10 9 23 4 34-7 13-24 20-42 20-24 0-43-8-59-14-9-4-24-6-21-17z"></path>
+                </g>
+
+                <!-- plotted growth curve -->
+                <g>
+                    <path class="specimen-curve-glow" d="M74 306c30-4 46-18 66-38 16-17 26-36 48-46 22-10 42-4 62-22 18-16 28-42 56-58"></path>
+                    <path class="specimen-curve" d="M74 306c30-4 46-18 66-38 16-17 26-36 48-46 22-10 42-4 62-22 18-16 28-42 56-58"></path>
+                    <circle class="specimen-node" cx="74" cy="306" r="4"></circle>
+                    <circle class="specimen-node" cx="188" cy="222" r="4"></circle>
+                    <circle class="specimen-node" cx="248" cy="200" r="4"></circle>
+                    <circle class="specimen-node" cx="306" cy="142" r="4.5"></circle>
+                </g>
+
+                <!-- speculative baseline -->
+                <path class="specimen-cross" d="M74 306h272" stroke-dasharray="2 5"></path>
+                <path class="specimen-cross" d="M74 306V96" stroke-dasharray="2 5"></path>
+
+                <!-- readouts -->
+                <text class="specimen-readout" x="66" y="332">Y0 / 00</text>
+                <text class="specimen-readout strong lime" x="286" y="120">0.942</text>
+                <text class="specimen-readout" x="66" y="96">Δ 12.4</text>
+                <text class="specimen-readout" x="306" y="330">N 06</text>
+                <text class="specimen-readout" x="152" y="54">01 · 06</text>
+            </svg>
+            <div class="specimen-float">
+                <span class="status-dot"></span>
+                <span>0.94 · 06</span>
+            </div>
         </div>
     </section>
 
-    <section class="mt-2" aria-labelledby="landing-highlights">
-        <h2 class="center" id="landing-highlights">{{ lang.t("landing.features.heading") }}</h2>
-        <p class="center muted">{{ lang.t("landing.features.subtitle") }}</p>
-        <div class="grid landing-grid mt">
+    <section class="features" aria-labelledby="landing-highlights">
+        <div class="section-head">
+            <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>06</span>
+            <h2 id="landing-highlights">{{ lang.t("landing.features.heading") }}</h2>
+            <p class="muted">{{ lang.t("landing.features.subtitle") }}</p>
+        </div>
+
+        <div class="feature-grid">
             <article class="card landing-feature">
+                <div class="feature-top">
+                    <span class="feature-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="9" cy="8" r="3.2"></circle>
+                            <path d="M3 20c.8-3.6 3.2-5.4 6-5.4s5.2 1.8 6 5.4"></path>
+                            <circle cx="17.5" cy="7" r="2.2"></circle>
+                            <path d="M16 13.5c2.6.2 4.3 2.1 5 5.1"></path>
+                        </svg>
+                    </span>
+                    <span class="feature-index" aria-hidden="true">01</span>
+                </div>
                 <h3>{{ lang.t("landing.feature.accounts.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.accounts.body") }}</p>
+                <p>{{ lang.t("landing.feature.accounts.body") }}</p>
             </article>
             <article class="card landing-feature">
+                <div class="feature-top">
+                    <span class="feature-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M10 14a4.5 4.5 0 0 0 6.4 0l2.6-2.6a4.5 4.5 0 0 0-6.4-6.4L11 6.6"></path>
+                            <path d="M14 10a4.5 4.5 0 0 0-6.4 0L5 12.6a4.5 4.5 0 0 0 6.4 6.4l1.6-1.6"></path>
+                        </svg>
+                    </span>
+                    <span class="feature-index" aria-hidden="true">02</span>
+                </div>
                 <h3>{{ lang.t("landing.feature.links.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.links.body") }}</p>
+                <p>{{ lang.t("landing.feature.links.body") }}</p>
             </article>
             <article class="card landing-feature">
+                <div class="feature-top">
+                    <span class="feature-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 3l7 3v5.4c0 4.4-3 8.2-7 9.6-4-1.4-7-5.2-7-9.6V6l7-3z"></path>
+                            <path d="M9 12l2.2 2.2L15.5 10"></path>
+                        </svg>
+                    </span>
+                    <span class="feature-index" aria-hidden="true">03</span>
+                </div>
                 <h3>{{ lang.t("landing.feature.protection.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.protection.body") }}</p>
+                <p>{{ lang.t("landing.feature.protection.body") }}</p>
             </article>
             <article class="card landing-feature">
+                <div class="feature-top">
+                    <span class="feature-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M4 19V5M4 19h16"></path>
+                            <path d="M8 15v-3M12 15V8M16 15v-5M20 15V6"></path>
+                        </svg>
+                    </span>
+                    <span class="feature-index" aria-hidden="true">04</span>
+                </div>
                 <h3>{{ lang.t("landing.feature.analytics.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.analytics.body") }}</p>
+                <p>{{ lang.t("landing.feature.analytics.body") }}</p>
             </article>
             <article class="card landing-feature">
+                <div class="feature-top">
+                    <span class="feature-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="4" width="18" height="16" rx="3"></rect>
+                            <path d="M7 9l3 3-3 3M13 15h4"></path>
+                        </svg>
+                    </span>
+                    <span class="feature-index" aria-hidden="true">05</span>
+                </div>
                 <h3>{{ lang.t("landing.feature.operations.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.operations.body") }}</p>
+                <p>{{ lang.t("landing.feature.operations.body") }}</p>
             </article>
             <article class="card landing-feature">
+                <div class="feature-top">
+                    <span class="feature-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="8.5"></circle>
+                            <path d="M3.5 12h17M12 3.5c2.6 2.6 3.8 5.6 3.8 8.5s-1.2 5.9-3.8 8.5c-2.6-2.6-3.8-5.6-3.8-8.5S9.4 6.1 12 3.5z"></path>
+                        </svg>
+                    </span>
+                    <span class="feature-index" aria-hidden="true">06</span>
+                </div>
                 <h3>{{ lang.t("landing.feature.platform.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.platform.body") }}</p>
+                <p>{{ lang.t("landing.feature.platform.body") }}</p>
             </article>
+        </div>
+    </section>
+
+    {# System pulse: a quiet instrument strip at the end of the page. #}
+    <section class="pulse" aria-hidden="true">
+        <svg class="pulse-contour" viewBox="0 0 1200 240" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path class="contour-a" d="M-40 210C140 210 200 140 340 140s200 54 340 54 200-78 340-78 180 26 240 34"></path>
+            <path class="contour-b" d="M-40 228C150 228 214 166 352 166s208 44 344 44 198-64 336-64 176 20 232 28"></path>
+            <path class="contour-c" d="M-40 190C132 190 196 116 344 116s196 66 336 66 196-92 340-92 170 32 232 42"></path>
+        </svg>
+        <div class="pulse-content">
+            <span class="pulse-label"><span class="status-dot"></span>SYS · 01 / 06</span>
+            <div class="pulse-cells">
+                <div class="pulse-cell"><b>0.982</b><span>SIG</span></div>
+                <div class="pulse-cell"><b>01:06</b><span>UTC</span></div>
+                <div class="pulse-cell"><b>24.0</b><span>AMB</span></div>
+                <div class="pulse-cell"><b>99.9</b><span>SLO</span></div>
+            </div>
+        </div>
+        <div class="pulse-track">
+            <span>01</span>
+            <span class="pulse-line"></span>
+            <span>06</span>
         </div>
     </section>
 </main>

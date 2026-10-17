@@ -3,10 +3,28 @@
 {% block title %}{{ lang.t("auth.register.title") }} — {{ site_name }}{% endblock %}
 
 {% block body %}
-<div class="wrap-narrow">
-    <h1 class="center">{{ site_name }}</h1>
+<div class="auth-shell">
+    <svg class="auth-contour" viewBox="0 0 1200 760" preserveAspectRatio="xMidYMid slice" aria-hidden="true" fill="none">
+        <path class="contour-a" d="M-120 620C70 580 150 452 334 452s212 92 402 64 220-152 396-152 178 20 256 28"></path>
+        <path class="contour-b" d="M-120 674C66 634 158 514 342 514s218 76 402 48 212-132 390-132 180 20 258 28"></path>
+        <path class="contour-c" d="M-120 572C60 536 138 398 328 398s216 106 402 78 216-176 396-176 182 28 262 38"></path>
+        <path class="contour-d" d="M-120 510C52 484 130 338 322 338s220 116 404 88 212-196 398-196 184 34 264 46"></path>
+    </svg>
 
-    <div class="card">
+    <div class="auth-card">
+        <div class="auth-brandline">
+            <span class="auth-mark" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+                    <path d="M10 17V7"></path>
+                    <path d="M10 10c0-3.2 2.3-5.6 5.6-5.6 0 3.3-2.3 5.6-5.6 5.6z"></path>
+                    <path d="M10 12.4C10 9.8 8.1 7.9 5.6 7.9c0 2.6 1.9 4.5 4.4 4.5z"></path>
+                </svg>
+            </span>
+            <span class="auth-note" aria-hidden="true">AUTH · 02</span>
+        </div>
+
+        <h1 class="auth-title">{{ site_name }}</h1>
+
         {% if !registration_open %}
         <div class="alert alert-warn">
             {{ lang.t("auth.register.closed") }}
@@ -20,7 +38,7 @@
         {% endmatch %}
 
         {% if registration_open %}
-        <form method="post" action="/app/register">
+        <form method="post" action="/app/register" class="auth-form">
             <input type="hidden" name="next" value="{{ next }}">
             <div class="field">
                 <label class="label" for="email">{{ lang.t("common.email") }}</label>
@@ -51,8 +69,7 @@
         </form>
         {% endif %}
 
-        <hr>
-        <p class="center small muted">
+        <p class="auth-swap">
             {{ lang.t("auth.register.have_account") }} <a href="/app/login">{{ lang.t("auth.register.sign_in") }}</a>
         </p>
     </div>

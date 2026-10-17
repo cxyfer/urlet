@@ -3,76 +3,96 @@
 {% block title %}{{ url.slug }} — {{ chrome.site_name }}{% endblock %}
 
 {% block content %}
-<div class="row between mt">
-    <div>
-        <h1 class="mono">{{ url.slug }}</h1>
-        <p class="muted small">
-            <span id="short-url">{{ url.short_url }}</span>
-            <button class="btn btn-sm" type="button" data-copy="#short-url">{{ lang.t("common.copy") }}</button>
-            <a class="btn btn-sm" href="/{{ url.slug }}" target="_blank" rel="noopener">{{ lang.t("common.open") }}</a>
-        </p>
+<div class="page-head">
+    <div class="page-head-main">
+        <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ lang.t("nav.links") }}</span>
+        <h1 class="page-title mono">{{ url.slug }}</h1>
+        <div class="slug-bar">
+            <span class="slug-value" id="short-url">{{ url.short_url }}</span>
+            <button class="btn btn-sm btn-sage" type="button" data-copy="#short-url">{{ lang.t("common.copy") }}</button>
+            <a class="btn btn-sm btn-ghost" href="/{{ url.slug }}" target="_blank" rel="noopener">{{ lang.t("common.open") }}</a>
+        </div>
     </div>
-    <div class="row">
+    <div class="page-head-side">
         <span class="badge {{ url.state_class }}">{{ url.state_label }}</span>
         <a class="btn btn-ghost" href="/app">{{ lang.t("url_detail.back") }}</a>
     </div>
 </div>
 
-<div class="grid grid-4 mt">
+<div class="stat-grid">
     <div class="stat">
-        <div class="stat-label">{{ lang.t("dashboard.stat.total_clicks") }}</div>
+        <div class="stat-top">
+            <span class="stat-label">{{ lang.t("dashboard.stat.total_clicks") }}</span>
+            <span class="stat-dot" aria-hidden="true"></span>
+        </div>
         <div class="stat-value">{{ summary.total_clicks }}</div>
     </div>
-    <div class="stat">
-        <div class="stat-label">{{ lang.t("dashboard.stat.unique_visitors") }}</div>
+    <div class="stat tone-water">
+        <div class="stat-top">
+            <span class="stat-label">{{ lang.t("dashboard.stat.unique_visitors") }}</span>
+            <span class="stat-dot" aria-hidden="true"></span>
+        </div>
         <div class="stat-value">{{ summary.unique_clicks }}</div>
     </div>
-    <div class="stat">
-        <div class="stat-label">{{ lang.t("url_detail.stat.human_clicks") }}</div>
+    <div class="stat tone-sap">
+        <div class="stat-top">
+            <span class="stat-label">{{ lang.t("url_detail.stat.human_clicks") }}</span>
+            <span class="stat-dot" aria-hidden="true"></span>
+        </div>
         <div class="stat-value">{{ summary.human_clicks }}</div>
     </div>
-    <div class="stat">
-        <div class="stat-label">{{ lang.t("dashboard.stat.bot_clicks") }}</div>
+    <div class="stat tone-clay">
+        <div class="stat-top">
+            <span class="stat-label">{{ lang.t("dashboard.stat.bot_clicks") }}</span>
+            <span class="stat-dot" aria-hidden="true"></span>
+        </div>
         <div class="stat-value">{{ summary.bot_clicks }}</div>
     </div>
 </div>
 
 {% if url.state == "expired" || url.state == "limit_reached" %}
-<div class="alert alert-warn">
-    {{ lang.t("url_detail.expired_notice") }}
-    <form method="post" action="/app/urls/{{ url.id }}/extend" class="row mt">
-        <button class="btn btn-sm" type="submit" name="days" value="30">{{ lang.t("url_detail.extend.days30") }}</button>
-        <button class="btn btn-sm" type="submit" name="days" value="365">{{ lang.t("url_detail.extend.year1") }}</button>
-        <button class="btn btn-sm" type="submit" name="clicks" value="100">{{ lang.t("url_detail.extend.clicks100") }}</button>
-        <button class="btn btn-sm" type="submit" name="clicks" value="1000">{{ lang.t("url_detail.extend.clicks1000") }}</button>
-    </form>
+<div class="alert alert-warn mt">
+    <div>
+        {{ lang.t("url_detail.expired_notice") }}
+        <form method="post" action="/app/urls/{{ url.id }}/extend" class="row mt">
+            <button class="btn btn-sm" type="submit" name="days" value="30">{{ lang.t("url_detail.extend.days30") }}</button>
+            <button class="btn btn-sm" type="submit" name="days" value="365">{{ lang.t("url_detail.extend.year1") }}</button>
+            <button class="btn btn-sm" type="submit" name="clicks" value="100">{{ lang.t("url_detail.extend.clicks100") }}</button>
+            <button class="btn btn-sm" type="submit" name="clicks" value="1000">{{ lang.t("url_detail.extend.clicks1000") }}</button>
+        </form>
+    </div>
 </div>
 {% endif %}
 
-<div class="card mt">
-    <div class="row between">
+<div class="panel mt">
+    <div class="panel-head">
         <h2>{{ lang.t("url_detail.chart.heading") }}</h2>
-        <div class="row small muted">
+        <div class="seg">
             <a class="btn btn-sm {% if days == 7 %}btn-primary{% endif %}" href="/app/urls/{{ url.id }}?days=7">{{ lang.t("url_detail.chart.range_7d") }}</a>
             <a class="btn btn-sm {% if days == 30 %}btn-primary{% endif %}" href="/app/urls/{{ url.id }}?days=30">{{ lang.t("url_detail.chart.range_30d") }}</a>
             <a class="btn btn-sm {% if days == 90 %}btn-primary{% endif %}" href="/app/urls/{{ url.id }}?days=90">{{ lang.t("url_detail.chart.range_90d") }}</a>
         </div>
     </div>
     {% if daily_total > 0 %}
-    {{ chart|safe }}
-    <div class="chart-axis">
-        <span>{{ days_label }}</span>
-        <span class="hint">{{ chart_legend }}</span>
-        <span>{{ lang.t("url_detail.chart.today") }}</span>
+    <div class="chart-panel">
+        {{ chart|safe }}
+        <div class="chart-axis">
+            <span>{{ days_label }}</span>
+            <span class="hint">{{ chart_legend }}</span>
+            <span>{{ lang.t("url_detail.chart.today") }}</span>
+        </div>
     </div>
     {% else %}
     <p class="empty">{{ lang.t("url_detail.chart.empty") }}</p>
     {% endif %}
 </div>
 
-<div class="grid grid-2 mt">
-    <div class="card">
-        <h3>{{ lang.t("url_detail.referrers.heading") }}</h3>
+<div class="detail-grid">
+    <div class="panel">
+        <div class="panel-head">
+            <h3>{{ lang.t("url_detail.referrers.heading") }}</h3>
+            <span class="panel-sub" aria-hidden="true">R / 01</span>
+        </div>
         {% if referrers.len() > 0 %}
         <div class="bar-list">
             {% for row in referrers %}
@@ -88,8 +108,11 @@
         {% endif %}
     </div>
 
-    <div class="card">
-        <h3>{{ lang.t("url_detail.devices.heading") }}</h3>
+    <div class="panel">
+        <div class="panel-head">
+            <h3>{{ lang.t("url_detail.devices.heading") }}</h3>
+            <span class="panel-sub" aria-hidden="true">D / 02</span>
+        </div>
         {% if devices.len() > 0 %}
         <div class="bar-list">
             {% for row in devices %}
@@ -105,8 +128,11 @@
         {% endif %}
     </div>
 
-    <div class="card">
-        <h3>{{ lang.t("url_detail.browsers.heading") }}</h3>
+    <div class="panel">
+        <div class="panel-head">
+            <h3>{{ lang.t("url_detail.browsers.heading") }}</h3>
+            <span class="panel-sub" aria-hidden="true">B / 03</span>
+        </div>
         {% if browsers.len() > 0 %}
         <div class="bar-list">
             {% for row in browsers %}
@@ -122,8 +148,11 @@
         {% endif %}
     </div>
 
-    <div class="card">
-        <h3>{{ lang.t("url_detail.os.heading") }}</h3>
+    <div class="panel">
+        <div class="panel-head">
+            <h3>{{ lang.t("url_detail.os.heading") }}</h3>
+            <span class="panel-sub" aria-hidden="true">O / 04</span>
+        </div>
         {% if operating_systems.len() > 0 %}
         <div class="bar-list">
             {% for row in operating_systems %}
@@ -140,10 +169,13 @@
     </div>
 </div>
 
-<div class="card mt">
-    <h2>{{ lang.t("url_detail.settings.heading") }}</h2>
+<div class="panel">
+    <div class="panel-head">
+        <h2>{{ lang.t("url_detail.settings.heading") }}</h2>
+        <span class="panel-sub" aria-hidden="true">CFG / 06</span>
+    </div>
     <form method="post" action="/app/urls/{{ url.id }}">
-        <div class="grid grid-2">
+        <div class="form-grid">
             <div class="field">
                 <label class="label" for="target_url">{{ lang.t("dashboard.new.destination") }}</label>
                 <input class="input" type="text" id="target_url" name="target_url" value="{{ url.target_url }}" required>
@@ -164,7 +196,7 @@
             </div>
         </div>
 
-        <div class="grid grid-2">
+        <div class="form-grid">
             <div class="field">
                 <label class="label" for="password">{{ lang.t("url_detail.settings.new_password") }}</label>
                 <input class="input" type="password" id="password" name="password"
@@ -210,12 +242,12 @@
             </div>
         </div>
 
-        <div class="row row-end mt">
+        <div class="form-actions">
             <button class="btn btn-primary" type="submit">{{ lang.t("url_detail.save") }}</button>
         </div>
     </form>
 
-    <hr>
+    <div class="section-rule"></div>
     <form method="post" action="/app/urls/{{ url.id }}/delete" class="row row-end">
         <button class="btn btn-danger" type="submit"
                 data-confirm="{{ lang.t("url_detail.delete_confirm") }}">
@@ -224,8 +256,11 @@
     </form>
 </div>
 
-<div class="card card-flush mt">
-    <h2 style="padding: 1rem 1rem 0;">{{ lang.t("url_detail.clicks.heading") }}</h2>
+<div class="panel panel-flush">
+    <div class="table-toolbar">
+        <h2>{{ lang.t("url_detail.clicks.heading") }}</h2>
+        <span class="panel-sub" aria-hidden="true">LOG / 07</span>
+    </div>
     {% if clicks.len() > 0 %}
     <div class="table-wrap">
         <table class="table">
@@ -235,7 +270,7 @@
             <tbody>
                 {% for click in clicks %}
                 <tr>
-                    <td class="small">{{ click.when }}</td>
+                    <td class="small nowrap">{{ click.when }}</td>
                     <td class="truncate">{{ click.referrer }}</td>
                     <td>{{ click.device }}</td>
                     <td>{{ click.browser }}</td>

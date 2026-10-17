@@ -5,34 +5,38 @@
 {% block content %}
 {% include "admin/tabs.html" %}
 
-<div class="row between">
-    <h1>{{ lang.t("admin.users.heading") }}</h1>
-    <span class="muted small">{{ count_label }}</span>
+<div class="page-head">
+    <div class="page-head-main">
+        <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ lang.t("nav.admin") }}</span>
+        <h1 class="page-title">{{ lang.t("admin.users.heading") }}</h1>
+    </div>
+    <div class="page-head-side">
+        <span class="page-note">{{ count_label }}</span>
+    </div>
 </div>
 
-<form method="get" action="/app/admin/users" class="row mt">
-    <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ lang.t("admin.users.search_placeholder") }}"
-           style="max-width: 240px;">
-    <select class="select" name="role" style="max-width: 140px;">
+<form method="get" action="/app/admin/users" class="filters filters-users">
+    <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ lang.t("admin.users.search_placeholder") }}">
+    <select class="select" name="role">
         <option value="">{{ lang.t("common.any_role") }}</option>
         <option value="user" {% if role == "user" %}selected{% endif %}>{{ lang.t("admin.users.role.user") }}</option>
         <option value="admin" {% if role == "admin" %}selected{% endif %}>{{ lang.t("admin.users.role.admin") }}</option>
     </select>
-    <select class="select" name="status" style="max-width: 160px;">
+    <select class="select" name="status">
         <option value="">{{ lang.t("common.any_status") }}</option>
         <option value="active" {% if status == "active" %}selected{% endif %}>{{ lang.t("admin.users.status.active") }}</option>
         <option value="suspended" {% if status == "suspended" %}selected{% endif %}>{{ lang.t("admin.users.status.suspended") }}</option>
     </select>
-    <button class="btn" type="submit">{{ lang.t("common.filter") }}</button>
+    <button class="btn btn-sage" type="submit">{{ lang.t("common.filter") }}</button>
     <a class="btn btn-ghost" href="/app/admin/users">{{ lang.t("common.reset") }}</a>
 </form>
 
-<div class="card card-flush mt">
+<div class="panel panel-flush mt">
     <div class="table-wrap">
         <table class="table">
             <thead>
                 <tr>
-                    <th>{{ lang.t("admin.users.account") }}</th><th>{{ lang.t("common.role") }}</th><th>{{ lang.t("common.status") }}</th><th>{{ lang.t("admin.users.links") }}</th>
+                    <th>{{ lang.t("admin.users.account") }}</th><th>{{ lang.t("common.role") }}</th><th>{{ lang.t("common.status") }}</th><th class="num">{{ lang.t("admin.users.links") }}</th>
                     <th>{{ lang.t("common.created") }}</th><th>{{ lang.t("admin.users.last_login") }}</th><th>{{ lang.t("common.actions") }}</th>
                 </tr>
             </thead>
@@ -40,11 +44,13 @@
                 {% for user in users %}
                 <tr>
                     <td>
-                        <div>{{ user.email }}</div>
-                        {% match user.display_name %}
-                        {% when Some with (name) %}<div class="small muted">{{ name }}</div>
-                        {% when None %}{% endmatch %}
-                        {% if user.is_self %}<span class="badge badge-accent">{{ lang.t("admin.users.you") }}</span>{% endif %}
+                        <div class="cell-stack">
+                            <span>{{ user.email }}</span>
+                            {% match user.display_name %}
+                            {% when Some with (name) %}<span class="small muted">{{ name }}</span>
+                            {% when None %}{% endmatch %}
+                            {% if user.is_self %}<span class="badge badge-accent">{{ lang.t("admin.users.you") }}</span>{% endif %}
+                        </div>
                     </td>
                     <td><span class="badge {% if user.role == "admin" %}badge-accent{% endif %}">{% if user.role == "admin" %}{{ lang.t("admin.users.role.admin") }}{% else %}{{ lang.t("admin.users.role.user") }}{% endif %}</span></td>
                     <td>
@@ -52,22 +58,22 @@
                             {% if user.status == "active" %}{{ lang.t("admin.users.status.active") }}{% else %}{{ lang.t("admin.users.status.suspended") }}{% endif %}
                         </span>
                     </td>
-                    <td>{{ user.link_count }}</td>
+                    <td class="num">{{ user.link_count }}</td>
                     <td class="small">{{ user.created }}</td>
                     <td class="small">{{ user.last_login }}</td>
                     <td>
                         <details>
                             <summary class="small">{{ lang.t("admin.users.manage") }}</summary>
-                            <div class="stack mt" style="min-width: 240px;">
+                            <div class="drawer stack">
                                 <form method="post" action="/app/admin/users/{{ user.id }}" class="stack">
-                                    <div class="field" style="margin-bottom: .25rem;">
+                                    <div class="field">
                                         <label class="label">{{ lang.t("common.role") }}</label>
                                         <select class="select" name="role">
                                             <option value="user" {% if user.role == "user" %}selected{% endif %}>{{ lang.t("admin.users.role.user") }}</option>
                                             <option value="admin" {% if user.role == "admin" %}selected{% endif %}>{{ lang.t("admin.users.role.admin") }}</option>
                                         </select>
                                     </div>
-                                    <div class="field" style="margin-bottom: .25rem;">
+                                    <div class="field">
                                         <label class="label">{{ lang.t("common.status") }}</label>
                                         <select class="select" name="status">
                                             <option value="active" {% if user.status == "active" %}selected{% endif %}>{{ lang.t("admin.users.status.active") }}</option>
@@ -77,7 +83,7 @@
                                     <button class="btn btn-sm btn-primary" type="submit">{{ lang.t("common.save") }}</button>
                                 </form>
                                 <form method="post" action="/app/admin/users/{{ user.id }}/password" class="stack">
-                                    <div class="field" style="margin-bottom: .25rem;">
+                                    <div class="field">
                                         <label class="label">{{ lang.t("admin.users.reset_password") }}</label>
                                         <input class="input" type="password" name="new_password" minlength="8"
                                                placeholder="{{ lang.t("admin.users.new_password_placeholder") }}" required>
