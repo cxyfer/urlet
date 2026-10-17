@@ -1,0 +1,141 @@
+name: Release container image
+
+# Publishing a version = pushing a `v*` tag. The workflow then:
+#   1. checks the tag matches the version in Cargo.toml,
+#   2. builds a multi-arch image (linux/amd64 + linux/arm64) with Buildx, and
+#   3. pushes it to the GitHub Container Registry.
+#
+# The GitHub release itself is still published by hand, so its notes are yours.
+# Manual runs (workflow_dispatch) rebuild an existing tag; by default they push
+# only the exact version, so rebuilding an old tag cannot move `latest` back.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing git tag to release, e.g. v1.1.0"
+        required: true
+        type: string
+      update_moving_tags:
+        description: "Also move the X, X.Y and latest tags to this build"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: release-image-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ------------------------------------------------------------------ validate
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - name: Resolve the release tag
+        id: release
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag="${INPUT_TAG:-$REF_NAME}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$tag' is not a release tag such as v1.2.3"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+
+      - name: Check that Cargo.toml matches the tag
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          manifest_version=$(awk -F'"' '/^version = / { print $2; exit }' Cargo.toml)
+          expected="${TAG#v}"
+          if [[ "$manifest_version" != "$expected" ]]; then
+            echo "::error file=Cargo.toml::Cargo.toml declares version '$manifest_version' but the tag is '$TAG'. Bump the version before tagging."
+            exit 1
+          fi
+          echo "Releasing uwurls $manifest_version"
+
+      - name: Check that Cargo.lock is current
+        run: |
+          set -euo pipefail
+          # The Dockerfile builds with --locked, so a stale lockfile would fail
+          # the image build much later. Catch it here instead.
+          cargo metadata --locked --format-version 1 >/dev/null
+          echo "Cargo.lock matches Cargo.toml"
+
+  # ------------------------------------------------------------------- publish
+  publish:
+    name: Build and push multi-arch image
+    needs: validate
+    runs-on: ubuntu-latest
+    # The arm64 half is compiled under QEMU, so the first run is slow; the GHA
+    # cache keeps later releases closer to a native build.
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Set up QEMU for arm64 emulation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.validate.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.validate.outputs.tag }},enable=${{ (github.event_name == 'push' || inputs.update_moving_tags) && !contains(needs.validate.outputs.tag, '-') }}
+            type=semver,pattern={{major}},value=${{ needs.validate.outputs.tag }},enable=${{ (github.event_name == 'push' || inputs.update_moving_tags) && !contains(needs.validate.outputs.tag, '-') }}
+            type=raw,value=latest,enable=${{ (github.event_name == 'push' || inputs.update_moving_tags) && !contains(needs.validate.outputs.tag, '-') }}
+          flavor: |
+            latest=false
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Inspect the published manifest
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect \
+            "${REGISTRY}/${IMAGE_NAME}:${{ steps.meta.outputs.version }}"

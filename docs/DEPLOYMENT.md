@@ -10,7 +10,7 @@
 | Memory | 128 MB | 256 MB |
 | Disk | 100 MB + data | 1 GB |
 | Docker | 24.x | Latest |
-| Docker Compose | 2.24 (`!override` is required by the TLS overlay) | Latest |
+| Docker Compose | 2.24 (`!override` / `!reset` are used by the overlays) | Latest |
 
 No external database, Redis or reverse proxy is needed. A single container can serve traffic on
 its own (putting a TLS terminator in front of it is recommended).
@@ -49,6 +49,27 @@ Verify:
 curl -fsS http://localhost:8080/health
 docker compose exec uwurls /usr/local/bin/uwurls healthcheck
 ```
+
+### 2.1 Prebuilt image
+
+Every `v*` tag publishes a multi-arch image (`linux/amd64`, `linux/arm64`) to GHCR. To run a
+published release instead of building locally:
+
+```bash
+export UWURLS_IMAGE=ghcr.io/cxyfer/uwurls:1.1.0   # pin the release you want
+docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
+```
+
+- `UWURLS_IMAGE` defaults to `ghcr.io/cxyfer/uwurls:latest`; pin an exact version in production
+  rather than tracking `latest`. When you do use `latest`, run `docker compose -f
+  docker-compose.yml -f docker-compose.image.yml pull` before `up -d` to fetch a newer release.
+- The overlay removes the `build` section, so compose pulls the image and never falls back to a
+  local Rust build.
+- The package defaults to **private**. Either authenticate (`docker login ghcr.io` with a token
+  that has `read:packages`) or make the package public under *Package settings → Change
+  visibility*.
+- The image runs as uid/gid `10001`, exactly like a locally built one, so the `/data` volume
+  permissions are unchanged.
 
 ## 3. Automatic HTTPS (Caddy)
 
@@ -98,12 +119,13 @@ UWURLS_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-For
 | `UWURLS_LOG_FORMAT` | `compact` | `compact` or `json` |
 | `UWURLS_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | Target of `uwurls healthcheck` |
 
-Two further variables are read by the compose files, not by the uwurls binary:
+Three further variables are read by the compose files, not by the uwurls binary:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `UWURLS_PORT` | `8080` | Host port that `docker-compose.yml` publishes (the container itself always listens on 8080) |
 | `UWURLS_DOMAIN` | — | Domain the `docker-compose.tls.yml` overlay requests a certificate for; required by that overlay |
+| `UWURLS_IMAGE` | `ghcr.io/cxyfer/uwurls:latest` | Image used by the `docker-compose.image.yml` overlay (ignored without it) |
 
 Instance-level settings (site name, registration mode, quota, default redirect type, analytics
 switch, click retention) are edited in **Admin → Settings**; they are stored in the database and
@@ -285,6 +307,13 @@ git pull
 docker compose up -d --build      # migrations are applied at startup
 ```
 
+With a prebuilt image, change `UWURLS_IMAGE` to the new version and recreate the container:
+
+```bash
+export UWURLS_IMAGE=ghcr.io/cxyfer/uwurls:1.2.0
+docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
+```
+
 Migrations are forward-only additive files (`migrations/`), and applied files are checksum
 protected: editing one makes startup fail instead of silently diverging. Back up before
 upgrading.
@@ -351,5 +380,6 @@ upgrading.
 - [ ] `UWURLS_TRUST_PROXY` matches the actual proxy behavior
 - [ ] The registration mode is `invite` or `closed` (unless you really want open registration)
 - [ ] `click_retention_days` and a backup schedule are planned
-- [ ] `docker compose pull && docker compose up -d --build` runs regularly
+- [ ] A regular update routine exists (rebuild locally or pull a new `UWURLS_IMAGE` tag), with a
+      backup before each upgrade
 - [ ] Bot verification is enabled on registration and sign-in if the instance is reachable by the public internet
