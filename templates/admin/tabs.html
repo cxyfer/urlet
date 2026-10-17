@@ -1,8 +1,16 @@
-<div class="tabs mt">
-    <a href="/app/admin" {% if section == "overview" %}class="active"{% endif %}>{{ lang.t("admin.tabs.overview") }}</a>
-    <a href="/app/admin/users" {% if section == "users" %}class="active"{% endif %}>{{ lang.t("admin.tabs.users") }}</a>
-    <a href="/app/admin/urls" {% if section == "urls" %}class="active"{% endif %}>{{ lang.t("admin.tabs.links") }}</a>
-    <a href="/app/admin/invites" {% if section == "invites" %}class="active"{% endif %}>{{ lang.t("admin.tabs.invites") }}</a>
-    <a href="/app/admin/settings" {% if section == "settings" %}class="active"{% endif %}>{{ lang.t("admin.tabs.settings") }}</a>
-    <a href="/app/admin/audit" {% if section == "audit" %}class="active"{% endif %}>{{ lang.t("admin.tabs.audit") }}</a>
+<div class="admin-band">
+    <div class="admin-band-row">
+        <span class="admin-band-label"><span class="band-dot" aria-hidden="true"></span>{{ lang.t("nav.admin") }}</span>
+        <span class="admin-band-marks" aria-hidden="true">///// &nbsp; 01 — 06</span>
+    </div>
+</div>
+<div class="admin-tabs-wrap">
+    <nav class="tabs" aria-label="{{ lang.t("nav.admin") }}">
+        <a href="/app/admin" {% if section == "overview" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">01</span><span>{{ lang.t("admin.tabs.overview") }}</span></a>
+        <a href="/app/admin/users" {% if section == "users" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">02</span><span>{{ lang.t("admin.tabs.users") }}</span></a>
+        <a href="/app/admin/urls" {% if section == "urls" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">03</span><span>{{ lang.t("admin.tabs.links") }}</span></a>
+        <a href="/app/admin/invites" {% if section == "invites" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">04</span><span>{{ lang.t("admin.tabs.invites") }}</span></a>
+        <a href="/app/admin/settings" {% if section == "settings" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">05</span><span>{{ lang.t("admin.tabs.settings") }}</span></a>
+        <a href="/app/admin/audit" {% if section == "audit" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">06</span><span>{{ lang.t("admin.tabs.audit") }}</span></a>
+    </nav>
 </div>

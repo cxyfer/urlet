@@ -10,75 +10,212 @@
 {% endblock %}
 
 {% block body %}
-<div class="topbar">
-    <div class="topbar-inner">
+<div class="telemetry">
+    <div class="telemetry-inner">
+        <span class="telemetry-site"><span class="dot" aria-hidden="true"></span>{{ site_name }}</span>
+        <span class="telemetry-marks" aria-hidden="true">/////</span>
+        <span class="telemetry-tail">
+            <span class="index" aria-hidden="true">01 / 06 — 1280</span>
+        </span>
+    </div>
+</div>
+
+<header class="masthead">
+    <div class="masthead-inner">
         {% if signed_in %}
         <a class="brand" href="/app">{{ site_name }}<span>.</span></a>
         {% else %}
         <a class="brand" href="/">{{ site_name }}<span>.</span></a>
         {% endif %}
         <nav class="nav">
-            {% include "partials/lang_switcher.html" %}
             {% if signed_in %}
             <a href="/app">{{ lang.t("landing.nav.dashboard") }}</a>
             <span class="muted small">{{ email }}</span>
             <form method="post" action="/app/logout">
-                <button class="btn btn-ghost btn-sm" type="submit">{{ lang.t("nav.sign_out") }}</button>
+                <button type="submit">{{ lang.t("nav.sign_out") }}</button>
             </form>
             {% endif %}
+            {% include "partials/lang_switcher.html" %}
         </nav>
         {% if !signed_in %}
-        {# Kept outside `.nav` so the primary button keeps its own colours. #}
-        <div class="row">
+        <div class="masthead-actions">
             <a class="btn btn-ghost btn-sm" href="/app/login">{{ lang.t("landing.nav.sign_in") }}</a>
             <a class="btn btn-primary btn-sm" href="/app/register">{{ lang.t("landing.nav.create_account") }}</a>
         </div>
         {% endif %}
     </div>
-</div>
+</header>
 
 <main class="wrap">
-    <section class="landing-hero">
-        <h1>{{ site_name }}</h1>
-        <p class="landing-tagline">{{ lang.t("landing.tagline") }}</p>
-        <p class="muted">{{ lang.t("landing.subtitle") }}</p>
-        <div class="row landing-cta">
-            {% if signed_in %}
-            <a class="btn btn-primary" href="/app">{{ lang.t("landing.cta.dashboard") }}</a>
-            {% else %}
-            <a class="btn btn-primary" href="/app/register">{{ lang.t("landing.cta.create_account") }}</a>
-            <a class="btn btn-ghost" href="/app/login">{{ lang.t("landing.cta.sign_in") }}</a>
-            {% endif %}
+    <section class="hero g12">
+        <div class="hero-main span-8">
+            <p class="kicker">
+                <span aria-hidden="true">+ — 01</span>
+                <span class="kicker-rule" aria-hidden="true"></span>
+                <span aria-hidden="true">///</span>
+            </p>
+            <h1>{{ site_name }}<span class="dot" aria-hidden="true">.</span></h1>
+            <div class="hero-rule" aria-hidden="true"></div>
+            <p class="landing-tagline">{{ lang.t("landing.tagline") }}</p>
+            <p class="landing-sub">{{ lang.t("landing.subtitle") }}</p>
+            <div class="landing-cta">
+                {% if signed_in %}
+                <a class="btn btn-primary" href="/app">{{ lang.t("landing.cta.dashboard") }}</a>
+                {% else %}
+                <a class="btn btn-primary" href="/app/register">{{ lang.t("landing.cta.create_account") }}</a>
+                <a class="btn" href="/app/login">{{ lang.t("landing.cta.sign_in") }}</a>
+                {% endif %}
+            </div>
         </div>
+
+        <aside class="spec-col span-4" aria-hidden="true">
+            <div class="spec-head">
+                <span>+ — 01</span>
+                <span>12 × 24</span>
+            </div>
+            <div class="spec-row">
+                <span class="k">01</span>
+                <span class="v">+ 0.842</span>
+                <span class="spec-bar"><i style="width: 72%"></i></span>
+            </div>
+            <div class="spec-row">
+                <span class="k">02</span>
+                <span class="v">— 0.128</span>
+                <span class="spec-bar"><i style="width: 38%"></i></span>
+            </div>
+            <div class="spec-row">
+                <span class="k">03</span>
+                <span class="v">+ 0.664</span>
+                <span class="spec-bar"><i style="width: 88%"></i></span>
+            </div>
+            <div class="spec-row">
+                <span class="k">04</span>
+                <span class="v">+ 0.210</span>
+                <span class="spec-bar"><i style="width: 54%"></i></span>
+            </div>
+
+            <svg class="spec-diagram" viewBox="0 0 260 120" preserveAspectRatio="none" role="presentation">
+                <g class="axis">
+                    <line x1="0" y1="104" x2="260" y2="104"></line>
+                    <line x1="0" y1="68" x2="260" y2="68" stroke-dasharray="2 5"></line>
+                    <line x1="0" y1="32" x2="260" y2="32" stroke-dasharray="2 5"></line>
+                    <line x1="0" y1="8" x2="0" y2="104"></line>
+                    <line x1="0" y1="104" x2="0" y2="108"></line>
+                    <line x1="65" y1="104" x2="65" y2="108"></line>
+                    <line x1="130" y1="104" x2="130" y2="108"></line>
+                    <line x1="195" y1="104" x2="195" y2="108"></line>
+                    <line x1="260" y1="104" x2="260" y2="108"></line>
+                </g>
+                <polyline class="sig-line-alt" points="0,92 32,88 65,94 97,74 130,78 162,60 195,66 227,48 260,52"></polyline>
+                <polyline class="sig-line" points="0,88 32,96 65,72 97,80 130,54 162,62 195,38 227,44 260,18"></polyline>
+                <circle class="sig-pt" cx="260" cy="18" r="4"></circle>
+            </svg>
+
+            <div class="spec-note">
+                <span>Δ — 06</span>
+                <span>/// 24.0</span>
+            </div>
+        </aside>
     </section>
 
-    <section class="mt-2" aria-labelledby="landing-highlights">
-        <h2 class="center" id="landing-highlights">{{ lang.t("landing.features.heading") }}</h2>
-        <p class="center muted">{{ lang.t("landing.features.subtitle") }}</p>
-        <div class="grid landing-grid mt">
-            <article class="card landing-feature">
+    <div class="system-strip" aria-hidden="true">
+        <span class="sig">■</span>
+        <span class="glyphs">→ × + · / // ·  + × → /// · → × + · / ·  × → + /// ·  + → × · / ·</span>
+        <span class="sig">■</span>
+        <span class="num">01 — 06</span>
+    </div>
+
+    <section class="features" aria-labelledby="landing-highlights">
+        <header class="feature-head">
+            <span class="sec-num" aria-hidden="true">02</span>
+            <h2 id="landing-highlights">{{ lang.t("landing.features.heading") }}</h2>
+            <p class="sub">{{ lang.t("landing.features.subtitle") }}</p>
+        </header>
+
+        <div class="feat-grid">
+            <article class="landing-feature">
+                <div class="feat-top">
+                    <span class="feat-num" aria-hidden="true">01</span>
+                    <svg class="feat-icon" viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
+                        <rect x="5" y="7" width="22" height="18"></rect>
+                        <line x1="5" y1="13" x2="27" y2="13"></line>
+                        <circle cx="10" cy="20" r="3"></circle>
+                        <line x1="16" y1="20" x2="23" y2="20"></line>
+                    </svg>
+                </div>
                 <h3>{{ lang.t("landing.feature.accounts.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.accounts.body") }}</p>
+                <p>{{ lang.t("landing.feature.accounts.body") }}</p>
             </article>
-            <article class="card landing-feature">
+
+            <article class="landing-feature">
+                <div class="feat-top">
+                    <span class="feat-num" aria-hidden="true">02</span>
+                    <svg class="feat-icon" viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
+                        <path d="M13 19l6-6"></path>
+                        <path d="M10 22l-2 2a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0"></path>
+                        <path d="M22 10l2-2a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"></path>
+                        <line x1="4" y1="28" x2="28" y2="4"></line>
+                    </svg>
+                </div>
                 <h3>{{ lang.t("landing.feature.links.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.links.body") }}</p>
+                <p>{{ lang.t("landing.feature.links.body") }}</p>
             </article>
-            <article class="card landing-feature">
+
+            <article class="landing-feature">
+                <div class="feat-top">
+                    <span class="feat-num" aria-hidden="true">03</span>
+                    <svg class="feat-icon" viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
+                        <rect x="7" y="14" width="18" height="13"></rect>
+                        <path d="M11 14v-4a5 5 0 0 1 10 0v4"></path>
+                        <line x1="16" y1="19" x2="16" y2="23"></line>
+                    </svg>
+                </div>
                 <h3>{{ lang.t("landing.feature.protection.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.protection.body") }}</p>
+                <p>{{ lang.t("landing.feature.protection.body") }}</p>
             </article>
-            <article class="card landing-feature">
+
+            <article class="landing-feature">
+                <div class="feat-top">
+                    <span class="feat-num" aria-hidden="true">04</span>
+                    <svg class="feat-icon" viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
+                        <line x1="6" y1="26" x2="26" y2="26"></line>
+                        <rect x="8" y="16" width="4" height="10"></rect>
+                        <rect x="14" y="11" width="4" height="15"></rect>
+                        <rect x="20" y="6" width="4" height="20"></rect>
+                    </svg>
+                </div>
                 <h3>{{ lang.t("landing.feature.analytics.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.analytics.body") }}</p>
+                <p>{{ lang.t("landing.feature.analytics.body") }}</p>
             </article>
-            <article class="card landing-feature">
+
+            <article class="landing-feature">
+                <div class="feat-top">
+                    <span class="feat-num" aria-hidden="true">05</span>
+                    <svg class="feat-icon" viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
+                        <rect x="5" y="6" width="22" height="20"></rect>
+                        <line x1="5" y1="12" x2="27" y2="12"></line>
+                        <line x1="12" y1="12" x2="12" y2="26"></line>
+                        <line x1="16" y1="17" x2="23" y2="17"></line>
+                        <line x1="16" y1="21" x2="23" y2="21"></line>
+                    </svg>
+                </div>
                 <h3>{{ lang.t("landing.feature.operations.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.operations.body") }}</p>
+                <p>{{ lang.t("landing.feature.operations.body") }}</p>
             </article>
-            <article class="card landing-feature">
+
+            <article class="landing-feature">
+                <div class="feat-top">
+                    <span class="feat-num" aria-hidden="true">06</span>
+                    <svg class="feat-icon" viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
+                        <circle cx="16" cy="16" r="11"></circle>
+                        <ellipse cx="16" cy="16" rx="5" ry="11"></ellipse>
+                        <line x1="5" y1="16" x2="27" y2="16"></line>
+                        <line x1="7" y1="10" x2="25" y2="10"></line>
+                        <line x1="7" y1="22" x2="25" y2="22"></line>
+                    </svg>
+                </div>
                 <h3>{{ lang.t("landing.feature.platform.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.platform.body") }}</p>
+                <p>{{ lang.t("landing.feature.platform.body") }}</p>
             </article>
         </div>
     </section>

@@ -5,70 +5,103 @@
 {% block content %}
 {% include "admin/tabs.html" %}
 
-<div class="row between">
-    <h1>{{ lang.t("admin.invites.heading") }}</h1>
-    <span class="badge {% if registration_mode == "invite" %}badge-accent{% endif %}">
-        {{ lang.t("admin.invites.registration") }} {{ registration_mode_label }}
-    </span>
-</div>
+<header class="sec-head">
+    <span class="sec-num" aria-hidden="true">04</span>
+    <div class="sec-title">
+        <p class="sec-kicker" aria-hidden="true">/// — 06</p>
+        <h1>{{ lang.t("admin.invites.heading") }}</h1>
+    </div>
+    <div class="sec-meta">
+        <span class="badge {% if registration_mode == "invite" %}badge-accent{% endif %}">
+            {{ lang.t("admin.invites.registration") }} {{ registration_mode_label }}
+        </span>
+    </div>
+</header>
 
 {% if registration_mode != "invite" %}
-<div class="alert alert-info">
-    {{ lang.t("admin.invites.mode_prefix") }} <strong>{{ registration_mode_label }}</strong>{{ lang.t("admin.invites.mode_suffix")|safe }}
+<div class="alert alert-info mt">
+    <span class="alert-glyph" aria-hidden="true">+</span>
+    <span>{{ lang.t("admin.invites.mode_prefix") }} <strong>{{ registration_mode_label }}</strong>{{ lang.t("admin.invites.mode_suffix")|safe }}</span>
 </div>
 {% endif %}
 
 {% match new_code %}
 {% when Some with (code) %}
-<div class="alert alert-info">
-    <strong>{{ lang.t("admin.invites.copy_now") }}</strong> {{ lang.t("admin.invites.copy_once") }}
-    <div class="copy-row mt">
-        <input class="input" id="new-invite" type="text" value="{{ code }}" readonly>
-        <button class="btn" type="button" data-copy="#new-invite">{{ lang.t("common.copy") }}</button>
+<div class="alert alert-info mt">
+    <span class="alert-glyph" aria-hidden="true">+</span>
+    <div>
+        <strong>{{ lang.t("admin.invites.copy_now") }}</strong> {{ lang.t("admin.invites.copy_once") }}
+        <div class="copy-row mt">
+            <input class="input" id="new-invite" type="text" value="{{ code }}" readonly>
+            <button class="btn" type="button" data-copy="#new-invite">{{ lang.t("common.copy") }}</button>
+        </div>
     </div>
 </div>
 {% when None %}
 {% endmatch %}
 
-<div class="card mt">
-    <h2>{{ lang.t("admin.invites.create") }}</h2>
-    <form method="post" action="/app/admin/invites" class="row">
-        <div class="field" style="flex: 2 1 220px; margin-bottom: 0;">
-            <label class="label" for="note">{{ lang.t("common.note") }}</label>
-            <input class="input" type="text" id="note" name="note" placeholder="{{ lang.t("admin.invites.note_placeholder") }}">
+<section class="card mt" aria-labelledby="create-invite-heading">
+    <div class="panel-head">
+        <span class="panel-num" aria-hidden="true">01</span>
+        <h2 id="create-invite-heading">{{ lang.t("admin.invites.create") }}</h2>
+        <span class="panel-rule" aria-hidden="true"></span>
+    </div>
+    <form method="post" action="/app/admin/invites">
+        <div class="fgrid">
+            <div class="field">
+                <label class="label" for="note">{{ lang.t("common.note") }}</label>
+                <input class="input" type="text" id="note" name="note" placeholder="{{ lang.t("admin.invites.note_placeholder") }}">
+            </div>
+            <div class="field">
+                <label class="label" for="max_uses">{{ lang.t("admin.invites.max_uses") }}</label>
+                <input class="input" type="number" id="max_uses" name="max_uses" min="1" value="1">
+            </div>
+            <div class="field">
+                <label class="label" for="expires_at">{{ lang.t("common.expires_at") }}</label>
+                <input class="input" type="text" id="expires_at" name="expires_at" placeholder="{{ lang.t("common.password_placeholder") }}">
+            </div>
         </div>
-        <div class="field" style="flex: 0 1 130px; margin-bottom: 0;">
-            <label class="label" for="max_uses">{{ lang.t("admin.invites.max_uses") }}</label>
-            <input class="input" type="number" id="max_uses" name="max_uses" min="1" value="1">
+        <div class="row row-end mt">
+            <button class="btn btn-primary" type="submit">{{ lang.t("admin.invites.create") }}</button>
         </div>
-        <div class="field" style="flex: 1 1 190px; margin-bottom: 0;">
-            <label class="label" for="expires_at">{{ lang.t("common.expires_at") }}</label>
-            <input class="input" type="text" id="expires_at" name="expires_at" placeholder="{{ lang.t("common.password_placeholder") }}">
-        </div>
-        <button class="btn btn-primary" type="submit">{{ lang.t("admin.invites.create") }}</button>
     </form>
-</div>
+</section>
 
-<div class="card card-flush mt">
+<section class="card card-flush mt" aria-labelledby="invite-list-heading">
+    <div class="panel-head panel-head-flush">
+        <span class="panel-num" aria-hidden="true">02</span>
+        <h2 id="invite-list-heading">{{ lang.t("admin.invites.heading") }}</h2>
+        <span class="panel-rule" aria-hidden="true"></span>
+        <span class="panel-meta" aria-hidden="true">{{ invites.len() }}</span>
+    </div>
     {% if invites.len() > 0 %}
+    <p class="table-scroll-hint" aria-hidden="true">← →</p>
     <div class="table-wrap">
         <table class="table">
             <thead>
-                <tr><th>{{ lang.t("common.prefix") }}</th><th>{{ lang.t("common.note") }}</th><th>{{ lang.t("admin.invites.uses") }}</th><th>{{ lang.t("common.expires") }}</th><th>{{ lang.t("common.status") }}</th><th>{{ lang.t("common.created") }}</th><th></th></tr>
+                <tr>
+                    <th>{{ lang.t("common.prefix") }}</th>
+                    <th>{{ lang.t("common.note") }}</th>
+                    <th class="num">{{ lang.t("admin.invites.uses") }}</th>
+                    <th>{{ lang.t("common.expires") }}</th>
+                    <th>{{ lang.t("common.status") }}</th>
+                    <th>{{ lang.t("common.created") }}</th>
+                    <th>{{ lang.t("common.actions") }}</th>
+                </tr>
             </thead>
             <tbody>
                 {% for invite in invites %}
                 <tr>
-                    <td class="mono">{{ invite.prefix }}…</td>
+                    <td class="cell-mono">{{ invite.prefix }}…</td>
                     <td class="truncate">{{ invite.note }}</td>
-                    <td>{{ invite.uses }}</td>
-                    <td class="small">{{ invite.expires }}</td>
+                    <td class="num">{{ invite.uses }}</td>
+                    <td class="small mono">{{ invite.expires }}</td>
                     <td>
                         <span class="badge {% if invite.usable %}badge-ok{% else %}badge-muted{% endif %}">
                             {{ invite.status }}
                         </span>
                     </td>
-                    <td class="small">{{ invite.created }}</td>
+                    <td class="small mono">{{ invite.created }}</td>
                     <td>
                         {% if invite.usable %}
                         <form method="post" action="/app/admin/invites/{{ invite.id }}/delete">
@@ -85,5 +118,5 @@
     {% else %}
     <p class="empty">{{ lang.t("admin.invites.empty") }}</p>
     {% endif %}
-</div>
+</section>
 {% endblock %}

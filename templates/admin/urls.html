@@ -5,44 +5,63 @@
 {% block content %}
 {% include "admin/tabs.html" %}
 
-<div class="row between">
-    <h1>{{ lang.t("admin.urls.heading") }}</h1>
-    <span class="muted small">{{ count_label }}</span>
-</div>
-
-<form method="get" action="/app/admin/urls" class="row mt">
-    <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ lang.t("dashboard.search.placeholder") }}"
-           style="max-width: 260px;">
-    <input class="input" type="number" name="user_id" value="{{ user_id }}" placeholder="{{ lang.t("admin.urls.owner_id_placeholder") }}"
-           style="max-width: 150px;">
-    <select class="select" name="status" style="max-width: 160px;">
-        <option value="">{{ lang.t("common.any_status") }}</option>
-        <option value="active" {% if status == "active" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
-        <option value="disabled" {% if status == "disabled" %}selected{% endif %}>{{ lang.t("common.disabled") }}</option>
-    </select>
-    <button class="btn" type="submit">{{ lang.t("common.filter") }}</button>
-    <a class="btn btn-ghost" href="/app/admin/urls">{{ lang.t("common.reset") }}</a>
-</form>
+<header class="sec-head">
+    <span class="sec-num" aria-hidden="true">03</span>
+    <div class="sec-title">
+        <p class="sec-kicker" aria-hidden="true">/// — 06</p>
+        <h1>{{ lang.t("admin.urls.heading") }}</h1>
+    </div>
+    <div class="sec-meta">{{ count_label }}</div>
+</header>
 
 <div class="card card-flush mt">
+    <form method="get" action="/app/admin/urls" class="toolbar" role="search">
+        <div class="field field-wide">
+            <label class="label" for="q">{{ lang.t("dashboard.search.placeholder") }}</label>
+            <input class="input" type="search" id="q" name="q" value="{{ q }}" placeholder="{{ lang.t("dashboard.search.placeholder") }}">
+        </div>
+        <div class="field">
+            <label class="label" for="user_id">{{ lang.t("admin.urls.owner") }}</label>
+            <input class="input" type="number" id="user_id" name="user_id" value="{{ user_id }}" placeholder="{{ lang.t("admin.urls.owner_id_placeholder") }}">
+        </div>
+        <div class="field">
+            <label class="label" for="status">{{ lang.t("common.status") }}</label>
+            <select class="select" id="status" name="status">
+                <option value="">{{ lang.t("common.any_status") }}</option>
+                <option value="active" {% if status == "active" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
+                <option value="disabled" {% if status == "disabled" %}selected{% endif %}>{{ lang.t("common.disabled") }}</option>
+            </select>
+        </div>
+        <div class="row-actions">
+            <button class="btn" type="submit">{{ lang.t("common.filter") }}</button>
+            <a class="btn btn-ghost" href="/app/admin/urls">{{ lang.t("common.reset") }}</a>
+        </div>
+    </form>
+
     {% if urls.len() > 0 %}
+    <p class="table-scroll-hint" aria-hidden="true">← →</p>
     <div class="table-wrap">
         <table class="table">
             <thead>
                 <tr>
-                    <th>{{ lang.t("common.slug") }}</th><th>{{ lang.t("admin.urls.owner") }}</th><th>{{ lang.t("common.destination") }}</th><th>{{ lang.t("common.clicks") }}</th>
-                    <th>{{ lang.t("common.state") }}</th><th>{{ lang.t("common.expiry") }}</th><th>{{ lang.t("common.actions") }}</th>
+                    <th>{{ lang.t("common.slug") }}</th>
+                    <th>{{ lang.t("admin.urls.owner") }}</th>
+                    <th>{{ lang.t("common.destination") }}</th>
+                    <th class="num">{{ lang.t("common.clicks") }}</th>
+                    <th>{{ lang.t("common.state") }}</th>
+                    <th>{{ lang.t("common.expiry") }}</th>
+                    <th>{{ lang.t("common.actions") }}</th>
                 </tr>
             </thead>
             <tbody>
                 {% for row in urls %}
                 <tr>
-                    <td class="mono">{{ row.url.slug }}</td>
+                    <td class="cell-mono">{{ row.url.slug }}</td>
                     <td class="small">
                         <a href="/app/admin/urls?user_id={{ row.owner_id }}">{{ row.owner }}</a>
                     </td>
                     <td class="truncate" title="{{ row.url.target_url }}">{{ row.url.target_display }}</td>
-                    <td>{{ row.url.click_count }}</td>
+                    <td class="num">{{ row.url.click_count }}</td>
                     <td><span class="badge {{ row.url.state_class }}">{{ row.url.state_label }}</span></td>
                     <td class="small">
                         {% match row.url.expires_human %}
@@ -50,7 +69,7 @@
                         {% when None %}<span class="muted">{{ lang.t("common.never") }}</span>{% endmatch %}
                     </td>
                     <td>
-                        <div class="row" style="gap: .25rem;">
+                        <div class="row">
                             <form method="post" action="/app/admin/urls/{{ row.url.id }}">
                                 <input type="hidden" name="status"
                                        value="{% if row.url.state == "disabled" %}active{% else %}disabled{% endif %}">
@@ -72,10 +91,10 @@
 
     {% if total_pages > 1 %}
     <div class="pagination">
-        <span class="muted small">{{ pagination_note }}</span>
+        <span class="pagination-note">{{ pagination_note }}</span>
         {% for link in links %}
         {% if link.current %}<span class="current">{{ link.label }}</span>
-        {% else %}<a class="btn btn-sm" href="{{ link.url }}">{{ link.label }}</a>{% endif %}
+        {% else %}<a href="{{ link.url }}">{{ link.label }}</a>{% endif %}
         {% endfor %}
     </div>
     {% endif %}

@@ -4,8 +4,24 @@
 {% block footer_lang %}{% endblock %}
 
 {% block body %}
-<div class="topbar">
-    <div class="topbar-inner">
+<div class="telemetry">
+    <div class="telemetry-inner">
+        <span class="telemetry-site"><span class="dot" aria-hidden="true"></span>{{ chrome.site_name }}</span>
+        <span class="telemetry-marks" aria-hidden="true">/////</span>
+        <span class="telemetry-section">
+            {% if chrome.active == "dashboard" %}{{ lang.t("nav.links") }}
+            {% else if chrome.active == "account" %}{{ lang.t("nav.account") }}
+            {% else if chrome.active == "admin" %}{{ lang.t("nav.admin") }}
+            {% else %}{{ lang.t("nav.links") }}{% endif %}
+        </span>
+        <span class="telemetry-tail">
+            {% include "partials/lang_switcher.html" %}
+        </span>
+    </div>
+</div>
+
+<header class="masthead">
+    <div class="masthead-inner">
         <a class="brand" href="/app">{{ chrome.site_name }}<span>.</span></a>
         <nav class="nav">
             <a href="/app" {% if chrome.active == "dashboard" %}class="active"{% endif %}>{{ lang.t("nav.links") }}</a>
@@ -13,20 +29,22 @@
             {% if chrome.is_admin %}
             <a href="/app/admin" {% if chrome.active == "admin" %}class="active"{% endif %}>{{ lang.t("nav.admin") }}</a>
             {% endif %}
-            {% include "partials/lang_switcher.html" %}
-            <span class="muted small">{{ chrome.email }}</span>
-            <form method="post" action="/app/logout">
-                <button class="btn btn-ghost btn-sm" type="submit">{{ lang.t("nav.sign_out") }}</button>
-            </form>
         </nav>
+        <div class="masthead-actions">
+            <span class="who" title="{{ chrome.email }}">{{ chrome.email }}</span>
+            <form method="post" action="/app/logout">
+                <button class="btn btn-sm" type="submit">{{ lang.t("nav.sign_out") }}</button>
+            </form>
+        </div>
     </div>
-</div>
+</header>
 
 <main class="wrap">
     {% match chrome.flash %}
     {% when Some with (flash) %}
     <div class="alert alert-{{ flash.kind }}" {% if flash.kind == "ok" %}data-auto-dismiss{% endif %}>
-        {{ flash.message }}
+        <span class="alert-glyph" aria-hidden="true">{% if flash.kind == "ok" %}+{% else %}!{% endif %}</span>
+        <span>{{ flash.message }}</span>
     </div>
     {% when None %}
     {% endmatch %}
