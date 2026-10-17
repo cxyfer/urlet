@@ -140,7 +140,10 @@ impl Config {
         let base_url = env_str("URLET_BASE_URL").unwrap_or_else(|| "http://localhost:8080".into());
         let base_url = base_url.trim().trim_end_matches('/').to_string();
         let (base_scheme, base_host) = split_base_url(&base_url)?;
-        let base_host = crate::services::domains::normalize_host(&base_host).unwrap_or(base_host);
+        let base_host = canonical_base_host(&base_host).ok_or_else(|| ConfigError::Invalid {
+            name: "URLET_BASE_URL",
+            value: base_url.clone(),
+        })?;
         let extra_domains_raw = env_str("URLET_DOMAINS");
         let extra_domains_declared = extra_domains_raw.is_some();
         let extra_domains = parse_extra_domains(extra_domains_raw, &base_host)?;
@@ -300,6 +303,30 @@ fn parse_bool(value: &str) -> bool {
     )
 }
 
+/// Canonical stored form of the `URLET_BASE_URL` host.
+///
+/// Normal hostnames use the same rules as request hosts. The canonical host may
+/// also be an IPv6 literal or a Docker-style underscore service name; those are
+/// accepted as an opaque ASCII key so the instance still starts. Unicode
+/// hostnames are rejected instead of silently serving 404s: use their punycode
+/// form in `URLET_BASE_URL`.
+fn canonical_base_host(raw: &str) -> Option<String> {
+    if let Some(host) = crate::services::domains::normalize_host(raw) {
+        return Some(host);
+    }
+    let trimmed = raw.trim();
+    if trimmed.is_empty()
+        || !trimmed.is_ascii()
+        || (!trimmed.starts_with('[') && !trimmed.contains('_'))
+        || trimmed.chars().any(|c| {
+            c.is_control() || c.is_whitespace() || matches!(c, '/' | '\\' | '@' | '#' | '?')
+        })
+    {
+        return None;
+    }
+    Some(crate::services::domains::raw_host_key(trimmed))
+}
+
 /// Parse `URLET_DOMAINS`: comma separated hostnames, normalised, de-duplicated
 /// and with the canonical host removed.
 fn parse_extra_domains(raw: Option<String>, base_host: &str) -> Result<Vec<String>, ConfigError> {
@@ -415,6 +442,23 @@ mod tests {
         for falsy in ["0", "false", "no", "off", ""] {
             assert!(!parse_bool(falsy), "{falsy}");
         }
+    }
+
+    #[test]
+    fn canonicalises_operator_supplied_base_hosts() {
+        assert_eq!(
+            canonical_base_host("Example.COM."),
+            Some("example.com".into())
+        );
+        assert_eq!(canonical_base_host(""), None);
+        assert_eq!(canonical_base_host("[::1]:8080"), Some("[::1]:8080".into()));
+        assert_eq!(
+            canonical_base_host("urlet_app:443"),
+            Some("urlet_app".into())
+        );
+        assert_eq!(canonical_base_host("例え.jp"), None);
+        assert_eq!(canonical_base_host("bad host"), None);
+        assert_eq!(canonical_base_host("example.com:99999"), None);
     }
 
     #[test]

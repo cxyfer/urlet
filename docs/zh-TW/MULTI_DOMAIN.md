@@ -33,8 +33,8 @@ urlet 以一個 **canonical host** 提供完整應用，並可加上任意數量
 - 簡單首頁只顯示站名、一句說明與回 canonical 的連結；沒有登入、註冊或短碼
   輸入框。
 - 目前的預設網域不能停用或刪除，必須先把另一個 active 網域設為預設。
-- `domains.source` 區分 `system`、`env`、`ui`。System 與 env 網域可以停用，
-  但不能從 UI 刪除。
+- `domains.source` 區分 `system`、`env`、`ui`。System/canonical 網域不可停用、
+  也不可刪除；env 網域可以停用，但不能從 UI 刪除。
 
 ## 3. Host 角色與路由
 
@@ -93,9 +93,14 @@ daily stats，再套用 `0003`，檢查列數、外鍵、回填的 domain、per-
 
 ## 6. Host 解析
 
-- 讀取 `Host` header。沒有 `Host`（HTTP/1.0 與測試）時視為 canonical。
+- 讀取 `Host` header。沒有 `Host`（HTTP/1.0 與測試）時視為 canonical；
+  有 `Host` 但無法解碼或格式無效時視為未知網域。
 - 正規化：trim、小寫、去結尾的點、去 `:80`/`:443`、保留其他 port；拒絕
   scheme、路徑與控制字元。
+- Canonical host 可以是 IPv6 literal 或 Docker 風格的底線服務名稱；這類值
+  透過 ASCII fallback 比對，額外網域仍必須是正常 hostname。Unicode canonical
+  host 必須使用 punycode；無法解析的 Unicode `URLET_BASE_URL` 會在啟動時
+  直接失敗，而不是靜默回 404。
 - 本版本**不信任** `X-Forwarded-Host`。反向代理必須保留原始 `Host`
   （Caddy 預設會保留）。
 - `AppState` 內的 `DomainRegistry` 快照提供 hostname/id 查詢、active host

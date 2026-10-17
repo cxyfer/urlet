@@ -542,14 +542,11 @@ impl UrlContext<'_> {
 
         let hostname = domain_service::validate_domain_hostname(raw)
             .map_err(|err| AppError::validation("domain", err.message()))?;
-        let domain = domain_db::find_by_hostname(self.pool, &hostname)
+        domain_db::find_by_hostname(self.pool, &hostname)
             .await
             .map_err(AppError::from)?
-            .ok_or_else(|| AppError::validation("domain", "unknown domain"))?;
-        if !domain.is_active() {
-            return Err(AppError::validation("domain", "that domain is not active"));
-        }
-        Ok(domain)
+            .filter(Domain::is_active)
+            .ok_or_else(|| AppError::validation("domain", "unknown or inactive domain"))
     }
 
     async fn sync_tags(&self, url_id: i64, tags: &[String]) -> Result<()> {

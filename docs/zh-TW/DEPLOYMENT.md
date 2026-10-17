@@ -91,7 +91,7 @@ URLET_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-*
 
 | 變數 | 預設 | 說明 |
 |------|------|------|
-| `URLET_BASE_URL` | `http://localhost:8080` | 對外網址；用於產生短網址、CSRF 同源檢查、Cookie `Secure` 判斷 |
+| `URLET_BASE_URL` | `http://localhost:8080` | 對外網址；用於產生短網址、CSRF 同源檢查、Cookie `Secure` 判斷。Host 必須是 ASCII（IDN 請用 punycode）；IPv6 literal 與底線服務名稱僅限 canonical host |
 | `URLET_DOMAINS` | 空 | 額外網域（僅轉址），以逗號分隔。第一次啟動時插入為 active；不會覆寫既有狀態。所有網域必須和 `URLET_BASE_URL` 使用相同 http/https scheme，且需要 DNS 與 TLS |
 | `URLET_BIND` | `0.0.0.0:8080` | 監聽位址 |
 | `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite 連線字串 |

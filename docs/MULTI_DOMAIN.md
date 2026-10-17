@@ -36,8 +36,9 @@ Implementation defaults agreed for the open points:
   link to the canonical host. No login, registration or slug input.
 - The current default domain cannot be disabled or deleted until another active
   domain is made default.
-- `domains.source` distinguishes `system`, `env` and `ui`. The system and
-  environment-managed domains can be disabled but not deleted from the UI.
+- `domains.source` distinguishes `system`, `env` and `ui`. The system/canonical
+  domain can be neither disabled nor deleted; environment-managed domains can be
+  disabled but not deleted from the UI.
 
 ## 3. Host roles and routing
 
@@ -102,9 +103,14 @@ working `sqlite_sequence`.
 ## 6. Host resolution
 
 - Read the `Host` header. An absent `Host` (HTTP/1.0 and tests) is treated as the
-  canonical host.
+  canonical host. A present but undecodable/invalid `Host` is an unknown host.
 - Normalise: trim, lower-case, strip a trailing dot, strip `:80`/`:443`, keep
   other ports, reject schemes, paths and control characters.
+- The canonical host may be an IPv6 literal or a Docker-style underscore service
+  name; those are matched through an opaque ASCII fallback because extra domains
+  still have to be normal hostnames. A Unicode canonical host must be supplied
+  as punycode; an unparseable Unicode `URLET_BASE_URL` fails startup instead of
+  silently serving 404s.
 - `X-Forwarded-Host` is not trusted in this version. The reverse proxy must
   preserve the original `Host` (Caddy does by default).
 - A `DomainRegistry` snapshot in `AppState` maps hostnames and ids to domains and

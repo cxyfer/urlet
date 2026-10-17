@@ -54,6 +54,24 @@ pub fn validate_domain_hostname(raw: &str) -> std::result::Result<String, HostEr
     parse_host(raw)
 }
 
+/// Fallback key for host matching when [`normalize_host`] rejects the value.
+///
+/// The canonical host is operator supplied and may be an IPv6 literal or a
+/// Docker-style service name with an underscore; those are not valid extra
+/// domain names, but refusing to start or silently 404ing the whole instance
+/// would be worse. Default ports are stripped, matching `normalize_host`.
+pub fn raw_host_key(host: &str) -> String {
+    let lowered = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    if let Some(stem) = lowered
+        .strip_suffix(":443")
+        .or_else(|| lowered.strip_suffix(":80"))
+    {
+        stem.to_string()
+    } else {
+        lowered
+    }
+}
+
 fn parse_host(raw: &str) -> std::result::Result<String, HostError> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -251,7 +269,10 @@ impl DomainContext<'_> {
         }
         domain_db::set_default(self.pool, id)
             .await
-            .map_err(AppError::from)?;
+            .map_err(|err| match err {
+                sqlx::Error::RowNotFound => AppError::conflict("the domain is no longer active"),
+                other => AppError::from(other),
+            })?;
         let domain = self.get(id).await?;
         self.audit(
             action::DOMAIN_DEFAULT_CHANGED,
@@ -453,12 +474,8 @@ pub struct DomainRegistry {
 
 impl DomainRegistry {
     pub fn new(canonical_host: &str) -> Self {
-        let canonical_host = normalize_host(canonical_host).unwrap_or_else(|| {
-            canonical_host
-                .trim()
-                .trim_end_matches('.')
-                .to_ascii_lowercase()
-        });
+        let canonical_host =
+            normalize_host(canonical_host).unwrap_or_else(|| raw_host_key(canonical_host));
         Self {
             canonical_host,
             snapshot: RwLock::new(Arc::new(DomainSnapshot::default())),
@@ -470,10 +487,12 @@ impl DomainRegistry {
     }
 
     pub fn is_canonical(&self, host: &str) -> bool {
-        normalize_host(host)
-            .as_deref()
-            .map(|host| host == self.canonical_host)
-            .unwrap_or(false)
+        if let Some(normalized) = normalize_host(host) {
+            if normalized == self.canonical_host {
+                return true;
+            }
+        }
+        raw_host_key(host) == self.canonical_host
     }
 
     fn current(&self) -> Arc<DomainSnapshot> {
@@ -573,6 +592,26 @@ mod tests {
             normalize_host("  links.example.com  ").as_deref(),
             Some("links.example.com")
         );
+    }
+
+    #[test]
+    fn raw_host_keys_support_operator_hosts() {
+        assert_eq!(raw_host_key("Example.COM."), "example.com");
+        assert_eq!(raw_host_key("[::1]:8080"), "[::1]:8080");
+        assert_eq!(raw_host_key("[::1]:443"), "[::1]");
+        assert_eq!(raw_host_key("urlet_app:443"), "urlet_app");
+        assert_eq!(raw_host_key("urlet_app:8080"), "urlet_app:8080");
+    }
+
+    #[test]
+    fn canonical_matching_falls_back_for_operator_hosts() {
+        let ipv6 = DomainRegistry::new("[::1]:8080");
+        assert!(ipv6.is_canonical("[::1]:8080"));
+        assert!(!ipv6.is_canonical("[::1]:9090"));
+
+        let underscore = DomainRegistry::new("urlet_app:443");
+        assert!(underscore.is_canonical("urlet_app"));
+        assert!(underscore.is_canonical("URLET_APP:443"));
     }
 
     #[test]

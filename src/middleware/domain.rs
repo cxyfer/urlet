@@ -60,20 +60,19 @@ pub async fn domain_gate(
         return next.run(request).await;
     }
 
-    let host_header = request
-        .headers()
-        .get(header::HOST)
-        .and_then(|value| value.to_str().ok());
-    let host = host_header.and_then(normalize_host);
+    let host_header = request.headers().get(header::HOST);
+    let raw_host = host_header.and_then(|value| value.to_str().ok());
+    let host = raw_host.and_then(normalize_host);
 
     // HTTP/1.0 requests and the test harness may omit Host; treat them as the
-    // canonical host. A *present but invalid* Host is never canonical: it is an
-    // unknown host and gets a 404.
+    // canonical host. A *present but invalid* Host (including one that is not
+    // visible ASCII) is never canonical: it is unknown and gets a 404. The
+    // canonical check uses the raw value because the configured canonical host
+    // may be an IPv6 literal or an underscore service name.
     let canonical = match host_header {
         None => true,
-        Some(_) => host
-            .as_deref()
-            .map(|host| state.domains.is_canonical(host))
+        Some(_) => raw_host
+            .map(|raw| state.domains.is_canonical(raw))
             .unwrap_or(false),
     };
 
@@ -155,6 +154,11 @@ fn redirect_to_canonical(state: &AppState, request: &Request) -> Response {
         Ok(value) => {
             let mut response = StatusCode::PERMANENT_REDIRECT.into_response();
             response.headers_mut().insert(header::LOCATION, value);
+            // A permanent redirect is correct, but do not let browsers pin a
+            // canonical target that may change with URLET_BASE_URL.
+            response
+                .headers_mut()
+                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
             response
         }
         Err(err) => {

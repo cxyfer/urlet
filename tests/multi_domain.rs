@@ -2,7 +2,8 @@
 
 mod common;
 
-use axum::http::StatusCode;
+use axum::body::Body;
+use axum::http::{header, HeaderValue, Request, StatusCode};
 use common::{delete_as, patch_json_as, post_form_with_host, TestApp};
 use serde_json::{json, Value};
 
@@ -51,10 +52,41 @@ async fn extra_domains_are_redirect_only() {
     assert_eq!(created["domain"], "go.example.com");
     assert_eq!(created["short_url"], "http://go.example.com/promo");
 
+    let dashboard = app.get_as("/app", &admin).await;
+    assert_eq!(dashboard.status, StatusCode::OK);
+    assert!(
+        dashboard.body.contains("name=\"domain\""),
+        "{}",
+        dashboard.body
+    );
+    assert!(dashboard.body.contains("go.example.com"));
+    assert!(dashboard.body.contains("http://go.example.com/promo"));
+    let detail = app
+        .get_as(&format!("/app/urls/{}", created["id"]), &admin)
+        .await;
+    assert_eq!(detail.status, StatusCode::OK);
+    assert!(detail.body.contains("name=\"domain\""), "{}", detail.body);
+    assert!(detail.body.contains("go.example.com"));
+    assert!(detail.body.contains("http://go.example.com/promo"));
+
     let redirect = app.get_with_host("/promo", "go.example.com").await;
     assert_eq!(redirect.status, StatusCode::FOUND);
     assert_eq!(
         redirect.header("location").as_deref(),
+        Some("https://example.com/extra")
+    );
+
+    // A spoofed forwarding header must not affect host routing or redirects.
+    let xfh = Request::builder()
+        .uri("/promo")
+        .header(header::HOST, "go.example.com")
+        .header("x-forwarded-host", "evil.example")
+        .body(Body::empty())
+        .expect("request");
+    let xfh = app.send(xfh).await;
+    assert_eq!(xfh.status, StatusCode::FOUND);
+    assert_eq!(
+        xfh.header("location").as_deref(),
         Some("https://example.com/extra")
     );
 
@@ -77,6 +109,10 @@ async fn extra_domains_are_redirect_only() {
     assert_eq!(
         app_redirect.header("location").as_deref(),
         Some("http://localhost:8080/app?x=1")
+    );
+    assert_eq!(
+        app_redirect.header("cache-control").as_deref(),
+        Some("no-store")
     );
 
     // State-changing /app requests are rejected, not redirected.
@@ -964,4 +1000,76 @@ async fn conditional_domain_updates_do_not_leave_a_disabled_default() {
             .expect("delete after disable"),
         1
     );
+}
+
+#[tokio::test]
+async fn operator_supplied_canonical_hosts_still_serve() {
+    for host in ["[::1]:8080", "urlet_app:8080"] {
+        let app = TestApp::spawn_with(|config| {
+            config.base_host = host.to_string();
+        })
+        .await;
+
+        let home = app.get_with_host("/", host).await;
+        assert_eq!(home.status, StatusCode::OK, "{host}: {}", home.body);
+        assert!(home.body.contains("Short links for teams"), "{host}");
+
+        // The API is reachable on the canonical host (401, not the gate's 404).
+        assert_eq!(
+            app.get_with_host("/api/v1/domains", host).await.status,
+            StatusCode::UNAUTHORIZED,
+            "{host}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn undecodable_host_is_not_canonical() {
+    let app = TestApp::spawn().await;
+    let request = Request::builder()
+        .uri("/")
+        .header(
+            header::HOST,
+            HeaderValue::from_bytes(b"bad\x80host").expect("header value"),
+        )
+        .body(Body::empty())
+        .expect("request");
+    let response = app.send(request).await;
+    assert_eq!(response.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn bootstrap_detaches_env_domains_when_the_variable_is_empty() {
+    let app = TestApp::spawn_with(|config| {
+        config.extra_domains = vec!["env.example.com".to_string()];
+        config.extra_domains_declared = true;
+    })
+    .await;
+    let source: String =
+        sqlx::query_scalar("SELECT source FROM domains WHERE hostname = 'env.example.com'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("source");
+    assert_eq!(source, "env");
+
+    // Re-open the same database as the next boot would, with an explicitly
+    // empty URLET_DOMAINS list. bootstrap() (not detach_env() directly) must
+    // detach the env row.
+    let mut config = urlet::config::Config::for_tests(&app.dir);
+    config.database_url = app.state.config.database_url.clone();
+    config.extra_domains = Vec::new();
+    config.extra_domains_declared = true;
+    let pool = urlet::db::init(&config).await.expect("database");
+    let settings = urlet::services::settings::Settings::load(&pool, &config)
+        .await
+        .expect("settings");
+    let state = urlet::state::AppState::new(config, pool, settings);
+    urlet::server::bootstrap(&state).await.expect("bootstrap");
+
+    let source: String =
+        sqlx::query_scalar("SELECT source FROM domains WHERE hostname = 'env.example.com'")
+            .fetch_one(&state.db)
+            .await
+            .expect("source after detach");
+    assert_eq!(source, "ui");
 }

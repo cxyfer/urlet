@@ -96,7 +96,7 @@ URLET_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-Forw
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `URLET_BASE_URL` | `http://localhost:8080` | Public URL; used to build short links, for the CSRF same-origin check and to decide whether cookies are `Secure` |
+| `URLET_BASE_URL` | `http://localhost:8080` | Public URL; used to build short links, for the CSRF same-origin check and to decide whether cookies are `Secure`. The host must be ASCII (punycode for IDN); IPv6 literals and underscore service names are accepted for the canonical host only |
 | `URLET_DOMAINS` | Empty | Extra redirect-only hostnames, comma separated. Inserted as active on first boot; never overrides an existing status. Every domain must use the same http/https scheme as `URLET_BASE_URL` and needs DNS + TLS |
 | `URLET_BIND` | `0.0.0.0:8080` | Listen address |
 | `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite connection string |
