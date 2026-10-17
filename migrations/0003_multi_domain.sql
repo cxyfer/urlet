@@ -16,11 +16,12 @@
 -- ---------------------------------------------------------------------------
 
 -- == domains ----------------------------------------------------------------
--- Normalise hostnames into a temporary mapping *before* renaming rows. A v2
--- installation that changed URLET_BASE_URL can contain two rows that normalise
--- to the same hostname (for example `example.com:443` and `example.com`); they
--- must be merged and their urls.domain_id remapped before the UNIQUE index can
--- be created.
+-- Normalise hostnames into a temporary mapping *before* renaming rows. Ports
+-- are parsed numerically, so `:443`, `:0443`, `:80` and `:080` all lose their
+-- default port while `:08080` becomes `:8080`. A v2 installation that changed
+-- URLET_BASE_URL can contain two rows that normalise to the same hostname (for
+-- example `example.com:443` and `example.com`); they must be merged and their
+-- urls.domain_id remapped before the UNIQUE index can be created.
 CREATE TEMP TABLE urlet_domain_normalized (
     id       INTEGER PRIMARY KEY,
     hostname TEXT NOT NULL
@@ -28,17 +29,32 @@ CREATE TEMP TABLE urlet_domain_normalized (
 
 WITH step1 AS (
     SELECT id, rtrim(lower(trim(hostname)), '.') AS h FROM domains
-), step2 AS (
-    SELECT id, replace(h, '.:', ':') AS h FROM step1
-), step3 AS (
-    SELECT id, CASE WHEN h LIKE '%:443' THEN substr(h, 1, length(h) - 4) ELSE h END AS h
-      FROM step2
-), step4 AS (
-    SELECT id, CASE WHEN h LIKE '%:80' THEN substr(h, 1, length(h) - 3) ELSE h END AS h
-      FROM step3
+), parsed AS (
+    SELECT id, h,
+           CASE WHEN h LIKE '%:%' AND h NOT LIKE '[%'
+                THEN substr(h, instr(h, ':') + 1) END AS port_text,
+           CASE WHEN h LIKE '%:%' AND h NOT LIKE '[%'
+                THEN substr(h, 1, instr(h, ':') - 1) ELSE h END AS host_text
+      FROM step1
+), normalized AS (
+    SELECT id,
+           CASE
+             WHEN port_text IS NULL THEN rtrim(host_text, '.')
+             WHEN port_text <> ''
+              AND port_text NOT GLOB '*[^0-9]*'
+              AND length(port_text) <= 5
+              AND CAST(port_text AS INTEGER) BETWEEN 1 AND 65535
+             THEN CASE
+                    WHEN CAST(port_text AS INTEGER) IN (80, 443)
+                    THEN rtrim(host_text, '.')
+                    ELSE rtrim(host_text, '.') || ':' || CAST(port_text AS INTEGER)
+                  END
+             ELSE h
+           END AS h
+      FROM parsed
 )
 INSERT INTO urlet_domain_normalized (id, hostname)
-SELECT id, rtrim(h, '.') FROM step4;
+SELECT id, h FROM normalized;
 
 CREATE TEMP TABLE urlet_domain_merge (
     keep_id INTEGER NOT NULL,

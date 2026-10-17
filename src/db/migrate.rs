@@ -509,7 +509,7 @@ mod tests {
         // an explicit default port.
         sqlx::query(
             "INSERT INTO domains (hostname, is_default, is_verified, created_at)
-             VALUES ('s.example.com.:443', 1, 1, ?)",
+             VALUES ('s.example.com.:0443', 1, 1, ?)",
         )
         .bind(&now)
         .execute(&pool)
@@ -517,22 +517,30 @@ mod tests {
         .expect("canonical domain");
         sqlx::query(
             "INSERT INTO domains (hostname, is_default, is_verified, created_at)
-             VALUES ('b.example.com:80', 0, 1, ?)",
+             VALUES ('b.example.com:080', 0, 1, ?)",
         )
         .bind(&now)
         .execute(&pool)
         .await
         .expect("extra domain");
         let canonical_old: i64 =
-            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = 's.example.com.:443'")
+            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = 's.example.com.:0443'")
                 .fetch_one(&pool)
                 .await
                 .expect("old canonical id");
         let extra_old: i64 =
-            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = 'b.example.com:80'")
+            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = 'b.example.com:080'")
                 .fetch_one(&pool)
                 .await
                 .expect("old extra id");
+        sqlx::query(
+            "INSERT INTO domains (hostname, is_default, is_verified, created_at)
+             VALUES ('c.example.com:08080', 0, 1, ?)",
+        )
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("zero-padded non-default port");
 
         sqlx::query(
             "INSERT INTO urls (user_id, domain_id, slug, target_url, created_at, updated_at)
@@ -577,7 +585,13 @@ mod tests {
             .fetch_one(&pool)
             .await
             .expect("domain count");
-        assert_eq!(count, 2, "no duplicate canonical row was inserted");
+        assert_eq!(count, 3, "no duplicate canonical row was inserted");
+        let non_default: String =
+            sqlx::query_scalar("SELECT hostname FROM domains WHERE hostname LIKE 'c.example.com%'")
+                .fetch_one(&pool)
+                .await
+                .expect("non-default port");
+        assert_eq!(non_default, "c.example.com:8080");
 
         let backfilled: i64 = sqlx::query_scalar("SELECT domain_id FROM urls WHERE slug = 'promo'")
             .fetch_one(&pool)
@@ -632,7 +646,7 @@ mod tests {
         // default; the old row still owns links created before the change.
         sqlx::query(
             "INSERT INTO domains (hostname, is_default, is_verified, created_at)
-             VALUES ('s.example.com:443', 0, 1, ?)",
+             VALUES ('s.example.com:0443', 0, 1, ?)",
         )
         .bind(&now)
         .execute(&pool)
@@ -647,7 +661,7 @@ mod tests {
         .await
         .expect("new canonical");
         let old_id: i64 =
-            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = 's.example.com:443'")
+            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = 's.example.com:0443'")
                 .fetch_one(&pool)
                 .await
                 .expect("old id");
