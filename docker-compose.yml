@@ -13,7 +13,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: urlet:1.0.0
+    image: urlet:1.2.0
     container_name: urlet
     restart: unless-stopped
 
