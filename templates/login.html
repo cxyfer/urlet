@@ -3,43 +3,49 @@
 {% block title %}{{ lang.t("auth.login.title") }} — {{ site_name }}{% endblock %}
 
 {% block body %}
-<div class="wrap-narrow">
-    <h1 class="center">{{ site_name }}</h1>
-    <p class="center muted">{{ lang.t("auth.login.subtitle") }}</p>
-
-    <div class="card">
-        {% match notice %}
-        {% when Some with (message) %}
-        <div class="alert alert-ok">{{ message }}</div>
-        {% when None %}
-        {% endmatch %}
-
-        {% match error %}
-        {% when Some with (message) %}
-        <div class="alert alert-error">{{ message }}</div>
-        {% when None %}
-        {% endmatch %}
-
-        <form method="post" action="/app/login">
-            <input type="hidden" name="next" value="{{ next }}">
-            <div class="field">
-                <label class="label" for="email">{{ lang.t("common.email") }}</label>
-                <input class="input" type="email" id="email" name="email" value="{{ email }}"
-                       autocomplete="username" required autofocus>
-            </div>
-            <div class="field">
-                <label class="label" for="password">{{ lang.t("common.password") }}</label>
-                <input class="input" type="password" id="password" name="password"
-                       autocomplete="current-password" required>
-            </div>
-            {% include "partials/captcha.html" %}
-            <button class="btn btn-primary btn-block" type="submit">{{ lang.t("auth.login.submit") }}</button>
-        </form>
-
-        <hr>
-        <p class="center small muted">
-            {{ lang.t("auth.login.no_account") }} <a href="/app/register">{{ lang.t("auth.login.create_one") }}</a>
+<main class="page page--title">
+    <div class="titlepage">
+        <p class="titlepage-issue">
+            <span class="titlepage-tick" aria-hidden="true"></span>
+            <span aria-hidden="true">№ 01</span>
         </p>
+        <h1 class="titlepage-brand">{{ site_name }}</h1>
+        <p class="titlepage-dek">{{ lang.t("auth.login.subtitle") }}</p>
+
+        <div class="sheet sheet--auth">
+            {% match notice %}
+            {% when Some with (message) %}
+            <div class="alert alert-ok" role="status">{{ message }}</div>
+            {% when None %}
+            {% endmatch %}
+
+            {% match error %}
+            {% when Some with (message) %}
+            <div class="alert alert-error" role="alert">{{ message }}</div>
+            {% when None %}
+            {% endmatch %}
+
+            <form method="post" action="/app/login">
+                <input type="hidden" name="next" value="{{ next }}">
+                <div class="field">
+                    <label class="label" for="email">{{ lang.t("common.email") }}</label>
+                    <input class="input" type="email" id="email" name="email" value="{{ email }}"
+                           autocomplete="username" required autofocus>
+                </div>
+                <div class="field">
+                    <label class="label" for="password">{{ lang.t("common.password") }}</label>
+                    <input class="input" type="password" id="password" name="password"
+                           autocomplete="current-password" required>
+                </div>
+                {% include "partials/captcha.html" %}
+                <button class="btn btn-primary btn-block" type="submit">{{ lang.t("auth.login.submit") }}</button>
+            </form>
+
+            <hr class="rule">
+            <p class="auth-alt">
+                {{ lang.t("auth.login.no_account") }} <a href="/app/register">{{ lang.t("auth.login.create_one") }}</a>
+            </p>
+        </div>
     </div>
-</div>
+</main>
 {% endblock %}

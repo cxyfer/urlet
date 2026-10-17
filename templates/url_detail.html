@@ -3,44 +3,45 @@
 {% block title %}{{ url.slug }} — {{ chrome.site_name }}{% endblock %}
 
 {% block content %}
-<div class="row between mt">
-    <div>
-        <h1 class="mono">{{ url.slug }}</h1>
-        <p class="muted small">
-            <span id="short-url">{{ url.short_url }}</span>
-            <button class="btn btn-sm" type="button" data-copy="#short-url">{{ lang.t("common.copy") }}</button>
-            <a class="btn btn-sm" href="/{{ url.slug }}" target="_blank" rel="noopener">{{ lang.t("common.open") }}</a>
+<header class="folio">
+    <div class="folio-main">
+        <p class="folio-issue"><span class="folio-tick" aria-hidden="true"></span><span aria-hidden="true">№ 03</span></p>
+        <h1 class="slug-title">{{ url.slug }}</h1>
+        <p class="folio-sub">
+            <span class="mono short-url" id="short-url">{{ url.short_url }}</span>
+            <button class="link-btn" type="button" data-copy="#short-url">{{ lang.t("common.copy") }}</button>
+            <a class="link-btn" href="/{{ url.slug }}" target="_blank" rel="noopener">{{ lang.t("common.open") }}</a>
         </p>
     </div>
-    <div class="row">
-        <span class="badge {{ url.state_class }}">{{ url.state_label }}</span>
-        <a class="btn btn-ghost" href="/app">{{ lang.t("url_detail.back") }}</a>
+    <div class="folio-side">
+        <span class="stamp {{ url.state_class }}">{{ url.state_label }}</span>
+        <a class="link-btn" href="/app">{{ lang.t("url_detail.back") }}</a>
     </div>
-</div>
+</header>
 
-<div class="grid grid-4 mt">
-    <div class="stat">
-        <div class="stat-label">{{ lang.t("dashboard.stat.total_clicks") }}</div>
-        <div class="stat-value">{{ summary.total_clicks }}</div>
+<dl class="stat-grid">
+    <div class="stat-cell">
+        <dt>{{ lang.t("dashboard.stat.total_clicks") }}</dt>
+        <dd>{{ summary.total_clicks }}</dd>
     </div>
-    <div class="stat">
-        <div class="stat-label">{{ lang.t("dashboard.stat.unique_visitors") }}</div>
-        <div class="stat-value">{{ summary.unique_clicks }}</div>
+    <div class="stat-cell">
+        <dt>{{ lang.t("dashboard.stat.unique_visitors") }}</dt>
+        <dd>{{ summary.unique_clicks }}</dd>
     </div>
-    <div class="stat">
-        <div class="stat-label">{{ lang.t("url_detail.stat.human_clicks") }}</div>
-        <div class="stat-value">{{ summary.human_clicks }}</div>
+    <div class="stat-cell">
+        <dt>{{ lang.t("url_detail.stat.human_clicks") }}</dt>
+        <dd>{{ summary.human_clicks }}</dd>
     </div>
-    <div class="stat">
-        <div class="stat-label">{{ lang.t("dashboard.stat.bot_clicks") }}</div>
-        <div class="stat-value">{{ summary.bot_clicks }}</div>
+    <div class="stat-cell">
+        <dt>{{ lang.t("dashboard.stat.bot_clicks") }}</dt>
+        <dd>{{ summary.bot_clicks }}</dd>
     </div>
-</div>
+</dl>
 
 {% if url.state == "expired" || url.state == "limit_reached" %}
-<div class="alert alert-warn">
-    {{ lang.t("url_detail.expired_notice") }}
-    <form method="post" action="/app/urls/{{ url.id }}/extend" class="row mt">
+<div class="notice">
+    <p>{{ lang.t("url_detail.expired_notice") }}</p>
+    <form method="post" action="/app/urls/{{ url.id }}/extend" class="notice-actions">
         <button class="btn btn-sm" type="submit" name="days" value="30">{{ lang.t("url_detail.extend.days30") }}</button>
         <button class="btn btn-sm" type="submit" name="days" value="365">{{ lang.t("url_detail.extend.year1") }}</button>
         <button class="btn btn-sm" type="submit" name="clicks" value="100">{{ lang.t("url_detail.extend.clicks100") }}</button>
@@ -49,17 +50,17 @@
 </div>
 {% endif %}
 
-<div class="card mt">
-    <div class="row between">
-        <h2>{{ lang.t("url_detail.chart.heading") }}</h2>
-        <div class="row small muted">
-            <a class="btn btn-sm {% if days == 7 %}btn-primary{% endif %}" href="/app/urls/{{ url.id }}?days=7">{{ lang.t("url_detail.chart.range_7d") }}</a>
-            <a class="btn btn-sm {% if days == 30 %}btn-primary{% endif %}" href="/app/urls/{{ url.id }}?days=30">{{ lang.t("url_detail.chart.range_30d") }}</a>
-            <a class="btn btn-sm {% if days == 90 %}btn-primary{% endif %}" href="/app/urls/{{ url.id }}?days=90">{{ lang.t("url_detail.chart.range_90d") }}</a>
+<section class="sheet" aria-labelledby="detail-chart-heading">
+    <div class="section-head">
+        <h2 id="detail-chart-heading">{{ lang.t("url_detail.chart.heading") }}</h2>
+        <div class="range">
+            <a class="range-link {% if days == 7 %}is-active{% endif %}" href="/app/urls/{{ url.id }}?days=7">{{ lang.t("url_detail.chart.range_7d") }}</a>
+            <a class="range-link {% if days == 30 %}is-active{% endif %}" href="/app/urls/{{ url.id }}?days=30">{{ lang.t("url_detail.chart.range_30d") }}</a>
+            <a class="range-link {% if days == 90 %}is-active{% endif %}" href="/app/urls/{{ url.id }}?days=90">{{ lang.t("url_detail.chart.range_90d") }}</a>
         </div>
     </div>
     {% if daily_total > 0 %}
-    {{ chart|safe }}
+    <div class="chart-frame">{{ chart|safe }}</div>
     <div class="chart-axis">
         <span>{{ days_label }}</span>
         <span class="hint">{{ chart_legend }}</span>
@@ -68,82 +69,84 @@
     {% else %}
     <p class="empty">{{ lang.t("url_detail.chart.empty") }}</p>
     {% endif %}
-</div>
+</section>
 
-<div class="grid grid-2 mt">
-    <div class="card">
+<div class="panel-grid">
+    <section class="panel panel--referrers">
         <h3>{{ lang.t("url_detail.referrers.heading") }}</h3>
         {% if referrers.len() > 0 %}
         <div class="bar-list">
             {% for row in referrers %}
             <div class="bar-row">
-                <span class="truncate">{{ row.label }}</span>
+                <span class="bar-label truncate">{{ row.label }}</span>
                 <span class="bar-track"><span class="bar-fill" style="width: {{ row.percent }}%;"></span></span>
-                <span class="muted">{{ row.count }}</span>
+                <span class="bar-count">{{ row.count }}</span>
             </div>
             {% endfor %}
         </div>
         {% else %}
-        <p class="muted small">{{ lang.t("url_detail.referrers.empty") }}</p>
+        <p class="panel-empty">{{ lang.t("url_detail.referrers.empty") }}</p>
         {% endif %}
-    </div>
+    </section>
 
-    <div class="card">
+    <section class="panel panel--devices">
         <h3>{{ lang.t("url_detail.devices.heading") }}</h3>
         {% if devices.len() > 0 %}
         <div class="bar-list">
             {% for row in devices %}
             <div class="bar-row">
-                <span class="truncate">{{ row.label }}</span>
+                <span class="bar-label truncate">{{ row.label }}</span>
                 <span class="bar-track"><span class="bar-fill" style="width: {{ row.percent }}%;"></span></span>
-                <span class="muted">{{ row.count }}</span>
+                <span class="bar-count">{{ row.count }}</span>
             </div>
             {% endfor %}
         </div>
         {% else %}
-        <p class="muted small">{{ lang.t("url_detail.devices.empty") }}</p>
+        <p class="panel-empty">{{ lang.t("url_detail.devices.empty") }}</p>
         {% endif %}
-    </div>
+    </section>
 
-    <div class="card">
+    <section class="panel panel--browsers">
         <h3>{{ lang.t("url_detail.browsers.heading") }}</h3>
         {% if browsers.len() > 0 %}
         <div class="bar-list">
             {% for row in browsers %}
             <div class="bar-row">
-                <span class="truncate">{{ row.label }}</span>
+                <span class="bar-label truncate">{{ row.label }}</span>
                 <span class="bar-track"><span class="bar-fill" style="width: {{ row.percent }}%;"></span></span>
-                <span class="muted">{{ row.count }}</span>
+                <span class="bar-count">{{ row.count }}</span>
             </div>
             {% endfor %}
         </div>
         {% else %}
-        <p class="muted small">{{ lang.t("url_detail.browsers.empty") }}</p>
+        <p class="panel-empty">{{ lang.t("url_detail.browsers.empty") }}</p>
         {% endif %}
-    </div>
+    </section>
 
-    <div class="card">
+    <section class="panel panel--systems">
         <h3>{{ lang.t("url_detail.os.heading") }}</h3>
         {% if operating_systems.len() > 0 %}
         <div class="bar-list">
             {% for row in operating_systems %}
             <div class="bar-row">
-                <span class="truncate">{{ row.label }}</span>
+                <span class="bar-label truncate">{{ row.label }}</span>
                 <span class="bar-track"><span class="bar-fill" style="width: {{ row.percent }}%;"></span></span>
-                <span class="muted">{{ row.count }}</span>
+                <span class="bar-count">{{ row.count }}</span>
             </div>
             {% endfor %}
         </div>
         {% else %}
-        <p class="muted small">{{ lang.t("url_detail.os.empty") }}</p>
+        <p class="panel-empty">{{ lang.t("url_detail.os.empty") }}</p>
         {% endif %}
-    </div>
+    </section>
 </div>
 
-<div class="card mt">
-    <h2>{{ lang.t("url_detail.settings.heading") }}</h2>
+<section class="sheet" aria-labelledby="detail-settings-heading">
+    <div class="section-head">
+        <h2 id="detail-settings-heading">{{ lang.t("url_detail.settings.heading") }}</h2>
+    </div>
     <form method="post" action="/app/urls/{{ url.id }}">
-        <div class="grid grid-2">
+        <div class="field-grid">
             <div class="field">
                 <label class="label" for="target_url">{{ lang.t("dashboard.new.destination") }}</label>
                 <input class="input" type="text" id="target_url" name="target_url" value="{{ url.target_url }}" required>
@@ -162,16 +165,13 @@
                 <label class="label" for="tags">{{ lang.t("dashboard.new.tags") }}</label>
                 <input class="input" type="text" id="tags" name="tags" value="{{ tags_csv }}">
             </div>
-        </div>
-
-        <div class="grid grid-2">
             <div class="field">
                 <label class="label" for="password">{{ lang.t("url_detail.settings.new_password") }}</label>
                 <input class="input" type="password" id="password" name="password"
                        autocomplete="new-password" minlength="4" placeholder="{{ lang.t("url_detail.settings.password_placeholder") }}">
                 <label class="checkbox">
                     <input type="checkbox" name="clear_password" value="on">
-                    {{ lang.t("url_detail.settings.remove_password") }}
+                    <span>{{ lang.t("url_detail.settings.remove_password") }}</span>
                 </label>
                 {% if url.has_password %}<span class="hint">{{ lang.t("url_detail.settings.password_protected") }}</span>{% endif %}
             </div>
@@ -182,7 +182,7 @@
                        placeholder="{{ lang.t("common.password_placeholder") }}">
                 <label class="checkbox">
                     <input type="checkbox" name="clear_expiry" value="on">
-                    {{ lang.t("url_detail.settings.no_expiry") }}
+                    <span>{{ lang.t("url_detail.settings.no_expiry") }}</span>
                 </label>
             </div>
             <div class="field">
@@ -191,7 +191,7 @@
                        value="{% match url.max_clicks %}{% when Some with (limit) %}{{ limit }}{% when None %}{% endmatch %}">
                 <label class="checkbox">
                     <input type="checkbox" name="clear_max_clicks" value="on">
-                    {{ lang.t("url_detail.settings.unlimited") }}
+                    <span>{{ lang.t("url_detail.settings.unlimited") }}</span>
                 </label>
             </div>
             <div class="field">
@@ -202,7 +202,7 @@
                     <option value="307" {% if url.redirect_type == 307 %}selected{% endif %}>{{ lang.t("dashboard.redirect.307") }}</option>
                     <option value="308" {% if url.redirect_type == 308 %}selected{% endif %}>{{ lang.t("dashboard.redirect.308") }}</option>
                 </select>
-                <label class="label" for="status">{{ lang.t("common.status") }}</label>
+                <label class="label label--tight" for="status">{{ lang.t("common.status") }}</label>
                 <select class="select" id="status" name="status">
                     <option value="active" {% if url.state != "disabled" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
                     <option value="disabled" {% if url.state == "disabled" %}selected{% endif %}>{{ lang.t("common.disabled") }}</option>
@@ -210,33 +210,42 @@
             </div>
         </div>
 
-        <div class="row row-end mt">
+        <div class="form-actions">
             <button class="btn btn-primary" type="submit">{{ lang.t("url_detail.save") }}</button>
         </div>
     </form>
 
-    <hr>
-    <form method="post" action="/app/urls/{{ url.id }}/delete" class="row row-end">
+    <hr class="rule rule--strong">
+    <form method="post" action="/app/urls/{{ url.id }}/delete" class="row-end">
         <button class="btn btn-danger" type="submit"
                 data-confirm="{{ lang.t("url_detail.delete_confirm") }}">
             {{ lang.t("url_detail.delete") }}
         </button>
     </form>
-</div>
+</section>
 
-<div class="card card-flush mt">
-    <h2 style="padding: 1rem 1rem 0;">{{ lang.t("url_detail.clicks.heading") }}</h2>
+<section class="list-section" aria-labelledby="clicks-heading">
+    <div class="section-head">
+        <h2 id="clicks-heading">{{ lang.t("url_detail.clicks.heading") }}</h2>
+    </div>
     {% if clicks.len() > 0 %}
-    <div class="table-wrap">
-        <table class="table">
+    <div class="table-wrap table-wrap--ledger">
+        <table class="table table--clicks">
             <thead>
-                <tr><th>{{ lang.t("common.when") }}</th><th>{{ lang.t("url_detail.clicks.referrer") }}</th><th>{{ lang.t("url_detail.clicks.device") }}</th><th>{{ lang.t("url_detail.clicks.browser") }}</th><th>{{ lang.t("url_detail.clicks.os") }}</th><th>{{ lang.t("url_detail.clicks.type") }}</th></tr>
+                <tr>
+                    <th scope="col">{{ lang.t("common.when") }}</th>
+                    <th scope="col">{{ lang.t("url_detail.clicks.referrer") }}</th>
+                    <th scope="col">{{ lang.t("url_detail.clicks.device") }}</th>
+                    <th scope="col">{{ lang.t("url_detail.clicks.browser") }}</th>
+                    <th scope="col">{{ lang.t("url_detail.clicks.os") }}</th>
+                    <th scope="col">{{ lang.t("url_detail.clicks.type") }}</th>
+                </tr>
             </thead>
             <tbody>
                 {% for click in clicks %}
                 <tr>
-                    <td class="small">{{ click.when }}</td>
-                    <td class="truncate">{{ click.referrer }}</td>
+                    <td class="cell-when">{{ click.when }}</td>
+                    <td class="cell-dest"><span class="truncate">{{ click.referrer }}</span></td>
                     <td>{{ click.device }}</td>
                     <td>{{ click.browser }}</td>
                     <td>{{ click.os }}</td>
@@ -249,5 +258,5 @@
     {% else %}
     <p class="empty">{{ lang.t("dashboard.chart.empty") }}</p>
     {% endif %}
-</div>
+</section>
 {% endblock %}

@@ -3,55 +3,72 @@
 {% block title %}{{ lang.t("admin.audit.title") }} — {{ site_name }}{% endblock %}
 
 {% block content %}
+<header class="folio">
+    <div class="folio-main">
+        <p class="folio-issue"><span class="folio-tick" aria-hidden="true"></span><span aria-hidden="true">№ 09</span></p>
+        <h1>{{ lang.t("admin.audit.heading") }}</h1>
+    </div>
+    <p class="folio-note mono">{{ count_label }}</p>
+</header>
+
 {% include "admin/tabs.html" %}
 
-<div class="row between">
-    <h1>{{ lang.t("admin.audit.heading") }}</h1>
-    <span class="muted small">{{ count_label }}</span>
-</div>
-
-<form method="get" action="/app/admin/audit" class="row mt">
-    <input class="input" type="search" name="action" value="{{ action }}" placeholder="{{ lang.t("admin.audit.action_placeholder") }}"
-           style="max-width: 240px;">
-    <input class="input" type="search" name="target_type" value="{{ target_type }}"
-           placeholder="{{ lang.t("admin.audit.target_placeholder") }}" style="max-width: 220px;">
-    <button class="btn" type="submit">{{ lang.t("common.filter") }}</button>
-    <a class="btn btn-ghost" href="/app/admin/audit">{{ lang.t("common.reset") }}</a>
+<form method="get" action="/app/admin/audit" class="filter-bar" role="search">
+    <div class="filter-field filter-field--search">
+        <label class="micro" for="action">{{ lang.t("admin.audit.action") }}</label>
+        <input class="input" type="search" id="action" name="action" value="{{ action }}"
+               placeholder="{{ lang.t("admin.audit.action_placeholder") }}">
+    </div>
+    <div class="filter-field filter-field--search">
+        <label class="micro" for="target_type">{{ lang.t("admin.audit.target") }}</label>
+        <input class="input" type="search" id="target_type" name="target_type" value="{{ target_type }}"
+               placeholder="{{ lang.t("admin.audit.target_placeholder") }}">
+    </div>
+    <div class="filter-actions">
+        <button class="btn" type="submit">{{ lang.t("common.filter") }}</button>
+        <a class="btn btn-quiet" href="/app/admin/audit">{{ lang.t("common.reset") }}</a>
+    </div>
 </form>
 
-<div class="card card-flush mt">
-    {% if entries.len() > 0 %}
-    <div class="table-wrap">
-        <table class="table">
-            <thead>
-                <tr><th>{{ lang.t("common.when") }}</th><th>{{ lang.t("admin.audit.action") }}</th><th>{{ lang.t("admin.audit.actor") }}</th><th>{{ lang.t("admin.audit.target") }}</th><th>{{ lang.t("admin.audit.details") }}</th></tr>
-            </thead>
-            <tbody>
-                {% for entry in entries %}
-                <tr>
-                    <td class="small nowrap">{{ entry.when }}</td>
-                    <td class="mono small">{{ entry.action }}</td>
-                    <td class="small">{{ entry.actor }}</td>
-                    <td class="small">{{ entry.target }}</td>
-                    <td class="small mono truncate" title="{{ entry.metadata }}">{{ entry.metadata }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    {% if total_pages > 1 %}
-    <div class="pagination">
-        <span class="muted small">{{ pagination_note }}</span>
-        {% for link in links %}
-        {% if link.current %}<span class="current">{{ link.label }}</span>
-        {% else %}<a class="btn btn-sm" href="{{ link.url }}">{{ link.label }}</a>{% endif %}
-        {% endfor %}
-    </div>
-    {% endif %}
-
-    {% else %}
-    <p class="empty">{{ lang.t("admin.audit.empty") }}</p>
-    {% endif %}
+{% if entries.len() > 0 %}
+<div class="table-wrap table-wrap--ledger">
+    <table class="table table--audit">
+        <thead>
+            <tr>
+                <th scope="col">{{ lang.t("common.when") }}</th>
+                <th scope="col">{{ lang.t("admin.audit.action") }}</th>
+                <th scope="col">{{ lang.t("admin.audit.actor") }}</th>
+                <th scope="col">{{ lang.t("admin.audit.target") }}</th>
+                <th scope="col">{{ lang.t("admin.audit.details") }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in entries %}
+            <tr>
+                <td class="cell-when nowrap">{{ entry.when }}</td>
+                <td class="mono cell-action">{{ entry.action }}</td>
+                <td class="cell-actor">{{ entry.actor }}</td>
+                <td class="cell-when">{{ entry.target }}</td>
+                <td class="mono cell-meta"><span class="truncate" title="{{ entry.metadata }}">{{ entry.metadata }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
+
+{% if total_pages > 1 %}
+<div class="pagination">
+    <span class="pagination-note">{{ pagination_note }}</span>
+    <span class="pagination-pages">
+        {% for link in links %}
+        {% if link.current %}<span class="current" aria-current="page">{{ link.label }}</span>
+        {% else %}<a href="{{ link.url }}">{{ link.label }}</a>{% endif %}
+        {% endfor %}
+    </span>
+</div>
+{% endif %}
+
+{% else %}
+<p class="empty">{{ lang.t("admin.audit.empty") }}</p>
+{% endif %}
 {% endblock %}

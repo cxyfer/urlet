@@ -3,58 +3,65 @@
 {% block title %}{{ lang.t("auth.register.title") }} — {{ site_name }}{% endblock %}
 
 {% block body %}
-<div class="wrap-narrow">
-    <h1 class="center">{{ site_name }}</h1>
+<main class="page page--title">
+    <div class="titlepage">
+        <p class="titlepage-issue">
+            <span class="titlepage-tick" aria-hidden="true"></span>
+            <span aria-hidden="true">№ 01</span>
+        </p>
+        <h1 class="titlepage-brand">{{ site_name }}</h1>
+        <p class="titlepage-dek">{{ lang.t("auth.register.title") }}</p>
 
-    <div class="card">
-        {% if !registration_open %}
-        <div class="alert alert-warn">
-            {{ lang.t("auth.register.closed") }}
-        </div>
-        {% endif %}
-
-        {% match error %}
-        {% when Some with (message) %}
-        <div class="alert alert-error">{{ message }}</div>
-        {% when None %}
-        {% endmatch %}
-
-        {% if registration_open %}
-        <form method="post" action="/app/register">
-            <input type="hidden" name="next" value="{{ next }}">
-            <div class="field">
-                <label class="label" for="email">{{ lang.t("common.email") }}</label>
-                <input class="input" type="email" id="email" name="email" value="{{ email }}"
-                       autocomplete="username" required autofocus>
-            </div>
-            <div class="field">
-                <label class="label" for="display_name">{{ lang.t("auth.register.display_name") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
-                <input class="input" type="text" id="display_name" name="display_name"
-                       value="{{ display_name }}" maxlength="60">
-            </div>
-            <div class="field">
-                <label class="label" for="password">{{ lang.t("common.password") }}</label>
-                <input class="input" type="password" id="password" name="password"
-                       autocomplete="new-password" minlength="8" required>
-                <span class="hint">{{ lang.t("auth.register.password_hint") }}</span>
-            </div>
-            {% if invite_required %}
-            <div class="field">
-                <label class="label" for="invite_code">{{ lang.t("auth.register.invite_code") }}</label>
-                <input class="input" type="text" id="invite_code" name="invite_code"
-                       value="{{ invite_code }}" required>
-                <span class="hint">{{ lang.t("auth.register.invite_hint") }}</span>
+        <div class="sheet sheet--auth">
+            {% if !registration_open %}
+            <div class="alert alert-warn" role="status">
+                {{ lang.t("auth.register.closed") }}
             </div>
             {% endif %}
-            {% include "partials/captcha.html" %}
-            <button class="btn btn-primary btn-block" type="submit">{{ lang.t("auth.register.submit") }}</button>
-        </form>
-        {% endif %}
 
-        <hr>
-        <p class="center small muted">
-            {{ lang.t("auth.register.have_account") }} <a href="/app/login">{{ lang.t("auth.register.sign_in") }}</a>
-        </p>
+            {% match error %}
+            {% when Some with (message) %}
+            <div class="alert alert-error" role="alert">{{ message }}</div>
+            {% when None %}
+            {% endmatch %}
+
+            {% if registration_open %}
+            <form method="post" action="/app/register">
+                <input type="hidden" name="next" value="{{ next }}">
+                <div class="field">
+                    <label class="label" for="email">{{ lang.t("common.email") }}</label>
+                    <input class="input" type="email" id="email" name="email" value="{{ email }}"
+                           autocomplete="username" required autofocus>
+                </div>
+                <div class="field">
+                    <label class="label" for="display_name">{{ lang.t("auth.register.display_name") }} <span class="label-aside">{{ lang.t("common.optional") }}</span></label>
+                    <input class="input" type="text" id="display_name" name="display_name"
+                           value="{{ display_name }}" maxlength="60">
+                </div>
+                <div class="field">
+                    <label class="label" for="password">{{ lang.t("common.password") }}</label>
+                    <input class="input" type="password" id="password" name="password"
+                           autocomplete="new-password" minlength="8" required>
+                    <span class="hint">{{ lang.t("auth.register.password_hint") }}</span>
+                </div>
+                {% if invite_required %}
+                <div class="field">
+                    <label class="label" for="invite_code">{{ lang.t("auth.register.invite_code") }}</label>
+                    <input class="input" type="text" id="invite_code" name="invite_code"
+                           value="{{ invite_code }}" required>
+                    <span class="hint">{{ lang.t("auth.register.invite_hint") }}</span>
+                </div>
+                {% endif %}
+                {% include "partials/captcha.html" %}
+                <button class="btn btn-primary btn-block" type="submit">{{ lang.t("auth.register.submit") }}</button>
+            </form>
+            {% endif %}
+
+            <hr class="rule">
+            <p class="auth-alt">
+                {{ lang.t("auth.register.have_account") }} <a href="/app/login">{{ lang.t("auth.register.sign_in") }}</a>
+            </p>
+        </div>
     </div>
-</div>
+</main>
 {% endblock %}

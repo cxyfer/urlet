@@ -3,11 +3,19 @@
 {% block title %}{{ lang.t("account.heading") }} — {{ chrome.site_name }}{% endblock %}
 
 {% block content %}
-<h1 class="mt">{{ lang.t("account.heading") }}</h1>
+<header class="folio">
+    <div class="folio-main">
+        <p class="folio-issue"><span class="folio-tick" aria-hidden="true"></span><span aria-hidden="true">№ 02</span></p>
+        <h1>{{ lang.t("account.heading") }}</h1>
+    </div>
+    <p class="folio-note folio-note--plain mono">{{ user.email }}</p>
+</header>
 
-<div class="grid grid-2 mt">
-    <div class="card">
-        <h2>{{ lang.t("account.profile.heading") }}</h2>
+<div class="duo">
+    <section class="sheet" aria-labelledby="account-profile-heading">
+        <div class="section-head">
+            <h2 id="account-profile-heading">{{ lang.t("account.profile.heading") }}</h2>
+        </div>
         <form method="post" action="/app/account">
             <div class="field">
                 <label class="label" for="display_name">{{ lang.t("account.profile.display_name") }}</label>
@@ -15,19 +23,24 @@
                        value="{% match user.display_name %}{% when Some with (name) %}{{ name }}{% when None %}{% endmatch %}">
                 <span class="hint">{{ lang.t("account.profile.display_name_hint") }}</span>
             </div>
-            <button class="btn btn-primary" type="submit">{{ lang.t("account.profile.save") }}</button>
+            <div class="form-actions form-actions--start">
+                <button class="btn btn-primary" type="submit">{{ lang.t("account.profile.save") }}</button>
+            </div>
         </form>
 
-        <dl class="meta mt">
-            <dt>{{ lang.t("common.email") }}</dt><dd>{{ user.email }}</dd>
-            <dt>{{ lang.t("common.role") }}</dt><dd>{% if user.role == "admin" %}{{ lang.t("admin.users.role.admin") }}{% else %}{{ lang.t("admin.users.role.user") }}{% endif %}</dd>
-            <dt>{{ lang.t("common.status") }}</dt><dd>{% if user.status == "active" %}{{ lang.t("admin.users.status.active") }}{% else %}{{ lang.t("admin.users.status.suspended") }}{% endif %}</dd>
-            <dt>{{ lang.t("common.created") }}</dt><dd>{{ user.created_at }}</dd>
+        <hr class="rule">
+        <dl class="spec">
+            <div class="spec-row"><dt>{{ lang.t("common.email") }}</dt><dd>{{ user.email }}</dd></div>
+            <div class="spec-row"><dt>{{ lang.t("common.role") }}</dt><dd>{% if user.role == "admin" %}{{ lang.t("admin.users.role.admin") }}{% else %}{{ lang.t("admin.users.role.user") }}{% endif %}</dd></div>
+            <div class="spec-row"><dt>{{ lang.t("common.status") }}</dt><dd>{% if user.status == "active" %}{{ lang.t("admin.users.status.active") }}{% else %}{{ lang.t("admin.users.status.suspended") }}{% endif %}</dd></div>
+            <div class="spec-row"><dt>{{ lang.t("common.created") }}</dt><dd>{{ user.created_at }}</dd></div>
         </dl>
-    </div>
+    </section>
 
-    <div class="card">
-        <h2>{{ lang.t("account.password.heading") }}</h2>
+    <section class="sheet" aria-labelledby="account-password-heading">
+        <div class="section-head">
+            <h2 id="account-password-heading">{{ lang.t("account.password.heading") }}</h2>
+        </div>
         <form method="post" action="/app/account/password">
             <div class="field">
                 <label class="label" for="current_password">{{ lang.t("account.password.current") }}</label>
@@ -40,31 +53,41 @@
                        autocomplete="new-password" minlength="8" required>
                 <span class="hint">{{ lang.t("account.password.hint") }}</span>
             </div>
-            <button class="btn btn-primary" type="submit">{{ lang.t("account.password.submit") }}</button>
+            <div class="form-actions form-actions--start">
+                <button class="btn btn-primary" type="submit">{{ lang.t("account.password.submit") }}</button>
+            </div>
         </form>
-    </div>
+    </section>
 </div>
 
-<div class="card card-flush mt">
-    <h2 style="padding: 1rem 1rem 0;">{{ lang.t("account.sessions.heading") }}</h2>
-    <div class="table-wrap">
-        <table class="table">
+<section class="list-section" aria-labelledby="account-sessions-heading">
+    <div class="section-head">
+        <h2 id="account-sessions-heading">{{ lang.t("account.sessions.heading") }}</h2>
+    </div>
+    <div class="table-wrap table-wrap--ledger">
+        <table class="table table--sessions">
             <thead>
-                <tr><th>{{ lang.t("account.sessions.client") }}</th><th>{{ lang.t("account.sessions.signed_in") }}</th><th>{{ lang.t("account.sessions.last_seen") }}</th><th>{{ lang.t("common.expires") }}</th><th></th></tr>
+                <tr>
+                    <th scope="col">{{ lang.t("account.sessions.client") }}</th>
+                    <th scope="col">{{ lang.t("account.sessions.signed_in") }}</th>
+                    <th scope="col">{{ lang.t("account.sessions.last_seen") }}</th>
+                    <th scope="col">{{ lang.t("common.expires") }}</th>
+                    <th scope="col"><span class="sr-only">{{ lang.t("common.actions") }}</span></th>
+                </tr>
             </thead>
             <tbody>
                 {% for session in sessions %}
                 <tr>
-                    <td class="truncate">
-                        {{ session.agent }}
+                    <td class="cell-dest">
+                        <span class="truncate">{{ session.agent }}</span>
                         {% if session.current %}<span class="badge badge-accent">{{ lang.t("account.sessions.this_device") }}</span>{% endif %}
                     </td>
-                    <td class="small">{{ session.created }}</td>
-                    <td class="small">{{ session.last_seen }}</td>
-                    <td class="small">{{ session.expires }}</td>
-                    <td>
+                    <td class="cell-when">{{ session.created }}</td>
+                    <td class="cell-when">{{ session.last_seen }}</td>
+                    <td class="cell-when">{{ session.expires }}</td>
+                    <td class="cell-edit">
                         <form method="post" action="/app/account/sessions/{{ session.id }}/delete">
-                            <button class="btn btn-sm btn-danger" type="submit"
+                            <button class="btn btn-danger btn-sm" type="submit"
                                     data-confirm="{{ lang.t("account.sessions.confirm") }}">{{ lang.t("common.revoke") }}</button>
                         </form>
                     </td>
@@ -73,19 +96,21 @@
             </tbody>
         </table>
     </div>
-</div>
+</section>
 
-<div class="card mt">
-    <h2>{{ lang.t("account.tokens.heading") }}</h2>
-    <p class="muted small">
+<section class="sheet" aria-labelledby="account-tokens-heading">
+    <div class="section-head">
+        <h2 id="account-tokens-heading">{{ lang.t("account.tokens.heading") }}</h2>
+    </div>
+    <p class="hint">
         {{ lang.t("account.tokens.hint")|safe }}
     </p>
 
     {% match new_token %}
     {% when Some with (token) %}
-    <div class="alert alert-info">
+    <div class="alert alert-info" role="status">
         <strong>{{ lang.t("account.tokens.copy_now") }}</strong> {{ lang.t("account.tokens.copy_once") }}
-        <div class="copy-row mt">
+        <div class="copy-row">
             <input class="input" id="new-token" type="text" value="{{ token }}" readonly>
             <button class="btn" type="button" data-copy="#new-token">{{ lang.t("common.copy") }}</button>
         </div>
@@ -93,24 +118,31 @@
     {% when None %}
     {% endmatch %}
 
-    <form method="post" action="/app/account/tokens" class="row">
-        <div class="field" style="flex: 1 1 220px; margin-bottom: 0;">
+    <form method="post" action="/app/account/tokens" class="inline-form">
+        <div class="field">
             <label class="label" for="name">{{ lang.t("account.tokens.name") }}</label>
             <input class="input" type="text" id="name" name="name" maxlength="{{ max_name_len }}"
                    placeholder="{{ lang.t("account.tokens.name_placeholder") }}" required>
         </div>
-        <div class="field" style="flex: 1 1 200px; margin-bottom: 0;">
-            <label class="label" for="expires_at">{{ lang.t("common.expires_at") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
+        <div class="field">
+            <label class="label" for="expires_at">{{ lang.t("common.expires_at") }} <span class="label-aside">{{ lang.t("common.optional") }}</span></label>
             <input class="input" type="text" id="expires_at" name="expires_at" placeholder="{{ lang.t("common.password_placeholder") }}">
         </div>
         <button class="btn btn-primary" type="submit">{{ lang.t("account.tokens.create") }}</button>
     </form>
 
     {% if tokens.len() > 0 %}
-    <div class="table-wrap mt">
-        <table class="table">
+    <div class="table-wrap table-wrap--ledger">
+        <table class="table table--tokens">
             <thead>
-                <tr><th>{{ lang.t("common.name") }}</th><th>{{ lang.t("common.prefix") }}</th><th>{{ lang.t("common.created") }}</th><th>{{ lang.t("common.last_used") }}</th><th>{{ lang.t("common.expires") }}</th><th></th></tr>
+                <tr>
+                    <th scope="col">{{ lang.t("common.name") }}</th>
+                    <th scope="col">{{ lang.t("common.prefix") }}</th>
+                    <th scope="col">{{ lang.t("common.created") }}</th>
+                    <th scope="col">{{ lang.t("common.last_used") }}</th>
+                    <th scope="col">{{ lang.t("common.expires") }}</th>
+                    <th scope="col"><span class="sr-only">{{ lang.t("common.actions") }}</span></th>
+                </tr>
             </thead>
             <tbody>
                 {% for token in tokens %}
@@ -120,21 +152,21 @@
                         {% if !token.active %}<span class="badge badge-muted">{{ lang.t("account.tokens.inactive") }}</span>{% endif %}
                     </td>
                     <td class="mono">{{ token.prefix }}…</td>
-                    <td class="small">{{ token.created }}</td>
-                    <td class="small">
+                    <td class="cell-when">{{ token.created }}</td>
+                    <td class="cell-when">
                         {% match token.last_used %}
                         {% when Some with (value) %}{{ value }}
                         {% when None %}<span class="muted">{{ lang.t("common.never") }}</span>{% endmatch %}
                     </td>
-                    <td class="small">
+                    <td class="cell-when">
                         {% match token.expires %}
                         {% when Some with (value) %}{{ value }}
                         {% when None %}<span class="muted">{{ lang.t("common.never") }}</span>{% endmatch %}
                     </td>
-                    <td>
+                    <td class="cell-edit">
                         {% if token.active %}
                         <form method="post" action="/app/account/tokens/{{ token.id }}/delete">
-                            <button class="btn btn-sm btn-danger" type="submit"
+                            <button class="btn btn-danger btn-sm" type="submit"
                                     data-confirm="{{ lang.t("account.tokens.confirm") }}">
                                 {{ lang.t("common.revoke") }}
                             </button>
@@ -147,7 +179,7 @@
         </table>
     </div>
     {% else %}
-    <p class="muted small mt">{{ lang.t("account.tokens.empty") }}</p>
+    <p class="empty">{{ lang.t("account.tokens.empty") }}</p>
     {% endif %}
-</div>
+</section>
 {% endblock %}

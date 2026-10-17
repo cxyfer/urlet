@@ -3,11 +3,13 @@
 {% block title %}{{ status_code }} — {{ title }}{% endblock %}
 
 {% block body %}
-<div class="link-page">
-    <div class="card">
+<main class="page page--link">
+    <div class="linkcard">
+        <p class="linkcard-brand">{{ site_name }}</p>
+        <p class="linkcard-code" aria-hidden="true">{{ status_code }}</p>
         <h1>{{ title }}</h1>
-        <p class="muted">{{ message }}</p>
+        <p class="linkcard-body">{{ message }}</p>
         <a class="btn btn-block" href="/app">{{ lang.t("link.go_to") }} {{ site_name }}</a>
     </div>
-</div>
+</main>
 {% endblock %}

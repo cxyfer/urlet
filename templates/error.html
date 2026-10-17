@@ -3,12 +3,14 @@
 {% block title %}{{ status_code }} — {{ title }}{% endblock %}
 
 {% block content %}
-<div class="card" style="max-width: 520px; margin: 8vh auto;">
+<div class="errorpage">
+    <p class="linkcard-brand">{{ site_name }}</p>
+    <p class="linkcard-code" aria-hidden="true">{{ status_code }}</p>
     <h1>{{ status_code }} — {{ title }}</h1>
     <p class="muted">{{ message }}</p>
     <div class="row">
         <a class="btn" href="/app">{{ lang.t("error.dashboard") }}</a>
-        <a class="btn btn-ghost" href="/app/login">{{ lang.t("auth.login.title") }}</a>
+        <a class="btn btn-quiet" href="/app/login">{{ lang.t("auth.login.title") }}</a>
     </div>
 </div>
 {% endblock %}

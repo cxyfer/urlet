@@ -10,77 +10,97 @@
 {% endblock %}
 
 {% block body %}
-<div class="topbar">
-    <div class="topbar-inner">
+<header class="masthead">
+    <div class="masthead-inner">
         {% if signed_in %}
-        <a class="brand" href="/app">{{ site_name }}<span>.</span></a>
+        <a class="brand" href="/app">{{ site_name }}<span class="brand-mark" aria-hidden="true">.</span></a>
         {% else %}
-        <a class="brand" href="/">{{ site_name }}<span>.</span></a>
+        <a class="brand" href="/">{{ site_name }}<span class="brand-mark" aria-hidden="true">.</span></a>
         {% endif %}
         <nav class="nav">
             {% include "partials/lang_switcher.html" %}
             {% if signed_in %}
-            <a href="/app">{{ lang.t("landing.nav.dashboard") }}</a>
-            <span class="muted small">{{ email }}</span>
+            <span class="nav-sep" aria-hidden="true"></span>
+            <a class="nav-strong" href="/app">{{ lang.t("landing.nav.dashboard") }}</a>
+            <span class="nav-user">{{ email }}</span>
             <form method="post" action="/app/logout">
-                <button class="btn btn-ghost btn-sm" type="submit">{{ lang.t("nav.sign_out") }}</button>
+                <button class="link-btn" type="submit">{{ lang.t("nav.sign_out") }}</button>
             </form>
             {% endif %}
         </nav>
         {% if !signed_in %}
         {# Kept outside `.nav` so the primary button keeps its own colours. #}
-        <div class="row">
-            <a class="btn btn-ghost btn-sm" href="/app/login">{{ lang.t("landing.nav.sign_in") }}</a>
+        <div class="masthead-actions">
+            <a class="link-btn" href="/app/login">{{ lang.t("landing.nav.sign_in") }}</a>
             <a class="btn btn-primary btn-sm" href="/app/register">{{ lang.t("landing.nav.create_account") }}</a>
         </div>
         {% endif %}
     </div>
-</div>
+</header>
 
-<main class="wrap">
-    <section class="landing-hero">
-        <h1>{{ site_name }}</h1>
-        <p class="landing-tagline">{{ lang.t("landing.tagline") }}</p>
-        <p class="muted">{{ lang.t("landing.subtitle") }}</p>
-        <div class="row landing-cta">
-            {% if signed_in %}
-            <a class="btn btn-primary" href="/app">{{ lang.t("landing.cta.dashboard") }}</a>
-            {% else %}
-            <a class="btn btn-primary" href="/app/register">{{ lang.t("landing.cta.create_account") }}</a>
-            <a class="btn btn-ghost" href="/app/login">{{ lang.t("landing.cta.sign_in") }}</a>
-            {% endif %}
-        </div>
-    </section>
+<main class="page page--landing">
+    <div class="landing">
+        <section class="hero">
+            <div class="hero-main">
+                <p class="hero-issue">
+                    <span class="hero-tick" aria-hidden="true"></span>
+                    <span class="hero-issue-num" aria-hidden="true">№ 01</span>
+                </p>
+                <h1>{{ site_name }}</h1>
+                <p class="hero-tagline">{{ lang.t("landing.tagline") }}</p>
+            </div>
+            <div class="hero-side">
+                <p class="hero-sub">{{ lang.t("landing.subtitle") }}</p>
+                <div class="hero-actions">
+                    {% if signed_in %}
+                    <a class="btn btn-primary" href="/app">{{ lang.t("landing.cta.dashboard") }}</a>
+                    {% else %}
+                    <a class="btn btn-primary" href="/app/register">{{ lang.t("landing.cta.create_account") }}</a>
+                    <a class="link-arrow" href="/app/login">{{ lang.t("landing.cta.sign_in") }}<span class="arrow" aria-hidden="true">→</span></a>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
 
-    <section class="mt-2" aria-labelledby="landing-highlights">
-        <h2 class="center" id="landing-highlights">{{ lang.t("landing.features.heading") }}</h2>
-        <p class="center muted">{{ lang.t("landing.features.subtitle") }}</p>
-        <div class="grid landing-grid mt">
-            <article class="card landing-feature">
-                <h3>{{ lang.t("landing.feature.accounts.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.accounts.body") }}</p>
-            </article>
-            <article class="card landing-feature">
-                <h3>{{ lang.t("landing.feature.links.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.links.body") }}</p>
-            </article>
-            <article class="card landing-feature">
-                <h3>{{ lang.t("landing.feature.protection.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.protection.body") }}</p>
-            </article>
-            <article class="card landing-feature">
-                <h3>{{ lang.t("landing.feature.analytics.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.analytics.body") }}</p>
-            </article>
-            <article class="card landing-feature">
-                <h3>{{ lang.t("landing.feature.operations.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.operations.body") }}</p>
-            </article>
-            <article class="card landing-feature">
-                <h3>{{ lang.t("landing.feature.platform.title") }}</h3>
-                <p class="muted small">{{ lang.t("landing.feature.platform.body") }}</p>
-            </article>
-        </div>
-    </section>
+        <section class="index" aria-labelledby="landing-highlights">
+            <div class="index-head">
+                <h2 id="landing-highlights">{{ lang.t("landing.features.heading") }}</h2>
+                <p class="index-dek">{{ lang.t("landing.features.subtitle") }}</p>
+                <span class="index-num" aria-hidden="true">№ 02</span>
+            </div>
+            <div class="index-grid">
+                <article class="landing-feature">
+                    <p class="feature-num" aria-hidden="true">01</p>
+                    <h3>{{ lang.t("landing.feature.accounts.title") }}</h3>
+                    <p>{{ lang.t("landing.feature.accounts.body") }}</p>
+                </article>
+                <article class="landing-feature">
+                    <p class="feature-num" aria-hidden="true">02</p>
+                    <h3>{{ lang.t("landing.feature.links.title") }}</h3>
+                    <p>{{ lang.t("landing.feature.links.body") }}</p>
+                </article>
+                <article class="landing-feature">
+                    <p class="feature-num" aria-hidden="true">03</p>
+                    <h3>{{ lang.t("landing.feature.protection.title") }}</h3>
+                    <p>{{ lang.t("landing.feature.protection.body") }}</p>
+                </article>
+                <article class="landing-feature">
+                    <p class="feature-num" aria-hidden="true">04</p>
+                    <h3>{{ lang.t("landing.feature.analytics.title") }}</h3>
+                    <p>{{ lang.t("landing.feature.analytics.body") }}</p>
+                </article>
+                <article class="landing-feature">
+                    <p class="feature-num" aria-hidden="true">05</p>
+                    <h3>{{ lang.t("landing.feature.operations.title") }}</h3>
+                    <p>{{ lang.t("landing.feature.operations.body") }}</p>
+                </article>
+                <article class="landing-feature">
+                    <p class="feature-num" aria-hidden="true">06</p>
+                    <h3>{{ lang.t("landing.feature.platform.title") }}</h3>
+                    <p>{{ lang.t("landing.feature.platform.body") }}</p>
+                </article>
+            </div>
+        </section>
+    </div>
 </main>
 {% endblock %}

@@ -9,15 +9,22 @@
     {% block head %}{% endblock %}
 </head>
 <body>
-{% block topbar %}{% endblock %}
 {% block body %}
-<main class="wrap">
-    {% block content %}{% endblock %}
+<main class="page">
+    <div class="page-inner">
+        {% block content %}{% endblock %}
+    </div>
 </main>
 {% endblock %}
-<footer class="site">
-    <span>{{ site_name }} — {{ lang.t("footer.tagline") }}</span>
-    {% block footer_lang %}{% include "partials/lang_switcher.html" %}{% endblock %}
+<footer class="colophon">
+    <div class="colophon-inner">
+        <p class="colophon-line">
+            <span class="colophon-name">{{ site_name }}</span>
+            <span class="colophon-rule" aria-hidden="true"></span>
+            <span class="colophon-tagline">{{ lang.t("footer.tagline") }}</span>
+        </p>
+        {% block footer_lang %}{% include "partials/lang_switcher.html" %}{% endblock %}
+    </div>
 </footer>
 <script src="/assets/app.js" defer></script>
 </body>
