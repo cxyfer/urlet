@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 
-{# Signed-in pages carry the switcher in the top bar instead of the footer. #}
-{% block footer_lang %}{% endblock %}
+{# Signed-in pages carry the theme and language controls in the top bar instead
+   of the footer. #}
+{% block footer_tools %}{% endblock %}
 
 {% block body %}
 <div class="topbar">
@@ -16,7 +17,10 @@
                 {% endif %}
             </span>
             <span class="nav-sep" aria-hidden="true"></span>
-            {% include "partials/lang_switcher.html" %}
+            <span class="nav-tools">
+                {% include "partials/theme_toggle.html" %}
+                {% include "partials/lang_switcher.html" %}
+            </span>
             <span class="user-chip">
                 <span class="user-avatar" aria-hidden="true">
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">

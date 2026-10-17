@@ -78,6 +78,25 @@
         link.setAttribute("href", href + "?next=" + encodeURIComponent(next));
     });
 
+    /* Close the language dropdown on an outside click. The native <details>
+       handles the toggle itself, so this is purely a polish enhancement. */
+    document.addEventListener("click", function (event) {
+        document.querySelectorAll("details[data-lang-switcher][open]").forEach(function (details) {
+            if (!details.contains(event.target)) {
+                details.removeAttribute("open");
+            }
+        });
+    });
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key !== "Escape") { return; }
+        document.querySelectorAll("details[data-lang-switcher][open]").forEach(function (details) {
+            details.removeAttribute("open");
+            var summary = details.querySelector("summary");
+            if (summary) { summary.focus(); }
+        });
+    });
+
     /* Reveal password inputs on demand. */
     document.addEventListener("change", function (event) {
         var toggle = event.target.closest("[data-toggle-target]");

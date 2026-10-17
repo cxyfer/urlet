@@ -26,6 +26,11 @@ pub async fn js() -> Response {
     asset("application/javascript; charset=utf-8", assets::APP_JS)
 }
 
+/// Tiny blocking script used in `<head>` to apply a saved theme before paint.
+pub async fn theme_js() -> Response {
+    asset("application/javascript; charset=utf-8", assets::THEME_JS)
+}
+
 pub async fn favicon() -> Response {
     asset("image/svg+xml", assets::FAVICON)
 }

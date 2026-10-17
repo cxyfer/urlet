@@ -1,4 +1,19 @@
-{# Language switcher shared by every page. Requires the `lang` template field. #}
-<div class="lang-switcher" role="group" aria-label="{{ lang.t("lang.switcher_label") }}" data-lang-switcher>
-    {% for option in lang.all() %}<a href="/app/lang/{{ option.code() }}" rel="nofollow"{% if option.code() == lang.code() %} class="active"{% endif %}>{{ option.label() }}</a>{% endfor %}
-</div>
+{# Language dropdown shared by every page. Requires the `lang` template field.
+   Native <details> keeps it usable without JavaScript; app.js closes it on an
+   outside click or Escape and adds ?next= so the visitor stays on the page. #}
+<details class="lang-switcher" data-lang-switcher>
+    <summary class="lang-trigger">
+        <span class="lang-current">{{ lang.label() }}</span>
+        <span class="lang-caret" aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+                 stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m4 6 4 4 4-4"></path>
+            </svg>
+        </span>
+    </summary>
+    <div class="lang-menu" role="group" aria-label="{{ lang.t("lang.switcher_label") }}">
+        {% for option in lang.all() %}
+        <a href="/app/lang/{{ option.code() }}" rel="nofollow"{% if option.code() == lang.code() %} class="active"{% endif %}>{{ option.label() }}</a>
+        {% endfor %}
+    </div>
+</details>

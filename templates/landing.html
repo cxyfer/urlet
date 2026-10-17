@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
-{# The landing page carries the switcher in the top bar, like the signed-in pages. #}
-{% block footer_lang %}{% endblock %}
+{# The landing page carries the theme and language controls in the top bar. #}
+{% block footer_tools %}{% endblock %}
 
 {% block title %}{{ site_name }} — {{ lang.t("landing.meta.title") }}{% endblock %}
 
@@ -23,7 +23,10 @@
                 <a class="nav-link" href="/app">{{ lang.t("landing.nav.dashboard") }}</a>
             </span>
             {% endif %}
-            {% include "partials/lang_switcher.html" %}
+            <span class="nav-tools">
+                {% include "partials/theme_toggle.html" %}
+                {% include "partials/lang_switcher.html" %}
+            </span>
             {% if signed_in %}
             <span class="user-chip">
                 <span class="user-avatar" aria-hidden="true">

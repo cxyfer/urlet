@@ -5,6 +5,7 @@
   "nav.admin": "Admin",
   "nav.sign_out": "Sign out",
   "lang.switcher_label": "Language",
+  "theme.toggle": "Toggle light and dark mode",
   "common.copy": "Copy",
   "common.open": "Open",
   "common.edit": "Edit",

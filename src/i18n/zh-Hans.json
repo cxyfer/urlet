@@ -5,6 +5,7 @@
   "nav.admin": "管理",
   "nav.sign_out": "退出登录",
   "lang.switcher_label": "语言",
+  "theme.toggle": "切换明暗模式",
   "common.copy": "复制",
   "common.open": "打开",
   "common.edit": "编辑",
