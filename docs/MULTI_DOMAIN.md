@@ -77,6 +77,13 @@ existing `is_default` partial unique index keeps exactly one default domain.
 
 ## 5. Migration `0003_multi_domain`
 
+Before renaming, the migration normalises hostnames into a temporary mapping and
+merges rows that become identical (case, trailing dot, default port). The
+survivor is the default row when the group has one, otherwise the lowest id;
+`urls.domain_id` is remapped to it and duplicate rows are deleted. This handles
+a v2 installation that changed `URLET_BASE_URL` from `example.com:443` to
+`example.com` and therefore already had both rows.
+
 SQLite cannot drop the inline `UNIQUE` on `urls.slug`, so the table is rebuilt
 with the official 12-step procedure. Because `clicks`, `url_tags` and
 `url_daily_stats` reference `urls` with `ON DELETE CASCADE`, the rebuild runs on

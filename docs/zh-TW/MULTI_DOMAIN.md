@@ -73,6 +73,11 @@ urlet 以一個 **canonical host** 提供完整應用，並可加上任意數量
 
 ## 5. Migration `0003_multi_domain`
 
+改名之前，migration 會先把 hostname 正規化到暫存映射，並合併正規化後相同的
+資料列（大小寫、結尾的點、預設 port）。若群組中有預設列就保留預設列，否則保留
+最小 id；`urls.domain_id` 會重新指向保留列，重複列刪除。這處理了 v2 安裝曾把
+`URLET_BASE_URL` 從 `example.com:443` 改成 `example.com`、因而同時存在兩列的情況。
+
 SQLite 無法直接移除 `urls.slug` 的 inline `UNIQUE`，因此用官方 12-step
 流程重建資料表。因為 `clicks`、`url_tags`、`url_daily_stats` 以
 `ON DELETE CASCADE` 參照 `urls`，重建必須在專用連線上、於 transaction

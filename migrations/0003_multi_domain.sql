@@ -16,20 +16,81 @@
 -- ---------------------------------------------------------------------------
 
 -- == domains ----------------------------------------------------------------
-UPDATE domains SET hostname = rtrim(lower(trim(hostname)), '.');
+-- Normalise hostnames into a temporary mapping *before* renaming rows. A v2
+-- installation that changed URLET_BASE_URL can contain two rows that normalise
+-- to the same hostname (for example `example.com:443` and `example.com`); they
+-- must be merged and their urls.domain_id remapped before the UNIQUE index can
+-- be created.
+CREATE TEMP TABLE urlet_domain_normalized (
+    id       INTEGER PRIMARY KEY,
+    hostname TEXT NOT NULL
+);
 
--- Match `services::domains::normalize_host`: a trailing dot before a port and a
--- default port are not part of the stored hostname. Without this, a v2 database
--- seeded from `URLET_BASE_URL=https://example.com:443` would keep
--- `example.com:443`, while the new bootstrap inserts `example.com`; URLs would
--- stay attached to the old row and every existing link would 404.
-UPDATE domains SET hostname = replace(hostname, '.:', ':')
- WHERE hostname LIKE '%.:%';
-UPDATE domains SET hostname = substr(hostname, 1, length(hostname) - 4)
- WHERE hostname LIKE '%:443';
-UPDATE domains SET hostname = substr(hostname, 1, length(hostname) - 3)
- WHERE hostname LIKE '%:80';
-UPDATE domains SET hostname = rtrim(hostname, '.');
+WITH step1 AS (
+    SELECT id, rtrim(lower(trim(hostname)), '.') AS h FROM domains
+), step2 AS (
+    SELECT id, replace(h, '.:', ':') AS h FROM step1
+), step3 AS (
+    SELECT id, CASE WHEN h LIKE '%:443' THEN substr(h, 1, length(h) - 4) ELSE h END AS h
+      FROM step2
+), step4 AS (
+    SELECT id, CASE WHEN h LIKE '%:80' THEN substr(h, 1, length(h) - 3) ELSE h END AS h
+      FROM step3
+)
+INSERT INTO urlet_domain_normalized (id, hostname)
+SELECT id, rtrim(h, '.') FROM step4;
+
+CREATE TEMP TABLE urlet_domain_merge (
+    keep_id INTEGER NOT NULL,
+    drop_id INTEGER PRIMARY KEY
+);
+
+-- Keep the default row when a group has one, otherwise the lowest id.
+INSERT INTO urlet_domain_merge (keep_id, drop_id)
+SELECT k.keep_id, n.id
+  FROM urlet_domain_normalized n
+  JOIN (
+      SELECT norm.hostname,
+             COALESCE(
+                 MAX(CASE WHEN d.is_default = 1 THEN d.id END),
+                 MIN(d.id)
+             ) AS keep_id
+        FROM urlet_domain_normalized norm
+        JOIN domains d ON d.id = norm.id
+       GROUP BY norm.hostname COLLATE NOCASE
+  ) k ON k.hostname = n.hostname COLLATE NOCASE
+ WHERE n.id <> k.keep_id;
+
+-- Preserve verification if any duplicate row was verified.
+UPDATE domains
+   SET is_verified = 1
+ WHERE id IN (SELECT keep_id FROM urlet_domain_merge)
+   AND EXISTS (
+       SELECT 1
+         FROM domains d
+         JOIN urlet_domain_merge m ON m.drop_id = d.id
+        WHERE m.keep_id = domains.id AND d.is_verified = 1
+   );
+
+UPDATE urls
+   SET domain_id = (
+       SELECT m.keep_id
+         FROM urlet_domain_merge m
+        WHERE m.drop_id = urls.domain_id
+   )
+ WHERE domain_id IN (SELECT drop_id FROM urlet_domain_merge);
+
+DELETE FROM domains WHERE id IN (SELECT drop_id FROM urlet_domain_merge);
+
+UPDATE domains
+   SET hostname = (
+       SELECT n.hostname
+         FROM urlet_domain_normalized n
+        WHERE n.id = domains.id
+   );
+
+DROP TABLE urlet_domain_merge;
+DROP TABLE urlet_domain_normalized;
 
 ALTER TABLE domains ADD COLUMN status TEXT NOT NULL DEFAULT 'active'
     CHECK (status IN ('pending', 'active', 'disabled'));

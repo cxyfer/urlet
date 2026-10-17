@@ -596,4 +596,131 @@ mod tests {
         pool.close().await;
         let _ = std::fs::remove_dir_all(&dir);
     }
+    #[tokio::test]
+    async fn merges_canonical_equivalent_domains_before_normalizing() {
+        let dir = std::env::temp_dir().join(format!(
+            "urlet-migrate-merge-domains-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = format!("{}/merge-domains.db", dir.display());
+        let options = test_options(&path);
+        let pool = test_pool(&options).await;
+
+        run_until(&pool, &options, "0002_clicks_indexes")
+            .await
+            .expect("v2 schema");
+
+        let now = now_iso();
+        sqlx::query(
+            "INSERT INTO users (email, email_normalized, password_hash, created_at, updated_at)
+             VALUES ('merge@example.com', 'merge@example.com', 'hash', ?, ?)",
+        )
+        .bind(&now)
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("user");
+        let user_id: i64 =
+            sqlx::query_scalar("SELECT id FROM users WHERE email = 'merge@example.com'")
+                .fetch_one(&pool)
+                .await
+                .expect("user id");
+
+        // v2 could leave both rows after URLET_BASE_URL changed from
+        // https://example.com:443 to https://example.com. The new row is the
+        // default; the old row still owns links created before the change.
+        sqlx::query(
+            "INSERT INTO domains (hostname, is_default, is_verified, created_at)
+             VALUES ('s.example.com:443', 0, 1, ?)",
+        )
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("old canonical");
+        sqlx::query(
+            "INSERT INTO domains (hostname, is_default, is_verified, created_at)
+             VALUES ('s.example.com', 1, 1, ?)",
+        )
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("new canonical");
+        let old_id: i64 =
+            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = 's.example.com:443'")
+                .fetch_one(&pool)
+                .await
+                .expect("old id");
+        let new_id: i64 =
+            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = 's.example.com'")
+                .fetch_one(&pool)
+                .await
+                .expect("new id");
+
+        let old_url = sqlx::query(
+            "INSERT INTO urls (user_id, domain_id, slug, target_url, created_at, updated_at)
+             VALUES (?, ?, 'old', 'https://example.com/old', ?, ?)",
+        )
+        .bind(user_id)
+        .bind(old_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("old url")
+        .last_insert_rowid();
+        let new_url = sqlx::query(
+            "INSERT INTO urls (user_id, domain_id, slug, target_url, created_at, updated_at)
+             VALUES (?, ?, 'new', 'https://example.com/new', ?, ?)",
+        )
+        .bind(user_id)
+        .bind(new_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("new url")
+        .last_insert_rowid();
+
+        run(&pool, &options).await.expect("upgrade");
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM domains")
+            .fetch_one(&pool)
+            .await
+            .expect("domain count");
+        assert_eq!(count, 1, "equivalent rows are merged");
+        let hostname: String = sqlx::query_scalar("SELECT hostname FROM domains")
+            .fetch_one(&pool)
+            .await
+            .expect("hostname");
+        assert_eq!(hostname, "s.example.com");
+        let kept: i64 = sqlx::query_scalar("SELECT id FROM domains")
+            .fetch_one(&pool)
+            .await
+            .expect("kept id");
+        assert_eq!(kept, new_id, "the default row is the survivor");
+        let is_default: i64 = sqlx::query_scalar("SELECT is_default FROM domains")
+            .fetch_one(&pool)
+            .await
+            .expect("default");
+        assert_eq!(is_default, 1);
+
+        for url_id in [old_url, new_url] {
+            let domain_id: i64 = sqlx::query_scalar("SELECT domain_id FROM urls WHERE id = ?")
+                .bind(url_id)
+                .fetch_one(&pool)
+                .await
+                .expect("url domain");
+            assert_eq!(domain_id, new_id, "URL domain_id remapped to the survivor");
+        }
+
+        let violations = sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(&pool)
+            .await
+            .expect("foreign key check");
+        assert!(violations.is_empty());
+
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
