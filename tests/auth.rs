@@ -9,7 +9,7 @@ use common::{
 };
 
 use serde_json::json;
-use uwurls::services::settings::RegistrationMode;
+use urlet::services::settings::RegistrationMode;
 
 #[tokio::test]
 async fn first_account_becomes_administrator() {
@@ -35,7 +35,7 @@ async fn second_account_is_a_regular_user() {
 async fn register_normalises_email_and_returns_a_session() {
     let app = TestApp::spawn().await;
     let (cookie, _) = app.register("  Mixed@Case.COM ", "supersecret").await;
-    assert!(cookie.starts_with("uwurls_session="));
+    assert!(cookie.starts_with("urlet_session="));
 
     let me = app.get_as("/api/v1/auth/me", &cookie).await;
     assert_eq!(me.status, StatusCode::OK);
@@ -125,7 +125,7 @@ async fn anonymous_requests_are_unauthorised() {
 async fn garbage_session_cookie_is_unauthorised() {
     let app = TestApp::spawn().await;
     let response = app
-        .get_as("/api/v1/auth/me", "uwurls_session=not-a-real-token")
+        .get_as("/api/v1/auth/me", "urlet_session=not-a-real-token")
         .await;
     assert_eq!(response.status, StatusCode::UNAUTHORIZED);
 }
@@ -447,9 +447,9 @@ async fn invite_only_registration_requires_a_valid_code() {
 
     // Create a single-use invite directly in the database.
     let code = "ABCD2345";
-    uwurls::db::invites::create(
+    urlet::db::invites::create(
         &app.state.db,
-        &uwurls::services::secret::sha256_hex(code),
+        &urlet::services::secret::sha256_hex(code),
         code,
         Some("test"),
         None,
@@ -493,12 +493,10 @@ async fn bootstrap_administrator_from_configuration() {
     assert_eq!(me.json()["user"]["role"], "admin");
 
     // Bootstrapping again must not create a duplicate.
-    uwurls::server::bootstrap(&app.state)
+    urlet::server::bootstrap(&app.state)
         .await
         .expect("bootstrap is idempotent");
-    let users = uwurls::db::users::count(&app.state.db)
-        .await
-        .expect("count");
+    let users = urlet::db::users::count(&app.state.db).await.expect("count");
     assert_eq!(users, 1);
 }
 
@@ -588,7 +586,7 @@ async fn sessions_slide_while_in_use() {
 
     // Give the session a nearly expired deadline and an old last_seen_at, then
     // verify that using it pushes the expiry out instead of leaving it fixed.
-    let nearly_expired = uwurls::services::time::iso_in_hours(1);
+    let nearly_expired = urlet::services::time::iso_in_hours(1);
     sqlx::query("UPDATE sessions SET last_seen_at = ?, expires_at = ?")
         .bind("2020-01-01T00:00:00.000Z")
         .bind(&nearly_expired)

@@ -246,7 +246,7 @@ async fn unlock_flow_with_form_and_json() {
     assert_eq!(ok_json.status, StatusCode::OK, "{}", ok_json.body);
     assert_eq!(ok_json.json()["redirect"], "/vault2");
     let unlock_cookie = ok_json
-        .cookie_named("uwurls_unlock_vault2")
+        .cookie_named("urlet_unlock_vault2")
         .expect("unlock cookie");
     assert!(ok_json
         .header("set-cookie")
@@ -273,7 +273,7 @@ async fn unlock_flow_with_form_and_json() {
         .await;
     assert_eq!(ok_form.status, StatusCode::SEE_OTHER);
     assert_eq!(ok_form.header("location").as_deref(), Some("/vault2"));
-    assert!(ok_form.cookie_named("uwurls_unlock_vault2").is_some());
+    assert!(ok_form.cookie_named("urlet_unlock_vault2").is_some());
 }
 
 #[tokio::test]
@@ -295,16 +295,14 @@ async fn unlock_cookies_are_scoped_to_one_link() {
             json!({ "password": "linkpass" }),
         ))
         .await;
-    let unlock_cookie = unlocked
-        .cookie_named("uwurls_unlock_first")
-        .expect("cookie");
+    let unlock_cookie = unlocked.cookie_named("urlet_unlock_first").expect("cookie");
 
     assert_eq!(
         app.get_as("/first", &unlock_cookie).await.status,
         StatusCode::FOUND
     );
     // The same cookie value under another name must not unlock the second link.
-    let forged = unlock_cookie.replace("uwurls_unlock_first", "uwurls_unlock_second");
+    let forged = unlock_cookie.replace("urlet_unlock_first", "urlet_unlock_second");
     let second = app.get_as("/second", &forged).await;
     assert_eq!(second.status, StatusCode::OK);
     assert!(second.body.contains("Protected link"));

@@ -155,7 +155,7 @@ mod tests {
     fn generated_secret_is_owner_only() {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir = std::env::temp_dir().join(format!("uwurls-secret-mode-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("urlet-secret-mode-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         load_or_create(&dir, None).expect("generated");
         let mode = std::fs::metadata(dir.join(SECRET_FILE))
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn creates_and_reloads_secret() {
-        let dir = std::env::temp_dir().join(format!("uwurls-secret-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("urlet-secret-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let first = load_or_create(&dir, None).expect("generated");
         let second = load_or_create(&dir, None).expect("reloaded");

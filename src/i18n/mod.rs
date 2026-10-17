@@ -19,7 +19,7 @@ use axum::http::{header, HeaderMap};
 use crate::services::cookies;
 
 /// Cookie remembering an explicit language choice.
-pub const COOKIE_NAME: &str = "uwurls_lang";
+pub const COOKIE_NAME: &str = "urlet_lang";
 
 /// Lifetime of the language cookie: one year.
 pub const COOKIE_MAX_AGE: i64 = 31_536_000;
@@ -814,7 +814,7 @@ mod tests {
     #[test]
     fn resolves_cookie_before_header() {
         let headers = headers_with(&[
-            ("cookie", "uwurls_lang=zh-Hant"),
+            ("cookie", "urlet_lang=zh-Hant"),
             ("accept-language", "en-US,en;q=0.9"),
         ]);
         assert_eq!(resolve(&headers), Lang::ZhHant);
@@ -826,7 +826,7 @@ mod tests {
 
         // An unparsable cookie falls through to the header.
         let headers = headers_with(&[
-            ("cookie", "uwurls_lang=nonsense"),
+            ("cookie", "urlet_lang=nonsense"),
             ("accept-language", "zh-Hans"),
         ]);
         assert_eq!(resolve(&headers), Lang::ZhHans);

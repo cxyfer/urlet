@@ -1,4 +1,4 @@
-/* uwurls — persisted light/dark preference.
+/* urlet — persisted light/dark preference.
  *
  * Loaded synchronously in <head> so the stored choice is applied before the
  * first paint. Without JavaScript the CSS media query keeps following the
@@ -8,7 +8,7 @@
 (function () {
     "use strict";
 
-    var KEY = "uwurls-theme";
+    var KEY = "urlet-theme";
     var root = document.documentElement;
     var media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
 

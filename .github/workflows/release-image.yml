@@ -84,7 +84,7 @@ jobs:
             echo "::error file=Cargo.toml::Cargo.toml declares version '$manifest_version' but the tag is '$TAG'. Bump the version before tagging."
             exit 1
           fi
-          echo "Releasing uwurls $manifest_version"
+          echo "Releasing urlet $manifest_version"
 
       - name: Check that Cargo.lock is current
         run: |

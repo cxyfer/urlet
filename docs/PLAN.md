@@ -1,6 +1,6 @@
 **English** | [繁體中文](zh-TW/PLAN.md)
 
-# uwurls — Phased Implementation Plan
+# urlet — Phased Implementation Plan
 
 > Spec: `docs/SPEC.md` v1.1
 > Principle: at the end of every phase the code must **compile, test, and commit**; each phase gets one (or a few) local commits.
@@ -10,7 +10,7 @@
 | Phase | Status | Commit |
 |-------|--------|--------|
 | P0 Spec and plan | ✅ Done | `4109fc8 📝 docs: add spec and phased implementation plan` |
-| P1 Project skeleton and data layer | ✅ Done | `06f91a7 🎉 init: bootstrap uwurls project skeleton` |
+| P1 Project skeleton and data layer | ✅ Done | `06f91a7 🎉 init: bootstrap urlet project skeleton` |
 | P2 Authentication and sessions | ✅ Done | `e0d8902 ✨ feat(auth): add sessions, registration, login and CSRF protection` |
 | P3 Short link core | ✅ Done | `e1db4fc ✨ feat(urls): add short link CRUD, slugs, tags and expiry rules` |
 | P4 Redirect and unlock | ✅ Done | `2a8ca77 ✨ feat(redirect): add redirects, password unlock and click analytics` |
@@ -29,7 +29,7 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 | Phase | Name | Deliverable | Acceptance | Commit |
 |-------|------|-------------|------------|--------|
 | P0 | Spec and plan | `docs/SPEC.md`, `docs/PLAN.md` | The spec covers every requirement and is traceable | `📝 docs: add spec and phased implementation plan` |
-| P1 | Project skeleton and data layer | Cargo project, config, 14-table migrations, db modules, error handling, health, Dockerfile, compose | `cargo run` starts, `/health` returns 200, migrations succeed | `🎉 init: bootstrap uwurls project skeleton` |
+| P1 | Project skeleton and data layer | Cargo project, config, 14-table migrations, db modules, error handling, health, Dockerfile, compose | `cargo run` starts, `/health` returns 200, migrations succeed | `🎉 init: bootstrap urlet project skeleton` |
 | P2 | Authentication and sessions | Register/login/logout, Argon2, sessions, CSRF, rate limiting, admin bootstrap | Integration tests cover register/login, 401 when unauthorized, CSRF 403 | `✨ feat(auth): ...` |
 | P3 | Short link core | Slug service, URL CRUD, tags, expiry/click-cap/password columns, quota | Integration tests cover CRUD, ownership isolation, slug validation | `✨ feat(urls): ...` |
 | P4 | Redirect and unlock | Redirect handler, click recording, UA parsing, unlock cookie, 410/404 pages | Integration tests cover redirects, the password flow, expiry 410 | `✨ feat(redirect): ...` |
@@ -72,7 +72,7 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 7. `middleware/csrf.rs`: check `Origin`/`Referer` on non-GET requests that use cookie authentication
 8. `middleware/security.rs`: security headers; `middleware/request_id.rs`
 9. `routes/api_auth.rs`: the §7.1 endpoints
-10. The first user becomes admin automatically; `UWURLS_ADMIN_EMAIL/PASSWORD` bootstrap
+10. The first user becomes admin automatically; `URLET_ADMIN_EMAIL/PASSWORD` bootstrap
 
 **Acceptance**: integration tests — register/login/logout/`/me`/change password, 401 when not logged in, 403 for cross-origin POST, and 429 after repeated failed logins.
 
@@ -176,16 +176,16 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 **Tasks**
 
 1. Locale catalogs `src/i18n/{en,zh-Hant,zh-Hans}.json` loaded by `src/i18n/mod.rs`: load the catalogs with `include_str!`, negotiate from `Accept-Language` honoring `q=` weights with **English** as the fallback, and fall back to the English string for a missing key.
-2. `src/middleware/locale.rs`: resolve the active language from the `uwurls_lang` cookie or `Accept-Language` (the cookie wins), publish it through a task-local context for handlers and error pages, render `<html lang>` from it, and add `Content-Language` plus `Vary: Accept-Language, Cookie` to HTML responses.
-3. `GET /app/lang/{code}?next=<path>`: set the cookie (`Path=/`, `SameSite=Lax`, `Max-Age` one year, not HttpOnly, `Secure` when `UWURLS_SECURE_COOKIES=true`) and return 302; only same-site relative paths are accepted for `next`, and anything else (including a missing `next`) falls back to `/app`; an unknown `code` is treated as `en`.
+2. `src/middleware/locale.rs`: resolve the active language from the `urlet_lang` cookie or `Accept-Language` (the cookie wins), publish it through a task-local context for handlers and error pages, render `<html lang>` from it, and add `Content-Language` plus `Vary: Accept-Language, Cookie` to HTML responses.
+3. `GET /app/lang/{code}?next=<path>`: set the cookie (`Path=/`, `SameSite=Lax`, `Max-Age` one year, not HttpOnly, `Secure` when `URLET_SECURE_COOKIES=true`) and return 302; only same-site relative paths are accepted for `next`, and anything else (including a missing `next`) falls back to `/app`; an unknown `code` is treated as `en`.
 4. `src/services/captcha.rs`: a provider abstraction for Cloudflare Turnstile and Google reCAPTCHA v2, settings values overridden by non-empty environment variables, a form-encoded 5-second HTTPS POST through `ureq` 2 (rustls + webpki-roots, no OpenSSL) to the provider siteverify endpoint, a check that the reported `hostname` is the base-URL host or on the allow-list (a missing `hostname` passes, a mismatch is rejected and logged at `WARN`), and a fail-closed result (timeout, non-2xx, or unparsable response rejects the request). Tests live in `tests/captcha.rs`.
-5. Enforce captcha on the web registration, sign-in and create-short-link forms, and on `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (JSON field `captcha_token`, 400 `captcha_failed`); on `POST /api/v1/urls` enforce it for session-cookie calls only and exempt `Authorization: Bearer uw_...` calls, so automation keeps working.
-6. Admin settings: the seven new keys `captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`, `captcha_on_login`, `captcha_on_create`, `captcha_allowed_hostnames`, each with a matching `UWURLS_CAPTCHA_*` environment variable (including `UWURLS_CAPTCHA_ON_LOGIN` and `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES`) that overrides the stored value when non-empty; the secret key field is write-only (an empty submission keeps the current value).
+5. Enforce captcha on the web registration, sign-in and create-short-link forms, and on `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (JSON field `captcha_token`, 400 `captcha_failed`); on `POST /api/v1/urls` enforce it for session-cookie calls only and exempt `Authorization: Bearer ur_...` calls, so automation keeps working.
+6. Admin settings: the seven new keys `captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`, `captcha_on_login`, `captcha_on_create`, `captcha_allowed_hostnames`, each with a matching `URLET_CAPTCHA_*` environment variable (including `URLET_CAPTCHA_ON_LOGIN` and `URLET_CAPTCHA_ALLOWED_HOSTNAMES`) that overrides the stored value when non-empty; the secret key field is write-only (an empty submission keeps the current value).
 7. `GET /` landing page (`src/routes/pages/home.rs` + `templates/landing.html`): hero, feature highlights, login and register entry points, language switcher, and footer, plus a dashboard entry point for signed-in users; remove the 302 redirect to `/app`.
 8. Tests: language negotiation (`q=` weights, fallback to English), cookie switching and `next` validation, API JSON staying English, the captcha enablement matrix, captcha fail-closed behavior on register, sign-in and create, and `GET /` returning 200.
 9. Docs: update `docs/SPEC.md` and the Chinese mirror `docs/zh-TW/SPEC.md` (FR tables, route list, environment variables, settings keys), both `PLAN.md` files, both READMEs, `docs/API.md`, `docs/DEPLOYMENT.md`, their `docs/zh-TW/` mirrors and `.env.example`.
 
-**Acceptance**: `GET /` returns 200 for anonymous and signed-in visitors and no longer redirects; `Accept-Language` negotiation and the language cookie switch the UI, while JSON API responses stay English; captcha is enabled only when provider ≠ `none`, both keys are non-empty, and the matching switch (`on_register`, `on_login` or `on_create`) is true, and it fails closed on timeout/non-2xx/parse failure on register, sign-in and create; on `POST /api/v1/urls` captcha applies to session-cookie calls and `Authorization: Bearer uw_...` calls stay exempt; the admin secret key is never rendered back; `cargo test`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check` are clean.
+**Acceptance**: `GET /` returns 200 for anonymous and signed-in visitors and no longer redirects; `Accept-Language` negotiation and the language cookie switch the UI, while JSON API responses stay English; captcha is enabled only when provider ≠ `none`, both keys are non-empty, and the matching switch (`on_register`, `on_login` or `on_create`) is true, and it fails closed on timeout/non-2xx/parse failure on register, sign-in and create; on `POST /api/v1/urls` captcha applies to session-cookie calls and `Authorization: Bearer ur_...` calls stay exempt; the admin secret key is never rendered back; `cargo test`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check` are clean.
 
 ---
 

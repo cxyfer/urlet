@@ -16,12 +16,12 @@ SHOTS="${SHOTS:-$DATA/shots}"
 rm -rf "$DATA"
 mkdir -p "$DATA" "$SHOTS"
 
-UWURLS_DATABASE_URL="sqlite://$DATA/db.sqlite?mode=rwc" \
-UWURLS_DATA_DIR="$DATA" \
-UWURLS_BIND="127.0.0.1:${PORT}" \
-UWURLS_BASE_URL="$BASE" \
-UWURLS_LOG=warn \
-./target/debug/uwurls serve > "$DATA/server.log" 2>&1 &
+URLET_DATABASE_URL="sqlite://$DATA/db.sqlite?mode=rwc" \
+URLET_DATA_DIR="$DATA" \
+URLET_BIND="127.0.0.1:${PORT}" \
+URLET_BASE_URL="$BASE" \
+URLET_LOG=warn \
+./target/debug/urlet serve > "$DATA/server.log" 2>&1 &
 SERVER_PID=$!
 trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
 
@@ -39,7 +39,7 @@ create_link() {
         -H 'content-type: application/json' -H "origin: $BASE" -d "$1"
 }
 
-create_link '{"target_url":"https://example.com/blog/announcing-uwurls-1-0","slug":"launch-2026","title":"Launch announcement","tags":["campaign","blog"],"expires_at":"2030-06-30","max_clicks":500}'
+create_link '{"target_url":"https://example.com/blog/announcing-urlet-1-0","slug":"launch-2026","title":"Launch announcement","tags":["campaign","blog"],"expires_at":"2030-06-30","max_clicks":500}'
 create_link '{"target_url":"https://docs.example.com/getting-started","slug":"docs","title":"Getting started guide","tags":["docs","product"],"expires_at":"2030-06-30"}'
 create_link '{"target_url":"https://events.example.com/register?ref=email","slug":"webinar","title":"Webinar signup","tags":["campaign"],"expires_at":"2030-06-30"}'
 create_link '{"target_url":"https://secret.example.com/board-deck","slug":"deck","title":"Board deck","password":"linkpass","tags":["internal"]}'

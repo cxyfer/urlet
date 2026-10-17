@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- uwurls schema, version 2
+-- urlet schema, version 2
 --
 -- Supports the click recording path: unique-visitor detection and referrer
 -- breakdowns both filter on columns that were not indexed in v1.

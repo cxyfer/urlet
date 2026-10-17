@@ -142,11 +142,7 @@ mod tests {
         assert_eq!(body_text(response).await, "zh-Hant");
 
         let response = app()
-            .oneshot(request(
-                "/plain",
-                Some("en-US"),
-                Some("uwurls_lang=zh-Hans"),
-            ))
+            .oneshot(request("/plain", Some("en-US"), Some("urlet_lang=zh-Hans")))
             .await
             .expect("response");
         assert_eq!(body_text(response).await, "zh-Hans");

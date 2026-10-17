@@ -152,7 +152,7 @@ async fn cookie_wins_over_accept_language() {
         .send(get_with(
             "/app/login",
             Some("en-US,en;q=0.9"),
-            Some("uwurls_lang=zh-Hant"),
+            Some("urlet_lang=zh-Hant"),
         ))
         .await;
     assert_eq!(page.header("content-language").as_deref(), Some("zh-Hant"));
@@ -160,11 +160,7 @@ async fn cookie_wins_over_accept_language() {
 
     // The reverse combination is honoured too.
     let page = app
-        .send(get_with(
-            "/app/login",
-            Some("zh-TW"),
-            Some("uwurls_lang=en"),
-        ))
+        .send(get_with("/app/login", Some("zh-TW"), Some("urlet_lang=en")))
         .await;
     assert_eq!(page.header("content-language").as_deref(), Some("en"));
     assert!(page.body.contains("Sign in to manage your short links."));
@@ -178,15 +174,15 @@ async fn language_route_sets_a_cookie_and_redirects() {
     assert_eq!(response.header("location").as_deref(), Some("/app"));
 
     let cookie = response
-        .cookie_named("uwurls_lang")
+        .cookie_named("urlet_lang")
         .expect("language cookie");
-    assert_eq!(cookie, "uwurls_lang=zh-Hans");
+    assert_eq!(cookie, "urlet_lang=zh-Hans");
     let raw = response
         .headers
         .get_all(header::SET_COOKIE)
         .into_iter()
         .filter_map(|value| value.to_str().ok())
-        .find(|value| value.starts_with("uwurls_lang="))
+        .find(|value| value.starts_with("urlet_lang="))
         .expect("set-cookie header");
     assert!(raw.contains("Path=/"));
     assert!(raw.contains("Max-Age=31536000"));
@@ -208,7 +204,7 @@ async fn language_cookie_is_secure_when_configured() {
         .get_all(header::SET_COOKIE)
         .into_iter()
         .filter_map(|value| value.to_str().ok())
-        .find(|value| value.starts_with("uwurls_lang="))
+        .find(|value| value.starts_with("urlet_lang="))
         .expect("set-cookie header");
     assert!(raw.contains("; Secure"));
 }
@@ -255,8 +251,8 @@ async fn language_route_keeps_the_landing_page() {
     assert_eq!(response.status, StatusCode::FOUND);
     assert_eq!(response.header("location").as_deref(), Some("/"));
     assert_eq!(
-        response.cookie_named("uwurls_lang").as_deref(),
-        Some("uwurls_lang=zh-Hant")
+        response.cookie_named("urlet_lang").as_deref(),
+        Some("urlet_lang=zh-Hant")
     );
 }
 
@@ -266,8 +262,8 @@ async fn unknown_language_codes_are_treated_as_english() {
     let response = app.get("/app/lang/klingon").await;
     assert_eq!(response.status, StatusCode::FOUND);
     assert_eq!(
-        response.cookie_named("uwurls_lang").as_deref(),
-        Some("uwurls_lang=en")
+        response.cookie_named("urlet_lang").as_deref(),
+        Some("urlet_lang=en")
     );
 }
 
@@ -300,7 +296,7 @@ async fn signed_in_pages_are_translated() {
         .send(get_with(
             "/app",
             None,
-            Some(&format!("{cookie}; uwurls_lang=zh-Hant")),
+            Some(&format!("{cookie}; urlet_lang=zh-Hant")),
         ))
         .await;
     assert_eq!(page.status, StatusCode::OK);
@@ -317,7 +313,7 @@ async fn account_admin_and_detail_pages_are_translated() {
     let app = TestApp::spawn().await;
     // The first account bootstraps the instance as administrator.
     let (session, _) = app.register("owner@example.com", "supersecret").await;
-    let cookie = format!("{session}; uwurls_lang=zh-Hans");
+    let cookie = format!("{session}; urlet_lang=zh-Hans");
 
     let account = app
         .send(get_with("/app/account", None, Some(&cookie)))
@@ -452,7 +448,7 @@ async fn admin_pages_label_the_registration_mode() {
     let app = TestApp::spawn().await;
     // The first account bootstraps the instance as administrator.
     let (session, _) = app.register("mode@example.com", "supersecret").await;
-    let cookie = format!("{session}; uwurls_lang=zh-Hant");
+    let cookie = format!("{session}; urlet_lang=zh-Hant");
 
     let overview = app.send(get_with("/app/admin", None, Some(&cookie))).await;
     assert_eq!(overview.status, StatusCode::OK);
@@ -520,7 +516,7 @@ async fn analytics_labels_are_translated_on_pages_but_raw_in_the_api() {
     }
     wait_for_clicks(&app, id, 5).await;
 
-    let cookie = format!("{session}; uwurls_lang=zh-Hant");
+    let cookie = format!("{session}; urlet_lang=zh-Hant");
     let page = app
         .send(get_with(&format!("/app/urls/{id}"), None, Some(&cookie)))
         .await;
@@ -606,7 +602,7 @@ async fn dashboard_placeholder_is_translated() {
         .body
         .contains("placeholder=\"https://example.com/very/long/link\""));
 
-    let cookie = format!("{session}; uwurls_lang=zh-Hans");
+    let cookie = format!("{session}; urlet_lang=zh-Hans");
     let chinese = app.send(get_with("/app", None, Some(&cookie))).await;
     // The example URL is intentionally identical in every language, but it has
     // to come from the catalogue: a mistyped key would print the key itself.

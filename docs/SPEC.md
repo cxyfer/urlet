@@ -1,6 +1,6 @@
 **English** | [繁體中文](zh-TW/SPEC.md)
 
-# uwurls — Lightweight Multi-User URL Shortener Specification
+# urlet — Lightweight Multi-User URL Shortener Specification
 
 > Version: 1.1
 > Status: Approved for implementation
@@ -10,7 +10,7 @@
 
 ## 1. Overview
 
-`uwurls` is a **self-hosted, multi-user** URL shortener. Every user gets an isolated space
+`urlet` is a **self-hosted, multi-user** URL shortener. Every user gets an isolated space
 for their own short links, can attach **password protection** and **expiry rules**, review click
 analytics, and drive the service programmatically with a personal API token.
 
@@ -37,7 +37,7 @@ Simplified Chinese), optional bot protection, and a public landing page.
 Two directions were explored in earlier projects. This project **inherits their data model and
 feature ideas** but re-selects the stack to satisfy P5:
 
-| Aspect | OURLS (prototype) | OURLS2 (prototype) | **uwurls (this project)** |
+| Aspect | OURLS (prototype) | OURLS2 (prototype) | **urlet (this project)** |
 |--------|-------------------|--------------------|---------------------------|
 | Runtime | Axum + MySQL + Redis | Cloudflare Workers (WASM) + D1 | **Axum + SQLite (single binary)** |
 | Deployment | docker compose (3 containers) | Wrangler / Cloudflare | **docker compose (1 container)** |
@@ -75,7 +75,7 @@ Multilingual support was a non-goal in v1.0 and is now in scope as of v1.1 (§4.
 
 ```
                         ┌─────────────────────────────────────────────────┐
-                        │ uwurls (single container)                       │
+                        │ urlet (single container)                       │
 Browser / curl          │                                                 │
 ───────────────────►    │ Axum Router                                     │
 :8080                   │  ├─ /                 landing / navigation page │
@@ -93,9 +93,9 @@ Browser / curl          │                                                 │
                         │ Services: slug / url / click / ua / ratelimit / │
                         │           audit / settings / i18n / captcha     │
                         │                                                 │
-                        │ sqlx Pool (WAL)  ──►  /data/uwurls.db           │
+                        │ sqlx Pool (WAL)  ──►  /data/urlet.db           │
                         └─────────────────────────────────────────────────┘
-                         named volume: uwurls-data
+                         named volume: urlet-data
 ```
 
 ### 3.2 Technology Choices and Rationale
@@ -148,7 +148,7 @@ target is still met.
 | FR-AUTH-4 | Change password | Requires the current password; on success all other sessions of that user are revoked |
 | FR-AUTH-5 | Profile | Change the display name; view email, role, and creation time |
 | FR-AUTH-6 | Session management | List your own signed-in devices and revoke any session |
-| FR-AUTH-7 | First user | If the database has no users, the first registrant automatically becomes `admin`; an admin can also be created at startup with `UWURLS_ADMIN_EMAIL/PASSWORD` |
+| FR-AUTH-7 | First user | If the database has no users, the first registrant automatically becomes `admin`; an admin can also be created at startup with `URLET_ADMIN_EMAIL/PASSWORD` |
 | FR-AUTH-8 | Suspension | A user with `status = suspended` cannot log in and existing sessions become invalid immediately |
 | FR-AUTH-9 | Rate limiting | Login, registration, and unlock are protected by in-memory token buckets, and `login_attempts` is recorded for auditing |
 
@@ -175,7 +175,7 @@ target is still met.
 |----|-------------|-------------|
 | FR-PWD-1 | Set | The create/edit forms accept a plaintext password, which is stored as an Argon2id hash in `urls.password_hash` |
 | FR-PWD-2 | Access | Visiting a protected link returns 200 with a password entry page (**the target URL is not leaked**) |
-| FR-PWD-3 | Unlock | `POST /{slug}/unlock` verifies the password; on success it sets the signed cookie `uwurls_unlock_<slug>` (HMAC-SHA256, TTL 30 minutes) |
+| FR-PWD-3 | Unlock | `POST /{slug}/unlock` verifies the password; on success it sets the signed cookie `urlet_unlock_<slug>` (HMAC-SHA256, TTL 30 minutes) |
 | FR-PWD-4 | Already unlocked | With a valid unlock cookie the visitor is redirected immediately and the click is recorded with `password_protected = 1` |
 | FR-PWD-5 | Rate limiting | At most 10 attempts per (slug, IP) in 5 minutes; further attempts return 429 |
 | FR-PWD-6 | Error handling | A wrong password returns 401 and shows an error on the page without revealing the target URL |
@@ -217,7 +217,7 @@ target is still met.
 
 | ID | Requirement | Description |
 |----|-------------|-------------|
-| FR-TOK-1 | Create | Generates `uw_` + 32 bytes of CSPRNG entropy (base64url, 43 characters); the plaintext is shown **only once** at creation time |
+| FR-TOK-1 | Create | Generates `ur_` + 32 bytes of CSPRNG entropy (base64url, 43 characters); the plaintext is shown **only once** at creation time |
 | FR-TOK-2 | Storage | Only the SHA-256 hash plus the first 8 characters as a prefix (for identification) are stored |
 | FR-TOK-3 | Usage | `Authorization: Bearer <token>`; works alongside session authentication |
 | FR-TOK-4 | Lifecycle | Supports `expires_at`, revocation (`revoked_at`), and `last_used_at`; when a user changes their password, or an admin resets a password or deletes an account, all of that account's tokens are revoked too |
@@ -245,7 +245,7 @@ target is still met.
 - Error codes: `bad_request` `unauthorized` `forbidden` `not_found` `conflict` `gone` `validation_error` `captcha_failed` `rate_limited` `internal_error`
 - Pagination format: `{ "items": [...], "page": 1, "per_page": 20, "total": 42, "total_pages": 3 }`
 - Authentication: session cookie **or** `Authorization: Bearer <api_token>`.
-- **All JSON API responses are English** and are not affected by the request language or the `uwurls_lang` cookie.
+- **All JSON API responses are English** and are not affected by the request language or the `urlet_lang` cookie.
 - See §7 for the endpoint list.
 
 ### 4.10 Web Interface (FR-UI)
@@ -259,7 +259,7 @@ target is still met.
 | `/app/urls/{id}` | Link detail | Edit form, analytics charts, recent clicks, delete (QR codes are a non-goal) |
 | `/app/account` | Account | Profile, change password, session list, API token management |
 | `/app/admin` | Admin panel | Users, all links, invite codes, settings, audit log |
-| `/app/lang/{code}` | Language switch | Sets the `uwurls_lang` cookie and 302-redirects to `next` (or to `/app`) |
+| `/app/lang/{code}` | Language switch | Sets the `urlet_lang` cookie and 302-redirects to `next` (or to `/app`) |
 | `/{slug}` | Redirect / password page / 410 / 404 | Public |
 
 **UI technology**: Askama templates + hand-written CSS (including `prefers-color-scheme` dark mode) +
@@ -271,8 +271,8 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 | ID | Requirement | Description |
 |----|-------------|-------------|
 | FR-I18N-1 | Supported languages | Three interface languages: English (`en`, the default), Traditional Chinese (`zh-Hant`), and Simplified Chinese (`zh-Hans`). Catalogs are JSON files embedded in the binary at `src/i18n/{en,zh-Hant,zh-Hans}.json` and loaded by `src/i18n/mod.rs` |
-| FR-I18N-2 | Language selection | On the first visit (no cookie) the language is negotiated from `Accept-Language`, honoring `q=` weights in descending order; `zh-TW`, `zh-HK` and `zh-MO` map to `zh-Hant`, every other Chinese tag (including a bare `zh`) maps to `zh-Hans`, and an unrecognized or absent header falls back to **English**. The `uwurls_lang` cookie always wins over the header |
-| FR-I18N-3 | Persistence | The chosen language is stored in the cookie `uwurls_lang` (`Path=/`, `SameSite=Lax`, `Max-Age` one year, **not** HttpOnly; `Secure` when `UWURLS_SECURE_COOKIES=true`) |
+| FR-I18N-2 | Language selection | On the first visit (no cookie) the language is negotiated from `Accept-Language`, honoring `q=` weights in descending order; `zh-TW`, `zh-HK` and `zh-MO` map to `zh-Hant`, every other Chinese tag (including a bare `zh`) maps to `zh-Hans`, and an unrecognized or absent header falls back to **English**. The `urlet_lang` cookie always wins over the header |
+| FR-I18N-3 | Persistence | The chosen language is stored in the cookie `urlet_lang` (`Path=/`, `SameSite=Lax`, `Max-Age` one year, **not** HttpOnly; `Secure` when `URLET_SECURE_COOKIES=true`) |
 | FR-I18N-4 | Switching | `GET /app/lang/{code}?next=<path>` sets the cookie and returns 302; `next` accepts only same-site relative paths, and anything else — including a missing `next` — falls back to `/app`. An unknown `code` is treated as `en` and never fails |
 | FR-I18N-5 | Markup and headers | `<html lang>` reflects the active language, a language switcher is available on the public pages and in the app shell, and HTML responses carry `Content-Language` plus `Vary: Accept-Language, Cookie` (static assets set no `Vary`) |
 | FR-I18N-6 | Fallback | A key missing from a catalog falls back to the English string |
@@ -289,9 +289,9 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 | FR-BOT-4 | Verification | The server issues a form-encoded HTTPS POST (`secret`, `response`, plus `remoteip` when the client address can be determined) to the provider's siteverify endpoint — Cloudflare `https://challenges.cloudflare.com/turnstile/v0/siteverify`, Google `https://www.google.com/recaptcha/api/siteverify` — with a 5-second timeout, through `ureq` 2 over rustls with webpki-roots |
 | FR-BOT-5 | Fail closed | Any failure (timeout, non-2xx status, unparsable response) rejects the request |
 | FR-BOT-6 | Coverage | Enforced on the web registration form, the web sign-in form, the web create-short-link form, `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (JSON field `captcha_token`; a failure returns 400 `captcha_failed`). The session-cookie form of `POST /api/v1/urls` is covered by FR-BOT-7 |
-| FR-BOT-7 | API token routes | `POST /api/v1/urls` is exempt from captcha **only** when it carries an API token (`Authorization: Bearer uw_...`). A session-cookie call is a browser session and is subject to `on_create`; it accepts an optional `captcha_token` |
+| FR-BOT-7 | API token routes | `POST /api/v1/urls` is exempt from captcha **only** when it carries an API token (`Authorization: Bearer ur_...`). A session-cookie call is a browser session and is subject to `on_create`; it accepts an optional `captcha_token` |
 | FR-BOT-8 | Admin UI | The secret key field is write-only: the stored value is never rendered back, and submitting the field empty keeps the current value |
-| FR-BOT-9 | Token hostname | The `hostname` reported in the provider's siteverify response must equal the host of `UWURLS_BASE_URL` or one of `captcha_allowed_hostnames` (comma-separated bare hostnames, trimmed and lowercased, empty items dropped, at most 10 items of 1–253 characters with no whitespace, `/`, `:` or `@`). A response without a `hostname`, or with an empty one, is accepted; a mismatch is rejected and logged at `WARN` with the reported hostname and the accepted candidates |
+| FR-BOT-9 | Token hostname | The `hostname` reported in the provider's siteverify response must equal the host of `URLET_BASE_URL` or one of `captcha_allowed_hostnames` (comma-separated bare hostnames, trimmed and lowercased, empty items dropped, at most 10 items of 1–253 characters with no whitespace, `/`, `:` or `@`). A response without a `hostname`, or with an empty one, is accepted; a mismatch is rejected and logged at `WARN` with the reported hostname and the accepted candidates |
 
 ---
 
@@ -302,7 +302,7 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 | ID | Requirement |
 |----|-------------|
 | NFR-SEC-1 | Passwords: Argon2id; sessions/API tokens/invite codes store only a SHA-256 hash and are looked up by indexed hash comparison (no plaintext is stored, so there is no comparable length difference); the unlock cookie signature is compared in constant time |
-| NFR-SEC-2 | Cookies: `HttpOnly`, `SameSite=Lax`, `Secure` (when `UWURLS_SECURE_COOKIES=true` or the base URL is https) |
+| NFR-SEC-2 | Cookies: `HttpOnly`, `SameSite=Lax`, `Secure` (when `URLET_SECURE_COOKIES=true` or the base URL is https) |
 | NFR-SEC-3 | CSRF: state-changing requests check that `Origin`/`Referer` are same-origin; cookie-authenticated non-GET requests are always verified; Bearer token requests are exempt |
 | NFR-SEC-4 | Security headers: `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`, and `Strict-Transport-Security` over https |
 | NFR-SEC-5 | Open redirect protection: targets must be `http` / `https`; `javascript:`, `data:`, `file:` and similar schemes are rejected |
@@ -313,11 +313,11 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 | NFR-SEC-9b | Account lockout: 30 accumulated failures for the same email within 15 minutes temporarily refuse login (429); this is persisted in the `login_attempts` table and survives a restart; in-memory rate limiter keys are stored as SHA-256 and capped at 50,000 entries |
 | NFR-SEC-10 | All SQL is parameterized (sqlx bind) with no string concatenation (no SQL outside `src/db/`) |
 | NFR-SEC-11 | The audit log covers every sensitive operation |
-| NFR-SEC-12 | If `UWURLS_SECRET` is unset at startup, a random key is generated and persisted in the data directory (created with mode 0600; an existing file with overly broad permissions is tightened automatically) |
-| NFR-SEC-13 | Reverse proxy headers: with `UWURLS_TRUST_PROXY=true`, prefer the proxy-rewritten `X-Real-IP`, then the **rightmost** entry of `X-Forwarded-For` (the leftmost can be forged by the client) |
+| NFR-SEC-12 | If `URLET_SECRET` is unset at startup, a random key is generated and persisted in the data directory (created with mode 0600; an existing file with overly broad permissions is tightened automatically) |
+| NFR-SEC-13 | Reverse proxy headers: with `URLET_TRUST_PROXY=true`, prefer the proxy-rewritten `X-Real-IP`, then the **rightmost** entry of `X-Forwarded-For` (the leftmost can be forged by the client) |
 | NFR-SEC-14 | Password hashing runs in `spawn_blocking` with a semaphore limiting it to 4 concurrent Argon2 computations (about 19 MiB each) |
 | NFR-SEC-15 | Captcha verification fails closed: a form-encoded HTTPS POST with a 5-second timeout to the configured provider, sent through `ureq` 2 over rustls + webpki-roots (no OpenSSL); a timeout, a non-2xx status, or an unparsable body rejects the request. The secret key is never rendered back into the admin UI |
-| NFR-SEC-16 | The language cookie `uwurls_lang` is intentionally not HttpOnly (client code reads it) and holds only a whitelisted language tag; the `next` parameter of the switch endpoint accepts only same-site relative paths to prevent open redirects |
+| NFR-SEC-16 | The language cookie `urlet_lang` is intentionally not HttpOnly (client code reads it) and holds only a whitelisted language tag; the `next` parameter of the switch endpoint accepts only same-site relative paths to prevent open redirects |
 
 ### 5.2 Performance (NFR-PERF)
 
@@ -334,12 +334,12 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 | ID | Requirement |
 |----|-------------|
 | NFR-OPS-1 | `docker compose up -d` completes the deployment; the first start migrates automatically and creates the admin |
-| NFR-OPS-2 | Health checks: `GET /health` (200 JSON) and the `uwurls healthcheck` subcommand (used by the Docker HEALTHCHECK) |
-| NFR-OPS-3 | Data is persisted in the named volume `uwurls-data` at `/data` |
-| NFR-OPS-4 | Logs go to stdout (`tracing`; JSON or compact controlled by `UWURLS_LOG_FORMAT`) |
+| NFR-OPS-2 | Health checks: `GET /health` (200 JSON) and the `urlet healthcheck` subcommand (used by the Docker HEALTHCHECK) |
+| NFR-OPS-3 | Data is persisted in the named volume `urlet-data` at `/data` |
+| NFR-OPS-4 | Logs go to stdout (`tracing`; JSON or compact controlled by `URLET_LOG_FORMAT`) |
 | NFR-OPS-5 | All configuration comes from environment variables (12-factor); `.env.example` documents everything |
 | NFR-OPS-6 | Daily maintenance task: purge expired sessions and optionally prune expired click records |
-| NFR-OPS-7 | Backup = copy `uwurls.db` (after a WAL checkpoint), as described in the README |
+| NFR-OPS-7 | Backup = copy `urlet.db` (after a WAL checkpoint), as described in the README |
 | NFR-OPS-8 | The container runs as a non-root user and works with a read-only root filesystem |
 | NFR-OPS-9 | Locale catalogs are embedded in the binary with `include_str!`, so a deployment is still a single file with no writable asset directory |
 
@@ -425,13 +425,13 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 
 ### 6.5 Seed Data
 
-- `settings`: `site_name=uwurls`, `registration_mode=open`, `default_slug_length=7`,
+- `settings`: `site_name=urlet`, `registration_mode=open`, `default_slug_length=7`,
   `max_urls_per_user=1000`, `default_redirect_type=302`, `analytics_enabled=true`, `click_retention_days=0`.
 - `settings` (v1.1 captcha keys): `captcha_provider=none`, `captcha_site_key=` (empty),
   `captcha_secret_key=` (empty), `captcha_on_register=false`, `captcha_on_login=false`,
   `captcha_on_create=false`, `captcha_allowed_hostnames=` (empty). A non-empty environment variable
   overrides the stored value (FR-BOT-2).
-- `domains`: at startup the default domain is inserted/updated from the host of `UWURLS_BASE_URL` (`is_default=1`).
+- `domains`: at startup the default domain is inserted/updated from the host of `URLET_BASE_URL` (`is_default=1`).
 
 ---
 
@@ -469,7 +469,7 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 | GET | `/api/v1/tags` | My tags (with usage counts) |
 | DELETE | `/api/v1/tags/{id}` | Delete a tag (only removes the association) |
 | GET | `/api/v1/tokens` | My API tokens (never includes plaintext) |
-| POST | `/api/v1/tokens` | `{name, expires_at?}` → 201 `{token: "uw_...", api_token}` **shown only once** |
+| POST | `/api/v1/tokens` | `{name, expires_at?}` → 201 `{token: "ur_...", api_token}` **shown only once** |
 | DELETE | `/api/v1/tokens/{id}` | Revoke → 204 |
 
 ### 7.4 Admin (requires admin)
@@ -496,7 +496,7 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 |--------|------|-------------|
 | GET | `/` | Landing / navigation page (HTML) |
 | GET | `/health` | `{status, version, database, uptime_seconds}` |
-| GET | `/app/lang/{code}` | Set the `uwurls_lang` cookie and 302 to `next`, or to `/app` when `next` is missing or not a same-site relative path |
+| GET | `/app/lang/{code}` | Set the `urlet_lang` cookie and 302 to `next`, or to `/app` when `next` is missing or not a same-site relative path |
 | GET | `/{slug}` | Redirect (302 and friends), password page (HTML), or a 410/404 page |
 | POST | `/{slug}/unlock` | Form or JSON `{password}`; on success a JSON request returns 200 `{ok, redirect}` and a form request 303 → `/{slug}` |
 | GET | `/api/v1/public/urls/{slug}` | Public metadata: `{slug, has_password, is_expired, state, title?}` (**never includes the target**) |
@@ -507,32 +507,32 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `UWURLS_BIND` | `0.0.0.0:8080` | Listen address |
-| `UWURLS_BASE_URL` | `http://localhost:8080` | Public base URL (used to build short links, check CSRF same-origin, and decide cookie `Secure`) |
-| `UWURLS_DATABASE_URL` | `sqlite:///data/uwurls.db?mode=rwc` | SQLite connection string |
-| `UWURLS_DATA_DIR` | Directory containing the database | Where an auto-generated secret is stored |
-| `UWURLS_HEALTHCHECK_URL` | Derived from `UWURLS_BIND` | Target URL for `uwurls healthcheck` |
-| `UWURLS_SECRET` | Auto-generated and persisted | HMAC key for sessions/unlock cookies/IP hashing (at least 16 characters; auto-generated keys are 44-character base64, written to `secret.key` in the data directory) |
-| `UWURLS_ADMIN_EMAIL` | — | Admin email to create/upgrade at startup |
-| `UWURLS_ADMIN_PASSWORD` | — | Password for that admin (only used when the account does not exist yet) |
-| `UWURLS_REGISTRATION` | Read from the settings table | Override the registration mode `open\|invite\|closed` |
-| `UWURLS_SECURE_COOKIES` | Derived from `BASE_URL` | Force the cookie `Secure` flag |
-| `UWURLS_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` / `X-Forwarded-Proto` |
-| `UWURLS_SESSION_TTL_HOURS` | `168` | Session lifetime (hours) |
-| `UWURLS_UNLOCK_TTL_MINUTES` | `30` | Short-link unlock cookie lifetime (minutes) |
-| `UWURLS_LOG` | `info` | `tracing` filter |
-| `UWURLS_LOG_FORMAT` | `compact` | `compact` \| `json` |
-| `UWURLS_DEFAULT_SLUG_LENGTH` | Read from the settings table | Override the automatic slug length (4–16) |
-| `UWURLS_CAPTCHA_PROVIDER` | `none` | Bot protection provider: `none` \| `turnstile` \| `recaptcha`; overrides `captcha_provider` when non-empty |
-| `UWURLS_CAPTCHA_SITE_KEY` | — | Provider site key; overrides `captcha_site_key` when non-empty |
-| `UWURLS_CAPTCHA_SECRET_KEY` | — | Provider secret key; overrides `captcha_secret_key` when non-empty |
-| `UWURLS_CAPTCHA_ON_REGISTER` | `false` | Require captcha on the registration forms; overrides `captcha_on_register` when non-empty |
-| `UWURLS_CAPTCHA_ON_LOGIN` | `false` | Require captcha on the web sign-in form and on `POST /api/v1/auth/login`; overrides `captcha_on_login` when non-empty |
-| `UWURLS_CAPTCHA_ON_CREATE` | `false` | Require captcha on the web create-short-link form; overrides `captcha_on_create` when non-empty |
-| `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` | — | Extra hostnames accepted in the provider's `hostname` response, comma-separated (up to 10); overrides `captcha_allowed_hostnames` when non-empty. The host of `UWURLS_BASE_URL` is always accepted |
+| `URLET_BIND` | `0.0.0.0:8080` | Listen address |
+| `URLET_BASE_URL` | `http://localhost:8080` | Public base URL (used to build short links, check CSRF same-origin, and decide cookie `Secure`) |
+| `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite connection string |
+| `URLET_DATA_DIR` | Directory containing the database | Where an auto-generated secret is stored |
+| `URLET_HEALTHCHECK_URL` | Derived from `URLET_BIND` | Target URL for `urlet healthcheck` |
+| `URLET_SECRET` | Auto-generated and persisted | HMAC key for sessions/unlock cookies/IP hashing (at least 16 characters; auto-generated keys are 44-character base64, written to `secret.key` in the data directory) |
+| `URLET_ADMIN_EMAIL` | — | Admin email to create/upgrade at startup |
+| `URLET_ADMIN_PASSWORD` | — | Password for that admin (only used when the account does not exist yet) |
+| `URLET_REGISTRATION` | Read from the settings table | Override the registration mode `open\|invite\|closed` |
+| `URLET_SECURE_COOKIES` | Derived from `BASE_URL` | Force the cookie `Secure` flag |
+| `URLET_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` / `X-Forwarded-Proto` |
+| `URLET_SESSION_TTL_HOURS` | `168` | Session lifetime (hours) |
+| `URLET_UNLOCK_TTL_MINUTES` | `30` | Short-link unlock cookie lifetime (minutes) |
+| `URLET_LOG` | `info` | `tracing` filter |
+| `URLET_LOG_FORMAT` | `compact` | `compact` \| `json` |
+| `URLET_DEFAULT_SLUG_LENGTH` | Read from the settings table | Override the automatic slug length (4–16) |
+| `URLET_CAPTCHA_PROVIDER` | `none` | Bot protection provider: `none` \| `turnstile` \| `recaptcha`; overrides `captcha_provider` when non-empty |
+| `URLET_CAPTCHA_SITE_KEY` | — | Provider site key; overrides `captcha_site_key` when non-empty |
+| `URLET_CAPTCHA_SECRET_KEY` | — | Provider secret key; overrides `captcha_secret_key` when non-empty |
+| `URLET_CAPTCHA_ON_REGISTER` | `false` | Require captcha on the registration forms; overrides `captcha_on_register` when non-empty |
+| `URLET_CAPTCHA_ON_LOGIN` | `false` | Require captcha on the web sign-in form and on `POST /api/v1/auth/login`; overrides `captcha_on_login` when non-empty |
+| `URLET_CAPTCHA_ON_CREATE` | `false` | Require captcha on the web create-short-link form; overrides `captcha_on_create` when non-empty |
+| `URLET_CAPTCHA_ALLOWED_HOSTNAMES` | — | Extra hostnames accepted in the provider's `hostname` response, comma-separated (up to 10); overrides `captcha_allowed_hostnames` when non-empty. The host of `URLET_BASE_URL` is always accepted |
 
-The captcha variables follow the same override rule as `UWURLS_REGISTRATION` and
-`UWURLS_DEFAULT_SLUG_LENGTH`: a non-empty environment variable wins over the value stored in the
+The captcha variables follow the same override rule as `URLET_REGISTRATION` and
+`URLET_DEFAULT_SLUG_LENGTH`: a non-empty environment variable wins over the value stored in the
 `settings` table (FR-BOT-2).
 
 ---
@@ -542,7 +542,7 @@ The captcha variables follow the same override rule as `UWURLS_REGISTRATION` and
 ### 9.1 Directory Structure
 
 ```
-uwurls/
+urlet/
 ├── Cargo.toml  Cargo.lock  rustfmt.toml
 ├── Dockerfile  .dockerignore
 ├── docker-compose.yml            # single container + named volume
@@ -569,26 +569,26 @@ uwurls/
 
 Multi-stage build:
 1. `rust:1-alpine` + `build-base` → `cargo build --release --target x86_64-unknown-linux-musl` (LTO, `strip`, `opt-level=z`)
-2. `alpine:3.21` → copy the binary plus `ca-certificates` and `tzdata`, create a non-root user, `HEALTHCHECK CMD ["/usr/local/bin/uwurls","healthcheck"]`
+2. `alpine:3.21` → copy the binary plus `ca-certificates` and `tzdata`, create a non-root user, `HEALTHCHECK CMD ["/usr/local/bin/urlet","healthcheck"]`
 
 ### 9.3 Compose Services
 
 ```yaml
 services:
-  uwurls:
+  urlet:
     build: .
-    image: uwurls:latest
+    image: urlet:latest
     ports: ["8080:8080"]
     env_file: [.env]
-    volumes: [uwurls-data:/data]
-    healthcheck: ...   # uwurls healthcheck
+    volumes: [urlet-data:/data]
+    healthcheck: ...   # urlet healthcheck
     restart: unless-stopped
 volumes:
-  uwurls-data:
+  urlet-data:
 ```
 
 `docker-compose.tls.yml`: adds Caddy (80/443, automatic Let's Encrypt) and stops exposing the
-uwurls port, so Caddy reverse-proxies it.
+urlet port, so Caddy reverse-proxies it.
 
 ---
 
@@ -624,13 +624,13 @@ v1.1 additions (this batch):
 
 - [ ] Three locale catalogs (`en`, `zh-Hant`, `zh-Hans`) are embedded in the binary and cover every UI string, with a missing key falling back to English
 - [ ] `Accept-Language` negotiation honors `q=` weights and defaults to English for an unrecognized or absent header
-- [ ] `GET /app/lang/{code}?next=<path>` sets `uwurls_lang` (Path=/, SameSite=Lax, Max-Age one year, not HttpOnly) and returns 302 to `next` or to `/app`, and `next` accepts only same-site relative paths
+- [ ] `GET /app/lang/{code}?next=<path>` sets `urlet_lang` (Path=/, SameSite=Lax, Max-Age one year, not HttpOnly) and returns 302 to `next` or to `/app`, and `next` accepts only same-site relative paths
 - [ ] `<html lang>` reflects the active language and error pages are localized
 - [ ] HTML responses carry `Content-Language` and `Vary: Accept-Language, Cookie`, while static assets set no `Vary`
 - [ ] JSON API responses stay English regardless of the request language
 - [ ] Captcha is enabled only when provider ≠ none, both keys are non-empty, and the matching switch (`on_register`, `on_login` or `on_create`) is true; a non-empty environment variable overrides the stored setting
 - [ ] Captcha verification fails closed on timeout, non-2xx status, or an unparsable response, and is enforced on web register, web sign-in, web create, `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (400 `captcha_failed`)
-- [ ] A reported `hostname` is accepted only when it matches the `UWURLS_BASE_URL` host or `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES`; a missing or empty `hostname` is accepted, and a mismatch is rejected with a `WARN` log line
+- [ ] A reported `hostname` is accepted only when it matches the `URLET_BASE_URL` host or `URLET_CAPTCHA_ALLOWED_HOSTNAMES`; a missing or empty `hostname` is accepted, and a mismatch is rejected with a `WARN` log line
 - [ ] The siteverify call is the only outbound HTTP request, goes through `ureq` 2 over rustls + webpki-roots (no OpenSSL), and is off by default
 - [ ] `POST /api/v1/urls` is captcha-exempt only for API-token calls (a session-cookie call honours `on_create`), and the admin secret-key field is write-only
 - [ ] `GET /` returns 200 as a landing/navigation page for anonymous and signed-in visitors, and no longer redirects to `/app`

@@ -1,7 +1,7 @@
 //! Authentication extractors.
 //!
 //! Two credential types are supported: the session cookie (browser) and an
-//! `Authorization: Bearer uw_...` API token (scripts, integrations).
+//! `Authorization: Bearer ur_...` API token (scripts, integrations).
 
 use axum::extract::FromRequestParts;
 use axum::http::header::AUTHORIZATION;

@@ -1,6 +1,6 @@
 [English](README.md) | **繁體中文**
 
-# uwurls
+# urlet
 
 **輕量化、自託管的多用戶短網址系統。** 單一 Rust 二進位檔 + 單一 SQLite 檔案，
 一個 `docker compose up -d` 就能上線，不需要外部資料庫、快取服務或前端建置流程。
@@ -18,7 +18,7 @@
 | ⏳ 過期機制 | 絕對到期時間與點擊次數上限，過期回 410 Gone |
 | 📊 點擊分析 | 每日趨勢、來源網域、裝置/瀏覽器/作業系統分佈、最近點擊 |
 | 🧩 標籤 | 依標籤篩選與分類，附使用次數 |
-| 🔑 API Token | `Authorization: Bearer uw_...`，可設到期與撤銷 |
+| 🔑 API Token | `Authorization: Bearer ur_...`，可設到期與撤銷 |
 | 🛠 管理後台 | 使用者管理、全站短網址、邀請碼、站台設定、稽核日誌 |
 | 🌐 多語系介面 | 介面提供 English / 繁體中文 / 简体中文 切換；初次訪問依瀏覽器 `Accept-Language` 自動選擇，無法辨識時預設英文 |
 | 🤖 防機器人驗證 | 可透過環境變數或管理後台啟用 Cloudflare Turnstile 或 Google reCAPTCHA v2，套用於註冊、登入與建立短網址表單 |
@@ -33,18 +33,18 @@
 ### Docker Compose（推薦）
 
 ```bash
-git clone <this repo> uwurls && cd uwurls
-cp .env.example .env      # 至少設定 UWURLS_BASE_URL 與管理員帳密
+git clone <this repo> urlet && cd urlet
+cp .env.example .env      # 至少設定 URLET_BASE_URL 與管理員帳密
 docker compose up -d --build
 ```
 
 打開 `http://localhost:8080`。導覽首頁提供登入與註冊入口，請用 `.env` 裡的
-`UWURLS_ADMIN_EMAIL` / `UWURLS_ADMIN_PASSWORD` 登入（伺服器啟動時會自動建立該管理員）。
+`URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` 登入（伺服器啟動時會自動建立該管理員）。
 
 想讓 Caddy 自動申請 HTTPS 憑證：
 
 ```bash
-export UWURLS_DOMAIN=s.example.com
+export URLET_DOMAIN=s.example.com
 docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
 ```
 
@@ -56,7 +56,7 @@ docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
 Registry，因此不必自己編譯 Rust：
 
 ```bash
-export UWURLS_IMAGE=ghcr.io/cxyfer/uwurls:latest   # 正式環境請固定版本標籤
+export URLET_IMAGE=ghcr.io/cxyfer/urlet:latest   # 正式環境請固定版本標籤
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 
@@ -69,25 +69,25 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 
 ```bash
 cargo build --release
-UWURLS_BASE_URL=http://localhost:8080 \
-UWURLS_DATA_DIR=./data \
-UWURLS_ADMIN_EMAIL=admin@example.com \
-UWURLS_ADMIN_PASSWORD=change-me-please \
-./target/release/uwurls serve
+URLET_BASE_URL=http://localhost:8080 \
+URLET_DATA_DIR=./data \
+URLET_ADMIN_EMAIL=admin@example.com \
+URLET_ADMIN_PASSWORD=change-me-please \
+./target/release/urlet serve
 ```
 
 ### 命令列
 
 ```
-uwurls serve                 # 啟動伺服器（預設）
-uwurls migrate               # 套用資料庫遷移後結束
-uwurls healthcheck [URL]     # 健康檢查（容器 HEALTHCHECK 使用，無需 curl）
-uwurls version | help
+urlet serve                 # 啟動伺服器（預設）
+urlet migrate               # 套用資料庫遷移後結束
+urlet healthcheck [URL]     # 健康檢查（容器 HEALTHCHECK 使用，無需 curl）
+urlet version | help
 ```
 
 ## 首次使用
 
-1. 若設定了 `UWURLS_ADMIN_EMAIL` / `UWURLS_ADMIN_PASSWORD`，啟動時會建立管理員。
+1. 若設定了 `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD`，啟動時會建立管理員。
 2. 若資料庫中**沒有任何帳號**，第一位註冊的使用者會自動成為管理員。
 3. 之後可在 **Admin → Invites** 產生邀請碼，並在 **Admin → Settings** 把註冊模式改為
    `invite`（僅邀請碼）或 `closed`（關閉註冊）。
@@ -135,7 +135,7 @@ uwurls version | help
 ## 專案結構
 
 ```
-uwurls/
+urlet/
 ├── .github/workflows/release-image.yml  # 標籤觸發的多架構映像發布
 ├── Cargo.toml
 ├── Dockerfile                  # 多階段建置（rust:alpine → alpine）
@@ -163,7 +163,7 @@ uwurls/
 ## 開發
 
 ```bash
-cargo test                 # 單元 + 整合測試（245 個）
+cargo test                 # 單元 + 整合測試（285 個）
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收（81 項）
@@ -177,7 +177,7 @@ bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 發布採標籤驅動，完整規則見 [`RELEASING.md`](RELEASING.md)（[中文版](docs/zh-TW/RELEASING.md)），
 建立標籤前請先閱讀。簡要流程：更新 [`Cargo.toml`](Cargo.toml) 的 `version`、同步
 `Cargo.lock`、提交，然後推送 annotated 的 `vX.Y.Z` 標籤。workflow 會驗證標籤、建置
-`linux/amd64` 與 `linux/arm64`，並以 semver 標籤發布 `ghcr.io/cxyfer/uwurls`。只有最新正式版會
+`linux/amd64` 與 `linux/arm64`，並以 semver 標籤發布 `ghcr.io/cxyfer/urlet`。只有最新正式版會
 移動 `X`、`X.Y` 與 `latest`；預發布版不會。GitHub Release 之後由人工撰寫。
 
 若只想重建既有標籤，請從 *Actions → Release container image → Run workflow* 手動執行
@@ -204,8 +204,8 @@ bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 - 隱私：不存原始 IP，只存 HMAC 後的 `ip_hash` 與每日輪替的 `visitor_hash`
 - 速率限制：登入（每 IP 與每帳號兩層）、註冊、解鎖、建立短網址、改密碼
 - 防機器人驗證：可選 Turnstile 或 reCAPTCHA v2，套用於註冊、登入與建立短網址，
-  並以 `UWURLS_CAPTCHA_ON_REGISTER`、`UWURLS_CAPTCHA_ON_LOGIN`、
-  `UWURLS_CAPTCHA_ON_CREATE` 逐表單開關
+  並以 `URLET_CAPTCHA_ON_REGISTER`、`URLET_CAPTCHA_ON_LOGIN`、
+  `URLET_CAPTCHA_ON_CREATE` 逐表單開關
 - 帳號鎖定：同一帳號 15 分鐘內 30 次失敗即暫時拒絕登入（持久化，重啟不重置）
 - 反向代理：優先信任代理設定的 `X-Real-IP`，其次取 `X-Forwarded-For` 最右側
 - 密碼雜湊在阻塞執行緒池中進行，並限制同時最多 4 個 Argon2 計算

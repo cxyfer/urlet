@@ -1,11 +1,11 @@
-# uwurls JSON API 參考
+# urlet JSON API 參考
 
 [English](../API.md) | **繁體中文**
 
 - 基底路徑：`/api/v1`
 - 認證方式（二選一）
-  - **Session Cookie**：`POST /api/v1/auth/login` 取得的 `uwurls_session`（瀏覽器表單流程同用）
-  - **API Token**：`Authorization: Bearer uw_...`（在 `/app/account` 建立）
+  - **Session Cookie**：`POST /api/v1/auth/login` 取得的 `urlet_session`（瀏覽器表單流程同用）
+  - **API Token**：`Authorization: Bearer ur_...`（在 `/app/account` 建立）
 - 請求／回應皆為 `application/json; charset=utf-8`
 - 時間一律為 ISO-8601 UTC（`2030-01-31T12:00:00.000Z`）；輸入接受
   `2030-01-31T12:00:00Z`、`2030-01-31 12:00`、`2030-01-31` 等形式
@@ -62,7 +62,7 @@
 `captcha_token` 是網頁註冊表單上驗證元件的 token，只在註冊流程啟用防機器人驗證時檢查，
 否則會忽略此欄位。詳見[防機器人驗證](#防機器人驗證)。
 
-> `POST /api/v1/urls` **只有在使用 API Token（`Authorization: Bearer uw_...`）認證時**才不套用
+> `POST /api/v1/urls` **只有在使用 API Token（`Authorization: Bearer ur_...`）認證時**才不套用
 > 防機器人驗證，因此自動化流程與 CI 不受影響。使用 **Session Cookie** 認證者屬於瀏覽器工作階段，
 > 會受「建立短網址」開關約束，需在 `captcha_token` 帶入 widget token。
 
@@ -77,7 +77,7 @@
 `400` `captcha_failed`（已為登入流程啟用防機器人驗證且驗證未通過時）、`429` 速率限制。
 
 `captcha_token` 是網頁登入表單上驗證元件的 token，只在登入流程啟用防機器人驗證時檢查
-（`captcha_on_login` / `UWURLS_CAPTCHA_ON_LOGIN`），否則會忽略此欄位。
+（`captcha_on_login` / `URLET_CAPTCHA_ON_LOGIN`），否則會忽略此欄位。
 詳見[防機器人驗證](#防機器人驗證)。
 
 ### `POST /api/v1/auth/logout`
@@ -124,8 +124,8 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 ```json
 {
-  "token": "uw_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-  "api_token": { "id": 1, "name": "ci pipeline", "prefix": "uw_abc12345", "scopes": "...", "created_at": "...", "last_used_at": null, "expires_at": "2030-01-01T00:00:00.000Z", "revoked": false, "active": true }
+  "token": "ur_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "api_token": { "id": 1, "name": "ci pipeline", "prefix": "ur_abc12345", "scopes": "...", "created_at": "...", "last_used_at": null, "expires_at": "2030-01-01T00:00:00.000Z", "revoked": false, "active": true }
 }
 ```
 
@@ -307,11 +307,11 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 網頁介面提供三種語言：英文（`en`）、繁體中文（`zh-Hant`）與简体中文（`zh-Hans`）。
 初次訪問時依瀏覽器的 `Accept-Language` 標頭自動選擇，無法辨識時使用英文；
-選擇結果存在 cookie `uwurls_lang`。
+選擇結果存在 cookie `urlet_lang`。
 
 | 方法 | 路徑 | 說明 |
 |------|------|------|
-| GET | `/app/lang/{code}?next=<path>` | 切換介面語言、設定 `uwurls_lang` cookie，接著回 `302` 轉往 `next`（未帶 `next` 或不是同站相對路徑時轉往 `/app`） |
+| GET | `/app/lang/{code}?next=<path>` | 切換介面語言、設定 `urlet_lang` cookie，接著回 `302` 轉往 `next`（未帶 `next` 或不是同站相對路徑時轉往 `/app`） |
 
 `code` 為 `en`、`zh-Hant`、`zh-Hans` 之一；`next` 必須是同站的相對路徑。
 無法辨識的 `code` 會退回英文（不會回錯誤）；未帶 cookie 的訪客則依 `Accept-Language`
@@ -323,7 +323,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 ## 防機器人驗證
 
-uwurls 可以要求三個會產生資料的公開表單通過防機器人驗證：網頁註冊表單、網頁登入表單與
+urlet 可以要求三個會產生資料的公開表單通過防機器人驗證：網頁註冊表單、網頁登入表單與
 網頁建立短網址表單。JSON API 的 `POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`
 則以選填欄位 `captcha_token` 接收驗證元件的權杖。預設關閉，可透過環境變數設定，
 也可在管理後台 **Admin → Settings** 設定；非空的環境變數會覆蓋後台設定。
@@ -353,7 +353,7 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | 網頁建立短網址表單（`POST /app/urls`） | 建立流程啟用時套用 |
 | `POST /api/v1/auth/register` | 註冊流程啟用時套用；以 `captcha_token` 傳入驗證元件的 token；失敗回 `400` 且 `error.code = "captcha_failed"` |
 | `POST /api/v1/auth/login` | 登入流程啟用時套用；以 `captcha_token` 傳入驗證元件的 token；失敗回 `400` 且 `error.code = "captcha_failed"` |
-| `POST /api/v1/urls` | **僅限 API Token 豁免** —— 帶 `Authorization: Bearer uw_...` 時不套用；使用 Session Cookie 者受「建立短網址」開關約束，可帶 optional `captcha_token` |
+| `POST /api/v1/urls` | **僅限 API Token 豁免** —— 帶 `Authorization: Bearer ur_...` 時不套用；使用 Session Cookie 者受「建立短網址」開關約束，可帶 optional `captcha_token` |
 
 ---
 
@@ -417,5 +417,5 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 但**帳號鎖定**會持久化：同一個 email 於 15 分鐘內累積 30 次失敗後，
 即使密碼正確也會回 `429`（`Retry-After: 900`），直到視窗滑過為止。
 
-登入的 IP 來源：`UWURLS_TRUST_PROXY=true` 時優先採用 `X-Real-IP`，
+登入的 IP 來源：`URLET_TRUST_PROXY=true` 時優先採用 `X-Real-IP`，
 其次取 `X-Forwarded-For` 最右側的位址。

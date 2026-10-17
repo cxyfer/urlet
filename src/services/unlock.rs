@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn cookie_names_are_slug_scoped() {
-        assert_eq!(cookie_name("Promo"), "uwurls_unlock_promo");
+        assert_eq!(cookie_name("Promo"), "urlet_unlock_promo");
         assert_ne!(cookie_name("promo"), cookie_name("other"));
     }
 }

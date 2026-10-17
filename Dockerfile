@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# uwurls container image.
+# urlet container image.
 #
 # Stage 1 compiles a static-ish musl binary with the dependencies cached in a
 # separate layer; stage 2 is a minimal alpine runtime that carries nothing but
@@ -17,7 +17,7 @@ WORKDIR /src
 # dependency graph. Rebuilt only when Cargo.toml / Cargo.lock change.
 #
 # Every artifact of the stub crate must be removed afterwards: `COPY` preserves
-# the source mtimes from the build context, so a stale `libuwurls*.rlib` would
+# the source mtimes from the build context, so a stale `liburlet*.rlib` would
 # look newer than the real sources and cargo would happily reuse it.
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir -p src \
@@ -25,44 +25,44 @@ RUN mkdir -p src \
     && echo '' > src/lib.rs \
     && cargo build --release --locked \
     && rm -rf src \
-              target/release/uwurls \
-              target/release/deps/uwurls* \
-              target/release/deps/libuwurls* \
-              target/release/.fingerprint/uwurls-*
+              target/release/urlet \
+              target/release/deps/urlet* \
+              target/release/deps/liburlet* \
+              target/release/.fingerprint/urlet-*
 
 # Application layer.
 COPY migrations ./migrations
 COPY templates ./templates
 COPY src ./src
 RUN cargo build --release --locked \
-    && strip target/release/uwurls \
-    && adduser -D -H -u 10001 uwurls \
-    && install -o uwurls -g uwurls -m 0755 target/release/uwurls /uwurls
+    && strip target/release/urlet \
+    && adduser -D -H -u 10001 urlet \
+    && install -o urlet -g urlet -m 0755 target/release/urlet /urlet
 
 # ------------------------------------------------------------------ runtime
 FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates tzdata \
-    && addgroup -S -g 10001 uwurls \
-    && adduser -S -u 10001 -G uwurls -H -s /sbin/nologin uwurls \
+    && addgroup -S -g 10001 urlet \
+    && adduser -S -u 10001 -G urlet -H -s /sbin/nologin urlet \
     && mkdir -p /data \
-    && chown -R uwurls:uwurls /data
+    && chown -R urlet:urlet /data
 
-COPY --from=builder /uwurls /usr/local/bin/uwurls
+COPY --from=builder /urlet /usr/local/bin/urlet
 
 USER 10001:10001
 
-ENV UWURLS_BIND=0.0.0.0:8080 \
-    UWURLS_DATABASE_URL="sqlite:///data/uwurls.db?mode=rwc" \
-    UWURLS_DATA_DIR=/data \
-    UWURLS_LOG=info \
-    UWURLS_LOG_FORMAT=compact
+ENV URLET_BIND=0.0.0.0:8080 \
+    URLET_DATABASE_URL="sqlite:///data/urlet.db?mode=rwc" \
+    URLET_DATA_DIR=/data \
+    URLET_LOG=info \
+    URLET_LOG_FORMAT=compact
 
 VOLUME ["/data"]
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD ["/usr/local/bin/uwurls", "healthcheck"]
+    CMD ["/usr/local/bin/urlet", "healthcheck"]
 
-ENTRYPOINT ["/usr/local/bin/uwurls"]
+ENTRYPOINT ["/usr/local/bin/urlet"]
 CMD ["serve"]

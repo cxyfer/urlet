@@ -1,4 +1,4 @@
-# uwurls deployment guide
+# urlet deployment guide
 
 **English** | [繁體中文](zh-TW/DEPLOYMENT.md)
 
@@ -18,36 +18,36 @@ its own (putting a TLS terminator in front of it is recommended).
 ## 2. Quick start (HTTP)
 
 ```bash
-git clone <this repo> uwurls && cd uwurls
+git clone <this repo> urlet && cd urlet
 cp .env.example .env
 ```
 
 Edit `.env`:
 
 ```env
-UWURLS_BASE_URL=http://localhost:8080      # public URL; use https:// once TLS is in front (§3)
-UWURLS_PORT=8080                            # host port to publish (read by docker compose only)
-UWURLS_ADMIN_EMAIL=admin@example.com
-UWURLS_ADMIN_PASSWORD=<strong password>
-UWURLS_REGISTRATION=invite                  # optional: open / invite / closed
+URLET_BASE_URL=http://localhost:8080      # public URL; use https:// once TLS is in front (§3)
+URLET_PORT=8080                            # host port to publish (read by docker compose only)
+URLET_ADMIN_EMAIL=admin@example.com
+URLET_ADMIN_PASSWORD=<strong password>
+URLET_REGISTRATION=invite                  # optional: open / invite / closed
 ```
 
-> Keep the scheme of `UWURLS_BASE_URL` in step with how visitors actually reach the instance: an
-> `https://` value makes uwurls mark the session cookie `Secure`, so serving plain HTTP while
-> `UWURLS_BASE_URL` says `https://` signs users out again immediately (§4, §10).
+> Keep the scheme of `URLET_BASE_URL` in step with how visitors actually reach the instance: an
+> `https://` value makes urlet mark the session cookie `Secure`, so serving plain HTTP while
+> `URLET_BASE_URL` says `https://` signs users out again immediately (§4, §10).
 
 Start it:
 
 ```bash
 docker compose up -d --build
-docker compose logs -f uwurls
+docker compose logs -f urlet
 ```
 
 Verify:
 
 ```bash
 curl -fsS http://localhost:8080/health
-docker compose exec uwurls /usr/local/bin/uwurls healthcheck
+docker compose exec urlet /usr/local/bin/urlet healthcheck
 ```
 
 ### 2.1 Prebuilt image
@@ -56,11 +56,11 @@ Every `v*` tag publishes a multi-arch image (`linux/amd64`, `linux/arm64`) to GH
 published release instead of building locally:
 
 ```bash
-export UWURLS_IMAGE=ghcr.io/cxyfer/uwurls:1.1.0   # pin the release you want
+export URLET_IMAGE=ghcr.io/cxyfer/urlet:1.1.0   # pin the release you want
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 
-- `UWURLS_IMAGE` defaults to `ghcr.io/cxyfer/uwurls:latest`; pin an exact version in production
+- `URLET_IMAGE` defaults to `ghcr.io/cxyfer/urlet:latest`; pin an exact version in production
   rather than tracking `latest`. When you do use `latest`, run `docker compose -f
   docker-compose.yml -f docker-compose.image.yml pull` before `up -d` to fetch a newer release.
 - The overlay removes the `build` section, so compose pulls the image and never falls back to a
@@ -74,58 +74,58 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ## 3. Automatic HTTPS (Caddy)
 
 ```bash
-export UWURLS_DOMAIN=s.example.com
+export URLET_DOMAIN=s.example.com
 docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
 ```
 
 - Point the A/AAAA record for `s.example.com` at this host first; Caddy obtains and renews the
   certificate automatically.
-- The overlay stops publishing the uwurls port (it is only reachable inside the compose network)
-  and sets `UWURLS_BASE_URL`, `UWURLS_SECURE_COOKIES=true` and `UWURLS_TRUST_PROXY=true` for you.
-- Certificates live in the `uwurls-caddy-data` volume.
+- The overlay stops publishing the urlet port (it is only reachable inside the compose network)
+  and sets `URLET_BASE_URL`, `URLET_SECURE_COOKIES=true` and `URLET_TRUST_PROXY=true` for you.
+- Certificates live in the `urlet-caddy-data` volume.
 
 If you already run Nginx or Traefik, reverse proxy to `127.0.0.1:8080` yourself and set:
 
 ```env
-UWURLS_BASE_URL=https://s.example.com
-UWURLS_SECURE_COOKIES=true
-UWURLS_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-Forwarded-*
+URLET_BASE_URL=https://s.example.com
+URLET_SECURE_COOKIES=true
+URLET_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-Forwarded-*
 ```
 
 ## 4. Configuration reference
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `UWURLS_BASE_URL` | `http://localhost:8080` | Public URL; used to build short links, for the CSRF same-origin check and to decide whether cookies are `Secure` |
-| `UWURLS_BIND` | `0.0.0.0:8080` | Listen address |
-| `UWURLS_DATABASE_URL` | `sqlite:///data/uwurls.db?mode=rwc` | SQLite connection string |
-| `UWURLS_DATA_DIR` | Directory holding the database | Where the auto-generated secret is written |
-| `UWURLS_SECRET` | Auto-generated | HMAC secret (at least 16 characters, 32+ recommended; the generated one is 44 characters of base64); **changing it invalidates every session and unlock cookie** |
-| `UWURLS_ADMIN_EMAIL` / `UWURLS_ADMIN_PASSWORD` | — | Create or promote the administrator at startup |
-| `UWURLS_REGISTRATION` | Read from the settings table | Override the registration mode: `open` / `invite` / `closed` |
-| `UWURLS_SECURE_COOKIES` | Derived from `BASE_URL` | Force the `Secure` cookie flag. The compose files always pass a value through (default `false`), so in Docker set it to `true` explicitly when you terminate TLS yourself; the TLS overlay does that for you |
-| `UWURLS_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` / `X-Forwarded-Proto` |
-| `UWURLS_SESSION_TTL_HOURS` | `168` | Session lifetime |
-| `UWURLS_UNLOCK_TTL_MINUTES` | `30` | Lifetime of the short link unlock cookie |
-| `UWURLS_DEFAULT_SLUG_LENGTH` | Read from the settings table | Override the generated slug length (4–16) |
-| `UWURLS_CAPTCHA_PROVIDER` | `none` | Bot verification provider: `none` / `turnstile` / `recaptcha` |
-| `UWURLS_CAPTCHA_SITE_KEY` | Empty | Public site key rendered into the widget |
-| `UWURLS_CAPTCHA_SECRET_KEY` | Empty | Secret key used for server-side verification (server only; the admin UI never echoes it back) |
-| `UWURLS_CAPTCHA_ON_REGISTER` | `false` | Apply bot verification to the registration form |
-| `UWURLS_CAPTCHA_ON_LOGIN` | `false` | Apply bot verification to the sign-in form |
-| `UWURLS_CAPTCHA_ON_CREATE` | `false` | Apply bot verification to the create-short-link form |
-| `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` | Empty | Extra hostnames accepted in the provider's `hostname` response, comma-separated (up to 10); the host of `UWURLS_BASE_URL` is always accepted |
-| `UWURLS_LOG` | `info` | tracing filter, for example `uwurls=debug,tower=warn` |
-| `UWURLS_LOG_FORMAT` | `compact` | `compact` or `json` |
-| `UWURLS_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | Target of `uwurls healthcheck` |
+| `URLET_BASE_URL` | `http://localhost:8080` | Public URL; used to build short links, for the CSRF same-origin check and to decide whether cookies are `Secure` |
+| `URLET_BIND` | `0.0.0.0:8080` | Listen address |
+| `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite connection string |
+| `URLET_DATA_DIR` | Directory holding the database | Where the auto-generated secret is written |
+| `URLET_SECRET` | Auto-generated | HMAC secret (at least 16 characters, 32+ recommended; the generated one is 44 characters of base64); **changing it invalidates every session and unlock cookie** |
+| `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` | — | Create or promote the administrator at startup |
+| `URLET_REGISTRATION` | Read from the settings table | Override the registration mode: `open` / `invite` / `closed` |
+| `URLET_SECURE_COOKIES` | Derived from `BASE_URL` | Force the `Secure` cookie flag. The compose files always pass a value through (default `false`), so in Docker set it to `true` explicitly when you terminate TLS yourself; the TLS overlay does that for you |
+| `URLET_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` / `X-Forwarded-Proto` |
+| `URLET_SESSION_TTL_HOURS` | `168` | Session lifetime |
+| `URLET_UNLOCK_TTL_MINUTES` | `30` | Lifetime of the short link unlock cookie |
+| `URLET_DEFAULT_SLUG_LENGTH` | Read from the settings table | Override the generated slug length (4–16) |
+| `URLET_CAPTCHA_PROVIDER` | `none` | Bot verification provider: `none` / `turnstile` / `recaptcha` |
+| `URLET_CAPTCHA_SITE_KEY` | Empty | Public site key rendered into the widget |
+| `URLET_CAPTCHA_SECRET_KEY` | Empty | Secret key used for server-side verification (server only; the admin UI never echoes it back) |
+| `URLET_CAPTCHA_ON_REGISTER` | `false` | Apply bot verification to the registration form |
+| `URLET_CAPTCHA_ON_LOGIN` | `false` | Apply bot verification to the sign-in form |
+| `URLET_CAPTCHA_ON_CREATE` | `false` | Apply bot verification to the create-short-link form |
+| `URLET_CAPTCHA_ALLOWED_HOSTNAMES` | Empty | Extra hostnames accepted in the provider's `hostname` response, comma-separated (up to 10); the host of `URLET_BASE_URL` is always accepted |
+| `URLET_LOG` | `info` | tracing filter, for example `urlet=debug,tower=warn` |
+| `URLET_LOG_FORMAT` | `compact` | `compact` or `json` |
+| `URLET_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | Target of `urlet healthcheck` |
 
-Three further variables are read by the compose files, not by the uwurls binary:
+Three further variables are read by the compose files, not by the urlet binary:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `UWURLS_PORT` | `8080` | Host port that `docker-compose.yml` publishes (the container itself always listens on 8080) |
-| `UWURLS_DOMAIN` | — | Domain the `docker-compose.tls.yml` overlay requests a certificate for; required by that overlay |
-| `UWURLS_IMAGE` | `ghcr.io/cxyfer/uwurls:latest` | Image used by the `docker-compose.image.yml` overlay (ignored without it) |
+| `URLET_PORT` | `8080` | Host port that `docker-compose.yml` publishes (the container itself always listens on 8080) |
+| `URLET_DOMAIN` | — | Domain the `docker-compose.tls.yml` overlay requests a certificate for; required by that overlay |
+| `URLET_IMAGE` | `ghcr.io/cxyfer/urlet:latest` | Image used by the `docker-compose.image.yml` overlay (ignored without it) |
 
 Instance-level settings (site name, registration mode, quota, default redirect type, analytics
 switch, click retention) are edited in **Admin → Settings**; they are stored in the database and
@@ -134,12 +134,12 @@ there.
 
 ## 5. Bot verification (CAPTCHA)
 
-uwurls can require a CAPTCHA on the three public forms that create state: the web registration
+urlet can require a CAPTCHA on the three public forms that create state: the web registration
 form, the web sign-in form, and the web create-short-link form. The JSON API endpoints
 `POST /api/v1/auth/register` and `POST /api/v1/auth/login` are covered as well; they take the
 widget token in the optional `captcha_token` field. `POST /api/v1/urls` is covered too, but only
 for session-cookie calls (the link-creation switch); a call carrying
-`Authorization: Bearer uw_...` stays exempt, so automation keeps working. Verification is disabled
+`Authorization: Bearer ur_...` stays exempt, so automation keeps working. Verification is disabled
 by default.
 
 ### Supported providers
@@ -154,17 +154,17 @@ by default.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `UWURLS_CAPTCHA_PROVIDER` | `none` | `none`, `turnstile` or `recaptcha` |
-| `UWURLS_CAPTCHA_SITE_KEY` | Empty | Public site key |
-| `UWURLS_CAPTCHA_SECRET_KEY` | Empty | Secret key, server side only |
-| `UWURLS_CAPTCHA_ON_REGISTER` | `false` | Verify the registration form |
-| `UWURLS_CAPTCHA_ON_LOGIN` | `false` | Verify the sign-in form |
-| `UWURLS_CAPTCHA_ON_CREATE` | `false` | Verify the create-short-link form |
-| `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` | Empty | Extra hostnames whose tokens are accepted, comma-separated (up to 10) |
+| `URLET_CAPTCHA_PROVIDER` | `none` | `none`, `turnstile` or `recaptcha` |
+| `URLET_CAPTCHA_SITE_KEY` | Empty | Public site key |
+| `URLET_CAPTCHA_SECRET_KEY` | Empty | Secret key, server side only |
+| `URLET_CAPTCHA_ON_REGISTER` | `false` | Verify the registration form |
+| `URLET_CAPTCHA_ON_LOGIN` | `false` | Verify the sign-in form |
+| `URLET_CAPTCHA_ON_CREATE` | `false` | Verify the create-short-link form |
+| `URLET_CAPTCHA_ALLOWED_HOSTNAMES` | Empty | Extra hostnames whose tokens are accepted, comma-separated (up to 10) |
 
 Verification becomes active for a form only when **all four** conditions hold: the provider is
 not `none`, the site key is non-empty, the secret key is non-empty, and the matching `ON_*`
-switch (`UWURLS_CAPTCHA_ON_REGISTER`, `UWURLS_CAPTCHA_ON_LOGIN` or `UWURLS_CAPTCHA_ON_CREATE`) is
+switch (`URLET_CAPTCHA_ON_REGISTER`, `URLET_CAPTCHA_ON_LOGIN` or `URLET_CAPTCHA_ON_CREATE`) is
 `true`. Setting a provider without keys, or keys without a provider, silently leaves verification
 off.
 
@@ -177,21 +177,21 @@ matching switch is enabled.
 ### Token hostname (deployments with several hostnames)
 
 Both providers report the hostname the token was solved on in the `siteverify` response, and
-uwurls verifies it: the token must have been solved **on this instance**. The reported hostname
-must therefore equal the host of `UWURLS_BASE_URL`, or one of the extra hostnames listed in
-`UWURLS_CAPTCHA_ALLOWED_HOSTNAMES`. A response whose `hostname` is missing or empty is accepted —
+urlet verifies it: the token must have been solved **on this instance**. The reported hostname
+must therefore equal the host of `URLET_BASE_URL`, or one of the extra hostnames listed in
+`URLET_CAPTCHA_ALLOWED_HOSTNAMES`. A response whose `hostname` is missing or empty is accepted —
 not every provider or widget configuration returns the field.
 
-`UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` takes a comma-separated list of bare hostnames: each item is
+`URLET_CAPTCHA_ALLOWED_HOSTNAMES` takes a comma-separated list of bare hostnames: each item is
 trimmed and lowercased, empty items are dropped, and at most **10** items of 1–253 characters are
 kept. Entries must not contain whitespace, `/`, `:` or `@`. Leaving it empty means "only the host
-of `UWURLS_BASE_URL`", which is the right setting for the common single-domain deployment.
+of `URLET_BASE_URL`", which is the right setting for the common single-domain deployment.
 
 > **If your instance serves the forms on more than one hostname** (for example a short-link domain
 > and a separate application domain, or an extra alias), list every one of those hostnames here.
-> Tokens solved on a hostname that is neither the `UWURLS_BASE_URL` host nor on the list are
+> Tokens solved on a hostname that is neither the `URLET_BASE_URL` host nor on the list are
 > rejected, which shows up as "the visitor solves the CAPTCHA but still cannot register or sign
-> in". On a mismatch uwurls logs a `WARN` line containing the reported hostname and the list of
+> in". On a mismatch urlet logs a `WARN` line containing the reported hostname and the list of
 > accepted candidates, which is the fastest way to find the missing entry.
 
 ### Getting the keys
@@ -199,7 +199,7 @@ of `UWURLS_BASE_URL`", which is the right setting for the common single-domain d
 **Cloudflare Turnstile**
 
 1. Sign in to the Cloudflare dashboard and open **Turnstile**.
-2. Choose **Add widget**, name it, and add the hostname(s) visitors will use to reach uwurls
+2. Choose **Add widget**, name it, and add the hostname(s) visitors will use to reach urlet
    (for example `s.example.com`; add `localhost` as well if you want to test locally).
 3. Pick a widget mode (Managed is a good default) and create the widget.
 4. Copy the **Site Key** and the **Secret Key**.
@@ -216,17 +216,17 @@ of `UWURLS_BASE_URL`", which is the right setting for the common single-domain d
 In `.env` (docker compose):
 
 ```env
-UWURLS_CAPTCHA_PROVIDER=turnstile
-UWURLS_CAPTCHA_SITE_KEY=0x4AAAAAAA...
-UWURLS_CAPTCHA_SECRET_KEY=0x4AAAAAAA...
-UWURLS_CAPTCHA_ON_REGISTER=true
-UWURLS_CAPTCHA_ON_LOGIN=true
-UWURLS_CAPTCHA_ON_CREATE=true
+URLET_CAPTCHA_PROVIDER=turnstile
+URLET_CAPTCHA_SITE_KEY=0x4AAAAAAA...
+URLET_CAPTCHA_SECRET_KEY=0x4AAAAAAA...
+URLET_CAPTCHA_ON_REGISTER=true
+URLET_CAPTCHA_ON_LOGIN=true
+URLET_CAPTCHA_ON_CREATE=true
 # Optional: extra hostnames whose tokens are accepted (comma-separated)
-# UWURLS_CAPTCHA_ALLOWED_HOSTNAMES=www.example.com,alt.example.com
+# URLET_CAPTCHA_ALLOWED_HOSTNAMES=www.example.com,alt.example.com
 ```
 
-The shipped `docker-compose.yml` passes all seven `UWURLS_CAPTCHA_*` variables through to the
+The shipped `docker-compose.yml` passes all seven `URLET_CAPTCHA_*` variables through to the
 container, so setting them in `.env` is enough — no compose edit is needed. Then
 `docker compose up -d` to recreate the container.
 
@@ -238,29 +238,29 @@ over the admin setting, so configure each value in exactly one place.
 ### `remoteip` behind a reverse proxy
 
 Server-side verification sends the visitor's IP address as `remoteip` so the provider can score
-the request. uwurls resolves that address exactly like the rate limiter does:
+the request. urlet resolves that address exactly like the rate limiter does:
 
-- `UWURLS_TRUST_PROXY=false` (the default) — the address is the direct peer, which is the proxy
-  itself when one sits in front of uwurls. Every visitor then looks like the same client to the
+- `URLET_TRUST_PROXY=false` (the default) — the address is the direct peer, which is the proxy
+  itself when one sits in front of urlet. Every visitor then looks like the same client to the
   provider, and only the token's own signals are used for scoring.
-- `UWURLS_TRUST_PROXY=true` — `X-Real-IP` is preferred, falling back to the rightmost entry of
+- `URLET_TRUST_PROXY=true` — `X-Real-IP` is preferred, falling back to the rightmost entry of
   `X-Forwarded-For`. The shipped `deploy/Caddyfile` sets
   `header_up X-Real-IP {remote_host}`, so Caddy passes the real visitor address.
 - When no address can be determined, `remoteip` is omitted; both provider APIs treat it as
   optional, so verification still works.
 
-Only enable `UWURLS_TRUST_PROXY` when the proxy is guaranteed to overwrite `X-Real-IP` /
+Only enable `URLET_TRUST_PROXY` when the proxy is guaranteed to overwrite `X-Real-IP` /
 `X-Forwarded-For`; otherwise a client can forge its address and also evade the rate limits.
 
 ## 6. Data and backups
 
-All state lives in `/data` (the `uwurls-data` volume):
+All state lives in `/data` (the `urlet-data` volume):
 
 ```
-/data/uwurls.db         # main database
-/data/uwurls.db-wal     # write-ahead log
-/data/uwurls.db-shm
-/data/secret.key        # auto-generated secret when UWURLS_SECRET is unset (0600)
+/data/urlet.db         # main database
+/data/urlet.db-wal     # write-ahead log
+/data/urlet.db-shm
+/data/secret.key        # auto-generated secret when URLET_SECRET is unset (0600)
 ```
 
 ### Backup
@@ -271,9 +271,9 @@ in the WAL. Two safe approaches:
 **Option A (host has `sqlite3`, no downtime)**
 
 ```bash
-VOL=$(docker volume inspect -f '{{ .Mountpoint }}' uwurls-data)
-sudo sqlite3 "$VOL/uwurls.db" ".backup '/tmp/uwurls-$(date +%F).db'"
-mv /tmp/uwurls-$(date +%F).db ./backups/
+VOL=$(docker volume inspect -f '{{ .Mountpoint }}' urlet-data)
+sudo sqlite3 "$VOL/urlet.db" ".backup '/tmp/urlet-$(date +%F).db'"
+mv /tmp/urlet-$(date +%F).db ./backups/
 ```
 
 `.backup` uses the SQLite online backup API and produces a consistent snapshot.
@@ -281,22 +281,22 @@ mv /tmp/uwurls-$(date +%F).db ./backups/
 **Option B (no `sqlite3`)**
 
 ```bash
-docker compose stop uwurls          # a clean shutdown checkpoints the WAL
-docker run --rm -v uwurls-data:/data -v "$PWD":/backup alpine \
-  cp /data/uwurls.db "/backup/uwurls-$(date +%F).db"
-docker compose start uwurls
+docker compose stop urlet          # a clean shutdown checkpoints the WAL
+docker run --rm -v urlet-data:/data -v "$PWD":/backup alpine \
+  cp /data/urlet.db "/backup/urlet-$(date +%F).db"
+docker compose start urlet
 ```
 
 Do not forget `secret.key`: if you rely on the auto-generated secret, back it up (or switch to the
-`UWURLS_SECRET` environment variable), otherwise every session and unlock cookie is invalidated
+`URLET_SECRET` environment variable), otherwise every session and unlock cookie is invalidated
 after a restore.
 
 ### Restore
 
 ```bash
 docker compose down
-docker run --rm -v uwurls-data:/data -v "$PWD":/backup alpine \
-  sh -c 'rm -f /data/uwurls.db*; cp /backup/uwurls-YYYY-MM-DD.db /data/uwurls.db; chown 10001:10001 /data/uwurls.db'
+docker run --rm -v urlet-data:/data -v "$PWD":/backup alpine \
+  sh -c 'rm -f /data/urlet.db*; cp /backup/urlet-YYYY-MM-DD.db /data/urlet.db; chown 10001:10001 /data/urlet.db'
 docker compose up -d
 ```
 
@@ -307,10 +307,10 @@ git pull
 docker compose up -d --build      # migrations are applied at startup
 ```
 
-With a prebuilt image, change `UWURLS_IMAGE` to the new version and recreate the container:
+With a prebuilt image, change `URLET_IMAGE` to the new version and recreate the container:
 
 ```bash
-export UWURLS_IMAGE=ghcr.io/cxyfer/uwurls:1.2.0
+export URLET_IMAGE=ghcr.io/cxyfer/urlet:1.2.0
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 
@@ -333,9 +333,9 @@ upgrading.
 
 ## 8. Reverse proxy notes
 
-- Always set `UWURLS_BASE_URL` to the URL users actually see, otherwise short links point at the
+- Always set `URLET_BASE_URL` to the URL users actually see, otherwise short links point at the
   wrong domain.
-- Only enable `UWURLS_TRUST_PROXY` when the proxy is **guaranteed to overwrite**
+- Only enable `URLET_TRUST_PROXY` when the proxy is **guaranteed to overwrite**
   `X-Forwarded-For` / `X-Real-IP`; otherwise clients can forge their IP and bypass the rate
   limits. The application prefers `X-Real-IP` (set by the proxy itself) and otherwise takes the
   rightmost entry of `X-Forwarded-For`, so appending proxies are safe too. The shipped
@@ -346,8 +346,8 @@ upgrading.
 ## 9. Monitoring
 
 - Health check: `GET /health` (200 = healthy, 503 = database problem)
-- The container ships a `HEALTHCHECK` that runs `uwurls healthcheck` (the image needs no curl)
-- Logs go to stdout; `UWURLS_LOG_FORMAT=json` pairs well with a collector such as Loki or
+- The container ships a `HEALTHCHECK` that runs `urlet healthcheck` (the image needs no curl)
+- Logs go to stdout; `URLET_LOG_FORMAT=json` pairs well with a collector such as Loki or
   CloudWatch
 - Every request carries an `x-request-id` response header, and the same id is written to the log
 - **Admin → Overview** in the admin UI shows the user count, short link count, total clicks and
@@ -358,28 +358,28 @@ upgrading.
 | Symptom | Cause and fix |
 |---------|---------------|
 | Startup fails with a migration checksum mismatch | A file in `migrations/` that was already applied has been edited; restore it or add a new migration instead |
-| Signed out immediately after signing in | `UWURLS_BASE_URL` does not match the real URL, or `UWURLS_SECURE_COOKIES=true` while browsing over HTTP |
-| Short links point at `http://localhost:8080` | `UWURLS_BASE_URL` is not set |
+| Signed out immediately after signing in | `URLET_BASE_URL` does not match the real URL, or `URLET_SECURE_COOKIES=true` while browsing over HTTP |
+| Short links point at `http://localhost:8080` | `URLET_BASE_URL` is not set |
 | `/health` returns 503 after the container starts | Volume permission problem: `/data` must be writable (the container runs as uid 10001) |
 | Rate limits hit legitimate users (many users behind NAT) | Loosen the limits or switch those clients to API tokens; limits are counted per IP |
-| Login returns 429 even with the correct password | The account is temporarily locked (30 failures within 15 minutes). Wait for the window to slide past, or run `sqlite3 /data/uwurls.db "DELETE FROM login_attempts"` to clear it immediately |
+| Login returns 429 even with the correct password | The account is temporarily locked (30 failures within 15 minutes). Wait for the window to slide past, or run `sqlite3 /data/urlet.db "DELETE FROM login_attempts"` to clear it immediately |
 | The CAPTCHA widget never appears | All four conditions must hold: a provider other than `none`, both keys, and the matching `ON_*` switch set to `true` |
 | Every submission fails with `captcha_failed` | The secret key does not belong to the configured provider, the widget's hostname list does not include the domain users visit, or an API client forgot to send the widget token as `captcha_token` |
-| The visitor solves the CAPTCHA but registration or sign-in still fails | The token was solved on a hostname that uwurls does not accept: add it to `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` (the `WARN` log line names the reported hostname and the accepted candidates) |
+| The visitor solves the CAPTCHA but registration or sign-in still fails | The token was solved on a hostname that urlet does not accept: add it to `URLET_CAPTCHA_ALLOWED_HOSTNAMES` (the `WARN` log line names the reported hostname and the accepted candidates) |
 | Want token access after forgetting the admin password | Resetting a password revokes every API token for that account (by design); create a new token afterwards |
-| Forgot the admin password | The startup bootstrap runs only when **both** `UWURLS_ADMIN_EMAIL` and `UWURLS_ADMIN_PASSWORD` are non-empty, and for an account that already exists it merely promotes it to administrator — it does **not** change the password (the password is used only when the account does not exist yet). To recover, point `UWURLS_ADMIN_EMAIL` at another account you can still sign in to (any non-empty `UWURLS_ADMIN_PASSWORD` makes the bootstrap run), restart, and use that account; or overwrite the password hash directly with `sqlite3` |
+| Forgot the admin password | The startup bootstrap runs only when **both** `URLET_ADMIN_EMAIL` and `URLET_ADMIN_PASSWORD` are non-empty, and for an account that already exists it merely promotes it to administrator — it does **not** change the password (the password is used only when the account does not exist yet). To recover, point `URLET_ADMIN_EMAIL` at another account you can still sign in to (any non-empty `URLET_ADMIN_PASSWORD` makes the bootstrap run), restart, and use that account; or overwrite the password hash directly with `sqlite3` |
 | A short link expired and you want it back | Open `/app/urls/{id}` and clear or extend the expiry; the data was never deleted |
 | Want to reuse a slug after deleting a short link | Deliberately not allowed (so old links cannot be hijacked); pick a new slug |
 
 ## 11. Security checklist
 
-- [ ] `UWURLS_BASE_URL` uses `https://`
-- [ ] `UWURLS_ADMIN_PASSWORD` is a strong password, changed at `/app/account` after the first sign-in
-- [ ] `UWURLS_SECRET` is set (at least 32 random characters), or the auto-generated `secret.key` (0600) is backed up
+- [ ] `URLET_BASE_URL` uses `https://`
+- [ ] `URLET_ADMIN_PASSWORD` is a strong password, changed at `/app/account` after the first sign-in
+- [ ] `URLET_SECRET` is set (at least 32 random characters), or the auto-generated `secret.key` (0600) is backed up
 - [ ] Only 80/443 are exposed publicly (Caddy or your existing proxy terminates TLS)
-- [ ] `UWURLS_TRUST_PROXY` matches the actual proxy behavior
+- [ ] `URLET_TRUST_PROXY` matches the actual proxy behavior
 - [ ] The registration mode is `invite` or `closed` (unless you really want open registration)
 - [ ] `click_retention_days` and a backup schedule are planned
-- [ ] A regular update routine exists (rebuild locally or pull a new `UWURLS_IMAGE` tag), with a
+- [ ] A regular update routine exists (rebuild locally or pull a new `URLET_IMAGE` tag), with a
       backup before each upgrade
 - [ ] Bot verification is enabled on registration and sign-in if the instance is reachable by the public internet

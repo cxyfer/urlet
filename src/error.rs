@@ -176,7 +176,7 @@ impl IntoResponse for AppError {
                 status_code: status.as_u16(),
                 title: lang.t(self.title_key()).to_string(),
                 message: crate::i18n::message(lang, &self.message()),
-                site_name: "uwurls".to_string(),
+                site_name: "urlet".to_string(),
                 lang,
             };
             match template.render() {

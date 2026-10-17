@@ -1,4 +1,4 @@
-/* uwurls — progressive enhancement only. Every page works without JS. */
+/* urlet — progressive enhancement only. Every page works without JS. */
 (function () {
     "use strict";
 

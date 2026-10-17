@@ -16,7 +16,7 @@ use crate::config::Config;
 use crate::services::secret;
 
 /// Best effort client address. Proxy headers are only honoured when
-/// `UWURLS_TRUST_PROXY` is enabled, so a spoofed header cannot bypass the
+/// `URLET_TRUST_PROXY` is enabled, so a spoofed header cannot bypass the
 /// rate limiter in a direct-exposure deployment.
 pub fn client_ip_parts(
     headers: &HeaderMap,

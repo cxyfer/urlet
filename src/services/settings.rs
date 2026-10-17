@@ -150,7 +150,7 @@ impl Settings {
                     Err(message) => {
                         tracing::warn!(
                             message = %message,
-                            "ignoring UWURLS_CAPTCHA_ALLOWED_HOSTNAMES"
+                            "ignoring URLET_CAPTCHA_ALLOWED_HOSTNAMES"
                         );
                         None
                     }
@@ -188,7 +188,7 @@ impl Settings {
     pub fn site_name(&self) -> String {
         self.raw("site_name")
             .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| "uwurls".into())
+            .unwrap_or_else(|| "urlet".into())
     }
 
     pub fn registration_mode(&self) -> RegistrationMode {

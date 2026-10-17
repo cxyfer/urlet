@@ -1,4 +1,4 @@
-//! `uwurls` binary: process concerns only (CLI, logging, signals).
+//! `urlet` binary: process concerns only (CLI, logging, signals).
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -6,8 +6,8 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use tracing_subscriber::EnvFilter;
-use uwurls::config::{Config, LogFormat};
-use uwurls::{db, server, VERSION};
+use urlet::config::{Config, LogFormat};
+use urlet::{db, server, VERSION};
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -19,7 +19,7 @@ async fn main() -> ExitCode {
         "migrate" => migrate().await,
         "healthcheck" => return healthcheck(&args),
         "version" | "--version" | "-V" => {
-            println!("uwurls {VERSION}");
+            println!("urlet {VERSION}");
             Ok(())
         }
         "help" | "--help" | "-h" => {
@@ -85,7 +85,7 @@ fn healthcheck(args: &[String]) -> ExitCode {
         .skip(1)
         .find(|arg| arg.starts_with("http://") || arg.starts_with("https://"))
         .cloned()
-        .or_else(|| std::env::var("UWURLS_HEALTHCHECK_URL").ok())
+        .or_else(|| std::env::var("URLET_HEALTHCHECK_URL").ok())
         .unwrap_or_else(default_healthcheck_url);
 
     match probe(&url) {
@@ -101,7 +101,7 @@ fn healthcheck(args: &[String]) -> ExitCode {
 }
 
 fn default_healthcheck_url() -> String {
-    let port = std::env::var("UWURLS_BIND")
+    let port = std::env::var("URLET_BIND")
         .ok()
         .and_then(|bind| bind.rsplit(':').next().map(str::to_string))
         .unwrap_or_else(|| "8080".to_string());
@@ -119,7 +119,7 @@ fn probe(url: &str) -> Result<(), String> {
         .set_write_timeout(Some(Duration::from_secs(5)))
         .map_err(|err| err.to_string())?;
     let request = format!(
-        "GET {path} HTTP/1.1\r\nHost: {address}\r\nUser-Agent: uwurls-healthcheck\r\nConnection: close\r\n\r\n"
+        "GET {path} HTTP/1.1\r\nHost: {address}\r\nUser-Agent: urlet-healthcheck\r\nConnection: close\r\n\r\n"
     );
     stream
         .write_all(request.as_bytes())
@@ -165,10 +165,10 @@ fn parse_http_url(url: &str) -> Result<(String, u16, String), String> {
 
 fn print_help() {
     println!(
-        "uwurls {VERSION} — lightweight multi-user URL shortener
+        "urlet {VERSION} — lightweight multi-user URL shortener
 
 USAGE:
-    uwurls [COMMAND]
+    urlet [COMMAND]
 
 COMMANDS:
     serve                 Start the HTTP server (default)
@@ -178,30 +178,30 @@ COMMANDS:
     help                  Print this help
 
 ENVIRONMENT:
-    UWURLS_BASE_URL       Public base URL, e.g. https://s.example.com
-    UWURLS_BIND           Listen address (default 0.0.0.0:8080)
-    UWURLS_DATABASE_URL   SQLite URL (default sqlite:///data/uwurls.db?mode=rwc)
-    UWURLS_DATA_DIR       Directory for the generated secret (default: db directory)
-    UWURLS_SECRET         HMAC secret; generated into the data dir when unset
-    UWURLS_ADMIN_EMAIL    Bootstrap administrator email
-    UWURLS_ADMIN_PASSWORD Bootstrap administrator password
-    UWURLS_REGISTRATION   open | invite | closed (overrides the settings table)
-    UWURLS_CAPTCHA_PROVIDER
+    URLET_BASE_URL       Public base URL, e.g. https://s.example.com
+    URLET_BIND           Listen address (default 0.0.0.0:8080)
+    URLET_DATABASE_URL   SQLite URL (default sqlite:///data/urlet.db?mode=rwc)
+    URLET_DATA_DIR       Directory for the generated secret (default: db directory)
+    URLET_SECRET         HMAC secret; generated into the data dir when unset
+    URLET_ADMIN_EMAIL    Bootstrap administrator email
+    URLET_ADMIN_PASSWORD Bootstrap administrator password
+    URLET_REGISTRATION   open | invite | closed (overrides the settings table)
+    URLET_CAPTCHA_PROVIDER
                           none | turnstile | recaptcha (overrides the settings table)
-    UWURLS_CAPTCHA_SITE_KEY
+    URLET_CAPTCHA_SITE_KEY
                           Public site key of the chosen provider
-    UWURLS_CAPTCHA_SECRET_KEY
+    URLET_CAPTCHA_SECRET_KEY
                           Secret key of the chosen provider
-    UWURLS_CAPTCHA_ON_REGISTER
+    URLET_CAPTCHA_ON_REGISTER
                           Protect the registration form (true | false)
-    UWURLS_CAPTCHA_ON_LOGIN
+    URLET_CAPTCHA_ON_LOGIN
                           Protect the sign-in form (true | false)
-    UWURLS_CAPTCHA_ON_CREATE
+    URLET_CAPTCHA_ON_CREATE
                           Protect link creation (browser sessions; true | false)
-    UWURLS_SECURE_COOKIES Force the Secure cookie flag
-    UWURLS_TRUST_PROXY    Honour X-Forwarded-For / X-Forwarded-Proto
-    UWURLS_LOG            tracing filter (default info)
-    UWURLS_LOG_FORMAT     compact | json
+    URLET_SECURE_COOKIES Force the Secure cookie flag
+    URLET_TRUST_PROXY    Honour X-Forwarded-For / X-Forwarded-Proto
+    URLET_LOG            tracing filter (default info)
+    URLET_LOG_FORMAT     compact | json
 
 See docs/DEPLOYMENT.md for the full reference."
     );

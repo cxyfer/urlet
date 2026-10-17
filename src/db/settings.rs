@@ -8,7 +8,7 @@ use crate::services::time::now_iso;
 
 /// Every setting the application understands, with its default value.
 pub const DEFAULTS: &[(&str, &str)] = &[
-    ("site_name", "uwurls"),
+    ("site_name", "urlet"),
     ("registration_mode", "open"),
     ("default_slug_length", "7"),
     ("max_urls_per_user", "1000"),

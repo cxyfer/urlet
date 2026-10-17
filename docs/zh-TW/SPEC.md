@@ -1,6 +1,6 @@
 [English](../SPEC.md) | **繁體中文**
 
-# uwurls — 輕量化多用戶短網址系統規格書 (Spec)
+# urlet — 輕量化多用戶短網址系統規格書 (Spec)
 
 > 版本：1.1
 > 狀態：Approved for implementation
@@ -10,7 +10,7 @@
 
 ## 1. 概述 (Overview)
 
-`uwurls` 是一套**自託管、多用戶**的短網址服務。每位使用者擁有自己獨立的短網址空間，
+`urlet` 是一套**自託管、多用戶**的短網址服務。每位使用者擁有自己獨立的短網址空間，
 可建立短網址、設定**密碼保護**與**過期機制**、檢視點擊統計，並透過個人 API Token 以程式方式操作。
 
 系統以「**盡可能輕量**」為最高設計原則：單一 Rust 二進位檔 + 單一 SQLite 檔案，
@@ -34,7 +34,7 @@ v1.1 起介面提供三種語言（英文／繁體中文／簡體中文）、可
 
 先前專案已探索過兩個方向，本專案**繼承其資料模型與功能構想**，但依 P5 重新選型：
 
-| 項目 | OURLS（半成品） | OURLS2（半成品） | **uwurls（本專案）** |
+| 項目 | OURLS（半成品） | OURLS2（半成品） | **urlet（本專案）** |
 |------|----------------|------------------|----------------------|
 | 執行環境 | Axum + MySQL + Redis | Cloudflare Workers (WASM) + D1 | **Axum + SQLite（單二進位）** |
 | 部署 | docker compose（3 容器） | Wrangler / Cloudflare | **docker compose（1 容器）** |
@@ -73,7 +73,7 @@ v1.1 起介面提供三種語言（英文／繁體中文／簡體中文）、可
 
 ```
                         ┌─────────────────────────────────────────────────┐
-                        │ uwurls（單一容器）                              │
+                        │ urlet（單一容器）                              │
 Browser / curl          │                                                 │
 ───────────────────►    │ Axum Router                                     │
 :8080                   │  ├─ /                 導覽首頁                  │
@@ -91,9 +91,9 @@ Browser / curl          │                                                 │
                         │ Services: slug / url / click / ua / ratelimit / │
                         │           audit / settings / i18n / captcha     │
                         │                                                 │
-                        │ sqlx Pool (WAL)  ──►  /data/uwurls.db           │
+                        │ sqlx Pool (WAL)  ──►  /data/urlet.db           │
                         └─────────────────────────────────────────────────┘
-                         named volume: uwurls-data
+                         named volume: urlet-data
 ```
 
 ### 3.2 技術選型與理由
@@ -143,7 +143,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | FR-AUTH-4 | 修改密碼 | 需驗證當前密碼；成功後撤銷該使用者其他所有 Session |
 | FR-AUTH-5 | 個人資料 | 修改顯示名稱；檢視 Email、角色、建立時間 |
 | FR-AUTH-6 | Session 管理 | 檢視自己的登入裝置清單，可撤銷任一 Session |
-| FR-AUTH-7 | 首個使用者 | 若資料庫無任何使用者，第一位註冊者自動成為 `admin`；亦可用 `UWURLS_ADMIN_EMAIL/PASSWORD` 於啟動時建立 |
+| FR-AUTH-7 | 首個使用者 | 若資料庫無任何使用者，第一位註冊者自動成為 `admin`；亦可用 `URLET_ADMIN_EMAIL/PASSWORD` 於啟動時建立 |
 | FR-AUTH-8 | 停權 | `status = suspended` 的使用者無法登入，既有 Session 立即失效 |
 | FR-AUTH-9 | 速率限制 | 登入/註冊/解鎖具記憶體令牌桶限制，並記錄 `login_attempts` 供稽核 |
 
@@ -170,7 +170,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 |----|------|------|
 | FR-PWD-1 | 設定 | 建立/編輯時提供明文密碼，系統以 Argon2id 雜湊存入 `urls.password_hash` |
 | FR-PWD-2 | 存取 | 受保護的短網址直接訪問時回傳 200 + 密碼輸入頁（**不洩漏目標網址**） |
-| FR-PWD-3 | 解鎖 | `POST /{slug}/unlock` 驗證密碼；成功後設定簽章 Cookie `uwurls_unlock_<slug>`（HMAC-SHA256，TTL 30 分鐘） |
+| FR-PWD-3 | 解鎖 | `POST /{slug}/unlock` 驗證密碼；成功後設定簽章 Cookie `urlet_unlock_<slug>`（HMAC-SHA256，TTL 30 分鐘） |
 | FR-PWD-4 | 已解鎖 | 持有效解鎖 Cookie 時直接轉址，並記錄 `password_protected = 1` |
 | FR-PWD-5 | 速率限制 | 每個 (slug, IP) 5 分鐘內最多 10 次嘗試，超過回 429 |
 | FR-PWD-6 | 錯誤處理 | 密碼錯誤回 401 並在頁面上顯示錯誤，不揭露目標網址 |
@@ -212,7 +212,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 
 | ID | 需求 | 說明 |
 |----|------|------|
-| FR-TOK-1 | 建立 | 產生 `uw_` + 32 bytes CSPRNG 熵（base64url 編碼，43 字元）；**僅在建立時顯示一次**明文 |
+| FR-TOK-1 | 建立 | 產生 `ur_` + 32 bytes CSPRNG 熵（base64url 編碼，43 字元）；**僅在建立時顯示一次**明文 |
 | FR-TOK-2 | 儲存 | 僅存 SHA-256 雜湊 + 前 8 字元前綴（供辨識） |
 | FR-TOK-3 | 使用 | `Authorization: Bearer <token>`；與 Session 認證並存 |
 | FR-TOK-4 | 生命週期 | 可設 `expires_at`、可撤銷（`revoked_at`）、記錄 `last_used_at`；使用者改密碼、管理員重設密碼或刪除帳號時，該帳號所有 Token 一併撤銷 |
@@ -240,7 +240,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 - 錯誤代碼：`bad_request` `unauthorized` `forbidden` `not_found` `conflict` `gone` `validation_error` `captcha_failed` `rate_limited` `internal_error`
 - 分頁格式：`{ "items": [...], "page": 1, "per_page": 20, "total": 42, "total_pages": 3 }`
 - 認證：Session Cookie **或** `Authorization: Bearer <api_token>`。
-- **JSON API 回應一律為英文**，不受請求語言或 `uwurls_lang` cookie 影響。
+- **JSON API 回應一律為英文**，不受請求語言或 `urlet_lang` cookie 影響。
 - 端點清單見 §7。
 
 ### 4.10 網頁介面 (FR-UI)
@@ -254,7 +254,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | `/app/urls/{id}` | 網址詳情 | 編輯表單、QR 免（Non-Goal）、統計圖表、最近點擊、刪除 |
 | `/app/account` | 帳號 | 個人資料、修改密碼、Session 清單、API Token 管理 |
 | `/app/admin` | 管理後台 | 使用者、全站網址、邀請碼、設定、稽核日誌 |
-| `/app/lang/{code}` | 語言切換 | 設定 `uwurls_lang` cookie 並 302 至 `next`（未帶時轉往 `/app`） |
+| `/app/lang/{code}` | 語言切換 | 設定 `urlet_lang` cookie 並 302 至 `next`（未帶時轉往 `/app`） |
 | `/{slug}` | 轉址 / 密碼頁 / 410 / 404 | 公開 |
 
 **UI 技術**：Askama 模板 + 手寫 CSS（含 `prefers-color-scheme` 深色模式）+ 約 150 行原生 JS
@@ -265,8 +265,8 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | ID | 需求 | 說明 |
 |----|------|------|
 | FR-I18N-1 | 支援語言 | 介面提供三種語言：英文（`en`，預設）、繁體中文（`zh-Hant`）、簡體中文（`zh-Hans`）。語言目錄為內嵌於二進位檔的 JSON 檔 `src/i18n/{en,zh-Hant,zh-Hans}.json`，由 `src/i18n/mod.rs` 載入 |
-| FR-I18N-2 | 語言選擇 | 初次訪問（無 cookie）時依 `Accept-Language` 協商，正確處理 `q=` 權重並由高至低排序；`zh-TW`、`zh-HK`、`zh-MO` 對應 `zh-Hant`，其餘中文標籤（含單獨的 `zh`）對應 `zh-Hans`，無法辨識或未帶標頭時預設 **英文**。`uwurls_lang` cookie 一律優先於標頭 |
-| FR-I18N-3 | 保存 | 選擇的語言存於 cookie `uwurls_lang`（`Path=/`、`SameSite=Lax`、`Max-Age` 一年、**非** HttpOnly；`UWURLS_SECURE_COOKIES=true` 時加上 `Secure`） |
+| FR-I18N-2 | 語言選擇 | 初次訪問（無 cookie）時依 `Accept-Language` 協商，正確處理 `q=` 權重並由高至低排序；`zh-TW`、`zh-HK`、`zh-MO` 對應 `zh-Hant`，其餘中文標籤（含單獨的 `zh`）對應 `zh-Hans`，無法辨識或未帶標頭時預設 **英文**。`urlet_lang` cookie 一律優先於標頭 |
+| FR-I18N-3 | 保存 | 選擇的語言存於 cookie `urlet_lang`（`Path=/`、`SameSite=Lax`、`Max-Age` 一年、**非** HttpOnly；`URLET_SECURE_COOKIES=true` 時加上 `Secure`） |
 | FR-I18N-4 | 切換 | `GET /app/lang/{code}?next=<path>` 設定 cookie 後回 302；`next` 只接受同站相對路徑，其餘（含未帶 `next`）一律回退 `/app`。無法辨識的 `code` 一律視為 `en`，不會回錯誤 |
 | FR-I18N-5 | 標記與標頭 | `<html lang>` 會反映當前語言；公開頁面與應用外框皆提供語言切換入口；HTML 回應會帶 `Content-Language` 與 `Vary: Accept-Language, Cookie`（靜態資源不設 `Vary`） |
 | FR-I18N-6 | 回退 | 語言目錄缺少的 key 回退使用英文字串 |
@@ -283,9 +283,9 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | FR-BOT-4 | 驗證方式 | 伺服器端以表單編碼（form-encoded）HTTPS POST 呼叫供應商的 siteverify 端點（帶 `secret`、`response`，以及可判定時的 `remoteip`）：Cloudflare `https://challenges.cloudflare.com/turnstile/v0/siteverify`、Google `https://www.google.com/recaptcha/api/siteverify`，逾時 5 秒，並透過 `ureq` 2 + rustls + webpki-roots 發出 |
 | FR-BOT-5 | 失敗關閉 | 任何失敗（逾時、非 2xx、回應無法解析）一律拒絕（fail closed） |
 | FR-BOT-6 | 套用範圍 | 網頁註冊表單、網頁登入表單、網頁建立短網址表單，以及 `POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`（JSON 欄位 `captcha_token`，失敗回 400 `captcha_failed`）。`POST /api/v1/urls` 的 Session Cookie 呼叫見 FR-BOT-7 |
-| FR-BOT-7 | API Token 路徑 | `POST /api/v1/urls` **僅在**帶 API Token（`Authorization: Bearer uw_...`）時豁免驗證碼。使用 Session Cookie 者屬瀏覽器工作階段，受 `on_create` 約束，可帶 optional `captcha_token` |
+| FR-BOT-7 | API Token 路徑 | `POST /api/v1/urls` **僅在**帶 API Token（`Authorization: Bearer ur_...`）時豁免驗證碼。使用 Session Cookie 者屬瀏覽器工作階段，受 `on_create` 約束，可帶 optional `captcha_token` |
 | FR-BOT-8 | 後台介面 | secret key 欄位為唯寫：不回顯已存值，留白送出表示維持原值 |
-| FR-BOT-9 | Token 主機名稱 | 供應商 siteverify 回應中的 `hostname` 必須等於 `UWURLS_BASE_URL` 的主機名稱，或 `captcha_allowed_hostnames` 中的任一個（逗號分隔的裸主機名稱，逐項 trim、轉小寫、丟棄空項，最多 10 項、每項 1–253 字元且不得含空白、`/`、`:`、`@`）。回應未帶 `hostname` 或該欄位為空字串時予以接受；不符時拒絕並記一筆 `WARN`，內容含回報的 hostname 與目前接受的候選清單 |
+| FR-BOT-9 | Token 主機名稱 | 供應商 siteverify 回應中的 `hostname` 必須等於 `URLET_BASE_URL` 的主機名稱，或 `captcha_allowed_hostnames` 中的任一個（逗號分隔的裸主機名稱，逐項 trim、轉小寫、丟棄空項，最多 10 項、每項 1–253 字元且不得含空白、`/`、`:`、`@`）。回應未帶 `hostname` 或該欄位為空字串時予以接受；不符時拒絕並記一筆 `WARN`，內容含回報的 hostname 與目前接受的候選清單 |
 
 ---
 
@@ -296,7 +296,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | ID | 需求 |
 |----|------|
 | NFR-SEC-1 | 密碼：Argon2id；Session/API Token/邀請碼僅存 SHA-256 雜湊，查詢以雜湊值進行索引比對（不儲存明文，因此無可比較的長度差異）；解鎖 Cookie 的簽章以常數時間比較 |
-| NFR-SEC-2 | Cookie：`HttpOnly`、`SameSite=Lax`、`Secure`（當 `UWURLS_SECURE_COOKIES=true` 或 Base URL 為 https） |
+| NFR-SEC-2 | Cookie：`HttpOnly`、`SameSite=Lax`、`Secure`（當 `URLET_SECURE_COOKIES=true` 或 Base URL 為 https） |
 | NFR-SEC-3 | CSRF：狀態變更請求檢查 `Origin`/`Referer` 同源；Cookie 認證 + 非 GET 一律驗證；Bearer Token 請求豁免 |
 | NFR-SEC-4 | 安全標頭：`Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: strict-origin-when-cross-origin`、`X-Frame-Options: DENY`、https 時 `Strict-Transport-Security` |
 | NFR-SEC-5 | 開放轉址防護：目標僅允許 `http` / `https`；拒絕 `javascript:`、`data:`、`file:` 等 |
@@ -307,11 +307,11 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | NFR-SEC-9b | 帳號鎖定：同一 email 15 分鐘內累積 30 次失敗即暫時拒絕登入（回 429），由 `login_attempts` 表持久化，重啟不重置；記憶體速率限制器的 key 以 SHA-256 儲存並有 5 萬筆上限 |
 | NFR-SEC-10 | SQL 一律參數化（sqlx bind），無字串拼接（`src/db/` 之外不得出現 SQL） |
 | NFR-SEC-11 | 稽核日誌涵蓋所有敏感操作 |
-| NFR-SEC-12 | 啟動時若 `UWURLS_SECRET` 未設定，於資料目錄產生並持久化隨機密鑰（建立時即為 0600；既有檔案若權限過寬會自動收緊） |
-| NFR-SEC-13 | 反向代理標頭：`UWURLS_TRUST_PROXY=true` 時優先採用代理自行改寫的 `X-Real-IP`，其次取 `X-Forwarded-For` **最右側**（最左側可被客戶端偽造） |
+| NFR-SEC-12 | 啟動時若 `URLET_SECRET` 未設定，於資料目錄產生並持久化隨機密鑰（建立時即為 0600；既有檔案若權限過寬會自動收緊） |
+| NFR-SEC-13 | 反向代理標頭：`URLET_TRUST_PROXY=true` 時優先採用代理自行改寫的 `X-Real-IP`，其次取 `X-Forwarded-For` **最右側**（最左側可被客戶端偽造） |
 | NFR-SEC-14 | 密碼雜湊在 `spawn_blocking` 中執行，並以信號量限制同時最多 4 個 Argon2 計算（每個約 19 MiB） |
 | NFR-SEC-15 | 驗證碼驗證失敗一律關閉：以表單編碼 HTTPS POST 搭配 5 秒逾時呼叫設定的供應商，並透過 `ureq` 2 + rustls + webpki-roots 發出（不需 OpenSSL）；逾時、非 2xx 或無法解析的回應一律拒絕請求。secret key 永不回顯於管理後台 |
-| NFR-SEC-16 | 語言 cookie `uwurls_lang` 刻意不設 HttpOnly（由前端程式讀取），內容僅為白名單語言標籤；切換端點的 `next` 只接受同站相對路徑，以防開放轉址 |
+| NFR-SEC-16 | 語言 cookie `urlet_lang` 刻意不設 HttpOnly（由前端程式讀取），內容僅為白名單語言標籤；切換端點的 `next` 只接受同站相對路徑，以防開放轉址 |
 
 ### 5.2 效能 (NFR-PERF)
 
@@ -328,12 +328,12 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | ID | 需求 |
 |----|------|
 | NFR-OPS-1 | `docker compose up -d` 即完成部署；首次啟動自動遷移 + 建立管理員 |
-| NFR-OPS-2 | 健康檢查：`GET /health`（200 JSON）與 `uwurls healthcheck` 子命令（供 Docker HEALTHCHECK 使用） |
-| NFR-OPS-3 | 資料持久化於 named volume `uwurls-data`，路徑 `/data` |
-| NFR-OPS-4 | 日誌輸出 stdout（`tracing`，JSON 或 compact 由 `UWURLS_LOG_FORMAT` 控制） |
+| NFR-OPS-2 | 健康檢查：`GET /health`（200 JSON）與 `urlet healthcheck` 子命令（供 Docker HEALTHCHECK 使用） |
+| NFR-OPS-3 | 資料持久化於 named volume `urlet-data`，路徑 `/data` |
+| NFR-OPS-4 | 日誌輸出 stdout（`tracing`，JSON 或 compact 由 `URLET_LOG_FORMAT` 控制） |
 | NFR-OPS-5 | 設定全部來自環境變數（12-factor），`.env.example` 完整說明 |
 | NFR-OPS-6 | 每日維護任務：清理過期 Session、可選清理過期點擊紀錄 |
-| NFR-OPS-7 | 備份 = 複製 `uwurls.db`（WAL checkpoint 後），README 說明 |
+| NFR-OPS-7 | 備份 = 複製 `urlet.db`（WAL checkpoint 後），README 說明 |
 | NFR-OPS-8 | 非 root 使用者執行容器；唯讀根檔案系統可運作 |
 | NFR-OPS-9 | 語言目錄以 `include_str!` 內嵌於二進位檔，部署仍為單一檔案，不需要可寫入的資產目錄 |
 
@@ -418,12 +418,12 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 
 ### 6.5 預設資料 (seed)
 
-- `settings`：`site_name=uwurls`、`registration_mode=open`、`default_slug_length=7`、
+- `settings`：`site_name=urlet`、`registration_mode=open`、`default_slug_length=7`、
   `max_urls_per_user=1000`、`default_redirect_type=302`、`analytics_enabled=true`、`click_retention_days=0`。
 - `settings`（v1.1 驗證碼 key）：`captcha_provider=none`、`captcha_site_key=`（空）、
   `captcha_secret_key=`（空）、`captcha_on_register=false`、`captcha_on_login=false`、
   `captcha_on_create=false`、`captcha_allowed_hostnames=`（空）。非空的環境變數會覆蓋表中值（FR-BOT-2）。
-- `domains`：啟動時依 `UWURLS_BASE_URL` 的 host 插入/更新預設網域（`is_default=1`）。
+- `domains`：啟動時依 `URLET_BASE_URL` 的 host 插入/更新預設網域（`is_default=1`）。
 
 ---
 
@@ -461,7 +461,7 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 | GET | `/api/v1/tags` | 我的標籤（含使用次數） |
 | DELETE | `/api/v1/tags/{id}` | 刪除標籤（僅解除關聯） |
 | GET | `/api/v1/tokens` | 我的 API Token 清單（不含明文） |
-| POST | `/api/v1/tokens` | `{name, expires_at?}` → 201 `{token: "uw_...", api_token}` **僅此一次** |
+| POST | `/api/v1/tokens` | `{name, expires_at?}` → 201 `{token: "ur_...", api_token}` **僅此一次** |
 | DELETE | `/api/v1/tokens/{id}` | 撤銷 → 204 |
 
 ### 7.4 管理（需 admin）
@@ -488,7 +488,7 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 |------|------|------|
 | GET | `/` | 導覽首頁（HTML） |
 | GET | `/health` | `{status, version, database, uptime_seconds}` |
-| GET | `/app/lang/{code}` | 設定 `uwurls_lang` cookie 並 302 至 `next`；`next` 未帶或不是同站相對路徑時轉往 `/app` |
+| GET | `/app/lang/{code}` | 設定 `urlet_lang` cookie 並 302 至 `next`；`next` 未帶或不是同站相對路徑時轉往 `/app` |
 | GET | `/{slug}` | 轉址（302 等）或密碼頁（HTML）或 410/404 頁 |
 | POST | `/{slug}/unlock` | 表單或 JSON `{password}`；成功時 JSON 回 200 `{ok, redirect}`、表單 303 → `/{slug}` |
 | GET | `/api/v1/public/urls/{slug}` | 公開中介資料：`{slug, has_password, is_expired, state, title?}`（**不含 target**） |
@@ -499,31 +499,31 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 
 | 變數 | 預設 | 說明 |
 |------|------|------|
-| `UWURLS_BIND` | `0.0.0.0:8080` | 監聽位址 |
-| `UWURLS_BASE_URL` | `http://localhost:8080` | 對外網址（用於產生短網址、CSRF 同源檢查、Cookie Secure 判斷） |
-| `UWURLS_DATABASE_URL` | `sqlite:///data/uwurls.db?mode=rwc` | SQLite 連線字串 |
-| `UWURLS_DATA_DIR` | 資料庫所在目錄 | 自動產生密鑰的存放位置 |
-| `UWURLS_HEALTHCHECK_URL` | 由 `UWURLS_BIND` 推導 | `uwurls healthcheck` 的目標 URL |
-| `UWURLS_SECRET` | 自動產生並存檔 | Session/解鎖 Cookie/IP 雜湊的 HMAC 密鑰（至少 16 字元；自動產生的為 44 字元 base64，寫入資料目錄的 `secret.key`） |
-| `UWURLS_ADMIN_EMAIL` | — | 啟動時建立/升級的管理員 Email |
-| `UWURLS_ADMIN_PASSWORD` | — | 上述管理員密碼（僅在帳號不存在時使用） |
-| `UWURLS_REGISTRATION` | 讀取設定表 | 覆寫註冊模式 `open\|invite\|closed` |
-| `UWURLS_SECURE_COOKIES` | 依 `BASE_URL` 判斷 | 強制 Cookie `Secure` |
-| `UWURLS_TRUST_PROXY` | `false` | 信任 `X-Forwarded-For` / `X-Forwarded-Proto` |
-| `UWURLS_SESSION_TTL_HOURS` | `168` | Session 有效期（小時） |
-| `UWURLS_UNLOCK_TTL_MINUTES` | `30` | 短網址解鎖 Cookie 有效期（分鐘） |
-| `UWURLS_LOG` | `info` | `tracing` 過濾器 |
-| `UWURLS_LOG_FORMAT` | `compact` | `compact` \| `json` |
-| `UWURLS_DEFAULT_SLUG_LENGTH` | 讀取設定表 | 覆寫自動 Slug 長度（4–16） |
-| `UWURLS_CAPTCHA_PROVIDER` | `none` | 防機器人驗證供應商：`none` \| `turnstile` \| `recaptcha`；非空時覆蓋 `captcha_provider` |
-| `UWURLS_CAPTCHA_SITE_KEY` | — | 供應商 site key；非空時覆蓋 `captcha_site_key` |
-| `UWURLS_CAPTCHA_SECRET_KEY` | — | 供應商 secret key；非空時覆蓋 `captcha_secret_key` |
-| `UWURLS_CAPTCHA_ON_REGISTER` | `false` | 註冊表單是否要求驗證碼；非空時覆蓋 `captcha_on_register` |
-| `UWURLS_CAPTCHA_ON_LOGIN` | `false` | 網頁登入表單與 `POST /api/v1/auth/login` 是否要求驗證碼；非空時覆蓋 `captcha_on_login` |
-| `UWURLS_CAPTCHA_ON_CREATE` | `false` | 網頁建立短網址表單是否要求驗證碼；非空時覆蓋 `captcha_on_create` |
-| `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` | — | 供應商 `hostname` 回應中額外接受的主機名稱，以逗號分隔（最多 10 項）；非空時覆蓋 `captcha_allowed_hostnames`。`UWURLS_BASE_URL` 的主機名稱一律接受 |
+| `URLET_BIND` | `0.0.0.0:8080` | 監聽位址 |
+| `URLET_BASE_URL` | `http://localhost:8080` | 對外網址（用於產生短網址、CSRF 同源檢查、Cookie Secure 判斷） |
+| `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite 連線字串 |
+| `URLET_DATA_DIR` | 資料庫所在目錄 | 自動產生密鑰的存放位置 |
+| `URLET_HEALTHCHECK_URL` | 由 `URLET_BIND` 推導 | `urlet healthcheck` 的目標 URL |
+| `URLET_SECRET` | 自動產生並存檔 | Session/解鎖 Cookie/IP 雜湊的 HMAC 密鑰（至少 16 字元；自動產生的為 44 字元 base64，寫入資料目錄的 `secret.key`） |
+| `URLET_ADMIN_EMAIL` | — | 啟動時建立/升級的管理員 Email |
+| `URLET_ADMIN_PASSWORD` | — | 上述管理員密碼（僅在帳號不存在時使用） |
+| `URLET_REGISTRATION` | 讀取設定表 | 覆寫註冊模式 `open\|invite\|closed` |
+| `URLET_SECURE_COOKIES` | 依 `BASE_URL` 判斷 | 強制 Cookie `Secure` |
+| `URLET_TRUST_PROXY` | `false` | 信任 `X-Forwarded-For` / `X-Forwarded-Proto` |
+| `URLET_SESSION_TTL_HOURS` | `168` | Session 有效期（小時） |
+| `URLET_UNLOCK_TTL_MINUTES` | `30` | 短網址解鎖 Cookie 有效期（分鐘） |
+| `URLET_LOG` | `info` | `tracing` 過濾器 |
+| `URLET_LOG_FORMAT` | `compact` | `compact` \| `json` |
+| `URLET_DEFAULT_SLUG_LENGTH` | 讀取設定表 | 覆寫自動 Slug 長度（4–16） |
+| `URLET_CAPTCHA_PROVIDER` | `none` | 防機器人驗證供應商：`none` \| `turnstile` \| `recaptcha`；非空時覆蓋 `captcha_provider` |
+| `URLET_CAPTCHA_SITE_KEY` | — | 供應商 site key；非空時覆蓋 `captcha_site_key` |
+| `URLET_CAPTCHA_SECRET_KEY` | — | 供應商 secret key；非空時覆蓋 `captcha_secret_key` |
+| `URLET_CAPTCHA_ON_REGISTER` | `false` | 註冊表單是否要求驗證碼；非空時覆蓋 `captcha_on_register` |
+| `URLET_CAPTCHA_ON_LOGIN` | `false` | 網頁登入表單與 `POST /api/v1/auth/login` 是否要求驗證碼；非空時覆蓋 `captcha_on_login` |
+| `URLET_CAPTCHA_ON_CREATE` | `false` | 網頁建立短網址表單是否要求驗證碼；非空時覆蓋 `captcha_on_create` |
+| `URLET_CAPTCHA_ALLOWED_HOSTNAMES` | — | 供應商 `hostname` 回應中額外接受的主機名稱，以逗號分隔（最多 10 項）；非空時覆蓋 `captcha_allowed_hostnames`。`URLET_BASE_URL` 的主機名稱一律接受 |
 
-驗證碼相關變數的覆蓋規則與 `UWURLS_REGISTRATION`、`UWURLS_DEFAULT_SLUG_LENGTH` 相同：
+驗證碼相關變數的覆蓋規則與 `URLET_REGISTRATION`、`URLET_DEFAULT_SLUG_LENGTH` 相同：
 非空的環境變數優先於 `settings` 表中的值（FR-BOT-2）。
 
 ---
@@ -533,7 +533,7 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 ### 9.1 目錄結構
 
 ```
-uwurls/
+urlet/
 ├── Cargo.toml  Cargo.lock  rustfmt.toml
 ├── Dockerfile  .dockerignore
 ├── docker-compose.yml            # 單一容器 + named volume
@@ -560,26 +560,26 @@ uwurls/
 
 多階段建置：
 1. `rust:1-alpine` + `build-base` → `cargo build --release --target x86_64-unknown-linux-musl`（LTO、`strip`、`opt-level=z`）
-2. `alpine:3.21` → 複製二進位 + `ca-certificates` + `tzdata`，建立非 root 使用者，`HEALTHCHECK CMD ["/usr/local/bin/uwurls","healthcheck"]`
+2. `alpine:3.21` → 複製二進位 + `ca-certificates` + `tzdata`，建立非 root 使用者，`HEALTHCHECK CMD ["/usr/local/bin/urlet","healthcheck"]`
 
 ### 9.3 Compose 服務
 
 ```yaml
 services:
-  uwurls:
+  urlet:
     build: .
-    image: uwurls:latest
+    image: urlet:latest
     ports: ["8080:8080"]
     env_file: [.env]
-    volumes: [uwurls-data:/data]
-    healthcheck: ...   # uwurls healthcheck
+    volumes: [urlet-data:/data]
+    healthcheck: ...   # urlet healthcheck
     restart: unless-stopped
 volumes:
-  uwurls-data:
+  urlet-data:
 ```
 
 `docker-compose.tls.yml`：額外加入 Caddy（80/443、自動 Let's Encrypt），
-uwurls 不對外暴露連接埠，由 Caddy 反向代理。
+urlet 不對外暴露連接埠，由 Caddy 反向代理。
 
 ---
 
@@ -615,13 +615,13 @@ v1.1 新增項目（本批次）：
 
 - [ ] 三份語言目錄（`en`、`zh-Hant`、`zh-Hans`）內嵌於二進位檔並涵蓋所有介面字串，缺少 key 時回退英文
 - [ ] `Accept-Language` 協商正確處理 `q=` 權重，無法辨識或未帶標頭時預設英文
-- [ ] `GET /app/lang/{code}?next=<path>` 設定 `uwurls_lang`（Path=/、SameSite=Lax、Max-Age 一年、非 HttpOnly）並回 302 轉往 `next` 或 `/app`，且 `next` 只接受同站相對路徑
+- [ ] `GET /app/lang/{code}?next=<path>` 設定 `urlet_lang`（Path=/、SameSite=Lax、Max-Age 一年、非 HttpOnly）並回 302 轉往 `next` 或 `/app`，且 `next` 只接受同站相對路徑
 - [ ] `<html lang>` 反映當前語言，錯誤頁面亦依語言呈現
 - [ ] HTML 回應帶 `Content-Language` 與 `Vary: Accept-Language, Cookie`；靜態資源不設 `Vary`
 - [ ] JSON API 回應不受請求語言影響，一律英文
 - [ ] 驗證碼僅在 provider ≠ none、兩把 key 非空、對應開關（`on_register`、`on_login` 或 `on_create`）為 true 時啟用；非空環境變數覆蓋後台設定
 - [ ] 驗證碼逾時、非 2xx 或無法解析時一律拒絕，並套用於網頁註冊、網頁登入、網頁建立、`POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`（400 `captcha_failed`）
-- [ ] 回報的 `hostname` 僅在符合 `UWURLS_BASE_URL` 的主機名稱或 `UWURLS_CAPTCHA_ALLOWED_HOSTNAMES` 時接受；未帶或空字串時接受，不符時拒絕並記一筆 `WARN`
+- [ ] 回報的 `hostname` 僅在符合 `URLET_BASE_URL` 的主機名稱或 `URLET_CAPTCHA_ALLOWED_HOSTNAMES` 時接受；未帶或空字串時接受，不符時拒絕並記一筆 `WARN`
 - [ ] siteverify 是系統唯一的對外 HTTP 請求，透過 `ureq` 2 + rustls + webpki-roots（不需 OpenSSL）發出，且預設關閉
 - [ ] `POST /api/v1/urls` 僅在 API Token 呼叫時豁免驗證碼（Session Cookie 呼叫受 `on_create` 約束）；後台 secret key 欄位為唯寫
 - [ ] `GET /` 對未登入與已登入使用者皆回 200 的導覽首頁，不再 302 至 `/app`

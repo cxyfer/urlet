@@ -151,7 +151,7 @@ pub async fn list(
 /// Bot protection applies to the **browser session** path only. The endpoint
 /// accepts two credentials, and they are not equally trusted:
 ///
-/// * an `Authorization: Bearer uw_...` API token — exempt, because a script that
+/// * an `Authorization: Bearer ur_...` API token — exempt, because a script that
 ///   already holds a long lived credential issued from the account page is not
 ///   the threat a captcha guards against, and challenging it would break every
 ///   existing integration;

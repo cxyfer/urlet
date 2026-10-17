@@ -1,4 +1,4 @@
-# uwurls 發布流程
+# urlet 發布流程
 
 [English](../../RELEASING.md) | **繁體中文**
 
@@ -27,7 +27,7 @@
 | 手動重建（預設） | `1.2.3` | 只重建精確版本 |
 | 手動重建 + 勾選「update moving tags」 | `1.2.3`、`1.2`、`1`、`latest` | 僅當 `1.2.3` 是最新正式版時適用 |
 
-完整映像名稱為 `ghcr.io/cxyfer/uwurls`，由 `github.repository` 推導；fork 會發布到自己的命名空間。
+完整映像名稱為 `ghcr.io/cxyfer/urlet`，由 `github.repository` 推導；fork 會發布到自己的命名空間。
 
 ## 規則
 
@@ -36,7 +36,7 @@
 2. **升版後必須更新 `Cargo.lock`。** [Dockerfile](../../Dockerfile) 使用
    `cargo build --locked`，根套件版本不同步會讓映像建置失敗：
    ```bash
-   cargo update -p uwurls
+   cargo update -p urlet
    cargo metadata --locked --format-version 1 >/dev/null
    ```
 3. **只能標記已合併的 commit。** workflow 檔案必須存在於被標記的 commit 上，因此請先推送
@@ -84,7 +84,7 @@ version = "1.2.3"
 更新 lockfile 並確認它是最新的：
 
 ```bash
-cargo update -p uwurls
+cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
 ```
 
@@ -114,8 +114,8 @@ gh run list --workflow=release-image.yml --limit 5
 gh run watch <run-id>
 
 docker login ghcr.io      # 只有私有套件需要
-docker buildx imagetools inspect ghcr.io/cxyfer/uwurls:1.2.3
-docker run --rm ghcr.io/cxyfer/uwurls:1.2.3 version   # 印出 "uwurls 1.2.3"
+docker buildx imagetools inspect ghcr.io/cxyfer/urlet:1.2.3
+docker run --rm ghcr.io/cxyfer/urlet:1.2.3 version   # 印出 "urlet 1.2.3"
 ```
 
 `imagetools inspect` 必須同時列出 `linux/amd64` 與 `linux/arm64`。
@@ -149,7 +149,7 @@ docker run --rm ghcr.io/cxyfer/uwurls:1.2.3 version   # 印出 "uwurls 1.2.3"
 | 映像已發布但有問題 | 不要重用標籤。升 patch 版本重新發布；期間在部署端固定使用前一個版本 |
 | 標籤在 workflow 存在前就已推送 | 用該標籤手動執行 workflow（關閉浮動標籤） |
 | 無法拉取套件 | 執行 `docker login ghcr.io`，或把套件設為公開 |
-| 需要前一個映像 | 設定 `UWURLS_IMAGE=ghcr.io/cxyfer/uwurls:<舊版本>` 並重建容器 |
+| 需要前一個映像 | 設定 `URLET_IMAGE=ghcr.io/cxyfer/urlet:<舊版本>` 並重建容器 |
 
 ## 快速複製指令
 
@@ -157,7 +157,7 @@ docker run --rm ghcr.io/cxyfer/uwurls:1.2.3 version   # 印出 "uwurls 1.2.3"
 VERSION=1.2.3
 
 sed -i "s/^version = \".*\"$/version = \"$VERSION\"/" Cargo.toml
-cargo update -p uwurls
+cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
 
 cargo fmt --check

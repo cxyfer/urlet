@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- uwurls schema, version 1
+-- urlet schema, version 1
 --
 -- Conventions
 --   * timestamps  : TEXT, ISO-8601 UTC, fixed width `YYYY-MM-DDTHH:MM:SS.sssZ`
@@ -215,7 +215,7 @@ CREATE INDEX IF NOT EXISTS idx_login_attempts_created
 
 -- == default settings -------------------------------------------------------
 INSERT OR IGNORE INTO settings (key, value, updated_at, updated_by) VALUES
-    ('site_name',            'uwurls', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL),
+    ('site_name',            'urlet', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL),
     ('registration_mode',    'open',   strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL),
     ('default_slug_length',  '7',      strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL),
     ('max_urls_per_user',    '1000',   strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL),

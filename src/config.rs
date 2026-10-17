@@ -18,7 +18,7 @@ pub enum ConfigError {
         #[source]
         source: std::io::Error,
     },
-    #[error("UWURLS_SECRET must be at least 16 characters when set explicitly")]
+    #[error("URLET_SECRET must be at least 16 characters when set explicitly")]
     WeakSecret,
 }
 
@@ -129,14 +129,14 @@ impl std::fmt::Debug for Config {
 impl Config {
     /// Read the configuration from the process environment.
     pub fn from_env() -> Result<Self, ConfigError> {
-        let base_url = env_str("UWURLS_BASE_URL").unwrap_or_else(|| "http://localhost:8080".into());
+        let base_url = env_str("URLET_BASE_URL").unwrap_or_else(|| "http://localhost:8080".into());
         let base_url = base_url.trim().trim_end_matches('/').to_string();
         let (base_scheme, base_host) = split_base_url(&base_url)?;
 
-        let database_url = env_str("UWURLS_DATABASE_URL")
-            .unwrap_or_else(|| "sqlite:///data/uwurls.db?mode=rwc".into());
+        let database_url = env_str("URLET_DATABASE_URL")
+            .unwrap_or_else(|| "sqlite:///data/urlet.db?mode=rwc".into());
 
-        let data_dir = match env_str("UWURLS_DATA_DIR") {
+        let data_dir = match env_str("URLET_DATA_DIR") {
             Some(dir) => PathBuf::from(dir),
             None => sqlite_dir(&database_url).unwrap_or_else(|| PathBuf::from("data")),
         };
@@ -145,24 +145,24 @@ impl Config {
             source,
         })?;
 
-        let explicit_secret = env_str("UWURLS_SECRET").filter(|s| !s.is_empty());
+        let explicit_secret = env_str("URLET_SECRET").filter(|s| !s.is_empty());
         let secret = Arc::new(secret::load_or_create(
             &data_dir,
             explicit_secret.as_deref(),
         )?);
 
-        let secure_cookies = match env_str("UWURLS_SECURE_COOKIES") {
+        let secure_cookies = match env_str("URLET_SECURE_COOKIES") {
             Some(v) => parse_bool(&v),
             None => base_scheme == "https",
         };
 
         Ok(Config {
-            bind: env_str("UWURLS_BIND")
+            bind: env_str("URLET_BIND")
                 .unwrap_or_else(|| "0.0.0.0:8080".into())
                 .parse()
                 .map_err(|_| ConfigError::Invalid {
-                    name: "UWURLS_BIND",
-                    value: env_str("UWURLS_BIND").unwrap_or_default(),
+                    name: "URLET_BIND",
+                    value: env_str("URLET_BIND").unwrap_or_default(),
                 })?,
             base_url,
             base_scheme,
@@ -171,34 +171,34 @@ impl Config {
             database_url,
             data_dir,
             secret,
-            session_ttl_hours: env_i64("UWURLS_SESSION_TTL_HOURS", 168),
-            unlock_ttl_minutes: env_i64("UWURLS_UNLOCK_TTL_MINUTES", 30),
-            trust_proxy: env_str("UWURLS_TRUST_PROXY")
+            session_ttl_hours: env_i64("URLET_SESSION_TTL_HOURS", 168),
+            unlock_ttl_minutes: env_i64("URLET_UNLOCK_TTL_MINUTES", 30),
+            trust_proxy: env_str("URLET_TRUST_PROXY")
                 .map(|v| parse_bool(&v))
                 .unwrap_or(false),
-            registration_override: env_str("UWURLS_REGISTRATION")
+            registration_override: env_str("URLET_REGISTRATION")
                 .filter(|v| !v.trim().is_empty())
                 .map(|v| v.trim().to_ascii_lowercase()),
-            slug_length_override: env_str("UWURLS_DEFAULT_SLUG_LENGTH")
+            slug_length_override: env_str("URLET_DEFAULT_SLUG_LENGTH")
                 .and_then(|v| v.trim().parse::<usize>().ok())
                 .filter(|v| (4..=16).contains(v)),
-            captcha_provider_override: env_str("UWURLS_CAPTCHA_PROVIDER")
+            captcha_provider_override: env_str("URLET_CAPTCHA_PROVIDER")
                 .filter(|v| !v.trim().is_empty())
                 .map(|v| v.trim().to_ascii_lowercase()),
-            captcha_site_key_override: env_str("UWURLS_CAPTCHA_SITE_KEY")
+            captcha_site_key_override: env_str("URLET_CAPTCHA_SITE_KEY")
                 .filter(|v| !v.trim().is_empty()),
-            captcha_secret_key_override: env_str("UWURLS_CAPTCHA_SECRET_KEY")
+            captcha_secret_key_override: env_str("URLET_CAPTCHA_SECRET_KEY")
                 .filter(|v| !v.trim().is_empty()),
-            captcha_allowed_hostnames_override: env_str("UWURLS_CAPTCHA_ALLOWED_HOSTNAMES")
+            captcha_allowed_hostnames_override: env_str("URLET_CAPTCHA_ALLOWED_HOSTNAMES")
                 .filter(|v| !v.trim().is_empty()),
-            captcha_on_register_override: env_bool("UWURLS_CAPTCHA_ON_REGISTER"),
-            captcha_on_login_override: env_bool("UWURLS_CAPTCHA_ON_LOGIN"),
-            captcha_on_create_override: env_bool("UWURLS_CAPTCHA_ON_CREATE"),
+            captcha_on_register_override: env_bool("URLET_CAPTCHA_ON_REGISTER"),
+            captcha_on_login_override: env_bool("URLET_CAPTCHA_ON_LOGIN"),
+            captcha_on_create_override: env_bool("URLET_CAPTCHA_ON_CREATE"),
             captcha_verify_url: None,
-            admin_email: env_str("UWURLS_ADMIN_EMAIL").filter(|v| !v.trim().is_empty()),
-            admin_password: env_str("UWURLS_ADMIN_PASSWORD").filter(|v| !v.is_empty()),
-            log_filter: env_str("UWURLS_LOG").unwrap_or_else(|| "info".into()),
-            log_format: LogFormat::parse(&env_str("UWURLS_LOG_FORMAT").unwrap_or_default()),
+            admin_email: env_str("URLET_ADMIN_EMAIL").filter(|v| !v.trim().is_empty()),
+            admin_password: env_str("URLET_ADMIN_PASSWORD").filter(|v| !v.is_empty()),
+            log_filter: env_str("URLET_LOG").unwrap_or_else(|| "info".into()),
+            log_format: LogFormat::parse(&env_str("URLET_LOG_FORMAT").unwrap_or_default()),
             default_slug_length: 7,
             max_urls_per_user: 1000,
         })
@@ -282,7 +282,7 @@ fn parse_bool(value: &str) -> bool {
 /// Split a base URL into `(scheme, host)` without pulling in a URL parser.
 fn split_base_url(base_url: &str) -> Result<(String, String), ConfigError> {
     let invalid = || ConfigError::Invalid {
-        name: "UWURLS_BASE_URL",
+        name: "URLET_BASE_URL",
         value: base_url.to_string(),
     };
     let (scheme, rest) = base_url.split_once("://").ok_or_else(invalid)?;
@@ -340,8 +340,8 @@ mod tests {
     #[test]
     fn derives_sqlite_paths() {
         assert_eq!(
-            sqlite_path("sqlite:///data/uwurls.db?mode=rwc"),
-            Some(PathBuf::from("/data/uwurls.db"))
+            sqlite_path("sqlite:///data/urlet.db?mode=rwc"),
+            Some(PathBuf::from("/data/urlet.db"))
         );
         assert_eq!(sqlite_path("sqlite:"), None);
     }
@@ -349,10 +349,10 @@ mod tests {
     #[test]
     fn derives_sqlite_directory() {
         assert_eq!(
-            sqlite_dir("sqlite:///data/uwurls.db?mode=rwc"),
+            sqlite_dir("sqlite:///data/urlet.db?mode=rwc"),
             Some(PathBuf::from("/data"))
         );
-        assert_eq!(sqlite_dir("sqlite:uwurls.db"), None);
+        assert_eq!(sqlite_dir("sqlite:urlet.db"), None);
     }
 
     #[test]

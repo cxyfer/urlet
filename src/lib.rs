@@ -1,4 +1,4 @@
-//! uwurls — lightweight multi-user URL shortener.
+//! urlet — lightweight multi-user URL shortener.
 //!
 //! The crate is split into a library (everything testable) and a thin binary
 //! (`src/main.rs`) that only handles process concerns: CLI parsing, logging

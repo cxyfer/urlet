@@ -1,6 +1,6 @@
 **English** | [繁體中文](README.zh-TW.md)
 
-# uwurls
+# urlet
 
 **A lightweight, self-hosted, multi-user URL shortener.** One Rust binary and one SQLite
 file: a single `docker compose up -d` and you are live. No external database, no cache
@@ -19,7 +19,7 @@ service, no frontend build step.
 | ⏳ Expiry | Absolute expiration time and click limits; expired links return 410 Gone |
 | 📊 Click analytics | Daily trends, referrer domains, device/browser/OS breakdown, recent clicks |
 | 🧩 Tags | Filter and group links by tag, with usage counts |
-| 🔑 API tokens | `Authorization: Bearer uw_...`, with optional expiry and revocation |
+| 🔑 API tokens | `Authorization: Bearer ur_...`, with optional expiry and revocation |
 | 🛠 Admin panel | User management, all site links, invite codes, site settings, audit log |
 | 🌐 Localized UI | English, Traditional Chinese, and Simplified Chinese; the first visit follows the browser's `Accept-Language` header and falls back to English |
 | 🤖 Bot protection | Cloudflare Turnstile or Google reCAPTCHA v2, enabled through environment variables or the admin panel; applies to the registration, sign-in and link creation forms |
@@ -36,19 +36,19 @@ service, no frontend build step.
 ### Docker Compose (recommended)
 
 ```bash
-git clone <this repo> uwurls && cd uwurls
-cp .env.example .env      # set at least UWURLS_BASE_URL and the admin credentials
+git clone <this repo> urlet && cd urlet
+cp .env.example .env      # set at least URLET_BASE_URL and the admin credentials
 docker compose up -d --build
 ```
 
 Open `http://localhost:8080`. The landing page links to sign-in and sign-up; sign in with
-the `UWURLS_ADMIN_EMAIL` / `UWURLS_ADMIN_PASSWORD` from `.env` (the server creates that
+the `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` from `.env` (the server creates that
 administrator on startup).
 
 To let Caddy obtain HTTPS certificates automatically:
 
 ```bash
-export UWURLS_DOMAIN=s.example.com
+export URLET_DOMAIN=s.example.com
 docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
 ```
 
@@ -60,7 +60,7 @@ Every `v*` tag publishes a multi-arch image (`linux/amd64` and `linux/arm64`) to
 Container Registry, so you can run a release without compiling Rust yourself:
 
 ```bash
-export UWURLS_IMAGE=ghcr.io/cxyfer/uwurls:latest   # pin a release tag in production
+export URLET_IMAGE=ghcr.io/cxyfer/urlet:latest   # pin a release tag in production
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 
@@ -73,25 +73,25 @@ make the package public under *Package settings → Change visibility*. See
 
 ```bash
 cargo build --release
-UWURLS_BASE_URL=http://localhost:8080 \
-UWURLS_DATA_DIR=./data \
-UWURLS_ADMIN_EMAIL=admin@example.com \
-UWURLS_ADMIN_PASSWORD=change-me-please \
-./target/release/uwurls serve
+URLET_BASE_URL=http://localhost:8080 \
+URLET_DATA_DIR=./data \
+URLET_ADMIN_EMAIL=admin@example.com \
+URLET_ADMIN_PASSWORD=change-me-please \
+./target/release/urlet serve
 ```
 
 ### Command line
 
 ```
-uwurls serve                 # start the server (default)
-uwurls migrate               # apply database migrations, then exit
-uwurls healthcheck [URL]     # health check (used by the container HEALTHCHECK, no curl needed)
-uwurls version | help
+urlet serve                 # start the server (default)
+urlet migrate               # apply database migrations, then exit
+urlet healthcheck [URL]     # health check (used by the container HEALTHCHECK, no curl needed)
+urlet version | help
 ```
 
 ## First run
 
-1. If `UWURLS_ADMIN_EMAIL` / `UWURLS_ADMIN_PASSWORD` are set, the administrator is created
+1. If `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` are set, the administrator is created
    at startup.
 2. If the database holds **no accounts at all**, the first user to register becomes an
    administrator automatically.
@@ -144,7 +144,7 @@ blocklists, webhooks, email delivery. The tables and architecture leave room for
 ## Project layout
 
 ```
-uwurls/
+urlet/
 ├── .github/workflows/release-image.yml  # tag-driven multi-arch image release
 ├── Cargo.toml
 ├── Dockerfile                  # multi-stage build (rust:alpine → alpine)
@@ -172,7 +172,7 @@ uwurls/
 ## Development
 
 ```bash
-cargo test                 # unit + integration tests (245)
+cargo test                 # unit + integration tests (285)
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 bash scripts/smoke.sh      # end-to-end acceptance run against the real binary (81 checks)
@@ -187,7 +187,7 @@ and never touch your development data.
 Releases are tag-driven and governed by [`RELEASING.md`](RELEASING.md) — read it before tagging.
 In short: bump `version` in [`Cargo.toml`](Cargo.toml), refresh `Cargo.lock`, commit, then push
 an annotated `vX.Y.Z` tag. The workflow validates the tag, builds `linux/amd64` and
-`linux/arm64`, and publishes `ghcr.io/cxyfer/uwurls` with semver tags. Only the newest stable
+`linux/arm64`, and publishes `ghcr.io/cxyfer/urlet` with semver tags. Only the newest stable
 release moves `X`, `X.Y` and `latest`; pre-releases never do. The GitHub Release is written by
 hand afterwards.
 
@@ -219,8 +219,8 @@ Chinese translations of these documents live under `docs/zh-TW/`.
 - Rate limiting: sign-in (per IP and per account), registration, unlock, link creation,
   password change
 - Bot verification: optional Turnstile or reCAPTCHA v2 on registration, sign-in and link
-  creation, toggled per form with `UWURLS_CAPTCHA_ON_REGISTER`, `UWURLS_CAPTCHA_ON_LOGIN` and
-  `UWURLS_CAPTCHA_ON_CREATE`
+  creation, toggled per form with `URLET_CAPTCHA_ON_REGISTER`, `URLET_CAPTCHA_ON_LOGIN` and
+  `URLET_CAPTCHA_ON_CREATE`
 - Account lockout: 30 failed sign-ins for the same account within 15 minutes temporarily
   blocks it (persisted, so a restart does not reset the counter)
 - Reverse proxy: the proxy's `X-Real-IP` is trusted first, otherwise the rightmost

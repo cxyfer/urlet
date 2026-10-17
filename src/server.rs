@@ -122,8 +122,8 @@ async fn warn_about_first_user(state: &AppState) -> Result<()> {
     {
         tracing::warn!(
             mode = state.settings.registration_mode().as_str(),
-            "no accounts exist and registration is not open; set UWURLS_ADMIN_EMAIL and \
-             UWURLS_ADMIN_PASSWORD or open registration"
+            "no accounts exist and registration is not open; set URLET_ADMIN_EMAIL and \
+             URLET_ADMIN_PASSWORD or open registration"
         );
     }
     Ok(())
@@ -167,7 +167,7 @@ pub async fn serve(config: Config) -> Result<()> {
         %local,
         %base_url,
         registration = state.settings.registration_mode().as_str(),
-        "uwurls is listening"
+        "urlet is listening"
     );
 
     axum::serve(

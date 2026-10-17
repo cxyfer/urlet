@@ -93,7 +93,7 @@ mod tests {
 
     #[tokio::test]
     async fn applies_migrations_once_and_is_idempotent() {
-        let dir = std::env::temp_dir().join(format!("uwurls-migrate-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("urlet-migrate-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let url = format!("sqlite://{}/migrate.db?mode=rwc", dir.display());
         let options: sqlx::sqlite::SqliteConnectOptions = url.parse().expect("valid url");

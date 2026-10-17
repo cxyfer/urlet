@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 #
-# uwurls end-to-end smoke test.
+# urlet end-to-end smoke test.
 #
 # Runs the real binary against a throwaway SQLite database and exercises every
 # user visible flow with curl. Exits non-zero on the first failure.
 #
-#   ./scripts/smoke.sh            # uses ./target/debug/uwurls (builds if needed)
-#   BIN=./target/release/uwurls ./scripts/smoke.sh
+#   ./scripts/smoke.sh            # uses ./target/debug/urlet (builds if needed)
+#   BIN=./target/release/urlet ./scripts/smoke.sh
 #
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-BIN="${BIN:-$ROOT/target/debug/uwurls}"
+BIN="${BIN:-$ROOT/target/debug/urlet}"
 PORT="${PORT:-18199}"
 BASE="http://127.0.0.1:${PORT}"
 DATA="$(mktemp -d)"
@@ -62,17 +62,17 @@ if [ ! -x "$BIN" ]; then
     cargo build --quiet || exit 1
 fi
 
-echo "uwurls smoke test"
+echo "urlet smoke test"
 echo "  binary: $BIN"
 echo "  base:   $BASE"
 echo
 
 start_server() {
-    UWURLS_DATABASE_URL="sqlite://$DATA/smoke.db?mode=rwc" \
-    UWURLS_DATA_DIR="$DATA" \
-    UWURLS_BIND="127.0.0.1:$PORT" \
-    UWURLS_BASE_URL="$BASE" \
-    UWURLS_LOG=warn \
+    URLET_DATABASE_URL="sqlite://$DATA/smoke.db?mode=rwc" \
+    URLET_DATA_DIR="$DATA" \
+    URLET_BIND="127.0.0.1:$PORT" \
+    URLET_BASE_URL="$BASE" \
+    URLET_LOG=warn \
     "$BIN" serve >> "$DATA/server.log" 2>&1 &
     SERVER_PID=$!
     for _ in $(seq 1 60); do
@@ -207,7 +207,7 @@ check "correct password unlocks" "200" "$(echo "$UNLOCK" | tail -1)"
 check "the unlocked link redirects" "302" \
     "$(curl -s -o /dev/null -w '%{http_code}' -b "$DATA/unlock.txt" "$BASE/vault")"
 check "the unlock cookie is scoped and HttpOnly" "yes" \
-    "$(grep -q 'uwurls_unlock_vault' "$DATA/unlock.txt" && echo yes || echo no)"
+    "$(grep -q 'urlet_unlock_vault' "$DATA/unlock.txt" && echo yes || echo no)"
 check "a form submission also unlocks" "303" "$(curl -s -o /dev/null -w '%{http_code}' \
     -X POST "$BASE/vault/unlock" -H 'content-type: application/x-www-form-urlencoded' \
     -H "origin: $BASE" -d 'password=linkpass')"
@@ -265,11 +265,11 @@ echo
 echo "API tokens"
 TOKEN=$(curl -s -b "$COOKIES" -X POST "$BASE/api/v1/tokens" -H 'content-type: application/json' \
     -H "origin: $BASE" -d '{"name":"smoke"}' | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
-contains "a token is issued once" "uw_" "$TOKEN"
+contains "a token is issued once" "ur_" "$TOKEN"
 check "the token authenticates" "200" "$(curl -s -o /dev/null -w '%{http_code}' \
     -H "authorization: Bearer $TOKEN" "$BASE/api/v1/urls")"
 check "a bogus token is rejected" "401" "$(curl -s -o /dev/null -w '%{http_code}' \
-    -H 'authorization: Bearer uw_not-a-real-token' "$BASE/api/v1/urls")"
+    -H 'authorization: Bearer ur_not-a-real-token' "$BASE/api/v1/urls")"
 TOKEN_ID=$(curl -s -b "$COOKIES" "$BASE/api/v1/tokens" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
 curl -s -o /dev/null -b "$COOKIES" -X DELETE -H "origin: $BASE" "$BASE/api/v1/tokens/$TOKEN_ID"
 check "a revoked token stops working" "401" "$(curl -s -o /dev/null -w '%{http_code}' \

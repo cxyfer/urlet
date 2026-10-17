@@ -7,10 +7,10 @@
 use axum::http::HeaderMap;
 
 /// Name of the session cookie.
-pub const SESSION_COOKIE: &str = "uwurls_session";
+pub const SESSION_COOKIE: &str = "urlet_session";
 
 /// Prefix of per-slug unlock cookies.
-pub const UNLOCK_PREFIX: &str = "uwurls_unlock_";
+pub const UNLOCK_PREFIX: &str = "urlet_unlock_";
 
 /// Read a cookie value from the request headers.
 pub fn get(headers: &HeaderMap, name: &str) -> Option<String> {
@@ -82,22 +82,22 @@ mod tests {
 
     #[test]
     fn reads_a_single_cookie() {
-        let headers = headers("uwurls_session=abc123");
+        let headers = headers("urlet_session=abc123");
         assert_eq!(get(&headers, SESSION_COOKIE), Some("abc123".to_string()));
         assert_eq!(get(&headers, "missing"), None);
     }
 
     #[test]
     fn reads_cookies_among_others() {
-        let headers = headers("theme=dark; uwurls_session=xyz; uwurls_unlock_promo=1");
+        let headers = headers("theme=dark; urlet_session=xyz; urlet_unlock_promo=1");
         assert_eq!(get(&headers, SESSION_COOKIE), Some("xyz".to_string()));
-        assert_eq!(get(&headers, "uwurls_unlock_promo"), Some("1".to_string()));
+        assert_eq!(get(&headers, "urlet_unlock_promo"), Some("1".to_string()));
         assert_eq!(get(&headers, "theme"), Some("dark".to_string()));
     }
 
     #[test]
     fn tolerates_malformed_pairs() {
-        let headers = headers("garbage; =empty; uwurls_session=ok");
+        let headers = headers("garbage; =empty; urlet_session=ok");
         assert_eq!(get(&headers, SESSION_COOKIE), Some("ok".to_string()));
     }
 
@@ -117,16 +117,16 @@ mod tests {
 
     #[test]
     fn lists_every_cookie_pair() {
-        let headers = headers("theme=dark; uwurls_session=xyz; broken");
+        let headers = headers("theme=dark; urlet_session=xyz; broken");
         let pairs = get_all(&headers);
         assert_eq!(pairs.len(), 2);
         assert_eq!(pairs[0], ("theme".to_string(), "dark".to_string()));
-        assert_eq!(pairs[1], ("uwurls_session".to_string(), "xyz".to_string()));
+        assert_eq!(pairs[1], ("urlet_session".to_string(), "xyz".to_string()));
         assert!(get_all(&HeaderMap::new()).is_empty());
     }
 
     #[test]
     fn unlock_cookie_names_are_slug_scoped() {
-        assert_eq!(unlock_cookie_name("aB3xK9z"), "uwurls_unlock_aB3xK9z");
+        assert_eq!(unlock_cookie_name("aB3xK9z"), "urlet_unlock_aB3xK9z");
     }
 }

@@ -1,4 +1,4 @@
-# Releasing uwurls
+# Releasing urlet
 
 **English** | [繁體中文](docs/zh-TW/RELEASING.md)
 
@@ -27,7 +27,7 @@ manual on purpose (see [Rules](#rules)).
 | Manual rebuild, defaults | `1.2.3` | Exact version only |
 | Manual rebuild + “update moving tags” | `1.2.3`, `1.2`, `1`, `latest` | Only when `1.2.3` is the newest stable tag |
 
-The full image name is `ghcr.io/cxyfer/uwurls`. It is derived from `github.repository`, so a fork
+The full image name is `ghcr.io/cxyfer/urlet`. It is derived from `github.repository`, so a fork
 publishes to its own namespace.
 
 ## Rules
@@ -37,7 +37,7 @@ publishes to its own namespace.
 2. **Refresh `Cargo.lock` after bumping.** The [Dockerfile](Dockerfile) runs
    `cargo build --locked`, so a stale root-package version breaks the image build:
    ```bash
-   cargo update -p uwurls
+   cargo update -p urlet
    cargo metadata --locked --format-version 1 >/dev/null
    ```
 3. **Tag only merged commits.** The workflow file must exist on the tagged commit, so push
@@ -90,7 +90,7 @@ version = "1.2.3"
 Refresh the lockfile and verify it is current:
 
 ```bash
-cargo update -p uwurls
+cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
 ```
 
@@ -120,8 +120,8 @@ gh run list --workflow=release-image.yml --limit 5
 gh run watch <run-id>
 
 docker login ghcr.io      # only if the package is private
-docker buildx imagetools inspect ghcr.io/cxyfer/uwurls:1.2.3
-docker run --rm ghcr.io/cxyfer/uwurls:1.2.3 version   # prints "uwurls 1.2.3"
+docker buildx imagetools inspect ghcr.io/cxyfer/urlet:1.2.3
+docker run --rm ghcr.io/cxyfer/urlet:1.2.3 version   # prints "urlet 1.2.3"
 ```
 
 `imagetools inspect` must list both `linux/amd64` and `linux/arm64`.
@@ -156,7 +156,7 @@ Typical uses: a base-image CVE fix or a runner/toolchain change without a new ap
 | Image published but broken | Do not reuse the tag. Bump the patch version and release again; pin the previous version in deployments meanwhile |
 | Tag pushed before the workflow existed | Run the workflow manually with that tag (moving tags off) |
 | The package cannot be pulled | `docker login ghcr.io`, or set the package public |
-| Need the previous image | Pin `UWURLS_IMAGE=ghcr.io/cxyfer/uwurls:<old-version>` and recreate the container |
+| Need the previous image | Pin `URLET_IMAGE=ghcr.io/cxyfer/urlet:<old-version>` and recreate the container |
 
 ## Quick copy-paste
 
@@ -164,7 +164,7 @@ Typical uses: a base-image CVE fix or a runner/toolchain change without a new ap
 VERSION=1.2.3
 
 sed -i "s/^version = \".*\"$/version = \"$VERSION\"/" Cargo.toml
-cargo update -p uwurls
+cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
 
 cargo fmt --check

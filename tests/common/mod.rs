@@ -13,9 +13,9 @@ use axum::http::{header, Request, StatusCode};
 use axum::Router;
 use serde_json::Value;
 use tower::ServiceExt;
-use uwurls::config::Config;
-use uwurls::services::settings::Settings;
-use uwurls::state::AppState;
+use urlet::config::Config;
+use urlet::services::settings::Settings;
+use urlet::state::AppState;
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -39,11 +39,11 @@ impl TestApp {
         let mut config = Config::for_tests(&dir);
         tweak(&mut config);
 
-        let pool = uwurls::db::init(&config).await.expect("database init");
+        let pool = urlet::db::init(&config).await.expect("database init");
         let settings = Settings::load(&pool, &config).await.expect("settings");
         let state = AppState::new(config, pool, settings);
-        uwurls::server::bootstrap(&state).await.expect("bootstrap");
-        let router = uwurls::server::build_router(state.clone());
+        urlet::server::bootstrap(&state).await.expect("bootstrap");
+        let router = urlet::server::build_router(state.clone());
         Self { router, state, dir }
     }
 
@@ -146,7 +146,7 @@ impl TestResponse {
     pub fn session_cookie(&self) -> Option<String> {
         let raw = self.headers.get(header::SET_COOKIE)?.to_str().ok()?;
         let pair = raw.split(';').next()?;
-        if pair.starts_with("uwurls_session=") {
+        if pair.starts_with("urlet_session=") {
             Some(pair.to_string())
         } else {
             None
@@ -176,7 +176,7 @@ pub fn unique_dir() -> PathBuf {
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
     let counter = COUNTER.fetch_add(1, Ordering::SeqCst);
-    std::env::temp_dir().join(format!("uwurls-test-{nanos}-{counter}"))
+    std::env::temp_dir().join(format!("urlet-test-{nanos}-{counter}"))
 }
 
 fn base_request(method: &str, uri: &str) -> axum::http::request::Builder {

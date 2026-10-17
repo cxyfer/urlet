@@ -418,7 +418,7 @@ async fn settings_can_be_read_and_updated() {
 
     let current = app.get_as("/api/v1/admin/settings", &cookie).await.json();
     assert_eq!(current["registration_mode"], "open");
-    assert_eq!(current["site_name"], "uwurls");
+    assert_eq!(current["site_name"], "urlet");
 
     let updated = app
         .send(put_json_as(
@@ -684,7 +684,7 @@ async fn maintenance_prunes_stale_rows() {
         .await
         .expect("retention");
 
-    uwurls::services::admin::run_maintenance(&app.state.db, &app.state.settings)
+    urlet::services::admin::run_maintenance(&app.state.db, &app.state.settings)
         .await
         .expect("maintenance");
 

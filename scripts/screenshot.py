@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Screenshot the uwurls UI for the README.
+"""Screenshot the urlet UI for the README.
 
     SHOTS=docs/screenshots ./scripts/demo.sh
 

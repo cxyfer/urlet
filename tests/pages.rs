@@ -71,7 +71,7 @@ async fn landing_page_treats_a_stale_session_as_anonymous() {
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
 
     // A syntactically plausible but unknown cookie is simply ignored.
-    let response = app.get_as("/", "uwurls_session=not-a-real-token").await;
+    let response = app.get_as("/", "urlet_session=not-a-real-token").await;
     assert_eq!(response.status, StatusCode::OK);
     assert!(response.body.contains("Short links for teams"));
     assert!(!response.body.contains("Open dashboard"));
@@ -80,7 +80,7 @@ async fn landing_page_treats_a_stale_session_as_anonymous() {
 
     // So is a real session that has expired.
     sqlx::query("UPDATE sessions SET expires_at = ?")
-        .bind(uwurls::services::time::iso_in_hours(-1))
+        .bind(urlet::services::time::iso_in_hours(-1))
         .execute(&app.state.db)
         .await
         .expect("expire the session");
@@ -408,7 +408,7 @@ async fn account_page_lists_sessions_and_issues_tokens() {
         .await;
     assert_eq!(created.status, StatusCode::OK);
     assert!(created.body.contains("Copy this token now"));
-    assert!(created.body.contains("uw_"));
+    assert!(created.body.contains("ur_"));
 
     // The plain token only exists in that response; the list shows a prefix.
     let page = app.get_as("/app/account", &cookie).await;

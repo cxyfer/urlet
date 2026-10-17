@@ -9,7 +9,7 @@ use crate::services::audit::{action, target, Audit};
 use crate::services::{secret, time};
 
 /// Prefix of every API token, so they are recognisable in logs and scanners.
-pub const TOKEN_PREFIX: &str = "uw_";
+pub const TOKEN_PREFIX: &str = "ur_";
 /// Number of characters kept in clear for identification.
 const DISPLAY_PREFIX_LEN: usize = 11;
 /// Default scopes for a new token.

@@ -110,7 +110,7 @@ pub fn verify(password: &str, stored: &str) -> bool {
 pub fn dummy_verify(password: &str) {
     static DUMMY: OnceLock<String> = OnceLock::new();
     let hash = DUMMY
-        .get_or_init(|| hash("uwurls-dummy-password-for-timing-equalisation").unwrap_or_default());
+        .get_or_init(|| hash("urlet-dummy-password-for-timing-equalisation").unwrap_or_default());
     let _ = verify(password, hash);
 }
 

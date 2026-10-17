@@ -19,7 +19,7 @@ use common::{
     post_form, post_form_as, post_json, post_json_as, put_json_as, TestApp, TestResponse,
 };
 use serde_json::{json, Value};
-use uwurls::error::AppError;
+use urlet::error::AppError;
 
 /// Which flows the fake instance protects.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -188,7 +188,7 @@ async fn app_with(reply: Reply, flows: Flows) -> (TestApp, MockSiteverify) {
 /// The settings form as the browser posts it, plus `extra` fields.
 fn settings_form(extra: &str) -> String {
     format!(
-        "site_name=uwurls&registration_mode=open&default_slug_length=7&max_urls_per_user=1000\
+        "site_name=urlet&registration_mode=open&default_slug_length=7&max_urls_per_user=1000\
          &default_redirect_type=302&click_retention_days=0&{extra}"
     )
 }
@@ -225,7 +225,7 @@ fn assert_captcha_error(response: &TestResponse) {
     assert_eq!(response.json()["error"]["code"], "captcha_failed");
     assert_eq!(
         response.json()["error"]["message"],
-        uwurls::services::captcha::FAILURE_MESSAGE
+        urlet::services::captcha::FAILURE_MESSAGE
     );
 }
 
@@ -1040,7 +1040,7 @@ async fn the_widget_is_rendered_and_localised() {
 #[tokio::test]
 async fn the_error_page_explains_a_captcha_failure() {
     let response =
-        AppError::captcha_failed(uwurls::services::captcha::FAILURE_MESSAGE).into_response();
+        AppError::captcha_failed(urlet::services::captcha::FAILURE_MESSAGE).into_response();
     assert_eq!(response.status(), AxumStatus::BAD_REQUEST);
     let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
         .await
@@ -1362,7 +1362,7 @@ async fn the_admin_api_accepts_the_captcha_keys_without_echoing_the_secret() {
 #[tokio::test]
 #[ignore = "needs outbound HTTPS to challenges.cloudflare.com"]
 async fn live_turnstile_endpoint_answers_over_tls() {
-    use uwurls::services::captcha::{
+    use urlet::services::captcha::{
         CaptchaError, CaptchaGuard, CaptchaProvider, TURNSTILE_VERIFY_URL,
     };
 

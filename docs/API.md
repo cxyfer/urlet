@@ -1,11 +1,11 @@
-# uwurls JSON API reference
+# urlet JSON API reference
 
 **English** | [繁體中文](zh-TW/API.md)
 
 - Base path: `/api/v1`
 - Authentication (choose one)
-  - **Session cookie**: `uwurls_session`, issued by `POST /api/v1/auth/login` (the browser form flow uses the same cookie)
-  - **API token**: `Authorization: Bearer uw_...` (create one under `/app/account`)
+  - **Session cookie**: `urlet_session`, issued by `POST /api/v1/auth/login` (the browser form flow uses the same cookie)
+  - **API token**: `Authorization: Bearer ur_...` (create one under `/app/account`)
 - Requests and responses are `application/json; charset=utf-8`
 - Timestamps are always ISO-8601 UTC (`2030-01-31T12:00:00.000Z`); input also accepts
   `2030-01-31T12:00:00Z`, `2030-01-31 12:00`, `2030-01-31`, and similar forms
@@ -65,7 +65,7 @@ It is only checked when bot verification is enabled for registration; otherwise 
 ignored. See [Bot verification](#bot-verification).
 
 > `POST /api/v1/urls` is exempt from bot verification **only when it authenticates with an API
-> token** (`Authorization: Bearer uw_...`), so automation and CI pipelines are unaffected. A
+> token** (`Authorization: Bearer ur_...`), so automation and CI pipelines are unaffected. A
 > request authenticated with a **session cookie** is a browser session and is subject to the
 > link-creation switch; send the widget token in `captcha_token`.
 
@@ -82,7 +82,7 @@ sign-in and rejects the request, `429` rate limited.
 
 `captcha_token` carries the token produced by the CAPTCHA widget on the web sign-in form. It is
 only checked when bot verification is enabled for sign-in (`captcha_on_login` /
-`UWURLS_CAPTCHA_ON_LOGIN`); otherwise the field is ignored. See
+`URLET_CAPTCHA_ON_LOGIN`); otherwise the field is ignored. See
 [Bot verification](#bot-verification).
 
 ### `POST /api/v1/auth/logout`
@@ -130,8 +130,8 @@ re-issues the cookie, so continuous use never expires.
 
 ```json
 {
-  "token": "uw_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-  "api_token": { "id": 1, "name": "ci pipeline", "prefix": "uw_abc12345", "scopes": "...", "created_at": "...", "last_used_at": null, "expires_at": "2030-01-01T00:00:00.000Z", "revoked": false, "active": true }
+  "token": "ur_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "api_token": { "id": 1, "name": "ci pipeline", "prefix": "ur_abc12345", "scopes": "...", "created_at": "...", "last_used_at": null, "expires_at": "2030-01-01T00:00:00.000Z", "revoked": false, "active": true }
 }
 ```
 
@@ -321,12 +321,12 @@ Public metadata without the target URL:
 
 The web UI ships in English (`en`), Traditional Chinese (`zh-Hant`) and Simplified Chinese
 (`zh-Hans`). On a first visit the language is chosen from the browser's `Accept-Language`
-header; when nothing matches, English is used. The selection is stored in the `uwurls_lang`
+header; when nothing matches, English is used. The selection is stored in the `urlet_lang`
 cookie.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/app/lang/{code}?next=<path>` | Switch the UI language, set the `uwurls_lang` cookie, then return `302` to `next` (or to `/app` when `next` is missing or not a same-site relative path) |
+| GET | `/app/lang/{code}?next=<path>` | Switch the UI language, set the `urlet_lang` cookie, then return `302` to `next` (or to `/app` when `next` is missing or not a same-site relative path) |
 
 `code` is one of `en`, `zh-Hant`, `zh-Hans`; `next` must be a same-site relative path.
 An unrecognized `code` falls back to English (it is never an error), and a visitor without a
@@ -339,7 +339,7 @@ never change with the selected language.
 
 ## Bot verification
 
-uwurls can require a CAPTCHA on the three public forms that create state: the web registration
+urlet can require a CAPTCHA on the three public forms that create state: the web registration
 form, the web sign-in form, and the web create-short-link form. The JSON API endpoints
 `POST /api/v1/auth/register` and `POST /api/v1/auth/login` accept the widget token in the optional
 `captcha_token` field. It is off by default and configured either through environment variables or
@@ -371,7 +371,7 @@ at `WARN`.
 | Web create-short-link form (`POST /app/urls`) | Applies when enabled for link creation |
 | `POST /api/v1/auth/register` | Applies when enabled for registration; send the widget token in `captcha_token`; failure returns `400` with `error.code = "captcha_failed"` |
 | `POST /api/v1/auth/login` | Applies when enabled for sign-in; send the widget token in `captcha_token`; failure returns `400` with `error.code = "captcha_failed"` |
-| `POST /api/v1/urls` | **API tokens only** — exempt when the request carries `Authorization: Bearer uw_...`; a session-cookie call is subject to the link-creation switch and takes an optional `captcha_token` |
+| `POST /api/v1/urls` | **API tokens only** — exempt when the request carries `Authorization: Bearer ur_...`; a session-cookie call is subject to the link-creation switch and takes an optional `captcha_token` |
 
 ---
 
@@ -437,5 +437,5 @@ restart, but **account lockout** is persistent: once one email accumulates 30 fa
 15 minutes, even the correct password returns `429` (`Retry-After: 900`) until the window slides
 past.
 
-The IP used for login comes from `X-Real-IP` when `UWURLS_TRUST_PROXY=true`, falling back to the
+The IP used for login comes from `X-Real-IP` when `URLET_TRUST_PROXY=true`, falling back to the
 rightmost address in `X-Forwarded-For`.

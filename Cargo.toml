@@ -1,18 +1,18 @@
 [package]
-name = "uwurls"
+name = "urlet"
 version = "1.0.0"
 edition = "2021"
 rust-version = "1.80"
 description = "Lightweight multi-user URL shortener with password protection and expiry"
 license = "MIT"
-default-run = "uwurls"
+default-run = "urlet"
 
 [lib]
-name = "uwurls"
+name = "urlet"
 path = "src/lib.rs"
 
 [[bin]]
-name = "uwurls"
+name = "urlet"
 path = "src/main.rs"
 
 [dependencies]
