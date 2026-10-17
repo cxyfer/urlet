@@ -222,9 +222,14 @@ impl DomainContext<'_> {
         if domain.is_disabled() {
             return Ok(domain);
         }
-        domain_db::disable(self.pool, id)
+
+        let changed = domain_db::disable(self.pool, id)
             .await
             .map_err(AppError::from)?;
+        if changed == 0 {
+            return self.disabled_race_result(id).await;
+        }
+
         let domain = self.get(id).await?;
         self.audit(
             action::DOMAIN_UPDATED,
@@ -283,12 +288,61 @@ impl DomainContext<'_> {
             )));
         }
 
-        domain_db::delete(self.pool, id)
-            .await
-            .map_err(AppError::from)?;
-        self.audit(action::DOMAIN_DELETED, &domain, serde_json::json!({}))
-            .await;
-        Ok(())
+        let deleted = domain_db::delete(self.pool, id).await;
+        match deleted {
+            Ok(0) => self.deleted_race_result(id).await,
+            Ok(_) => {
+                self.audit(action::DOMAIN_DELETED, &domain, serde_json::json!({}))
+                    .await;
+                Ok(())
+            }
+            Err(err) if is_foreign_key_violation(&err) => Err(AppError::conflict(
+                "this domain still has link(s); disable it instead",
+            )),
+            Err(err) => Err(AppError::from(err)),
+        }
+    }
+
+    /// Explain a conditional disable that affected 0 rows.
+    async fn disabled_race_result(&self, id: i64) -> AppResult<Domain> {
+        let current = self.get(id).await?;
+        if current.is_system() {
+            return Err(AppError::conflict(
+                "the canonical domain cannot be disabled",
+            ));
+        }
+        if current.is_default() {
+            return Err(AppError::conflict(
+                "choose another default domain before disabling this one",
+            ));
+        }
+        if current.is_disabled() {
+            return Ok(current);
+        }
+        Err(AppError::conflict(
+            "the domain changed while it was being disabled; try again",
+        ))
+    }
+
+    /// Explain a conditional delete that affected 0 rows.
+    async fn deleted_race_result(&self, id: i64) -> AppResult<()> {
+        let current = self.get(id).await?;
+        if current.is_system() {
+            return Err(AppError::conflict("the canonical domain cannot be deleted"));
+        }
+        if current.is_env() {
+            return Err(AppError::conflict(
+                "this domain is managed by URLET_DOMAINS; remove it there instead",
+            ));
+        }
+        if current.is_default() {
+            return Err(AppError::conflict(
+                "choose another default domain before deleting this one",
+            ));
+        }
+        Err(AppError::conflict(
+            "the domain changed while it was being deleted; try again",
+        ))
     }
 
     async fn get(&self, id: i64) -> AppResult<Domain> {
@@ -318,6 +372,10 @@ impl DomainContext<'_> {
 
 fn is_unique_violation(err: &sqlx::Error) -> bool {
     matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("2067"))
+}
+
+fn is_foreign_key_violation(err: &sqlx::Error) -> bool {
+    matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("787"))
 }
 
 /// One domain as exposed to the create/edit form.

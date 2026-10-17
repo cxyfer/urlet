@@ -918,3 +918,50 @@ async fn changing_the_canonical_host_retires_the_previous_system_domain() {
     .await;
     assert_eq!(defaulted["domain"], "extra.example.com");
 }
+
+#[tokio::test]
+async fn conditional_domain_updates_do_not_leave_a_disabled_default() {
+    let app = TestApp::spawn().await;
+    let _admin = register_admin(&app).await;
+    let go_id = app.add_domain("go.example.com", "active").await;
+    let canonical = domain_id(&app, "localhost:8080").await;
+    app.set_default_domain(go_id).await;
+
+    // The final conditional UPDATE sees that set_default won the race.
+    let changed = urlet::db::domains::disable(&app.state.db, go_id)
+        .await
+        .expect("conditional disable");
+    assert_eq!(changed, 0);
+    let status: String = sqlx::query_scalar("SELECT status FROM domains WHERE id = ?")
+        .bind(go_id)
+        .fetch_one(&app.state.db)
+        .await
+        .expect("status");
+    assert_eq!(status, "active");
+    let is_default: i64 = sqlx::query_scalar("SELECT is_default FROM domains WHERE id = ?")
+        .bind(go_id)
+        .fetch_one(&app.state.db)
+        .await
+        .expect("default");
+    assert_eq!(is_default, 1);
+
+    // Deleting the current default is equally conditional.
+    let deleted = urlet::db::domains::delete(&app.state.db, go_id)
+        .await
+        .expect("conditional delete");
+    assert_eq!(deleted, 0);
+
+    app.set_default_domain(canonical).await;
+    assert_eq!(
+        urlet::db::domains::disable(&app.state.db, go_id)
+            .await
+            .expect("disable after default moved"),
+        1
+    );
+    assert_eq!(
+        urlet::db::domains::delete(&app.state.db, go_id)
+            .await
+            .expect("delete after disable"),
+        1
+    );
+}

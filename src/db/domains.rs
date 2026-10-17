@@ -244,10 +244,13 @@ pub async fn activate(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
 
 /// Disable a domain; links on it stop resolving.
 pub async fn disable(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
+    // Conditional on purpose: a concurrent `set_default` must win rather than
+    // leave a disabled default domain behind. The caller re-reads the row when
+    // this affects 0 rows and reports the reason.
     let result = sqlx::query(
         "UPDATE domains
             SET status = 'disabled', updated_at = ?
-          WHERE id = ?",
+          WHERE id = ? AND is_default = 0 AND source <> 'system'",
     )
     .bind(now_iso())
     .bind(id)
@@ -282,10 +285,14 @@ pub async fn set_default(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> 
 }
 
 pub async fn delete(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query("DELETE FROM domains WHERE id = ?")
-        .bind(id)
-        .execute(pool)
-        .await?;
+    // Conditional on purpose: a concurrent `set_default` must not be deleted
+    // out from under the instance. The caller re-reads the row when this
+    // affects 0 rows and reports the reason.
+    let result =
+        sqlx::query("DELETE FROM domains WHERE id = ? AND is_default = 0 AND source = 'ui'")
+            .bind(id)
+            .execute(pool)
+            .await?;
     Ok(result.rows_affected())
 }
 
