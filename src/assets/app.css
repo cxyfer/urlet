@@ -277,15 +277,23 @@ footer.site { max-width: 1080px; margin: 2rem auto 1rem; padding: 0 1rem; color:
 .link-page { max-width: 420px; margin: 12vh auto; padding: 0 1rem; }
 .link-page .card { padding: 1.5rem; }
 
-/* ---------------------------------------------------------------- landing */
+/* ----------------------------------------------------------------- landing */
 .landing-hero { max-width: 44rem; margin: 0 auto; padding: 3rem 0 1.5rem; text-align: center; }
 .landing-hero h1 { font-size: clamp(1.9rem, 5vw, 2.5rem); letter-spacing: -.02em; }
 .landing-tagline { font-size: 1.15rem; margin-bottom: .5rem; }
 .landing-cta { justify-content: center; margin-top: 1.25rem; }
+/* Six cards need three even columns; the shared `.grid-3` is auto-fit and packs
+   five at a 1280px viewport, leaving the last card stranded on its own row. */
+.landing-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .landing-feature h3 { margin-bottom: .35rem; }
 .landing-feature p { margin: 0; }
 
+@media (max-width: 960px) {
+    .landing-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (max-width: 640px) {
+    .landing-grid { grid-template-columns: 1fr; }
     .nav { width: 100%; margin-left: 0; }
     .stat .stat-value { font-size: 1.35rem; }
     table.table th, table.table td { padding: .5rem; }
