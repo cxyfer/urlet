@@ -469,32 +469,47 @@ impl AdminContext<'_> {
     }
 
     /// Create a user group.
-    async fn validate_group_domains(&self, draft: &GroupDraft) -> Result<()> {
+    async fn validate_group_domains(
+        &self,
+        draft: &GroupDraft,
+        existing: Option<&UserGroup>,
+    ) -> Result<()> {
         if let Some(id) = draft.default_domain_id {
-            self.require_active_group_domain(id, "default_domain_id")
+            // Keeping an already-selected, now disabled default is not a new
+            // choice; changing to a disabled domain is.
+            let unchanged = existing.and_then(|group| group.default_domain_id) == Some(id);
+            self.require_group_domain(id, "default_domain_id", !unchanged)
                 .await?;
         }
         if let Some(ids) = &draft.allowed_domain_ids {
             for id in ids {
-                self.require_active_group_domain(*id, "domain_ids").await?;
+                // A disabled domain may stay in the allowlist (shown as a
+                // disabled option in the form) so re-enabling it later restores
+                // access without an administrator re-checking every group.
+                self.require_group_domain(*id, "domain_ids", false).await?;
             }
         }
         Ok(())
     }
 
-    async fn require_active_group_domain(&self, id: i64, field: &'static str) -> Result<()> {
+    async fn require_group_domain(
+        &self,
+        id: i64,
+        field: &'static str,
+        must_be_active: bool,
+    ) -> Result<()> {
         let domain = domain_db::find_by_id(self.pool, id)
             .await
             .map_err(AppError::from)?
             .ok_or_else(|| AppError::validation(field, "unknown domain"))?;
-        if !domain.is_active() {
+        if must_be_active && !domain.is_active() {
             return Err(AppError::validation(field, "the domain must be active"));
         }
         Ok(())
     }
 
     pub async fn create_group(&self, draft: GroupDraft) -> Result<UserGroup> {
-        self.validate_group_domains(&draft).await?;
+        self.validate_group_domains(&draft, None).await?;
         if user_groups::find_by_name(self.pool, &draft.name)
             .await
             .map_err(AppError::from)?
@@ -534,6 +549,7 @@ impl AdminContext<'_> {
                 "max_api_tokens": group.max_api_tokens,
                 "default_domain_id": group.default_domain_id,
                 "restrict_domains": group.restrict_domains,
+                "allowed_domain_ids": allowed_domain_ids,
                 "is_default": group.is_default
             }))
             .record(self.pool)
@@ -543,11 +559,11 @@ impl AdminContext<'_> {
 
     /// Replace a group's settings and optionally move the default marker.
     pub async fn update_group(&self, id: i64, draft: GroupDraft) -> Result<UserGroup> {
-        self.validate_group_domains(&draft).await?;
         let existing = user_groups::find_by_id(self.pool, id)
             .await
             .map_err(AppError::from)?
             .ok_or_else(AppError::not_found)?;
+        self.validate_group_domains(&draft, Some(&existing)).await?;
         if let Some(other) = user_groups::find_by_name(self.pool, &draft.name)
             .await
             .map_err(AppError::from)?
@@ -574,6 +590,9 @@ impl AdminContext<'_> {
             .await
             .map_err(AppError::from)?
             .ok_or_else(|| AppError::internal("group disappeared after update"))?;
+        let allowed_domain_ids = user_groups::domain_ids(self.pool, id)
+            .await
+            .map_err(AppError::from)?;
 
         self.audit(action::ADMIN_GROUP_UPDATED, target::GROUP, id)
             .metadata(serde_json::json!({
@@ -583,6 +602,7 @@ impl AdminContext<'_> {
                 "max_api_tokens": group.max_api_tokens,
                 "default_domain_id": group.default_domain_id,
                 "restrict_domains": group.restrict_domains,
+                "allowed_domain_ids": allowed_domain_ids,
                 "is_default": group.is_default
             }))
             .record(self.pool)
@@ -713,7 +733,7 @@ impl AdminContext<'_> {
 /// report, instead of leaking an internal error.
 fn new_group_write_error(err: sqlx::Error) -> AppError {
     if crate::db::is_foreign_key_violation(&err) {
-        AppError::validation("domain_ids", "a selected domain no longer exists")
+        AppError::validation("domains", "a selected domain no longer exists")
     } else {
         map_group_write_error(err)
     }

@@ -466,8 +466,9 @@ login_attempts (auditing)
 
 The v1.1 changes add settings **keys** only; because `settings` is a key-value table, v1.1 kept
 the schema at 14 tables and 27 indexes. v1.2 adds the `user_groups` and `group_domains`
-tables, the nullable `users.group_id` / `invite_codes.group_id` / `default_domain_id` columns and
-four indexes, for **16 tables and 31 indexes** (§6.1, §6.3, §6.4).
+tables, the nullable `users.group_id` / `invite_codes.group_id` columns, the
+`user_groups.default_domain_id` / `restrict_domains` columns and four indexes, for **16 tables and
+31 indexes** (§6.1, §6.3, §6.4).
 
 ### 6.5 Seed Data
 
@@ -550,9 +551,9 @@ old token frees a slot immediately (FR-TOK-6).
 | PATCH | `/api/v1/admin/users/{id}` | `{role?, status?, display_name?, group_id?}`; `group_id: null` makes the user ungrouped (site-wide defaults apply) |
 | POST | `/api/v1/admin/users/{id}/password` | `{new_password}` reset |
 | DELETE | `/api/v1/admin/users/{id}` | Soft delete (their links are soft-deleted too) |
-| GET | `/api/v1/admin/groups` | Group list with member counts (paginated) |
-| POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, default_domain_id?, restrict_domains?, domain_ids?, is_default?}` → 201; domain ids must be active; a duplicate name or a second default returns 409 |
-| PUT | `/api/v1/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` set to `null` inherit the site quota; `description: null` clears it; `default_domain_id: null` means the site default; `domain_ids: []` clears the allowlist; `is_default: true` moves the marker in one transaction |
+| GET | `/api/v1/admin/groups` | Group list with member counts, stored default/allowlist domain fields (paginated) |
+| POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, default_domain_id?, restrict_domains?, domain_ids?, is_default?}` → 201; domain_ids must exist and default_domain_id must be active; a duplicate name or a second default returns 409 |
+| PUT | `/api/v1/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` set to `null` inherit the site quota; `description: null` clears it; `default_domain_id: null` means the site default; `domain_ids: null` or `[]` clears the allowlist; `is_default: true` moves the marker in one transaction |
 | DELETE | `/api/v1/admin/groups/{id}?reassign_to={id}` | Move members to `reassign_to`, then delete → 204; 409 for the default group or a missing/invalid target |
 | GET | `/api/v1/admin/urls` | Site-wide link list |
 | PATCH | `/api/v1/admin/urls/{id}` | Force disable/enable/delete |
@@ -730,7 +731,7 @@ v1.2 additions (this batch):
 - [x] A group can set its own default domain and restrict selection to `group_domains`; an empty restricted list allows only the default, and a disabled/deleted default falls back to the site default
 - [x] The token quota defaults to 20 usable tokens, is shown on the account page, and is exposed in `GET /api/v1/auth/me` together with the effective link quota and toggles
 - [x] Group mutations are audited (`admin.group_created` / `updated` / `deleted`) and user reassignment is recorded in the audit metadata
-- [x] `cargo test` (372 tests, one ignored), `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are clean, and `scripts/smoke.sh` passes all 106 checks (including group CRUD, quota enforcement, domain policy and reassignment)
+- [x] `cargo test` (374 tests, one ignored), `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are clean, and `scripts/smoke.sh` passes all 108 checks (including group CRUD, quota enforcement, domain policy and reassignment)
 
 ---
 

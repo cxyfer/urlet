@@ -237,9 +237,9 @@ pub struct GroupPayload {
     pub default_domain_id: Option<Option<i64>>,
     #[serde(default)]
     pub restrict_domains: Option<bool>,
-    /// `[]` removes every allowlist row; omitting it keeps the current list.
-    #[serde(default)]
-    pub domain_ids: Option<Vec<i64>>,
+    /// `null` or `[]` removes every allowlist row; omitting it keeps the current list.
+    #[serde(default, deserialize_with = "crate::routes::dto::double_option")]
+    pub domain_ids: Option<Option<Vec<i64>>>,
     #[serde(default)]
     pub is_default: Option<bool>,
 }
@@ -283,7 +283,11 @@ impl GroupPayload {
                 .restrict_domains
                 .or_else(|| existing.map(|group| group.restrict_domains))
                 .unwrap_or(false),
-            allowed_domain_ids: self.domain_ids,
+            allowed_domain_ids: match self.domain_ids {
+                None => None,
+                Some(None) => Some(Vec::new()),
+                Some(Some(ids)) => Some(ids),
+            },
             make_default: self.is_default.unwrap_or(false),
         }
         .validate()?)

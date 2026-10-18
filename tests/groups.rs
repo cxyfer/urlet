@@ -720,6 +720,37 @@ async fn a_disabled_group_default_falls_back_to_the_site_default() {
         .execute(&app.state.db)
         .await
         .expect("disable domain");
+    app.reload_domains().await;
+
+    let page = app.get_as("/app/admin/groups", &admin_cookie).await;
+    assert!(page.body.contains(&format!("value=\"{b}\" selected")));
+
+    let canonical = app.state.domains.canonical_host().to_string();
+    let options = app.get_as("/api/v1/domains", &member_cookie).await.json();
+    let entries = options.as_array().expect("domain list");
+    assert!(entries
+        .iter()
+        .any(|entry| { entry["hostname"] == canonical && entry["is_default"] == true }));
+    assert!(!entries
+        .iter()
+        .any(|entry| entry["hostname"] == "b.example.com"));
+
+    // Saving the form must accept the unchanged disabled default.
+    let body = format!(
+        "name=Fallback&max_urls=&max_api_tokens=&allow_custom_slug=on&allow_password=on\
+         &allow_expiry=on&allow_max_clicks=on&allow_tags=on&allow_api_tokens=on\
+         &allow_domain_selection=on&default_domain_id={b}"
+    );
+    let response = app
+        .send(post_form_as(
+            &format!("/app/admin/groups/{group_id}"),
+            &body,
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    let list = groups(&app, &admin_cookie).await;
+    assert_eq!(group_named(&list, "Fallback")["default_domain_id"], b);
 
     let created = create_link(
         &app,
@@ -728,7 +759,6 @@ async fn a_disabled_group_default_falls_back_to_the_site_default() {
     )
     .await;
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
-    let canonical = app.state.domains.canonical_host().to_string();
     assert_eq!(created.json()["domain"], canonical);
 
     let me = app.get_as("/api/v1/auth/me", &member_cookie).await.json();
@@ -883,6 +913,33 @@ async fn group_domain_policy_works_through_the_html_form() {
     assert_eq!(ids, vec![a, b]);
     let group_id = row["id"].as_i64().expect("id");
 
+    let page = app.get_as("/app/admin/groups", &admin_cookie).await;
+    assert!(page.body.contains(&format!("value=\"{a}\" selected")));
+    assert!(page
+        .body
+        .contains(&format!("name=\"domain_{a}\" value=\"on\" checked")));
+    assert!(page
+        .body
+        .contains(&format!("name=\"domain_{b}\" value=\"on\" checked")));
+
+    // Changing the active default through the form persists it.
+    let body = format!(
+        "name=Form+Domains&max_urls=&max_api_tokens=&allow_custom_slug=on&allow_password=on\
+         &allow_expiry=on&allow_max_clicks=on&allow_tags=on&allow_api_tokens=on\
+         &allow_domain_selection=on&default_domain_id={b}&restrict_domains=on\
+         &domain_{a}=on&domain_{b}=on"
+    );
+    let response = app
+        .send(post_form_as(
+            &format!("/app/admin/groups/{group_id}"),
+            &body,
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    let list = groups(&app, &admin_cookie).await;
+    assert_eq!(group_named(&list, "Form Domains")["default_domain_id"], b);
+
     // Clearing the default and restriction through the form removes the rows.
     let body = "name=Form+Domains&max_urls=&max_api_tokens=&allow_custom_slug=on\
                 &allow_password=on&allow_expiry=on&allow_max_clicks=on&allow_tags=on\
@@ -901,6 +958,125 @@ async fn group_domain_policy_works_through_the_html_form() {
     assert_eq!(row["default_domain_id"], Value::Null);
     assert_eq!(row["restrict_domains"], false);
     assert_eq!(row["allowed_domain_ids"], json!([]));
+}
+
+#[tokio::test]
+async fn invalid_or_inactive_group_domains_are_rejected() {
+    let app = TestApp::spawn().await;
+    let (admin_cookie, _) = admin(&app).await;
+    let b = app.add_domain("b.example.com", "active").await;
+    sqlx::query("UPDATE domains SET status = 'disabled' WHERE id = ?")
+        .bind(b)
+        .execute(&app.state.db)
+        .await
+        .expect("disable domain");
+    app.reload_domains().await;
+
+    let bad_default = create_group(
+        &app,
+        &admin_cookie,
+        json!({ "name": "Bad default", "default_domain_id": b }),
+    )
+    .await;
+    assert_eq!(bad_default.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    let unknown = create_group(
+        &app,
+        &admin_cookie,
+        json!({ "name": "Unknown domain", "domain_ids": [999_999] }),
+    )
+    .await;
+    assert_eq!(unknown.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // An existing but disabled domain may stay in the allowlist.
+    let allowed = create_group(
+        &app,
+        &admin_cookie,
+        json!({
+            "name": "Disabled allow",
+            "restrict_domains": true,
+            "domain_ids": [b]
+        }),
+    )
+    .await;
+    assert_eq!(allowed.status, StatusCode::CREATED, "{}", allowed.body);
+    let group_id = allowed.json()["id"].as_i64().expect("id");
+
+    let changed_default = update_group(
+        &app,
+        &admin_cookie,
+        group_id,
+        json!({ "name": "Disabled allow", "default_domain_id": b }),
+    )
+    .await;
+    assert_eq!(changed_default.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    let changed_allowlist = update_group(
+        &app,
+        &admin_cookie,
+        group_id,
+        json!({ "name": "Disabled allow", "domain_ids": [999_999] }),
+    )
+    .await;
+    assert_eq!(changed_allowlist.status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn editing_a_group_keeps_a_disabled_allowlist_domain() {
+    let app = TestApp::spawn().await;
+    let (admin_cookie, _) = admin(&app).await;
+    let a = app.add_domain("a.example.com", "active").await;
+    let b = app.add_domain("b.example.com", "active").await;
+    let group = create_group(
+        &app,
+        &admin_cookie,
+        json!({
+            "name": "Keep Disabled",
+            "default_domain_id": a,
+            "restrict_domains": true,
+            "domain_ids": [a, b]
+        }),
+    )
+    .await
+    .json();
+    let group_id = group["id"].as_i64().expect("id");
+    sqlx::query("UPDATE domains SET status = 'disabled' WHERE id = ?")
+        .bind(b)
+        .execute(&app.state.db)
+        .await
+        .expect("disable domain");
+    app.reload_domains().await;
+
+    // The disabled stored domain is not selectable, but the edit form keeps it
+    // in a hidden field so saving another change does not drop it.
+    let page = app.get_as("/app/admin/groups", &admin_cookie).await;
+    assert!(page.body.contains(&format!("name=\"domain_{b}\"")));
+
+    let body = format!(
+        "name=Keep+Disabled&max_urls=&max_api_tokens=&allow_custom_slug=on&allow_password=on\
+         &allow_expiry=on&allow_max_clicks=on&allow_tags=on&allow_api_tokens=on\
+         &allow_domain_selection=on&default_domain_id={a}&restrict_domains=on\
+         &domain_{a}=on&domain_{b}=on"
+    );
+    let response = app
+        .send(post_form_as(
+            &format!("/app/admin/groups/{group_id}"),
+            &body,
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+
+    let list = groups(&app, &admin_cookie).await;
+    let row = group_named(&list, "Keep Disabled");
+    let mut ids: Vec<i64> = row["allowed_domain_ids"]
+        .as_array()
+        .expect("ids")
+        .iter()
+        .map(|value| value.as_i64().expect("id"))
+        .collect();
+    ids.sort_unstable();
+    assert_eq!(ids, vec![a, b]);
 }
 
 #[tokio::test]
@@ -936,6 +1112,27 @@ async fn group_domain_policy_partial_updates_keep_omitted_fields() {
     assert_eq!(row["default_domain_id"], a);
     assert_eq!(row["restrict_domains"], true);
     assert_eq!(row["allowed_domain_ids"], json!([a, b]));
+
+    // `domain_ids: null` clears the allowlist just like `[]`.
+    let cleared_null = update_group(
+        &app,
+        &admin_cookie,
+        group_id,
+        json!({ "name": "Partial domains renamed", "domain_ids": null }),
+    )
+    .await;
+    assert_eq!(cleared_null.status, StatusCode::OK, "{}", cleared_null.body);
+    assert_eq!(cleared_null.json()["allowed_domain_ids"], json!([]));
+
+    let restored = update_group(
+        &app,
+        &admin_cookie,
+        group_id,
+        json!({ "name": "Partial domains renamed", "domain_ids": [a, b] }),
+    )
+    .await;
+    assert_eq!(restored.status, StatusCode::OK, "{}", restored.body);
+    assert_eq!(restored.json()["allowed_domain_ids"], json!([a, b]));
 
     // Explicit null clears the default; [] removes the allowlist rows.
     let cleared = update_group(

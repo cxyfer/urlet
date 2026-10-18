@@ -352,10 +352,14 @@ contains "a group default domain is stored" "\"default_domain_id\":$GO_ID" "$POL
 check "the policy group is assigned" "200" "$(curl -s -o /dev/null -w '%{http_code}' \
     -b "$COOKIES" -X PATCH "$BASE/api/v1/admin/users/2" -H 'content-type: application/json' \
     -H "origin: $BASE" -d "{\"group_id\":$POLICY_ID}")"
+HOST=${BASE#http://}
+POLICY_DOMAINS=$(curl -s -b "$COOKIES_B" "$BASE/api/v1/domains")
+contains "the policy domain list contains the allowlisted domain" '"hostname":"go.example.com"' "$POLICY_DOMAINS"
+POLICY_OTHER=$(printf '%s' "$POLICY_DOMAINS" | grep -F -c "\"hostname\":\"$HOST\"" || true)
+check "the policy domain list excludes the canonical domain" "0" "$POLICY_OTHER"
 DEFAULT_LINK=$(curl -s -b "$COOKIES_B" -X POST "$BASE/api/v1/urls" -H 'content-type: application/json' \
     -H "origin: $BASE" -d '{"target_url":"https://example.com/group-domain"}')
 contains "the group default domain is used" '"domain":"go.example.com"' "$DEFAULT_LINK"
-HOST=${BASE#http://}
 check "a domain outside the allowlist is refused" "403" "$(curl -s -o /dev/null -w '%{http_code}' \
     -b "$COOKIES_B" -X POST "$BASE/api/v1/urls" -H 'content-type: application/json' \
     -H "origin: $BASE" -d "{\"target_url\":\"https://example.com/not-allowed\",\"domain\":\"$HOST\"}")"

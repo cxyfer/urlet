@@ -52,8 +52,6 @@ pub struct DashboardPage {
     pub default_redirect_type: i64,
     /// Domains selectable in the create form.
     pub domains: Vec<DomainOption>,
-    /// Group default domain, used to preselect the select.
-    pub default_domain_id: i64,
     /// Provider widget for the create form, or `None` when it is not protected.
     pub captcha: Option<crate::services::captcha::CaptchaWidget>,
     /// Localised "3 of 10 links used" line.
@@ -194,7 +192,6 @@ pub async fn dashboard(
         allow_max_clicks: effective.allow_max_clicks,
         allow_tags: effective.allow_tags,
         allow_domain_selection: policy.allow_selection,
-        default_domain_id: policy.default_domain_id,
         default_redirect_type: state.settings.default_redirect_type(),
         domains: policy.options(&state.domains),
         captcha: crate::routes::pages::captcha_widget(&state, CaptchaFlow::Create),

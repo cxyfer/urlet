@@ -419,9 +419,14 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | PATCH | `/admin/domains/{id}` | `{ "status"?: "active"\|"disabled", "is_default"?: true }` |
 | DELETE | `/admin/domains/{id}` | `204`；僅限沒有連結、非預設的 UI 網域 |
 | GET | `/admin/groups?page=&per_page=` | 使用者群組列表（含成員數，分頁） |
-| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "default_domain_id"?, "restrict_domains"?, "domain_ids"?, "is_default"? }` → `201`；`default_domain_id` 與 `domain_ids` 必須指向 active 網域 |
-| PUT | `/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`default_domain_id: null` 表示全站預設；`domain_ids: []` 會清空允許清單；`is_default: true` 會轉移唯一的預設標記 |
+| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "default_domain_id"?, "restrict_domains"?, "domain_ids"?, "is_default"? }` → `201`；`default_domain_id` 必須指向 active 網域；`domain_ids` 必須指向存在的網域（停用的項目會保留但無法選取） |
+| PUT | `/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`default_domain_id: null` 表示全站預設；`domain_ids: null` 或 `[]` 會清空允許清單；`is_default: true` 會轉移唯一的預設標記 |
 | DELETE | `/admin/groups/{id}?reassign_to={id}` | `204`，先移動成員再刪除；預設群組或目標不存在/不合法回 `409` |
+
+`GroupDto` 另回傳 `default_domain_id`、`default_domain`（儲存值，即使網域已停用）、
+`restrict_domains`、`allowed_domain_ids`、`allowed_domains`。請求欄位是 `domain_ids`（`null` 或 `[]` 表示清空，省略則維持原值），回應使用
+`allowed_*`。`GET /api/v1/auth/me` 回傳的是*生效*的 fallback 預設，若儲存的群組預設已停用，
+可能與 `default_domain` 不同。
 | GET | `/admin/urls?q=&status=&user_id=&page=` | 全站短網址 |
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |

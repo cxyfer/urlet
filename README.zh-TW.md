@@ -165,10 +165,10 @@ urlet/
 ## 開發
 
 ```bash
-cargo test                 # 單元 + 整合測試（372 個）
+cargo test                 # 單元 + 整合測試（374 個）
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收（106 項）
+bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收（108 項）
 bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 ```
 

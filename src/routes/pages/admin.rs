@@ -25,7 +25,7 @@ use crate::routes::pages::{
 };
 use crate::services::admin::{self, AdminContext};
 use crate::services::captcha::CaptchaProvider;
-use crate::services::domains::DomainContext;
+use crate::services::domains::{DomainContext, DomainOption, DomainRegistry};
 use crate::services::groups::{self as group_service, GroupDraft, GroupOverview};
 use crate::services::settings::Settings;
 use crate::services::time;
@@ -277,13 +277,42 @@ pub struct GroupRow {
     pub default_domain_id: Option<i64>,
     pub restrict_domains: bool,
     pub allowed_domain_ids: Vec<i64>,
+    /// Stored allowlist domains that are currently disabled; rendered as
+    /// checked options so they can be kept or removed explicitly.
+    pub disabled_domains: Vec<DomainOption>,
+    /// Stored group default that is currently disabled.
+    pub default_domain_disabled_id: Option<i64>,
+    pub default_domain_disabled_name: Option<String>,
     pub features_label: String,
     pub created: String,
 }
 
 impl GroupRow {
-    fn new(settings: &Settings, lang: Lang, overview: &GroupOverview) -> Self {
+    fn new(
+        settings: &Settings,
+        lang: Lang,
+        overview: &GroupOverview,
+        active_domain_ids: &[i64],
+        domains: &DomainRegistry,
+    ) -> Self {
         let group = &overview.group;
+        let default_domain_disabled_id = group
+            .default_domain_id
+            .filter(|id| !active_domain_ids.contains(id));
+        let default_domain_disabled_name =
+            default_domain_disabled_id.and_then(|id| domains.hostname(id));
+        let disabled_domains = overview
+            .allowed_domain_ids
+            .iter()
+            .filter(|id| !active_domain_ids.contains(id))
+            .filter_map(|id| {
+                domains.hostname(*id).map(|hostname| DomainOption {
+                    id: *id,
+                    hostname,
+                    is_default: false,
+                })
+            })
+            .collect();
         let allowed_features = [
             group.allow_custom_slug,
             group.allow_password,
@@ -327,6 +356,9 @@ impl GroupRow {
             default_domain_id: group.default_domain_id,
             restrict_domains: group.restrict_domains,
             allowed_domain_ids: overview.allowed_domain_ids.clone(),
+            disabled_domains,
+            default_domain_disabled_id,
+            default_domain_disabled_name,
             features_label: i18n::format(
                 lang,
                 "admin.groups.features_count",
@@ -346,6 +378,18 @@ impl GroupRow {
     /// Whether `domain_id` is in the explicit allowlist.
     pub fn allows_domain(&self, domain_id: &i64) -> bool {
         self.allowed_domain_ids.contains(domain_id)
+    }
+
+    pub fn has_disabled_default_domain(&self) -> bool {
+        self.default_domain_disabled_id.is_some()
+    }
+
+    pub fn disabled_default_domain_id(&self) -> i64 {
+        self.default_domain_disabled_id.unwrap_or(0)
+    }
+
+    pub fn disabled_default_domain_name(&self) -> &str {
+        self.default_domain_disabled_name.as_deref().unwrap_or("")
     }
 }
 
@@ -1690,6 +1734,8 @@ async fn render_groups(
 ) -> Result<Response, AppError> {
     let overview = group_service::overview(&state.db).await?;
     let lang = i18n::current();
+    let domains = state.domains.active_options();
+    let active_domain_ids: Vec<i64> = domains.iter().map(|domain| domain.id).collect();
     render(
         GroupsPage {
             section: "groups",
@@ -1697,9 +1743,17 @@ async fn render_groups(
             chrome: Chrome::new(state, user, "admin", flash),
             groups: overview
                 .iter()
-                .map(|row| GroupRow::new(&state.settings, lang, row))
+                .map(|row| {
+                    GroupRow::new(
+                        &state.settings,
+                        lang,
+                        row,
+                        &active_domain_ids,
+                        &state.domains,
+                    )
+                })
                 .collect(),
-            domains: state.domains.active_options(),
+            domains,
             lang,
         },
         StatusCode::OK,

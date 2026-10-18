@@ -456,8 +456,8 @@ login_attempts (稽核用)
 | `group_domains(domain_id)` | 網域刪除與允許清單查詢 |
 
 v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表，v1.1 維持 **14 張表、27 個索引**。
-v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` / `invite_codes.group_id` /
-`default_domain_id` 欄位及四個索引，共 **16 張表、31 個索引**（§6.1、§6.3、§6.4）。
+v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` / `invite_codes.group_id` 欄位、
+`user_groups.default_domain_id` / `restrict_domains` 欄位及四個索引，共 **16 張表、31 個索引**（§6.1、§6.3、§6.4）。
 
 ### 6.5 預設資料 (seed)
 
@@ -535,9 +535,9 @@ v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` /
 | PATCH | `/api/v1/admin/users/{id}` | `{role?, status?, display_name?, group_id?}`；`group_id: null` 表示改為未分組（套用全站預設） |
 | POST | `/api/v1/admin/users/{id}/password` | `{new_password}` 重設 |
 | DELETE | `/api/v1/admin/users/{id}` | 軟刪除（其網址一併軟刪除） |
-| GET | `/api/v1/admin/groups` | 使用者群組列表（含成員數，分頁） |
-| POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, default_domain_id?, restrict_domains?, domain_ids?, is_default?}` → 201；網域 id 必須 active；名稱重複或第二個預設群組回 409 |
-| PUT | `/api/v1/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`default_domain_id: null` 表示全站預設；`domain_ids: []` 會清空允許清單；`is_default: true` 會在同一交易內轉移預設標記 |
+| GET | `/api/v1/admin/groups` | 使用者群組列表（含成員數、儲存的預設/允許網域欄位，分頁） |
+| POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, default_domain_id?, restrict_domains?, domain_ids?, is_default?}` → 201；domain_ids 必須存在，default_domain_id 必須 active；名稱重複或第二個預設群組回 409 |
+| PUT | `/api/v1/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`default_domain_id: null` 表示全站預設；`domain_ids: null` 或 `[]` 會清空允許清單；`is_default: true` 會在同一交易內轉移預設標記 |
 | DELETE | `/api/v1/admin/groups/{id}?reassign_to={id}` | 先把成員搬到 `reassign_to`，再刪除 → 204；預設群組或目標不存在/不合法回 409 |
 | GET | `/api/v1/admin/urls` | 全站網址列表 |
 | PATCH | `/api/v1/admin/urls/{id}` | 強制停用/啟用/刪除 |
@@ -713,7 +713,7 @@ v1.2 新增項目（本批次）：
 - [x] 群組可設定自己的預設網域，並用 `group_domains` 限制可選網域；開啟限制但沒有資料列時只能用預設，預設網域停用/刪除時回退全站預設
 - [x] Token 配額預設為 20 個可用 Token，顯示於帳號頁，並與生效連結配額及開關一起在 `GET /api/v1/auth/me` 回傳
 - [x] 群組異動寫入稽核（`admin.group_created` / `updated` / `deleted`），使用者改派記錄於稽核 metadata
-- [x] `cargo test`（372 個測試，1 個 ignored）、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過，`scripts/smoke.sh` 106 項檢查全過（含群組 CRUD、配額強制、網域策略與改派）
+- [x] `cargo test`（374 個測試，1 個 ignored）、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過，`scripts/smoke.sh` 108 項檢查全過（含群組 CRUD、配額強制、網域策略與改派）
 
 ---
 
