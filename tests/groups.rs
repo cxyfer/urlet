@@ -1019,6 +1019,16 @@ async fn invalid_or_inactive_group_domains_are_rejected() {
     )
     .await;
     assert_eq!(changed_allowlist.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // A missing group is a 404, not a 422 from domain validation.
+    let missing = update_group(
+        &app,
+        &admin_cookie,
+        999_999,
+        json!({ "name": "Missing", "default_domain_id": 999_999 }),
+    )
+    .await;
+    assert_eq!(missing.status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
