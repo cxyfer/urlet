@@ -341,6 +341,27 @@ check "the default group cannot be deleted" "409" "$(curl -s -o /dev/null -w '%{
 check "a non-default group is deleted with reassignment" "204" "$(curl -s -o /dev/null -w '%{http_code}' \
     -b "$COOKIES" -X DELETE -H "origin: $BASE" "$BASE/api/v1/admin/groups/$GROUP_ID?reassign_to=1")"
 
+# group domain policy: a group default plus an allowlist
+GO_ID=$(curl -s -b "$COOKIES" "$BASE/api/v1/domains" \
+    | sed -n 's/.*{"id":\([0-9]*\),"hostname":"go.example.com".*/\1/p')
+POLICY=$(curl -s -b "$COOKIES" -X POST "$BASE/api/v1/admin/groups" -H 'content-type: application/json' \
+    -H "origin: $BASE" \
+    -d "{\"name\":\"Smoke Domains\",\"max_urls\":5,\"default_domain_id\":$GO_ID,\"restrict_domains\":true,\"domain_ids\":[$GO_ID]}")
+POLICY_ID=$(echo "$POLICY" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+contains "a group default domain is stored" "\"default_domain_id\":$GO_ID" "$POLICY"
+check "the policy group is assigned" "200" "$(curl -s -o /dev/null -w '%{http_code}' \
+    -b "$COOKIES" -X PATCH "$BASE/api/v1/admin/users/2" -H 'content-type: application/json' \
+    -H "origin: $BASE" -d "{\"group_id\":$POLICY_ID}")"
+DEFAULT_LINK=$(curl -s -b "$COOKIES_B" -X POST "$BASE/api/v1/urls" -H 'content-type: application/json' \
+    -H "origin: $BASE" -d '{"target_url":"https://example.com/group-domain"}')
+contains "the group default domain is used" '"domain":"go.example.com"' "$DEFAULT_LINK"
+HOST=${BASE#http://}
+check "a domain outside the allowlist is refused" "403" "$(curl -s -o /dev/null -w '%{http_code}' \
+    -b "$COOKIES_B" -X POST "$BASE/api/v1/urls" -H 'content-type: application/json' \
+    -H "origin: $BASE" -d "{\"target_url\":\"https://example.com/not-allowed\",\"domain\":\"$HOST\"}")"
+check "the policy group is deleted with reassignment" "204" "$(curl -s -o /dev/null -w '%{http_code}' \
+    -b "$COOKIES" -X DELETE -H "origin: $BASE" "$BASE/api/v1/admin/groups/$POLICY_ID?reassign_to=1")"
+
 # The registration limiter is in memory and counts per IP; restart to reset it
 # so the invite flow below is not throttled by the checks above.
 stop_server

@@ -58,6 +58,11 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/0004_user_groups.sql"),
         kind: MigrationKind::Transactional,
     },
+    Migration {
+        version: "0005_group_domains",
+        sql: include_str!("../../migrations/0005_group_domains.sql"),
+        kind: MigrationKind::Transactional,
+    },
 ];
 
 /// Apply all pending migrations.
@@ -348,6 +353,7 @@ mod tests {
         for expected in [
             "users",
             "user_groups",
+            "group_domains",
             "urls",
             "clicks",
             "sessions",
@@ -985,6 +991,23 @@ mod tests {
             .expect("invite group");
         assert_eq!(invite_group, None, "existing invites stay unpinned");
 
+        let group_policy: (Option<i64>, i64) = sqlx::query_as(
+            "SELECT default_domain_id, restrict_domains FROM user_groups WHERE is_default = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("group domain policy");
+        assert_eq!(
+            group_policy,
+            (None, 0),
+            "existing groups keep the site default and no restriction"
+        );
+        let allowlist_rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM group_domains")
+            .fetch_one(&pool)
+            .await
+            .expect("allowlist rows");
+        assert_eq!(allowlist_rows, 0, "existing groups have no allowlist");
+
         let quota: String =
             sqlx::query_scalar("SELECT value FROM settings WHERE key = 'max_api_tokens_per_user'")
                 .fetch_one(&pool)
@@ -1003,6 +1026,85 @@ mod tests {
             violations.is_empty(),
             "foreign key violations: {violations:?}"
         );
+        assert_eq!(
+            applied_count(&pool).await.expect("count"),
+            MIGRATIONS.len() as i64
+        );
+
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn upgrades_a_v4_group_without_a_domain_policy() {
+        let dir = std::env::temp_dir().join(format!(
+            "urlet-migrate-group-domains-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = format!("{}/group-domains.db", dir.display());
+        let options = test_options(&path);
+        let pool = test_pool(&options).await;
+
+        run_until(&pool, &options, "0004_user_groups")
+            .await
+            .expect("v4 schema");
+        let now = now_iso();
+        sqlx::query(
+            "INSERT INTO domains (hostname, is_default, is_verified, created_at)
+             VALUES ('s.example.com', 1, 1, ?)",
+        )
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("domain");
+        sqlx::query(
+            "INSERT INTO user_groups
+                 (name, description, max_urls, max_api_tokens, allow_custom_slug, allow_password,
+                  allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens,
+                  allow_domain_selection, is_default, created_at, updated_at)
+             VALUES ('Legacy', NULL, NULL, NULL, 1, 1, 1, 1, 1, 1, 1, 0, ?, ?)",
+        )
+        .bind(&now)
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("legacy group");
+
+        run(&pool, &options).await.expect("v5 upgrade");
+
+        let upgraded: (Option<i64>, i64) = sqlx::query_as(
+            "SELECT default_domain_id, restrict_domains FROM user_groups WHERE name = 'Legacy'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("upgraded group");
+        assert_eq!(upgraded, (None, 0));
+        let domain_id: i64 =
+            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = 's.example.com'")
+                .fetch_one(&pool)
+                .await
+                .expect("domain id");
+        let group_id: i64 = sqlx::query_scalar("SELECT id FROM user_groups WHERE name = 'Legacy'")
+            .fetch_one(&pool)
+            .await
+            .expect("group id");
+        sqlx::query("INSERT INTO group_domains (group_id, domain_id) VALUES (?, ?)")
+            .bind(group_id)
+            .bind(domain_id)
+            .execute(&pool)
+            .await
+            .expect("allowlist row");
+        sqlx::query("DELETE FROM domains WHERE id = ?")
+            .bind(domain_id)
+            .execute(&pool)
+            .await
+            .expect("delete domain");
+        let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM group_domains")
+            .fetch_one(&pool)
+            .await
+            .expect("remaining rows");
+        assert_eq!(remaining, 0, "deleting a domain cascades the allowlist row");
         assert_eq!(
             applied_count(&pool).await.expect("count"),
             MIGRATIONS.len() as i64

@@ -501,6 +501,458 @@ async fn domain_selection_is_a_group_permission() {
 }
 
 #[tokio::test]
+async fn group_default_domain_and_allowlist_are_enforced() {
+    let app = TestApp::spawn().await;
+    let (admin_cookie, _) = admin(&app).await;
+    let a = app.add_domain("a.example.com", "active").await;
+    let b = app.add_domain("b.example.com", "active").await;
+    app.add_domain("c.example.com", "active").await;
+
+    let group = create_group(
+        &app,
+        &admin_cookie,
+        json!({
+            "name": "A and B",
+            "default_domain_id": a,
+            "restrict_domains": true,
+            "domain_ids": [a, b]
+        }),
+    )
+    .await
+    .json();
+    assert_eq!(group["default_domain_id"], a);
+    assert_eq!(group["restrict_domains"], true);
+    let mut allowed: Vec<i64> = group["allowed_domain_ids"]
+        .as_array()
+        .expect("allowed ids")
+        .iter()
+        .map(|value| value.as_i64().expect("id"))
+        .collect();
+    allowed.sort_unstable();
+    assert_eq!(allowed, vec![a, b]);
+    let group_id = group["id"].as_i64().expect("id");
+
+    let (member_cookie, member_id) = member(&app, "group-domains@example.com").await;
+    assert_eq!(
+        assign(&app, &admin_cookie, member_id, group_id)
+            .await
+            .status,
+        StatusCode::OK
+    );
+
+    // Omitting `domain` uses the group default, not the site default.
+    let default_link = create_link(
+        &app,
+        &member_cookie,
+        json!({ "target_url": "https://example.com/group-default" }),
+    )
+    .await;
+    assert_eq!(
+        default_link.status,
+        StatusCode::CREATED,
+        "{}",
+        default_link.body
+    );
+    assert_eq!(default_link.json()["domain"], "a.example.com");
+
+    for (domain, expected) in [
+        ("b.example.com", StatusCode::CREATED),
+        ("c.example.com", StatusCode::FORBIDDEN),
+        (app.state.domains.canonical_host(), StatusCode::FORBIDDEN),
+    ] {
+        let response = create_link(
+            &app,
+            &member_cookie,
+            json!({ "target_url": "https://example.com/choice", "domain": domain }),
+        )
+        .await;
+        assert_eq!(
+            response.status, expected,
+            "domain {domain}: {}",
+            response.body
+        );
+    }
+
+    let me = app.get_as("/api/v1/auth/me", &member_cookie).await.json();
+    assert_eq!(me["limits"]["default_domain"], "a.example.com");
+    let mut allowed_hosts: Vec<&str> = me["limits"]["allowed_domains"]
+        .as_array()
+        .expect("allowed domains")
+        .iter()
+        .map(|value| value.as_str().expect("host"))
+        .collect();
+    allowed_hosts.sort_unstable();
+    assert_eq!(allowed_hosts, vec!["a.example.com", "b.example.com"]);
+
+    let options = app.get_as("/api/v1/domains", &member_cookie).await.json();
+    let mut hosts: Vec<&str> = options
+        .as_array()
+        .expect("domain list")
+        .iter()
+        .map(|value| value["hostname"].as_str().expect("host"))
+        .collect();
+    hosts.sort_unstable();
+    assert_eq!(hosts, vec!["a.example.com", "b.example.com"]);
+    let a_option = options
+        .as_array()
+        .expect("domain list")
+        .iter()
+        .find(|value| value["hostname"] == "a.example.com")
+        .expect("a option");
+    assert_eq!(a_option["is_default"], true);
+    assert_eq!(a_option["id"], a);
+
+    let dashboard = app.get_as("/app", &member_cookie).await;
+    assert!(dashboard.body.contains("name=\"domain\""));
+    assert!(dashboard.body.contains("a.example.com"));
+    assert!(dashboard.body.contains("b.example.com"));
+    assert!(!dashboard.body.contains("c.example.com"));
+
+    // Turning restriction off re-opens every active domain.
+    let opened = update_group(
+        &app,
+        &admin_cookie,
+        group_id,
+        json!({ "name": "A and B", "restrict_domains": false }),
+    )
+    .await;
+    assert_eq!(opened.status, StatusCode::OK, "{}", opened.body);
+    assert_eq!(
+        create_link(
+            &app,
+            &member_cookie,
+            json!({ "target_url": "https://example.com/c", "domain": "c.example.com" }),
+        )
+        .await
+        .status,
+        StatusCode::CREATED
+    );
+}
+
+#[tokio::test]
+async fn an_empty_restricted_allowlist_allows_only_the_default() {
+    let app = TestApp::spawn().await;
+    let (admin_cookie, _) = admin(&app).await;
+    let a = app.add_domain("a.example.com", "active").await;
+    app.add_domain("b.example.com", "active").await;
+    let group = create_group(
+        &app,
+        &admin_cookie,
+        json!({
+            "name": "Only default",
+            "default_domain_id": a,
+            "restrict_domains": true
+        }),
+    )
+    .await
+    .json();
+    let group_id = group["id"].as_i64().expect("id");
+    assert_eq!(group["allowed_domain_ids"], json!([]));
+    let (member_cookie, member_id) = member(&app, "empty-allowlist@example.com").await;
+    assert_eq!(
+        assign(&app, &admin_cookie, member_id, group_id)
+            .await
+            .status,
+        StatusCode::OK
+    );
+
+    let default_link = create_link(
+        &app,
+        &member_cookie,
+        json!({ "target_url": "https://example.com/default-only" }),
+    )
+    .await;
+    assert_eq!(
+        default_link.status,
+        StatusCode::CREATED,
+        "{}",
+        default_link.body
+    );
+    assert_eq!(default_link.json()["domain"], "a.example.com");
+    assert_eq!(
+        create_link(
+            &app,
+            &member_cookie,
+            json!({ "target_url": "https://example.com/b", "domain": "b.example.com" }),
+        )
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        create_link(
+            &app,
+            &member_cookie,
+            json!({
+                "target_url": "https://example.com/site",
+                "domain": app.state.domains.canonical_host()
+            }),
+        )
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
+async fn a_disabled_group_default_falls_back_to_the_site_default() {
+    let app = TestApp::spawn().await;
+    let (admin_cookie, _) = admin(&app).await;
+    let b = app.add_domain("b.example.com", "active").await;
+    let group = create_group(
+        &app,
+        &admin_cookie,
+        json!({ "name": "Fallback", "default_domain_id": b }),
+    )
+    .await
+    .json();
+    let group_id = group["id"].as_i64().expect("id");
+    let (member_cookie, member_id) = member(&app, "domain-fallback@example.com").await;
+    assert_eq!(
+        assign(&app, &admin_cookie, member_id, group_id)
+            .await
+            .status,
+        StatusCode::OK
+    );
+
+    sqlx::query("UPDATE domains SET status = 'disabled' WHERE id = ?")
+        .bind(b)
+        .execute(&app.state.db)
+        .await
+        .expect("disable domain");
+
+    let created = create_link(
+        &app,
+        &member_cookie,
+        json!({ "target_url": "https://example.com/fallback" }),
+    )
+    .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let canonical = app.state.domains.canonical_host().to_string();
+    assert_eq!(created.json()["domain"], canonical);
+
+    let me = app.get_as("/api/v1/auth/me", &member_cookie).await.json();
+    assert_eq!(me["limits"]["default_domain"], canonical);
+
+    sqlx::query("DELETE FROM domains WHERE id = ?")
+        .bind(b)
+        .execute(&app.state.db)
+        .await
+        .expect("delete group default");
+    let list = groups(&app, &admin_cookie).await;
+    assert_eq!(
+        group_named(&list, "Fallback")["default_domain_id"],
+        Value::Null
+    );
+}
+
+#[tokio::test]
+async fn selection_off_keeps_the_current_domain_but_blocks_moves() {
+    let app = TestApp::spawn().await;
+    let (admin_cookie, _) = admin(&app).await;
+    let a = app.add_domain("a.example.com", "active").await;
+    let b = app.add_domain("b.example.com", "active").await;
+    app.add_domain("c.example.com", "active").await;
+    let group = create_group(
+        &app,
+        &admin_cookie,
+        json!({
+            "name": "Locked choice",
+            "default_domain_id": a,
+            "restrict_domains": true,
+            "domain_ids": [a, b]
+        }),
+    )
+    .await
+    .json();
+    let group_id = group["id"].as_i64().expect("id");
+    let (member_cookie, member_id) = member(&app, "domain-locked-choice@example.com").await;
+    assert_eq!(
+        assign(&app, &admin_cookie, member_id, group_id)
+            .await
+            .status,
+        StatusCode::OK
+    );
+
+    // Put the link on the non-default allowed domain before locking selection.
+    let on_b = create_link(
+        &app,
+        &member_cookie,
+        json!({ "target_url": "https://example.com/on-b", "domain": "b.example.com" }),
+    )
+    .await;
+    assert_eq!(on_b.status, StatusCode::CREATED, "{}", on_b.body);
+    let url_id = on_b.json()["id"].as_i64().expect("id");
+
+    let locked = update_group(
+        &app,
+        &admin_cookie,
+        group_id,
+        json!({ "name": "Locked choice", "allow_domain_selection": false }),
+    )
+    .await;
+    assert_eq!(locked.status, StatusCode::OK, "{}", locked.body);
+
+    // Keeping the current domain (even without sending it) is allowed.
+    let kept = app
+        .send(patch_json_as(
+            &format!("/api/v1/urls/{url_id}"),
+            json!({ "title": "Kept" }),
+            &member_cookie,
+        ))
+        .await;
+    assert_eq!(kept.status, StatusCode::OK, "{}", kept.body);
+    assert_eq!(
+        app.send(patch_json_as(
+            &format!("/api/v1/urls/{url_id}"),
+            json!({ "domain": "b.example.com", "title": "Kept again" }),
+            &member_cookie,
+        ))
+        .await
+        .status,
+        StatusCode::OK
+    );
+    // A non-default move is refused, moving back to the group default is not.
+    assert_eq!(
+        app.send(patch_json_as(
+            &format!("/api/v1/urls/{url_id}"),
+            json!({ "domain": "c.example.com" }),
+            &member_cookie,
+        ))
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.send(patch_json_as(
+            &format!("/api/v1/urls/{url_id}"),
+            json!({ "domain": "a.example.com" }),
+            &member_cookie,
+        ))
+        .await
+        .status,
+        StatusCode::OK
+    );
+
+    let dashboard = app.get_as("/app", &member_cookie).await;
+    assert!(!dashboard.body.contains("name=\"domain\""));
+    let detail = app
+        .get_as(&format!("/app/urls/{url_id}"), &member_cookie)
+        .await;
+    assert!(!detail.body.contains("name=\"domain\""));
+
+    let me = app.get_as("/api/v1/auth/me", &member_cookie).await.json();
+    assert_eq!(me["limits"]["default_domain"], "a.example.com");
+    assert_eq!(me["limits"]["allowed_domains"], json!(["a.example.com"]));
+    let options = app.get_as("/api/v1/domains", &member_cookie).await.json();
+    assert_eq!(
+        options,
+        json!([{"id": a, "hostname": "a.example.com", "is_default": true}])
+    );
+}
+
+#[tokio::test]
+async fn group_domain_policy_works_through_the_html_form() {
+    let app = TestApp::spawn().await;
+    let (admin_cookie, _) = admin(&app).await;
+    let a = app.add_domain("a.example.com", "active").await;
+    let b = app.add_domain("b.example.com", "active").await;
+
+    let body = format!(
+        "name=Form+Domains&max_urls=&max_api_tokens=&allow_custom_slug=on&allow_password=on\
+         &allow_expiry=on&allow_max_clicks=on&allow_tags=on&allow_api_tokens=on\
+         &allow_domain_selection=on&default_domain_id={a}&restrict_domains=on\
+         &domain_{a}=on&domain_{b}=on"
+    );
+    let response = app
+        .send(post_form_as("/app/admin/groups", &body, &admin_cookie))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+
+    let list = groups(&app, &admin_cookie).await;
+    let row = group_named(&list, "Form Domains");
+    assert_eq!(row["default_domain_id"], a);
+    assert_eq!(row["restrict_domains"], true);
+    let mut ids: Vec<i64> = row["allowed_domain_ids"]
+        .as_array()
+        .expect("ids")
+        .iter()
+        .map(|value| value.as_i64().expect("id"))
+        .collect();
+    ids.sort_unstable();
+    assert_eq!(ids, vec![a, b]);
+    let group_id = row["id"].as_i64().expect("id");
+
+    // Clearing the default and restriction through the form removes the rows.
+    let body = "name=Form+Domains&max_urls=&max_api_tokens=&allow_custom_slug=on\
+                &allow_password=on&allow_expiry=on&allow_max_clicks=on&allow_tags=on\
+                &allow_api_tokens=on&allow_domain_selection=on&default_domain_id=";
+    let response = app
+        .send(post_form_as(
+            &format!("/app/admin/groups/{group_id}"),
+            body,
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+
+    let list = groups(&app, &admin_cookie).await;
+    let row = group_named(&list, "Form Domains");
+    assert_eq!(row["default_domain_id"], Value::Null);
+    assert_eq!(row["restrict_domains"], false);
+    assert_eq!(row["allowed_domain_ids"], json!([]));
+}
+
+#[tokio::test]
+async fn group_domain_policy_partial_updates_keep_omitted_fields() {
+    let app = TestApp::spawn().await;
+    let (admin_cookie, _) = admin(&app).await;
+    let a = app.add_domain("a.example.com", "active").await;
+    let b = app.add_domain("b.example.com", "active").await;
+    let group = create_group(
+        &app,
+        &admin_cookie,
+        json!({
+            "name": "Partial domains",
+            "default_domain_id": a,
+            "restrict_domains": true,
+            "domain_ids": [a, b]
+        }),
+    )
+    .await
+    .json();
+    let group_id = group["id"].as_i64().expect("id");
+
+    // A name-only PUT keeps the domain policy.
+    let renamed = update_group(
+        &app,
+        &admin_cookie,
+        group_id,
+        json!({ "name": "Partial domains renamed" }),
+    )
+    .await;
+    assert_eq!(renamed.status, StatusCode::OK, "{}", renamed.body);
+    let row = renamed.json();
+    assert_eq!(row["default_domain_id"], a);
+    assert_eq!(row["restrict_domains"], true);
+    assert_eq!(row["allowed_domain_ids"], json!([a, b]));
+
+    // Explicit null clears the default; [] removes the allowlist rows.
+    let cleared = update_group(
+        &app,
+        &admin_cookie,
+        group_id,
+        json!({ "name": "Partial domains renamed", "default_domain_id": null, "domain_ids": [] }),
+    )
+    .await;
+    assert_eq!(cleared.status, StatusCode::OK, "{}", cleared.body);
+    let row = cleared.json();
+    assert_eq!(row["default_domain_id"], Value::Null);
+    assert_eq!(row["allowed_domain_ids"], json!([]));
+    assert_eq!(row["restrict_domains"], true);
+}
+
+#[tokio::test]
 async fn token_quota_counts_only_usable_tokens() {
     let app = TestApp::spawn().await;
     let (admin_cookie, _) = admin(&app).await;
@@ -808,6 +1260,8 @@ async fn admin_group_pages_and_restricted_user_views_render() {
     assert!(page.body.contains("User groups"));
     assert!(page.body.contains("Standard"));
     assert!(page.body.contains("id=\"max_api_tokens\""));
+    assert!(page.body.contains("name=\"default_domain_id\""));
+    assert!(page.body.contains("name=\"restrict_domains\""));
 
     // Create a group through the browser form: custom slugs and tags are off.
     let created = app
@@ -1341,11 +1795,13 @@ async fn updating_a_missing_group_does_not_clear_the_default() {
         allow_tags: true,
         allow_api_tokens: true,
         allow_domain_selection: true,
+        default_domain_id: None,
+        restrict_domains: false,
     };
 
     // Moving the marker onto a row that no longer exists must not clear the
     // current default.
-    let updated = urlet::db::user_groups::update(&app.state.db, 999_999, &values, true)
+    let updated = urlet::db::user_groups::update(&app.state.db, 999_999, &values, true, None)
         .await
         .expect("update call");
     assert!(!updated);

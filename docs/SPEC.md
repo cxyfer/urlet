@@ -32,7 +32,7 @@ deployment model.
 | P4 | Docker Compose deployment | A single `docker-compose.yml` (app + named volume), with an optional Caddy TLS overlay |
 | P5 | As lightweight as possible | One binary, SQLite (no MySQL/Redis), SSR templates (no Node build), image < 40 MB |
 | P6 | Rust implementation | Rust 2021 + Axum 0.8 + Tokio + sqlx (SQLite) |
-| P7 | Well-designed schema | 15 tables, 30 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
+| P7 | Well-designed schema | 16 tables, 31 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
 | P8 | Sensible extra features | Tags, click analytics, API tokens, invite codes, admin panel, audit log, daily rollups, trilingual UI, optional bot protection, quota/feature user groups |
 
 ### 1.2 Relationship to the Earlier Prototypes (OURLS / OURLS2)
@@ -246,7 +246,7 @@ target is still met.
 | FR-ADMIN-5 | Audit log | Records logins, registrations, link changes, group changes, admin actions, and setting changes; filterable by action/target |
 | FR-ADMIN-6 | System info | Version, database size, user/link/click totals, uptime |
 | FR-ADMIN-7 | Authorization | Every `/api/v1/admin/**` and `/app/admin/**` route requires `role = admin`, otherwise 403 |
-| FR-ADMIN-8 | Group management | Create, edit, set as default and delete user groups from `/app/admin/groups` and `/api/v1/admin/groups` (FR-GROUP-1) |
+| FR-ADMIN-8 | Group management | Create, edit, set as default, configure domain policy and delete user groups from `/app/admin/groups` and `/api/v1/admin/groups` (FR-GROUP-1, FR-GROUP-9) |
 
 ### 4.9 JSON API (FR-API)
 
@@ -273,7 +273,7 @@ target is still met.
 | `/app/account` | Account | Profile, change password, session list, API token management |
 | `/app/admin` | Admin panel | Users, user groups, all links, domains, invite codes, settings, audit log |
 | `/app/admin/domains` | Domain management | Add, activate, disable, set default and delete domains |
-| `/app/admin/groups` | User groups | Create/edit/delete groups, quotas, feature toggles, default marker |
+| `/app/admin/groups` | User groups | Create/edit/delete groups, quotas, feature toggles, default domain, domain allowlist and default marker |
 | `/app/lang/{code}` | Language switch | Sets the `urlet_lang` cookie and 302-redirects to `next` (or to `/app`) |
 | `/{slug}` | Redirect / password page / 410 / 404 | Public |
 | Extra domain | Redirect-only | `/` shows a small landing page, `/{slug}` redirects, `/app` 308s to canonical, `/api` is 404 |
@@ -315,12 +315,13 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 |----|-------------|-------------|
 | FR-GROUP-1 | Group CRUD | Administrators can create, rename, edit and delete groups. A name is trimmed, 1–40 characters, case-insensitively unique (`COLLATE NOCASE`) and free of control characters; a description is optional and at most 200 characters. Each quota accepts `NULL` (inherit), `0` (unlimited) or a positive integer up to 1,000,000 |
 | FR-GROUP-2 | Quota inheritance | The effective `max_urls` / `max_api_tokens` is the group value when it is not `NULL`, otherwise `settings.max_urls_per_user` / `settings.max_api_tokens_per_user`. A user without a group uses the site-wide values |
-| FR-GROUP-3 | Feature toggles | Seven booleans, all default `true`: `allow_custom_slug`, `allow_password`, `allow_expiry`, `allow_max_clicks`, `allow_tags`, `allow_api_tokens`, `allow_domain_selection`. They gate creation, and on update they refuse to switch a blocked feature on while permitting clearing a value or omitting the field to keep it. The default domain is always allowed; `allow_domain_selection = false` refuses creating or moving a link to a non-default domain. A non-empty link password is always treated as a new value and is refused while `allow_password` is off. Existing links and tokens are never modified or deleted by a toggle |
+| FR-GROUP-3 | Feature toggles | Seven booleans, all default `true`: `allow_custom_slug`, `allow_password`, `allow_expiry`, `allow_max_clicks`, `allow_tags`, `allow_api_tokens`, `allow_domain_selection`. They gate creation, and on update they refuse to switch a blocked feature on while permitting clearing a value or omitting the field to keep it. The effective group default domain is always allowed; `allow_domain_selection = false` refuses creating or moving a link to any other domain (FR-GROUP-9). A non-empty link password is always treated as a new value and is refused while `allow_password` is off. Existing links and tokens are never modified or deleted by a toggle |
 | FR-GROUP-4 | Assignment | A user belongs to at most one group (`users.group_id`, nullable). Registration assigns the default group; an invite code may carry a group, which wins over the default at redemption. A code supplied in `open` mode is validated too, so its group still applies. An administrator can reassign any user; the change takes effect on the next request because the user row is loaded per request |
 | FR-GROUP-5 | Default group | Exactly one row has `is_default = 1`, enforced by a partial unique index. The marker can be moved from the group edit form (one transaction unsets the previous default); the group currently marked default cannot be deleted. The migration seeds a group named `Standard` with both quotas `NULL` and assigns every existing user to it, so upgrading changes no behaviour |
 | FR-GROUP-6 | Deletion | Deleting a group requires a reassignment target (`reassign_to` on the API, a select in the web dialog). All members move to the target in the same transaction, and invite codes pointing at the deleted group fall back to the default group through `ON DELETE SET NULL`. Reassigning to the group being deleted, or deleting the default group, is rejected with 409 |
 | FR-GROUP-7 | Enforcement scope | Quotas and toggles apply equally to administrators. Lowering a quota or switching a toggle off never deletes or disables existing links or tokens; it only blocks new creations (and newly enabling a blocked feature on update) |
-| FR-GROUP-8 | Visibility | The account page shows the group name plus link usage `used / quota` and token usage `used / quota`; `GET /api/v1/auth/me` returns `group` and a `limits` object with the effective quotas and toggles so API clients can predict refusals |
+| FR-GROUP-8 | Visibility | The account page shows the group name plus link usage `used / quota` and token usage `used / quota`; `GET /api/v1/auth/me` returns `group` and a `limits` object with the effective quotas, toggles, default domain and allowed domains so API clients can predict refusals |
+| FR-GROUP-9 | Domain policy | `user_groups.default_domain_id` is the group default (`NULL` = site default); new links without a domain use it, and a missing, disabled or deleted default falls back to the site default. `restrict_domains = 1` limits selection to `group_domains` rows plus the effective default; with restriction on and no rows only the default is available. `allow_domain_selection = false` also limits selection to the group default. Keeping an existing link on its current domain is always allowed; ungrouped users get the site default and every active domain. |
 
 ---
 
@@ -391,7 +392,8 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 
 ```
 user_groups ─┬─< users
-             └─< invite_codes
+             ├─< invite_codes
+             └─< group_domains >─ domains
 users ─┬─< sessions
        ├─< api_tokens
        ├─< urls ─┬─< clicks
@@ -421,13 +423,14 @@ login_attempts (auditing)
 
 ### 6.3 DDL (migration summary)
 
-> The complete source of truth is the migration files (`0001_init.sql`, `0003_multi_domain.sql` for the multi-domain rebuild and `0004_user_groups.sql` for groups); the table below is a structural summary.
+> The complete source of truth is the migration files (`0001_init.sql`, `0003_multi_domain.sql` for the multi-domain rebuild and `0004_user_groups.sql` for groups and `0005_group_domains.sql` for the domain policy); the table below is a structural summary.
 
 
 | Table | Main columns | Purpose |
 |-------|--------------|---------|
 | `users` | id, email, email_normalized(UNIQUE), password_hash, display_name, role, status, group_id, email_verified_at, last_login_at, created_at, updated_at, deleted_at | Users |
-| `user_groups` | id, name(UNIQUE, NOCASE), description, max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection, is_default, created_at, updated_at | Quota and feature-toggle groups |
+| `user_groups` | id, name(UNIQUE, NOCASE), description, max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection, default_domain_id, restrict_domains, is_default, created_at, updated_at | Quota, feature-toggle and domain-policy groups |
+| `group_domains` | group_id, domain_id (PK) | Explicit per-group domain allowlist |
 | `sessions` | id, user_id, token_hash(UNIQUE), user_agent, ip_hash, created_at, last_seen_at, expires_at, revoked_at | Login state |
 | `api_tokens` | id, user_id, name, token_prefix, token_hash(UNIQUE), scopes, last_used_at, expires_at, created_at, revoked_at | API credentials |
 | `domains` | id, hostname(UNIQUE, NOCASE), is_default, is_verified, status, source, created_by, created_at, updated_at | Canonical/system, `URLET_DOMAINS`/env and admin/UI domains; `pending`/`active`/`disabled` |
@@ -459,11 +462,12 @@ login_attempts (auditing)
 | `user_groups(is_default) WHERE is_default = 1` UNIQUE | At most one default group |
 | `users(group_id)` | Group member listing and reassignment |
 | `invite_codes(group_id)` | Invite lookup per group |
+| `group_domains(domain_id)` | Domain deletion and allowlist checks |
 
 The v1.1 changes add settings **keys** only; because `settings` is a key-value table, v1.1 kept
-the schema at 14 tables and 27 indexes. v1.2 adds the `user_groups` table, the nullable
-`users.group_id` and `invite_codes.group_id` columns and three indexes, for **15 tables and
-30 indexes** (§6.1, §6.3, §6.4).
+the schema at 14 tables and 27 indexes. v1.2 adds the `user_groups` and `group_domains`
+tables, the nullable `users.group_id` / `invite_codes.group_id` / `default_domain_id` columns and
+four indexes, for **16 tables and 31 indexes** (§6.1, §6.3, §6.4).
 
 ### 6.5 Seed Data
 
@@ -477,8 +481,10 @@ the schema at 14 tables and 27 indexes. v1.2 adds the `user_groups` table, the n
   Because it defaults to 20 rather than 0, an account that already holds more than 20 usable tokens
   cannot create another one until it revokes some; existing tokens are never revoked by the upgrade.
 - `user_groups` (v1.2): one row named `Standard` with `max_urls = NULL`, `max_api_tokens = NULL`,
-  all seven toggles `1` (including `allow_domain_selection`) and `is_default = 1`; the migration
-  assigns every existing user to it.
+  all seven toggles `1` (including `allow_domain_selection`), `default_domain_id = NULL`,
+  `restrict_domains = 0` and `is_default = 1`; the migration assigns every existing user to it.
+- `group_domains`: no rows are seeded; an existing or new group without restriction rows may use
+  every active domain.
 - `domains`: at startup the canonical domain is inserted/updated from the host of `URLET_BASE_URL`
   (`source=system`, always active). It is made the default only when no default exists, so an
   administrator can choose another default. `URLET_DOMAINS` inserts missing domains as
@@ -495,7 +501,7 @@ the schema at 14 tables and 27 indexes. v1.2 adds the `user_groups` table, the n
 | POST | `/api/v1/auth/register` | `{email, password, invite_code?, captcha_token?}` → 201 `{user}`; 400 `captcha_failed` when captcha verification fails |
 | POST | `/api/v1/auth/login` | `{email, password, captcha_token?}` → 200 `{user}` + Set-Cookie; 400 `captcha_failed` when captcha verification fails |
 | POST | `/api/v1/auth/logout` | Revoke the current session → 204 |
-| GET | `/api/v1/auth/me` | Current user → 200 `{user}`; also returns `group` (id/name or null) and `limits` (effective quotas and toggles, FR-GROUP-8) |
+| GET | `/api/v1/auth/me` | Current user → 200 `{user}`; also returns `group` (id/name or null) and `limits` (effective quotas, toggles, default domain and allowed domains, FR-GROUP-8) |
 | PATCH | `/api/v1/auth/me` | `{display_name}` → 200 `{user}` |
 | POST | `/api/v1/auth/password` | `{current_password, new_password}` → 204 |
 | GET | `/api/v1/auth/sessions` | List my sessions |
@@ -511,7 +517,7 @@ name and effective limits are exposed through `GET /api/v1/auth/me`.
 |--------|------|-------------|
 | GET | `/api/v1/urls` | Query parameters: `q, tag, status, page, per_page, sort(created_at\|clicks\|slug\|updated\|expires)` |
 | POST | `/api/v1/urls` | `{target_url, domain?, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?, captcha_token?}`; API-token calls are captcha-exempt, session-cookie calls honour `on_create` |
-| GET | `/api/v1/domains` | Active domains available for new links |
+| GET | `/api/v1/domains` | Active domains available for new links, filtered by the caller's group policy (includes the effective `is_default`) |
 | GET | `/api/v1/urls/{id}` | Single link (with `short_url`, `is_expired`, `has_password`) |
 | PATCH | `/api/v1/urls/{id}` | Partial update; `domain` moves the link; `password: null` clears the password; `expires_at: null` clears the expiry |
 | DELETE | `/api/v1/urls/{id}` | Soft delete → 204 |
@@ -545,8 +551,8 @@ old token frees a slot immediately (FR-TOK-6).
 | POST | `/api/v1/admin/users/{id}/password` | `{new_password}` reset |
 | DELETE | `/api/v1/admin/users/{id}` | Soft delete (their links are soft-deleted too) |
 | GET | `/api/v1/admin/groups` | Group list with member counts (paginated) |
-| POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, is_default?}` → 201; a duplicate name or a second default returns 409 |
-| PUT | `/api/v1/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` set to `null` inherit the site quota; `description: null` clears it; `is_default: true` moves the marker in one transaction |
+| POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, default_domain_id?, restrict_domains?, domain_ids?, is_default?}` → 201; domain ids must be active; a duplicate name or a second default returns 409 |
+| PUT | `/api/v1/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` set to `null` inherit the site quota; `description: null` clears it; `default_domain_id: null` means the site default; `domain_ids: []` clears the allowlist; `is_default: true` moves the marker in one transaction |
 | DELETE | `/api/v1/admin/groups/{id}?reassign_to={id}` | Move members to `reassign_to`, then delete → 204; 409 for the default group or a missing/invalid target |
 | GET | `/api/v1/admin/urls` | Site-wide link list |
 | PATCH | `/api/v1/admin/urls/{id}` | Force disable/enable/delete |
@@ -625,7 +631,7 @@ urlet/
 ├── docker-compose.tls.yml        # optional: Caddy automatic HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql  migrations/0003_multi_domain.sql  migrations/0004_user_groups.sql
+├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql  migrations/0003_multi_domain.sql  migrations/0004_user_groups.sql  migrations/0005_group_domains.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama templates (base, app_base, landing.html + pages + admin/)
@@ -634,7 +640,7 @@ urlet/
 │   ├── assets/{app.css,app.js,favicon.svg}
 │   ├── i18n/{mod.rs,en.json,zh-Hant.json,zh-Hans.json}
 │   ├── db/{mod,migrate,users,user_groups,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
-│   ├── services/{auth,urls,admin,domains,groups,limits,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
+│   ├── services/{auth,urls,admin,domains,domain_policy,groups,limits,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
 │   ├── middleware/{mod,auth,csrf,domain,security,locale}.rs
 │   └── routes/{mod,api,api_auth,api_urls,api_domains,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract}.rs
 │       └── pages/{mod,auth,dashboard,urls,account,admin,home}.rs
@@ -714,16 +720,17 @@ v1.1 additions (this batch):
 
 v1.2 additions (this batch):
 
-- [x] `user_groups` (15 tables, 30 indexes) with nullable `max_urls` / `max_api_tokens` and seven feature toggles (including domain selection), plus `users.group_id` and `invite_codes.group_id`
+- [x] `user_groups` and `group_domains` (16 tables, 31 indexes) with nullable `max_urls` / `max_api_tokens`, seven feature toggles, per-group default domains and allowlists, plus `users.group_id` and `invite_codes.group_id`
 - [x] The migration seeds a `Standard` group with both quotas `NULL` and assigns every existing user to it, so upgrading changes no behaviour
 - [x] Effective quotas inherit the site-wide settings when the group value is `NULL`, with `0` meaning unlimited; administrators follow the same rules as users
 - [x] Feature toggles gate creation and refuse to switch a blocked feature on during an update, while clearing or keeping the current value is accepted
 - [x] Admins can create, edit and delete groups and move the single default marker; deleting a non-default group requires a reassignment target, and the default group cannot be deleted
 - [x] Invite codes may carry a group, which wins at redemption; a deleted group falls back to the default group via `ON DELETE SET NULL`
-- [x] Group domain selection is a toggle: the default domain is always allowed, a non-default domain is refused on create/move when disabled, and both forms hide the selector
+- [x] Group domain selection is a toggle: the effective group default is always allowed, any other domain is refused on create/move when disabled, and both forms hide the selector
+- [x] A group can set its own default domain and restrict selection to `group_domains`; an empty restricted list allows only the default, and a disabled/deleted default falls back to the site default
 - [x] The token quota defaults to 20 usable tokens, is shown on the account page, and is exposed in `GET /api/v1/auth/me` together with the effective link quota and toggles
 - [x] Group mutations are audited (`admin.group_created` / `updated` / `deleted`) and user reassignment is recorded in the audit metadata
-- [x] `cargo test` (362 tests, one ignored), `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are clean, and `scripts/smoke.sh` passes all 101 checks (including group CRUD, quota enforcement and reassignment)
+- [x] `cargo test` (372 tests, one ignored), `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are clean, and `scripts/smoke.sh` passes all 106 checks (including group CRUD, quota enforcement, domain policy and reassignment)
 
 ---
 
@@ -731,7 +738,7 @@ v1.2 additions (this batch):
 
 | Feature | Already reserved |
 |---------|------------------|
-| Per-user / per-group domain allowlists | `domains`, `user_groups` and the `allow_domain_selection` toggle exist; a `group_domains` join table can restrict which domains a group may use |
+| Per-user domain overrides | `user_groups` + `group_domains` implement per-group defaults and allowlists; a `user_domains` table could add per-account exceptions |
 | Fine-grained permissions | `user_groups`, `users.group_id` and the seven feature toggles; a future `group_permissions` table can add per-action permissions on top |
 | Team collaboration / shared workspaces | `users.group_id` already groups accounts; a `url_members` table can extend ownership from `urls.user_id` to a group or team |
 | Password reset / email verification | `users.email_verified_at`; a `password_resets` table can be added |

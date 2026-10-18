@@ -19,6 +19,7 @@
 | P7 測試與文件 | ✅ 完成 | 見 `git log`（smoke.sh、README、API.md、DEPLOYMENT.md） |
 | P8 最終驗證 | ✅ 完成 | 見 `git log`（release 建置、映像檔策略、收尾） |
 | P10 使用者群組 (v1.2) | ✅ 完成 | 見 `git log`（migration 0004、群組 API/UI、三語字串、文件） |
+| P11 群組網域策略 (v1.2) | ✅ 完成 | 見 `git log`（migration 0005、預設網域 + 允許清單、管理 UI/API、測試） |
 
 驗收數據（v1.0）：`cargo test` 187 個測試全綠、`cargo clippy --all-targets -- -D warnings` 與
 `cargo fmt --check` 無警告、`scripts/smoke.sh` 81 項端對端檢查全數通過。
@@ -39,7 +40,8 @@
 | P7 | 測試與文件 | 整合測試補齊、`scripts/smoke.sh`、README、API.md、DEPLOYMENT.md | `cargo test` 全綠、smoke 全通過 | `🧪 test: ...` / `📝 docs: ...` |
 | P8 | 最終驗證與收尾 | clippy/fmt 清零、release 建置、compose 設定驗證、映像檔策略確認 | 驗收清單全數勾選 | `🔖 chore: finalize v1.0.0` |
 | P9 | 多語系、防機器人驗證與導覽首頁 | 三份內嵌語言目錄、語言協商與切換、註冊／登入／建立流程的 Turnstile／reCAPTCHA 驗證、`/` 導覽首頁 | 語言協商、cookie 切換、驗證碼失敗關閉（含登入）與導覽首頁皆有測試涵蓋；`/` 回 200 | `📝 docs: ...` / `✨ feat(i18n): ...` |
-| P10 | 使用者群組 (v1.2) | `user_groups` 提供各群組連結／Token 配額與七個功能開關（含網域選擇）；可透過使用者或邀請碼指派；含管理頁面與 API | 15 張表／30 個索引、升級不改變行為、配額與開關生效（管理員亦然）、刪組需改派、測試與 smoke 全綠 | `✨ feat(groups): ...` |
+| P10 | 使用者群組 (v1.2) | `user_groups` 提供各群組連結／Token 配額與七個功能開關（含網域選擇）；可透過使用者或邀請碼指派；含管理頁面與 API | 16 張表／31 個索引、升級不改變行為、配額與開關生效（管理員亦然）、刪組需改派、測試與 smoke 全綠 | `✨ feat(groups): ...` |
+| P11 | 群組網域策略 (v1.2) | 各群組 `default_domain_id`、`restrict_domains` 與 `group_domains` 允許清單；建立/移動連結時強制，透過 `/api/v1/auth/me` 與 `/api/v1/domains` 曝光，管理群組表單可編輯 | 16 張表／31 個索引、既有群組維持所有 active 網域、限制清單為空時只能用預設、預設網域停用時回退全站預設、測試與 smoke 全綠 | `✨ feat(domains): ...` |
 
 ---
 
@@ -204,9 +206,21 @@
 7. 測試：配額繼承與群組驗證的單元測試，以及 `tests/groups.rs` 涵蓋授權、CRUD、配額、開關、邀請碼、刪組、預設轉移與頁面渲染。
 8. 文件：中英 SPEC／PLAN／API／README，以及群組的 smoke 檢查。
 
-**驗收**：15 張表、30 個索引；種下的預設群組不改變任何既有行為；配額與開關依群組生效（管理員亦然）；刪除群組必須指定改派目標；`/me` 回傳生效額度；`cargo test`、clippy、fmt 與 smoke 全數通過。
+**驗收**：16 張表、31 個索引；種下的預設群組不改變任何既有行為；配額與開關依群組生效（管理員亦然）；刪除群組必須指定改派目標；`/me` 回傳生效額度；`cargo test`、clippy、fmt 與 smoke 全數通過。
 
 ---
+
+## P11 — 群組網域策略（v1.2 follow-up）
+
+**任務**
+
+1. `migrations/0005_group_domains.sql`：`user_groups.default_domain_id`（可空、`ON DELETE SET NULL`）、`user_groups.restrict_domains`、`group_domains(group_id, domain_id)` 及其網域索引。
+2. `services/domain_policy.rs`：解析生效預設（群組預設 active 時採用，否則全站預設）、允許清單與 `allow_domain_selection`，並提供過濾後的 `DomainOption`。
+3. 連結服務：未指定 `domain` 時使用群組預設；建立/移動須通過 `allows()`；維持目前網域一律成功。
+4. API/UI：group payload/DTO 欄位、`/api/v1/auth/me` 的 `default_domain` + `allowed_domains`、`/api/v1/domains` 過濾、管理群組表單的下拉與勾選。
+5. 測試：v4 升級、空允許清單、明確允許清單、預設停用回退、關閉選擇、partial update、HTML 表單、API/UI 與 smoke。
+
+**驗收**：既有群組維持所有 active 網域；受限群組只能建立/移動到允許清單加預設；限制清單為空時只能用預設；群組預設停用/刪除時回退全站預設；`cargo test`、clippy/fmt 與 smoke 全綠。
 
 ## 風險與對策
 

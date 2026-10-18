@@ -19,6 +19,7 @@
 | P7 Tests and documentation | ✅ Done | See `git log` (smoke.sh, README, API.md, DEPLOYMENT.md) |
 | P8 Final verification | ✅ Done | See `git log` (release build, image strategy, wrap-up) |
 | P10 User groups (v1.2) | ✅ Done | See `git log` (migration 0004, group API/UI, trilingual strings, docs) |
+| P11 Group domain policy (v1.2) | ✅ Done | See `git log` (migration 0005, default domain + allowlist, admin UI/API, tests) |
 
 Acceptance data (v1.0): `cargo test` is all green with 187 tests, `cargo clippy --all-targets -- -D warnings`
 and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scripts/smoke.sh` pass.
@@ -39,7 +40,8 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 | P7 | Tests and documentation | Completed integration tests, `scripts/smoke.sh`, README, API.md, DEPLOYMENT.md | `cargo test` all green, smoke tests all pass | `🧪 test: ...` / `📝 docs: ...` |
 | P8 | Final verification and wrap-up | clippy/fmt clean, release build, compose config validation, image strategy confirmed | Every acceptance item checked | `🔖 chore: finalize v1.0.0` |
 | P9 | i18n, bot protection and navigation homepage | Three embedded locale catalogs, language negotiation and switching, optional Turnstile/reCAPTCHA on register, sign-in and create, landing page at `/` | Negotiation, cookie switching, captcha fail-closed (including sign-in) and the landing page covered by tests; `/` returns 200 | `📝 docs: ...` / `✨ feat(i18n): ...` |
-| P10 | User groups (v1.2) | `user_groups` with per-group link/token quotas and seven feature toggles (including domain selection), assignment through users and invite codes, admin page and API | 15 tables / 30 indexes, upgrade changes no behaviour, quotas/toggles enforced (admins included), deletion reassigns members, tests and smoke green | `✨ feat(groups): ...` |
+| P10 | User groups (v1.2) | `user_groups` with per-group link/token quotas and seven feature toggles (including domain selection), assignment through users and invite codes, admin page and API | 16 tables / 31 indexes, upgrade changes no behaviour, quotas/toggles enforced (admins included), deletion reassigns members, tests and smoke green | `✨ feat(groups): ...` |
+| P11 | Group domain policy (v1.2) | Per-group `default_domain_id`, `restrict_domains` and `group_domains` allowlist; group default/allowlist enforced on create/move, exposed through `/api/v1/auth/me` and `/api/v1/domains`, editable in the admin group form | 16 tables / 31 indexes, existing groups keep every active domain, empty restricted list allows only the default, disabled default falls back to the site default, tests and smoke green | `✨ feat(domains): ...` |
 
 ---
 
@@ -204,9 +206,21 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 7. Tests: unit coverage for limit inheritance and group validation, plus `tests/groups.rs` for authorization, CRUD, quotas, toggles, invites, deletion, default transfer and page rendering.
 8. Docs: SPEC/PLAN/API/README in both languages, and a smoke section for groups.
 
-**Acceptance**: 15 tables and 30 indexes; the seeded default group changes no behaviour; quotas and toggles are enforced per group (administrators included); deletion requires a reassignment target; `/me` exposes the effective limits; `cargo test`, clippy, fmt and smoke are clean.
+**Acceptance**: 16 tables and 31 indexes; the seeded default group changes no behaviour; quotas and toggles are enforced per group (administrators included); deletion requires a reassignment target; `/me` exposes the effective limits; `cargo test`, clippy, fmt and smoke are clean.
 
 ---
+
+## P11 — Group Domain Policy (v1.2 follow-up)
+
+**Tasks**
+
+1. `migrations/0005_group_domains.sql`: `user_groups.default_domain_id` (nullable, `ON DELETE SET NULL`), `user_groups.restrict_domains`, `group_domains(group_id, domain_id)` and its domain index.
+2. `services/domain_policy.rs`: resolve the effective default (group default when active, otherwise the site default), the allowlist and the `allow_domain_selection` rule; expose filtered `DomainOption`s.
+3. Link service: create without `domain` uses the group default; create/move must pass `allows()`; keeping the current domain always succeeds.
+4. API/UI: group payload/DTO fields, `/api/v1/auth/me` `default_domain` + `allowed_domains`, `/api/v1/domains` filtered, admin group form selects/checkboxes.
+5. Tests: migration from v4, empty allowlist, explicit allowlist, disabled default fallback, selection off, partial updates, HTML form, API/UI and smoke.
+
+**Acceptance**: an existing group keeps every active domain; a restricted group can only create/move to its allowlist plus its default; an empty restricted list allows only the default; disabling/deleting the group default falls back to the site default; `cargo test`, clippy/fmt and smoke are clean.
 
 ## Risks and Mitigations
 

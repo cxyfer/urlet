@@ -250,6 +250,8 @@ pub struct GroupsPage {
     pub section: &'static str,
     pub chrome: Chrome,
     pub groups: Vec<GroupRow>,
+    /// Every active domain, for the default-domain select and the allowlist.
+    pub domains: Vec<crate::services::domains::DomainOption>,
     pub lang: Lang,
 }
 
@@ -272,6 +274,9 @@ pub struct GroupRow {
     pub allow_tags: bool,
     pub allow_api_tokens: bool,
     pub allow_domain_selection: bool,
+    pub default_domain_id: Option<i64>,
+    pub restrict_domains: bool,
+    pub allowed_domain_ids: Vec<i64>,
     pub features_label: String,
     pub created: String,
 }
@@ -319,6 +324,9 @@ impl GroupRow {
             allow_tags: group.allow_tags,
             allow_api_tokens: group.allow_api_tokens,
             allow_domain_selection: group.allow_domain_selection,
+            default_domain_id: group.default_domain_id,
+            restrict_domains: group.restrict_domains,
+            allowed_domain_ids: overview.allowed_domain_ids.clone(),
             features_label: i18n::format(
                 lang,
                 "admin.groups.features_count",
@@ -326,6 +334,18 @@ impl GroupRow {
             ),
             created: time::humanize_lang(lang, &group.created_at),
         }
+    }
+}
+
+impl GroupRow {
+    /// Whether this group uses `domain_id` as its default.
+    pub fn uses_default_domain(&self, domain_id: &i64) -> bool {
+        self.default_domain_id == Some(*domain_id)
+    }
+
+    /// Whether `domain_id` is in the explicit allowlist.
+    pub fn allows_domain(&self, domain_id: &i64) -> bool {
+        self.allowed_domain_ids.contains(domain_id)
     }
 }
 
@@ -493,6 +513,13 @@ pub struct GroupForm {
     #[serde(default)]
     pub allow_domain_selection: Option<String>,
     #[serde(default)]
+    pub default_domain_id: Option<String>,
+    #[serde(default)]
+    pub restrict_domains: Option<String>,
+    /// Dynamic `domain_<id>` checkboxes; serde cannot model them statically.
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, String>,
+    #[serde(default)]
     pub is_default: Option<String>,
 }
 
@@ -511,6 +538,20 @@ impl GroupForm {
             allow_tags: self.allow_tags.is_some(),
             allow_api_tokens: self.allow_api_tokens.is_some(),
             allow_domain_selection: self.allow_domain_selection.is_some(),
+            default_domain_id: parse_optional_number(
+                "default_domain_id",
+                self.default_domain_id.as_deref(),
+            )?,
+            restrict_domains: self.restrict_domains.is_some(),
+            allowed_domain_ids: Some(
+                self.extra
+                    .iter()
+                    .filter_map(|(key, _)| {
+                        key.strip_prefix("domain_")
+                            .and_then(|id| id.parse::<i64>().ok())
+                    })
+                    .collect(),
+            ),
             make_default: self.is_default.is_some(),
         }
         .validate()
@@ -1658,6 +1699,7 @@ async fn render_groups(
                 .iter()
                 .map(|row| GroupRow::new(&state.settings, lang, row))
                 .collect(),
+            domains: state.domains.active_options(),
             lang,
         },
         StatusCode::OK,

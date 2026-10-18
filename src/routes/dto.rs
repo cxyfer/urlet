@@ -94,6 +94,8 @@ pub struct LimitsDto {
     pub allow_tags: bool,
     pub allow_api_tokens: bool,
     pub allow_domain_selection: bool,
+    pub default_domain: Option<String>,
+    pub allowed_domains: Vec<String>,
 }
 
 impl From<Limits> for LimitsDto {
@@ -108,6 +110,8 @@ impl From<Limits> for LimitsDto {
             allow_tags: limits.allow_tags,
             allow_api_tokens: limits.allow_api_tokens,
             allow_domain_selection: limits.allow_domain_selection,
+            default_domain: None,
+            allowed_domains: Vec::new(),
         }
     }
 }

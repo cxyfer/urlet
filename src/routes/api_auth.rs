@@ -180,6 +180,7 @@ pub async fn me(
     CurrentUser { user, .. }: CurrentUser,
 ) -> Result<Json<MeDto>, ApiError> {
     let limits = crate::services::limits::effective(&state.db, &state.settings, &user).await?;
+    let policy = crate::services::domain_policy::effective(&state.db, &user).await?;
     let group = match user.group_id {
         Some(id) => crate::db::user_groups::find_by_id(&state.db, id)
             .await?
@@ -189,10 +190,13 @@ pub async fn me(
             }),
         None => None,
     };
+    let mut limits: crate::routes::dto::LimitsDto = limits.into();
+    limits.default_domain = policy.default_hostname(&state.domains);
+    limits.allowed_domains = policy.allowed_hostnames(&state.domains);
     Ok(Json(MeDto {
         user: UserDto::from(&user),
         group,
-        limits: limits.into(),
+        limits,
     }))
 }
 

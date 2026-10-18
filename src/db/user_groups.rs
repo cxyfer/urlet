@@ -25,6 +25,8 @@ pub struct UserGroup {
     pub allow_tags: bool,
     pub allow_api_tokens: bool,
     pub allow_domain_selection: bool,
+    pub default_domain_id: Option<i64>,
+    pub restrict_domains: bool,
     pub is_default: bool,
     pub created_at: String,
     pub updated_at: String,
@@ -32,8 +34,8 @@ pub struct UserGroup {
 
 const SELECT: &str = "SELECT id, name, description, max_urls, max_api_tokens, allow_custom_slug, \
                       allow_password, allow_expiry, allow_max_clicks, allow_tags, \
-                      allow_api_tokens, allow_domain_selection, is_default, created_at, \
-                      updated_at FROM user_groups";
+                      allow_api_tokens, allow_domain_selection, default_domain_id, \
+                      restrict_domains, is_default, created_at, updated_at FROM user_groups";
 
 /// Every field an administrator can write, already validated and canonicalised.
 #[derive(Debug, Clone, Copy)]
@@ -49,6 +51,8 @@ pub struct GroupValues<'a> {
     pub allow_tags: bool,
     pub allow_api_tokens: bool,
     pub allow_domain_selection: bool,
+    pub default_domain_id: Option<i64>,
+    pub restrict_domains: bool,
 }
 
 /// Groups in display order: the default first, then by name.
@@ -117,14 +121,17 @@ pub async fn create(
     pool: &SqlitePool,
     values: &GroupValues<'_>,
     is_default: bool,
+    allowed_domain_ids: &[i64],
 ) -> Result<i64, sqlx::Error> {
     let now = now_iso();
+    let mut tx = pool.begin().await?;
     let result = sqlx::query(
         "INSERT INTO user_groups
             (name, description, max_urls, max_api_tokens, allow_custom_slug, allow_password,
              allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens,
-             allow_domain_selection, is_default, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             allow_domain_selection, default_domain_id, restrict_domains, is_default,
+             created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(values.name)
     .bind(values.description)
@@ -137,12 +144,23 @@ pub async fn create(
     .bind(values.allow_tags)
     .bind(values.allow_api_tokens)
     .bind(values.allow_domain_selection)
+    .bind(values.default_domain_id)
+    .bind(values.restrict_domains)
     .bind(is_default)
     .bind(&now)
     .bind(&now)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
-    Ok(result.last_insert_rowid())
+    let id = result.last_insert_rowid();
+    for domain_id in allowed_domain_ids {
+        sqlx::query("INSERT INTO group_domains (group_id, domain_id) VALUES (?, ?)")
+            .bind(id)
+            .bind(domain_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(id)
 }
 
 /// Replace every writable field of a group.
@@ -155,6 +173,7 @@ pub async fn update(
     id: i64,
     values: &GroupValues<'_>,
     make_default: bool,
+    allowed_domain_ids: Option<&[i64]>,
 ) -> Result<bool, sqlx::Error> {
     let now = now_iso();
     let mut tx = pool.begin().await?;
@@ -163,7 +182,8 @@ pub async fn update(
             SET name = ?, description = ?, max_urls = ?, max_api_tokens = ?,
                 allow_custom_slug = ?, allow_password = ?, allow_expiry = ?,
                 allow_max_clicks = ?, allow_tags = ?, allow_api_tokens = ?,
-                allow_domain_selection = ?, updated_at = ?
+                allow_domain_selection = ?, default_domain_id = ?, restrict_domains = ?,
+                updated_at = ?
           WHERE id = ?",
     )
     .bind(values.name)
@@ -177,6 +197,8 @@ pub async fn update(
     .bind(values.allow_tags)
     .bind(values.allow_api_tokens)
     .bind(values.allow_domain_selection)
+    .bind(values.default_domain_id)
+    .bind(values.restrict_domains)
     .bind(&now)
     .bind(id)
     .execute(&mut *tx)
@@ -186,6 +208,20 @@ pub async fn update(
         // Another administrator deleted the row after the service loaded it.
         tx.rollback().await?;
         return Ok(false);
+    }
+
+    if let Some(domain_ids) = allowed_domain_ids {
+        sqlx::query("DELETE FROM group_domains WHERE group_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        for domain_id in domain_ids {
+            sqlx::query("INSERT INTO group_domains (group_id, domain_id) VALUES (?, ?)")
+                .bind(id)
+                .bind(domain_id)
+                .execute(&mut *tx)
+                .await?;
+        }
     }
 
     if make_default {
@@ -206,6 +242,28 @@ pub async fn update(
 
     tx.commit().await?;
     Ok(true)
+}
+
+/// The explicit domain allowlist of one group.
+pub async fn domain_ids(pool: &SqlitePool, group_id: i64) -> Result<Vec<i64>, sqlx::Error> {
+    sqlx::query_scalar("SELECT domain_id FROM group_domains WHERE group_id = ? ORDER BY domain_id")
+        .bind(group_id)
+        .fetch_all(pool)
+        .await
+}
+
+/// Domain allowlists for every group, keyed by group id.
+pub async fn domain_ids_by_group(pool: &SqlitePool) -> Result<HashMap<i64, Vec<i64>>, sqlx::Error> {
+    let rows: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT group_id, domain_id FROM group_domains ORDER BY group_id, domain_id",
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut map: HashMap<i64, Vec<i64>> = HashMap::new();
+    for (group_id, domain_id) in rows {
+        map.entry(group_id).or_default().push(domain_id);
+    }
+    Ok(map)
 }
 
 /// Move every member of `id` (including soft-deleted accounts) to `target`, then

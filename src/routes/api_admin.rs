@@ -158,6 +158,11 @@ pub struct GroupDto {
     pub allow_tags: bool,
     pub allow_api_tokens: bool,
     pub allow_domain_selection: bool,
+    pub default_domain_id: Option<i64>,
+    pub default_domain: Option<String>,
+    pub restrict_domains: bool,
+    pub allowed_domain_ids: Vec<i64>,
+    pub allowed_domains: Vec<String>,
     pub is_default: bool,
     pub members: i64,
     pub created_at: String,
@@ -165,7 +170,12 @@ pub struct GroupDto {
 }
 
 impl GroupDto {
-    fn new(group: &UserGroup, members: i64) -> Self {
+    fn new(
+        group: &UserGroup,
+        members: i64,
+        allowed_domain_ids: &[i64],
+        domains: &crate::services::domains::DomainRegistry,
+    ) -> Self {
         Self {
             id: group.id,
             name: group.name.clone(),
@@ -179,6 +189,14 @@ impl GroupDto {
             allow_tags: group.allow_tags,
             allow_api_tokens: group.allow_api_tokens,
             allow_domain_selection: group.allow_domain_selection,
+            default_domain_id: group.default_domain_id,
+            default_domain: group.default_domain_id.and_then(|id| domains.hostname(id)),
+            restrict_domains: group.restrict_domains,
+            allowed_domain_ids: allowed_domain_ids.to_vec(),
+            allowed_domains: allowed_domain_ids
+                .iter()
+                .filter_map(|id| domains.hostname(*id))
+                .collect(),
             is_default: group.is_default,
             members,
             created_at: group.created_at.clone(),
@@ -214,6 +232,14 @@ pub struct GroupPayload {
     pub allow_api_tokens: Option<bool>,
     #[serde(default)]
     pub allow_domain_selection: Option<bool>,
+    /// `null` means the site-wide default; omitting it keeps the current value.
+    #[serde(default, deserialize_with = "crate::routes::dto::double_option")]
+    pub default_domain_id: Option<Option<i64>>,
+    #[serde(default)]
+    pub restrict_domains: Option<bool>,
+    /// `[]` removes every allowlist row; omitting it keeps the current list.
+    #[serde(default)]
+    pub domain_ids: Option<Vec<i64>>,
     #[serde(default)]
     pub is_default: Option<bool>,
 }
@@ -249,6 +275,15 @@ impl GroupPayload {
             allow_domain_selection: current(self.allow_domain_selection, |group| {
                 group.allow_domain_selection
             }),
+            default_domain_id: match self.default_domain_id {
+                Some(value) => value,
+                None => existing.and_then(|group| group.default_domain_id),
+            },
+            restrict_domains: self
+                .restrict_domains
+                .or_else(|| existing.map(|group| group.restrict_domains))
+                .unwrap_or(false),
+            allowed_domain_ids: self.domain_ids,
             make_default: self.is_default.unwrap_or(false),
         }
         .validate()?)
@@ -803,7 +838,14 @@ pub async fn list_groups(
         .iter()
         .skip(offset)
         .take(limit)
-        .map(|row| GroupDto::new(&row.group, row.members))
+        .map(|row| {
+            GroupDto::new(
+                &row.group,
+                row.members,
+                &row.allowed_domain_ids,
+                &state.domains,
+            )
+        })
         .collect();
     Ok(Json(Page::new(
         items,
@@ -824,7 +866,17 @@ pub async fn create_group(
     let draft = payload.into_draft(None)?;
     let group = context(&state, &client, &user).create_group(draft).await?;
     let members = crate::db::user_groups::count_members(&state.db, group.id).await?;
-    Ok((StatusCode::CREATED, Json(GroupDto::new(&group, members))).into_response())
+    let allowed_domain_ids = crate::db::user_groups::domain_ids(&state.db, group.id).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(GroupDto::new(
+            &group,
+            members,
+            &allowed_domain_ids,
+            &state.domains,
+        )),
+    )
+        .into_response())
 }
 
 /// `PUT /api/v1/admin/groups/{id}`
@@ -844,7 +896,13 @@ pub async fn update_group(
         .update_group(id, draft)
         .await?;
     let members = crate::db::user_groups::count_members(&state.db, group.id).await?;
-    Ok(Json(GroupDto::new(&group, members)))
+    let allowed_domain_ids = crate::db::user_groups::domain_ids(&state.db, group.id).await?;
+    Ok(Json(GroupDto::new(
+        &group,
+        members,
+        &allowed_domain_ids,
+        &state.domains,
+    )))
 }
 
 /// `DELETE /api/v1/admin/groups/{id}?reassign_to={id}`

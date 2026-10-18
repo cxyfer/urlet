@@ -29,7 +29,7 @@ v1.2 起新增**使用者群組**：可為不同群組設定各自的連結與 A
 | P4 | Docker Compose 部署 | 單一 `docker-compose.yml`（app + named volume），可選 Caddy TLS overlay |
 | P5 | 盡可能輕量化 | 單一二進位、SQLite（無 MySQL/Redis）、SSR 模板（無 Node 建置）、映像檔 < 40 MB |
 | P6 | Rust 實作 | Rust 2021 + Axum 0.8 + Tokio + sqlx(SQLite) |
-| P7 | 完善的資料表設計 | 15 張表、30 個索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
+| P7 | 完善的資料表設計 | 16 張表、31 個索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
 | P8 | 適度添加功能 | 標籤、點擊分析、API Token、邀請碼、管理後台、稽核日誌、每日彙總、三語介面、可選防機器人驗證、配額／功能開關使用者群組 |
 
 ### 1.2 與先前半成品 (OURLS / OURLS2) 的關係
@@ -239,7 +239,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | FR-ADMIN-5 | 稽核日誌 | 記錄登入、註冊、網址異動、群組異動、管理操作、設定變更；可依動作/對象篩選 |
 | FR-ADMIN-6 | 系統資訊 | 版本、資料庫大小、使用者/網址/點擊總數、運行時間 |
 | FR-ADMIN-7 | 授權 | 所有 `/api/v1/admin/**` 與 `/app/admin/**` 需 `role = admin`，否則 403 |
-| FR-ADMIN-8 | 群組管理 | 於 `/app/admin/groups` 與 `/api/v1/admin/groups` 建立、編輯、設為預設與刪除使用者群組（FR-GROUP-1） |
+| FR-ADMIN-8 | 群組管理 | 於 `/app/admin/groups` 與 `/api/v1/admin/groups` 建立、編輯、設為預設、設定網域策略與刪除使用者群組（FR-GROUP-1、FR-GROUP-9） |
 
 ### 4.9 JSON API (FR-API)
 
@@ -266,7 +266,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | `/app/account` | 帳號 | 個人資料、修改密碼、Session 清單、API Token 管理 |
 | `/app/admin` | 管理後台 | 使用者、使用者群組、全站網址、網域、邀請碼、設定、稽核日誌 |
 | `/app/admin/domains` | 網域管理 | 新增、啟用、停用、設為預設、刪除網域 |
-| `/app/admin/groups` | 使用者群組 | 建立/編輯/刪除群組、配額、功能開關、預設標記 |
+| `/app/admin/groups` | 使用者群組 | 建立/編輯/刪除群組、配額、功能開關、預設網域、允許網域與預設標記 |
 | `/app/lang/{code}` | 語言切換 | 設定 `urlet_lang` cookie 並 302 至 `next`（未帶時轉往 `/app`） |
 | `/{slug}` | 轉址 / 密碼頁 / 410 / 404 | 公開 |
 | 額外網域 | 僅轉址 | `/` 顯示簡單首頁、`/{slug}` 轉址、`/app` 308 回 canonical、`/api` 回 404 |
@@ -307,12 +307,13 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 |----|------|------|
 | FR-GROUP-1 | 群組 CRUD | 管理員可建立、改名、編輯與刪除群組。名稱 trim 後長度 1–40 字元、以 `COLLATE NOCASE` 不分大小寫唯一、不得含控制字元；說明為選填且最多 200 字元。配額可為 `NULL`（跟隨全站）、`0`（無上限）或 1–1,000,000 的正整數 |
 | FR-GROUP-2 | 配額繼承 | 生效的 `max_urls` / `max_api_tokens` = 群組值非 `NULL` 時採群組值，否則採 `settings.max_urls_per_user` / `settings.max_api_tokens_per_user`；未分組使用者一律使用全站值 |
-| FR-GROUP-3 | 功能開關 | 七個布林值，預設全為 `true`：`allow_custom_slug`、`allow_password`、`allow_expiry`、`allow_max_clicks`、`allow_tags`、`allow_api_tokens`、`allow_domain_selection`。它們在建立時把關；更新時拒絕「新開啟」被封鎖的功能，但允許清除或省略欄位以維持原值。預設網域一律允許；`allow_domain_selection = false` 會拒絕建立或移動連結到非預設網域。非空的連結密碼一律視為新值，在 `allow_password` 關閉時會被拒絕。既有連結與 Token 不會因關閉開關而被修改或刪除 |
+| FR-GROUP-3 | 功能開關 | 七個布林值，預設全為 `true`：`allow_custom_slug`、`allow_password`、`allow_expiry`、`allow_max_clicks`、`allow_tags`、`allow_api_tokens`、`allow_domain_selection`。它們在建立時把關；更新時拒絕「新開啟」被封鎖的功能，但允許清除或省略欄位以維持原值。生效的群組預設網域一律允許；`allow_domain_selection = false` 會拒絕建立或移動連結到其他網域（FR-GROUP-9）。非空的連結密碼一律視為新值，在 `allow_password` 關閉時會被拒絕。既有連結與 Token 不會因關閉開關而被修改或刪除 |
 | FR-GROUP-4 | 歸屬 | 每位使用者最多屬於一個群組（`users.group_id`，可為空）。註冊時指派預設群組；邀請碼可指定群組，兌換時優先於預設群組。在 `open` 模式下提供的邀請碼同樣會驗證，因此其群組仍會生效。管理員可改派任何使用者；因為每次請求都重新載入使用者，改派立即生效 |
 | FR-GROUP-5 | 預設群組 | 恰有一筆 `is_default = 1`，由部分唯一索引保證。可於群組編輯表單轉移標記（同一交易內取消舊預設）；目前為預設的群組不可刪除。遷移時建立名為 `Standard`、兩個配額皆為 `NULL` 的群組，並把所有既有使用者指派進去，因此升級後行為不變 |
 | FR-GROUP-6 | 刪除 | 刪除群組必須指定改派目標（API 用 `reassign_to`，網頁用下拉選單）。同一交易內把所有成員搬到目標群組；指向該群組的邀請碼透過 `ON DELETE SET NULL` 回退到預設群組。改派到即將刪除的群組本身、或刪除預設群組，一律回 409 |
 | FR-GROUP-7 | 強制範圍 | 配額與開關對管理員一體適用。調降配額或關閉開關不會刪除或停用既有連結與 Token，只會擋下新的建立（以及更新時新開啟被封鎖的功能） |
-| FR-GROUP-8 | 可見性 | 帳號頁顯示群組名稱、連結用量 `已用 / 配額` 與 Token 用量 `已用 / 配額`；`GET /api/v1/auth/me` 回傳 `group` 與 `limits`（生效配額與開關），讓 API 客戶端能預先判斷請求是否會被拒絕 |
+| FR-GROUP-8 | 可見性 | 帳號頁顯示群組名稱、連結用量 `已用 / 配額` 與 Token 用量 `已用 / 配額`；`GET /api/v1/auth/me` 回傳 `group` 與 `limits`（生效配額、開關、預設網域與允許網域），讓 API 客戶端能預先判斷請求是否會被拒絕 |
+| FR-GROUP-9 | 網域策略 | `user_groups.default_domain_id` 是群組預設網域（`NULL` = 全站預設）；未指定網域的新連結會使用它，若該網域不存在、停用或刪除則回退全站預設。`restrict_domains = 1` 時只允許 `group_domains` 內的網域與生效預設；開啟限制但沒有資料列時只能使用預設。`allow_domain_selection = false` 時也只能使用群組預設。既有連結維持目前網域一律允許；未分組使用者使用全站預設與所有 active 網域。 |
 
 ---
 
@@ -383,7 +384,8 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 
 ```
 user_groups ─┬─< users
-             └─< invite_codes
+             ├─< invite_codes
+             └─< group_domains >─ domains
 users ─┬─< sessions
        ├─< api_tokens
        ├─< urls ─┬─< clicks
@@ -413,12 +415,13 @@ login_attempts (稽核用)
 
 ### 6.3 DDL（migration 摘要）
 
-> 完整真實來源為 `migrations/` 目錄（`0001_init.sql`、`0003_multi_domain.sql` 的多網域重建與 `0004_user_groups.sql` 的群組）；以下為結構摘要。
+> 完整真實來源為 `migrations/` 目錄（`0001_init.sql`、`0003_multi_domain.sql` 的多網域重建與 `0004_user_groups.sql` 的群組與 `0005_group_domains.sql` 的網域策略）；以下為結構摘要。
 
 | 表 | 主要欄位 | 用途 |
 |----|----------|------|
 | `users` | id, email, email_normalized(UNIQUE), password_hash, display_name, role, status, group_id, email_verified_at, last_login_at, created_at, updated_at, deleted_at | 使用者 |
-| `user_groups` | id, name(UNIQUE, NOCASE), description, max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection, is_default, created_at, updated_at | 配額與功能開關群組 |
+| `user_groups` | id, name(UNIQUE, NOCASE), description, max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection, default_domain_id, restrict_domains, is_default, created_at, updated_at | 配額、功能開關與網域策略群組 |
+| `group_domains` | group_id, domain_id (PK) | 各群組的明確網域允許清單 |
 | `sessions` | id, user_id, token_hash(UNIQUE), user_agent, ip_hash, created_at, last_seen_at, expires_at, revoked_at | 登入狀態 |
 | `api_tokens` | id, user_id, name, token_prefix, token_hash(UNIQUE), scopes, last_used_at, expires_at, created_at, revoked_at | API 憑證 |
 | `domains` | id, hostname(UNIQUE, NOCASE), is_default, is_verified, status, source, created_by, created_at, updated_at | Canonical/system、`URLET_DOMAINS`/env 與管理員/UI 網域；`pending`/`active`/`disabled` |
@@ -450,10 +453,11 @@ login_attempts (稽核用)
 | `user_groups(is_default) WHERE is_default = 1` UNIQUE | 最多一個預設群組 |
 | `users(group_id)` | 群組成員列表與改派 |
 | `invite_codes(group_id)` | 依群組查詢邀請碼 |
+| `group_domains(domain_id)` | 網域刪除與允許清單查詢 |
 
 v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表，v1.1 維持 **14 張表、27 個索引**。
-v1.2 新增 `user_groups` 表、可空的 `users.group_id` 與 `invite_codes.group_id` 欄位及三個索引，
-共 **15 張表、30 個索引**（§6.1、§6.3、§6.4）。
+v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` / `invite_codes.group_id` /
+`default_domain_id` 欄位及四個索引，共 **16 張表、31 個索引**（§6.1、§6.3、§6.4）。
 
 ### 6.5 預設資料 (seed)
 
@@ -466,7 +470,9 @@ v1.2 新增 `user_groups` 表、可空的 `users.group_id` 與 `invite_codes.gro
   由於預設為 20 而非 0，升級後若帳號已持有超過 20 個可用 Token，必須先撤銷部分 Token 才能再新增；
   升級不會主動撤銷任何既有 Token。
 - `user_groups`（v1.2）：建立一筆名為 `Standard`、`max_urls = NULL`、`max_api_tokens = NULL`、
-  七個開關皆為 `1`（含 `allow_domain_selection`）、`is_default = 1` 的群組；遷移會把所有既有使用者指派進去。
+  七個開關皆為 `1`（含 `allow_domain_selection`）、`default_domain_id = NULL`、
+  `restrict_domains = 0`、`is_default = 1` 的群組；遷移會把所有既有使用者指派進去。
+- `group_domains`：不種任何資料；沒有資料列的既有或新群組可使用所有 active 網域。
 - `domains`：啟動時依 `URLET_BASE_URL` 的 host 插入/更新 canonical 網域（`source=system`，永遠 active）。
   只有在沒有任何預設網域時才會設為預設，讓管理員可以改選其他預設。`URLET_DOMAINS` 只插入缺少的
   網域（`active`/`env`），不改既有資料。
@@ -482,7 +488,7 @@ v1.2 新增 `user_groups` 表、可空的 `users.group_id` 與 `invite_codes.gro
 | POST | `/api/v1/auth/register` | `{email, password, invite_code?, captcha_token?}` → 201 `{user}`；驗證碼驗證失敗回 400 `captcha_failed` |
 | POST | `/api/v1/auth/login` | `{email, password, captcha_token?}` → 200 `{user}` + Set-Cookie；驗證碼驗證失敗回 400 `captcha_failed` |
 | POST | `/api/v1/auth/logout` | 撤銷當前 Session → 204 |
-| GET | `/api/v1/auth/me` | 當前使用者 → 200 `{user}`；另含 `group`（id/name 或 null）與 `limits`（生效配額與開關，FR-GROUP-8） |
+| GET | `/api/v1/auth/me` | 當前使用者 → 200 `{user}`；另含 `group`（id/name 或 null）與 `limits`（生效配額、開關、預設網域與允許網域，FR-GROUP-8） |
 | PATCH | `/api/v1/auth/me` | `{display_name}` → 200 `{user}` |
 | POST | `/api/v1/auth/password` | `{current_password, new_password}` → 204 |
 | GET | `/api/v1/auth/sessions` | 我的 Session 清單 |
@@ -498,7 +504,7 @@ v1.2 新增 `user_groups` 表、可空的 `users.group_id` 與 `invite_codes.gro
 |------|------|------|
 | GET | `/api/v1/urls` | 查詢參數：`q, tag, status, page, per_page, sort(created_at\|clicks\|slug\|updated\|expires)` |
 | POST | `/api/v1/urls` | `{target_url, domain?, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?, captcha_token?}`；API Token 呼叫豁免驗證碼，Session Cookie 呼叫受 `on_create` 約束 |
-| GET | `/api/v1/domains` | 建立短網址時可選的 active 網域 |
+| GET | `/api/v1/domains` | 建立短網址時可選的 active 網域，已依呼叫者的群組策略過濾（含生效的 `is_default`） |
 | GET | `/api/v1/urls/{id}` | 單筆（含 `short_url`、`is_expired`、`has_password`） |
 | PATCH | `/api/v1/urls/{id}` | 部分更新；`domain` 可搬移連結；`password: null` 清除密碼；`expires_at: null` 清除過期 |
 | DELETE | `/api/v1/urls/{id}` | 軟刪除 → 204 |
@@ -530,8 +536,8 @@ v1.2 新增 `user_groups` 表、可空的 `users.group_id` 與 `invite_codes.gro
 | POST | `/api/v1/admin/users/{id}/password` | `{new_password}` 重設 |
 | DELETE | `/api/v1/admin/users/{id}` | 軟刪除（其網址一併軟刪除） |
 | GET | `/api/v1/admin/groups` | 使用者群組列表（含成員數，分頁） |
-| POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, is_default?}` → 201；名稱重複或第二個預設群組回 409 |
-| PUT | `/api/v1/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`is_default: true` 會在同一交易內轉移預設標記 |
+| POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, default_domain_id?, restrict_domains?, domain_ids?, is_default?}` → 201；網域 id 必須 active；名稱重複或第二個預設群組回 409 |
+| PUT | `/api/v1/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`default_domain_id: null` 表示全站預設；`domain_ids: []` 會清空允許清單；`is_default: true` 會在同一交易內轉移預設標記 |
 | DELETE | `/api/v1/admin/groups/{id}?reassign_to={id}` | 先把成員搬到 `reassign_to`，再刪除 → 204；預設群組或目標不存在/不合法回 409 |
 | GET | `/api/v1/admin/urls` | 全站網址列表 |
 | PATCH | `/api/v1/admin/urls/{id}` | 強制停用/啟用/刪除 |
@@ -608,7 +614,7 @@ urlet/
 ├── docker-compose.tls.yml        # 可選：Caddy 自動 HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql  migrations/0003_multi_domain.sql  migrations/0004_user_groups.sql
+├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql  migrations/0003_multi_domain.sql  migrations/0004_user_groups.sql  migrations/0005_group_domains.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama 模板（base、app_base、landing.html + 各頁面 + admin/）
@@ -617,7 +623,7 @@ urlet/
 │   ├── assets/{app.css,app.js,favicon.svg}
 │   ├── i18n/{mod.rs,en.json,zh-Hant.json,zh-Hans.json}
 │   ├── db/{mod,migrate,users,user_groups,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
-│   ├── services/{auth,urls,admin,domains,groups,limits,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
+│   ├── services/{auth,urls,admin,domains,domain_policy,groups,limits,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
 │   ├── middleware/{mod,auth,csrf,domain,security,locale}.rs
 │   └── routes/{mod,api,api_auth,api_urls,api_domains,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract}.rs
 │       └── pages/{mod,auth,dashboard,urls,account,admin,home}.rs
@@ -697,16 +703,17 @@ v1.1 新增項目（本批次）：
 
 v1.2 新增項目（本批次）：
 
-- [x] `user_groups`（15 張表、30 個索引）具備可空的 `max_urls` / `max_api_tokens` 與七個功能開關（含網域選擇），並新增 `users.group_id` 與 `invite_codes.group_id`
+- [x] `user_groups` 與 `group_domains`（16 張表、31 個索引）具備可空的 `max_urls` / `max_api_tokens`、七個功能開關、各群組預設網域與允許清單，並新增 `users.group_id` 與 `invite_codes.group_id`
 - [x] 遷移建立 `Standard` 群組（兩個配額皆為 `NULL`）並把所有既有使用者指派進去，升級後行為不變
 - [x] 群組值為 `NULL` 時生效配額跟隨全站設定，`0` 代表無上限；管理員與一般使用者適用同一套規則
 - [x] 功能開關在建立時把關；更新時拒絕新開啟被封鎖的功能，但允許清除或維持原值
 - [x] 管理員可建立、編輯、刪除群組並轉移唯一的預設標記；刪除非預設群組必須指定改派目標，預設群組不可刪除
 - [x] 邀請碼可指定群組，兌換時優先採用；群組被刪除時透過 `ON DELETE SET NULL` 回退到預設群組
-- [x] 群組網域選擇是一項開關：預設網域一律允許；關閉時建立或移動到非預設網域會被拒絕，且兩個表單都會隱藏網域下拉
+- [x] 群組網域選擇是一項開關：生效的群組預設網域一律允許；關閉時建立或移動到其他網域會被拒絕，且兩個表單都會隱藏網域下拉
+- [x] 群組可設定自己的預設網域，並用 `group_domains` 限制可選網域；開啟限制但沒有資料列時只能用預設，預設網域停用/刪除時回退全站預設
 - [x] Token 配額預設為 20 個可用 Token，顯示於帳號頁，並與生效連結配額及開關一起在 `GET /api/v1/auth/me` 回傳
 - [x] 群組異動寫入稽核（`admin.group_created` / `updated` / `deleted`），使用者改派記錄於稽核 metadata
-- [x] `cargo test`（362 個測試，1 個 ignored）、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過，`scripts/smoke.sh` 101 項檢查全過（含群組 CRUD、配額強制與改派）
+- [x] `cargo test`（372 個測試，1 個 ignored）、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過，`scripts/smoke.sh` 106 項檢查全過（含群組 CRUD、配額強制、網域策略與改派）
 
 ---
 
@@ -714,7 +721,7 @@ v1.2 新增項目（本批次）：
 
 | 功能 | 已預留 |
 |------|--------|
-| 各群組可使用哪些網域 | `domains`、`user_groups` 與 `allow_domain_selection` 已存在；可新增 `group_domains` join table 限制群組可選的網域 |
+| 各使用者的網域例外 | `user_groups` + `group_domains` 已提供各群組預設與允許清單；可新增 `user_domains` 表提供單一帳號的例外 |
 | 細緻權限 | v1.2 已具備 `user_groups`、`users.group_id` 與七個功能開關；未來可新增 `group_permissions` 表加入逐動作權限 |
 | 團隊協作 / 共享工作區 | `users.group_id` 已能將帳號分組；可新增 `url_members` 把 `urls.user_id` 的所有權擴充到群組或團隊 |
 | 密碼重設 / Email 驗證 | `users.email_verified_at`、可新增 `password_resets` |

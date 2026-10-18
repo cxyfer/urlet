@@ -11,6 +11,7 @@ use crate::state::AppState;
 /// One selectable domain.
 #[derive(Debug, Clone, Serialize)]
 pub struct DomainChoiceDto {
+    pub id: i64,
     pub hostname: String,
     pub is_default: bool,
 }
@@ -18,13 +19,14 @@ pub struct DomainChoiceDto {
 /// `GET /api/v1/domains`
 pub async fn list(
     State(state): State<AppState>,
-    CurrentUser { .. }: CurrentUser,
+    CurrentUser { user, .. }: CurrentUser,
 ) -> Result<Json<Vec<DomainChoiceDto>>, ApiError> {
-    let items = state
-        .domains
-        .active_options()
+    let policy = crate::services::domain_policy::effective(&state.db, &user).await?;
+    let items = policy
+        .options(&state.domains)
         .into_iter()
         .map(|domain| DomainChoiceDto {
+            id: domain.id,
             hostname: domain.hostname,
             is_default: domain.is_default,
         })
