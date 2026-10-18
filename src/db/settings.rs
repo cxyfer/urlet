@@ -12,6 +12,7 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("registration_mode", "open"),
     ("default_slug_length", "7"),
     ("max_urls_per_user", "1000"),
+    ("max_api_tokens_per_user", "20"),
     ("default_redirect_type", "302"),
     ("analytics_enabled", "true"),
     ("click_retention_days", "0"),

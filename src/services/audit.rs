@@ -34,6 +34,9 @@ pub mod action {
     pub const DOMAIN_UPDATED: &str = "domain.updated";
     pub const DOMAIN_DELETED: &str = "domain.deleted";
     pub const DOMAIN_DEFAULT_CHANGED: &str = "domain.default_changed";
+    pub const ADMIN_GROUP_CREATED: &str = "admin.group_created";
+    pub const ADMIN_GROUP_UPDATED: &str = "admin.group_updated";
+    pub const ADMIN_GROUP_DELETED: &str = "admin.group_deleted";
 }
 
 /// Target types used in audit entries.
@@ -44,6 +47,7 @@ pub mod target {
     pub const INVITE: &str = "invite";
     pub const SETTINGS: &str = "settings";
     pub const DOMAIN: &str = "domain";
+    pub const GROUP: &str = "group";
 }
 
 /// Builder for an audit entry.

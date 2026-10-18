@@ -10,10 +10,12 @@ use sqlx::SqlitePool;
 use crate::config::Config;
 use crate::db::invites::Invite;
 use crate::db::urls::{self, UrlUpdate};
+use crate::db::user_groups::{self, UserGroup};
 use crate::db::users::{self, User, UserFilter};
 use crate::db::{audit, clicks, invites, sessions, settings as settings_db, tokens};
 use crate::error::{AppError, Result};
 use crate::services::audit::{action, target, Audit};
+use crate::services::groups::GroupDraft;
 use crate::services::settings::Settings;
 use crate::services::{password, secret, time, tokens as token_service};
 
@@ -66,18 +68,25 @@ impl AdminContext<'_> {
             .ip_hash(self.ip_hash.map(str::to_string))
     }
 
-    /// Update role, status and display name of an account.
+    /// Update role, status, group and display name of an account.
     pub async fn update_user(
         &self,
         user_id: i64,
         role: Option<&str>,
         status: Option<&str>,
+        group_id: Option<Option<i64>>,
         display_name: Option<Option<&str>>,
     ) -> Result<User> {
         let user = users::find_by_id(self.pool, user_id)
             .await
             .map_err(AppError::from)?
             .ok_or_else(AppError::not_found)?;
+
+        // Keep the request's own options: the write must not replay values that
+        // were only read to resolve guard rails.
+        let requested_role = role;
+        let requested_status = status;
+        let requested_group = group_id;
 
         let role = match role {
             Some(role) => {
@@ -105,6 +114,36 @@ impl AdminContext<'_> {
             }
             None => user.status.clone(),
         };
+        let group_id = match group_id {
+            Some(Some(group_id)) => {
+                if user_groups::find_by_id(self.pool, group_id)
+                    .await
+                    .map_err(AppError::from)?
+                    .is_none()
+                {
+                    return Err(AppError::validation(
+                        "group_id",
+                        "the selected group does not exist",
+                    ));
+                }
+                Some(group_id)
+            }
+            Some(None) => None,
+            None => user.group_id,
+        };
+
+        // Validate every submitted field before the first write: a rejected
+        // display name must not leave the group or role partially changed.
+        let display_name = match display_name {
+            Some(name) => {
+                let name = name.map(str::trim).filter(|value| !value.is_empty());
+                if let Some(name) = name {
+                    crate::services::auth::validate_display_name(name)?;
+                }
+                Some(name)
+            }
+            None => None,
+        };
 
         // Guard rails: an administrator must not lock themselves out.
         let demoting_self = user.id == self.actor.id && (role != "admin" || status != "active");
@@ -128,30 +167,45 @@ impl AdminContext<'_> {
             }
         }
 
-        if role != user.role || status != user.status {
-            users::set_role_status(self.pool, user.id, &role, &status)
+        let update = users::AdminUserUpdate {
+            // Keep omission (None) separate, but persist the canonical values:
+            // " Admin " and "SUSPENDED" are valid input and must be stored as
+            // "admin" / "suspended".
+            role: requested_role.map(|_| role.as_str()),
+            status: requested_status.map(|_| status.as_str()),
+            group_id: requested_group,
+            display_name,
+        };
+        let applied = users::apply_admin_update(self.pool, user.id, &update)
+            .await
+            .map_err(|err| {
+                if crate::db::is_foreign_key_violation(&err) {
+                    AppError::validation("group_id", "the selected group no longer exists")
+                } else {
+                    AppError::from(err)
+                }
+            })?;
+        if !applied {
+            // The row vanished, or the conditional update refused to remove the
+            // last active administrator. Distinguish the two after the rollback.
+            return match users::find_by_id(self.pool, user.id)
                 .await
-                .map_err(AppError::from)?;
-        }
-        if let Some(name) = display_name {
-            let name = name.map(str::trim).filter(|value| !value.is_empty());
-            if let Some(name) = name {
-                crate::services::auth::validate_display_name(name)?;
-            }
-            users::set_display_name(self.pool, user.id, name)
-                .await
-                .map_err(AppError::from)?;
-        }
-
-        // A suspended account loses its sessions immediately.
-        if status == "suspended" {
-            sessions::revoke_for_user(self.pool, user.id, &time::now_iso(), None)
-                .await
-                .map_err(AppError::from)?;
+                .map_err(AppError::from)?
+            {
+                Some(_) => Err(AppError::conflict(
+                    "at least one active administrator is required",
+                )),
+                None => Err(AppError::not_found()),
+            };
         }
 
         self.audit(action::ADMIN_USER_UPDATED, target::USER, user.id)
-            .metadata(serde_json::json!({ "role": role, "status": status }))
+            .metadata(serde_json::json!({
+                "role": role,
+                "status": status,
+                "group_id": group_id,
+                "previous_group_id": user.group_id
+            }))
             .record(self.pool)
             .await;
 
@@ -208,9 +262,21 @@ impl AdminContext<'_> {
             }
         }
 
-        users::soft_delete(self.pool, user.id)
+        let deleted = users::soft_delete(self.pool, user.id)
             .await
             .map_err(AppError::from)?;
+        if !deleted {
+            return match users::find_by_id(self.pool, user.id)
+                .await
+                .map_err(AppError::from)?
+            {
+                Some(_) => Err(AppError::conflict(
+                    "at least one active administrator is required",
+                )),
+                // Another administrator already removed the account.
+                None => Ok(()),
+            };
+        }
         self.audit(action::ADMIN_USER_DELETED, target::USER, user.id)
             .metadata(serde_json::json!({ "email": user.email }))
             .record(self.pool)
@@ -282,10 +348,11 @@ impl AdminContext<'_> {
         Ok(())
     }
 
-    /// Create an invite code.
+    /// Create an invite code. `group_id` optionally pins the redeemer's group.
     pub async fn create_invite(
         &self,
         note: Option<&str>,
+        group_id: Option<i64>,
         max_uses: Option<i64>,
         expires_at: Option<&str>,
     ) -> Result<CreatedInvite> {
@@ -298,6 +365,22 @@ impl AdminContext<'_> {
             }
             Some(value) => value,
             None => 1,
+        };
+        let group_id = match group_id {
+            Some(group_id) => {
+                if user_groups::find_by_id(self.pool, group_id)
+                    .await
+                    .map_err(AppError::from)?
+                    .is_none()
+                {
+                    return Err(AppError::validation(
+                        "group_id",
+                        "the selected group does not exist",
+                    ));
+                }
+                Some(group_id)
+            }
+            None => None,
         };
         let note = match note.map(str::trim).filter(|value| !value.is_empty()) {
             Some(note) => {
@@ -332,25 +415,37 @@ impl AdminContext<'_> {
         let prefix: String = plain_code.chars().take(4).collect();
         let id = invites::create(
             self.pool,
-            &code_hash,
-            &prefix,
-            note.as_deref(),
-            Some(self.actor.id),
-            max_uses,
-            expires_at.as_deref(),
+            &crate::db::invites::NewInvite {
+                code_hash: &code_hash,
+                code_prefix: &prefix,
+                note: note.as_deref(),
+                group_id,
+                created_by: Some(self.actor.id),
+                max_uses,
+                expires_at: expires_at.as_deref(),
+            },
         )
         .await
-        .map_err(AppError::from)?;
+        .map_err(|err| {
+            // The selected group may have been deleted after the check above.
+            if crate::db::is_foreign_key_violation(&err) {
+                AppError::validation("group_id", "the selected group no longer exists")
+            } else {
+                AppError::from(err)
+            }
+        })?;
 
-        let invite = invites::list(self.pool, 1, 0)
+        let invite = invites::find_by_id(self.pool, id)
             .await
             .map_err(AppError::from)?
-            .into_iter()
-            .find(|invite| invite.id == id)
             .ok_or_else(|| AppError::internal("invite disappeared after creation"))?;
 
         self.audit(action::INVITE_CREATED, target::INVITE, id)
-            .metadata(serde_json::json!({ "max_uses": max_uses, "prefix": prefix }))
+            .metadata(serde_json::json!({
+                "max_uses": max_uses,
+                "prefix": prefix,
+                "group_id": group_id
+            }))
             .record(self.pool)
             .await;
 
@@ -366,6 +461,141 @@ impl AdminContext<'_> {
             return Err(AppError::not_found());
         }
         self.audit(action::INVITE_REVOKED, target::INVITE, invite_id)
+            .record(self.pool)
+            .await;
+        Ok(())
+    }
+
+    /// Create a user group.
+    pub async fn create_group(&self, draft: GroupDraft) -> Result<UserGroup> {
+        if user_groups::find_by_name(self.pool, &draft.name)
+            .await
+            .map_err(AppError::from)?
+            .is_some()
+        {
+            return Err(AppError::conflict("a group with that name already exists"));
+        }
+        if draft.make_default
+            && user_groups::default_group(self.pool)
+                .await
+                .map_err(AppError::from)?
+                .is_some()
+        {
+            return Err(AppError::conflict(
+                "a default group already exists; edit an existing group to move the marker",
+            ));
+        }
+
+        let id = user_groups::create(self.pool, &draft.values(), draft.make_default)
+            .await
+            .map_err(map_group_write_error)?;
+        let group = user_groups::find_by_id(self.pool, id)
+            .await
+            .map_err(AppError::from)?
+            .ok_or_else(|| AppError::internal("group disappeared after creation"))?;
+
+        self.audit(action::ADMIN_GROUP_CREATED, target::GROUP, id)
+            .metadata(serde_json::json!({
+                "name": &group.name,
+                "max_urls": group.max_urls,
+                "max_api_tokens": group.max_api_tokens,
+                "is_default": group.is_default
+            }))
+            .record(self.pool)
+            .await;
+        Ok(group)
+    }
+
+    /// Replace a group's settings and optionally move the default marker.
+    pub async fn update_group(&self, id: i64, draft: GroupDraft) -> Result<UserGroup> {
+        let existing = user_groups::find_by_id(self.pool, id)
+            .await
+            .map_err(AppError::from)?
+            .ok_or_else(AppError::not_found)?;
+        if let Some(other) = user_groups::find_by_name(self.pool, &draft.name)
+            .await
+            .map_err(AppError::from)?
+        {
+            if other.id != id {
+                return Err(AppError::conflict("a group with that name already exists"));
+            }
+        }
+
+        let updated = user_groups::update(self.pool, id, &draft.values(), draft.make_default)
+            .await
+            .map_err(map_group_write_error)?;
+        if !updated {
+            // The row disappeared after the load above; do not touch the marker.
+            return Err(AppError::not_found());
+        }
+        let group = user_groups::find_by_id(self.pool, id)
+            .await
+            .map_err(AppError::from)?
+            .ok_or_else(|| AppError::internal("group disappeared after update"))?;
+
+        self.audit(action::ADMIN_GROUP_UPDATED, target::GROUP, id)
+            .metadata(serde_json::json!({
+                "name": &group.name,
+                "previous_name": &existing.name,
+                "max_urls": group.max_urls,
+                "max_api_tokens": group.max_api_tokens,
+                "is_default": group.is_default
+            }))
+            .record(self.pool)
+            .await;
+        Ok(group)
+    }
+
+    /// Delete a non-default group after moving all members to `reassign_to`.
+    pub async fn delete_group(&self, id: i64, reassign_to: Option<i64>) -> Result<()> {
+        let group = user_groups::find_by_id(self.pool, id)
+            .await
+            .map_err(AppError::from)?
+            .ok_or_else(AppError::not_found)?;
+        if group.is_default {
+            return Err(AppError::conflict("the default group cannot be deleted"));
+        }
+        let target = reassign_to
+            .ok_or_else(|| AppError::conflict("choose a group to move the members to"))?;
+        if target == id {
+            return Err(AppError::conflict(
+                "members cannot be moved to the group being deleted",
+            ));
+        }
+        let target_group = user_groups::find_by_id(self.pool, target)
+            .await
+            .map_err(AppError::from)?
+            .ok_or_else(|| AppError::conflict("the target group does not exist"))?;
+
+        let deleted = user_groups::delete_with_reassign(self.pool, id, target)
+            .await
+            .map_err(|err| {
+                // The reassignment target may have been deleted between the
+                // lookup above and the transaction's write lock.
+                if crate::db::is_foreign_key_violation(&err) {
+                    AppError::conflict("the target group does not exist")
+                } else {
+                    AppError::from(err)
+                }
+            })?;
+        if !deleted {
+            // The marker moved after the service-level check (or another
+            // administrator removed the group). The transaction rolled back.
+            return match user_groups::find_by_id(self.pool, id)
+                .await
+                .map_err(AppError::from)?
+            {
+                Some(_) => Err(AppError::conflict("the default group cannot be deleted")),
+                None => Err(AppError::not_found()),
+            };
+        }
+
+        self.audit(action::ADMIN_GROUP_DELETED, target::GROUP, id)
+            .metadata(serde_json::json!({
+                "name": &group.name,
+                "reassign_to": target,
+                "target_name": &target_group.name
+            }))
             .record(self.pool)
             .await;
         Ok(())
@@ -432,6 +662,21 @@ impl AdminContext<'_> {
             database_bytes,
             registration_mode: self.settings.registration_mode().as_str().to_string(),
         })
+    }
+}
+
+/// Map a concurrent name/default collision to the same conflict the pre-checks
+/// report, instead of leaking an internal error.
+fn map_group_write_error(err: sqlx::Error) -> AppError {
+    if crate::services::urls::is_unique_violation(&err) {
+        let message = err.to_string();
+        if message.contains("is_default") || message.contains("idx_user_groups_single_default") {
+            AppError::conflict("a default group already exists")
+        } else {
+            AppError::conflict("a group with that name already exists")
+        }
+    } else {
+        AppError::from(err)
     }
 }
 

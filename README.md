@@ -21,7 +21,8 @@ service, no frontend build step.
 | 🧩 Tags | Filter and group links by tag, with usage counts |
 | 🔑 API tokens | `Authorization: Bearer ur_...`, with optional expiry and revocation |
 | 🌐 Multi-domain | Add extra domains in the admin panel; each domain has its own slug namespace and serves redirects only |
-| 🛠 Admin panel | User management, all site links, domains, invite codes, site settings, audit log |
+| 👥 User groups | Per-group link and API-token quotas plus feature toggles; assign users directly or through an invite code |
+| 🛠 Admin panel | User management, user groups, all site links, domains, invite codes, site settings, audit log |
 | 🌐 Localized UI | English, Traditional Chinese, and Simplified Chinese; the first visit follows the browser's `Accept-Language` header and falls back to English |
 | 🤖 Bot protection | Cloudflare Turnstile or Google reCAPTCHA v2, enabled through environment variables or the admin panel; applies to the registration, sign-in and link creation forms |
 | 🐳 Deployment | Single container plus a named volume; published multi-arch images on GHCR; optional Caddy overlay for automatic HTTPS |
@@ -138,7 +139,7 @@ Chromium).
 | Authentication | Server-side sessions + API tokens | Revocable immediately, without adding a JWT dependency |
 | Passwords | Argon2id (19 MiB, t=2, p=1) | OWASP-recommended parameters |
 
-**Deliberately out of scope**: OAuth, user group permission matrices, GeoIP, keyword
+**Deliberately out of scope**: OAuth, fine-grained permission matrices, GeoIP, keyword
 blocklists, webhooks, email delivery. The tables and architecture leave room for them
 (see `docs/SPEC.md` §12).
 
@@ -173,10 +174,10 @@ urlet/
 ## Development
 
 ```bash
-cargo test                 # unit + integration tests (285)
+cargo test                 # unit + integration tests (362)
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-bash scripts/smoke.sh      # end-to-end acceptance run against the real binary
+bash scripts/smoke.sh      # end-to-end acceptance run against the real binary (101 checks)
 bash scripts/demo.sh       # build a demo site and write screenshots to .tmp/demo/shots
 ```
 

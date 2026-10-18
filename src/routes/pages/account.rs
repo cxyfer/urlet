@@ -8,7 +8,7 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::Form;
 use serde::Deserialize;
 
-use crate::db::{sessions, users};
+use crate::db::{sessions, user_groups, users};
 use crate::error::AppError;
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
@@ -19,7 +19,7 @@ use crate::routes::pages::{
 use crate::services::audit::{action, target, Audit};
 use crate::services::auth::AuthContext;
 use crate::services::ratelimit::limits;
-use crate::services::{time, tokens};
+use crate::services::{limits as effective_limits, time, tokens};
 use crate::state::AppState;
 
 #[derive(Debug, Template)]
@@ -28,8 +28,14 @@ pub struct AccountPage {
     pub site_name: String,
     pub chrome: Chrome,
     pub user: UserDto,
+    pub group_name: String,
     pub sessions: Vec<SessionRow>,
     pub tokens: Vec<TokenRow>,
+    /// Localised "2 of 5 links used" line.
+    pub links_usage: String,
+    /// Localised "2 of 20 tokens used" line.
+    pub tokens_usage: String,
+    pub allow_api_tokens: bool,
     /// Plain value of a token created by the current request (shown once).
     pub new_token: Option<String>,
     pub max_name_len: usize,
@@ -244,6 +250,7 @@ pub async fn create_token(
     let name = payload.name.as_deref().unwrap_or("api token");
     match tokens::create(
         &state.db,
+        &state.settings,
         &current.user,
         name,
         payload.expires_at.as_deref(),
@@ -305,10 +312,60 @@ async fn render_account(
         .unwrap_or_else(|| user.clone());
 
     let lang = i18n::current();
+    let effective = effective_limits::effective(&state.db, &state.settings, &fresh).await?;
+    let group_name = match fresh.group_id {
+        Some(group_id) => user_groups::find_by_id(&state.db, group_id)
+            .await
+            .map_err(AppError::from)?
+            .map(|group| group.name)
+            .unwrap_or_default(),
+        None => String::new(),
+    };
+    let now = time::now_iso();
+    let link_used = crate::db::urls::count_for_user(&state.db, fresh.id)
+        .await
+        .map_err(AppError::from)?;
+    let links_usage = i18n::format(
+        lang,
+        "dashboard.usage",
+        &[
+            ("used", link_used.to_string()),
+            (
+                "quota",
+                if effective.max_urls > 0 {
+                    effective.max_urls.to_string()
+                } else {
+                    lang.t("common.unlimited").to_string()
+                },
+            ),
+        ],
+    );
+    // `tokens::list` is capped at 100 rows for the table; the usage meter must
+    // count every usable token, not only the ones displayed.
+    let token_used = crate::db::tokens::count_active_for_user(&state.db, fresh.id, &now)
+        .await
+        .map_err(AppError::from)?;
+    let tokens_usage = i18n::format(
+        lang,
+        "account.tokens.usage",
+        &[
+            ("used", token_used.to_string()),
+            (
+                "quota",
+                if effective.max_api_tokens > 0 {
+                    effective.max_api_tokens.to_string()
+                } else {
+                    lang.t("common.unlimited").to_string()
+                },
+            ),
+        ],
+    );
     let page = AccountPage {
         site_name: state.settings.site_name(),
         chrome: Chrome::new(state, &fresh, "account", flash),
         user: UserDto::from(&fresh),
+        group_name,
+        links_usage,
         sessions: session_rows
             .iter()
             .map(|session| {
@@ -345,6 +402,8 @@ async fn render_account(
                 active: token.is_valid_at(&time::now_iso()),
             })
             .collect(),
+        tokens_usage,
+        allow_api_tokens: effective.allow_api_tokens,
         new_token,
         max_name_len: tokens::MAX_NAME_LEN,
         lang,

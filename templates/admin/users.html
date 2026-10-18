@@ -27,6 +27,12 @@
         <option value="active" {% if status == "active" %}selected{% endif %}>{{ lang.t("admin.users.status.active") }}</option>
         <option value="suspended" {% if status == "suspended" %}selected{% endif %}>{{ lang.t("admin.users.status.suspended") }}</option>
     </select>
+    <select class="select" name="group_id">
+        <option value="">{{ lang.t("admin.users.any_group") }}</option>
+        {% for group in groups %}
+        <option value="{{ group.id }}" {% if group_id == group.id.to_string() %}selected{% endif %}>{{ group.name }}</option>
+        {% endfor %}
+    </select>
     <button class="btn btn-sage" type="submit">{{ lang.t("common.filter") }}</button>
     <a class="btn btn-ghost" href="/app/admin/users">{{ lang.t("common.reset") }}</a>
 </form>
@@ -36,7 +42,7 @@
         <table class="table">
             <thead>
                 <tr>
-                    <th>{{ lang.t("admin.users.account") }}</th><th>{{ lang.t("common.role") }}</th><th>{{ lang.t("common.status") }}</th><th class="num">{{ lang.t("admin.users.links") }}</th>
+                    <th>{{ lang.t("admin.users.account") }}</th><th>{{ lang.t("common.role") }}</th><th>{{ lang.t("common.status") }}</th><th>{{ lang.t("admin.users.group") }}</th><th class="num">{{ lang.t("admin.users.links") }}</th>
                     <th>{{ lang.t("common.created") }}</th><th>{{ lang.t("admin.users.last_login") }}</th><th>{{ lang.t("common.actions") }}</th>
                 </tr>
             </thead>
@@ -58,6 +64,7 @@
                             {% if user.status == "active" %}{{ lang.t("admin.users.status.active") }}{% else %}{{ lang.t("admin.users.status.suspended") }}{% endif %}
                         </span>
                     </td>
+                    <td class="small">{{ user.group_name }}</td>
                     <td class="num">{{ user.link_count }}</td>
                     <td class="small">{{ user.created }}</td>
                     <td class="small">{{ user.last_login }}</td>
@@ -78,6 +85,15 @@
                                         <select class="select" name="status">
                                             <option value="active" {% if user.status == "active" %}selected{% endif %}>{{ lang.t("admin.users.status.active") }}</option>
                                             <option value="suspended" {% if user.status == "suspended" %}selected{% endif %}>{{ lang.t("admin.users.status.suspended") }}</option>
+                                        </select>
+                                    </div>
+                                    <div class="field">
+                                        <label class="label">{{ lang.t("admin.users.group") }}</label>
+                                        <select class="select" name="group_id">
+                                            <option value="">{{ lang.t("admin.users.ungrouped") }}</option>
+                                            {% for group in groups %}
+                                            <option value="{{ group.id }}" {% if user.group_id == group.id.to_string() %}selected{% endif %}>{{ group.name }}</option>
+                                            {% endfor %}
                                         </select>
                                     </div>
                                     <button class="btn btn-sm btn-primary" type="submit">{{ lang.t("common.save") }}</button>

@@ -128,6 +128,9 @@ async fn bootstrap_admin(state: &AppState) -> Result<()> {
         }
         None => {
             let password_hash = password::hash(&plain_password)?;
+            let group_id = db::user_groups::default_id(&state.db)
+                .await
+                .map_err(AppError::from)?;
             let user_id = db::users::create(
                 &state.db,
                 &NewUser {
@@ -136,6 +139,7 @@ async fn bootstrap_admin(state: &AppState) -> Result<()> {
                     password_hash,
                     display_name: Some("Administrator".to_string()),
                     role: "admin".to_string(),
+                    group_id,
                 },
             )
             .await

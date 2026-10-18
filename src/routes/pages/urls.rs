@@ -47,6 +47,12 @@ pub struct UrlDetailPage {
     pub domains: Vec<DomainOption>,
     /// Hostname the link currently uses.
     pub current_domain: String,
+    pub allow_custom_slug: bool,
+    pub allow_password: bool,
+    pub allow_expiry: bool,
+    pub allow_max_clicks: bool,
+    pub allow_tags: bool,
+    pub allow_domain_selection: bool,
     /// Localised "30 days ago" label of the chart axis.
     pub days_label: String,
     /// Localised "42 clicks in this window; grey segments are bots" legend.
@@ -162,6 +168,8 @@ pub struct UpdateForm {
     pub notes: Option<String>,
     #[serde(default)]
     pub tags: Option<String>,
+    #[serde(default)]
+    pub clear_tags: Option<String>,
     #[serde(default)]
     pub password: Option<String>,
     #[serde(default)]
@@ -347,6 +355,7 @@ pub async fn detail(
         tag_names.clone(),
     );
     let lang = i18n::current();
+    let effective = crate::services::limits::effective(&state.db, &state.settings, &user).await?;
     let daily_total: i64 = daily.iter().map(|point| point.clicks).sum();
     let page = UrlDetailPage {
         site_name: state.settings.site_name(),
@@ -372,6 +381,12 @@ pub async fn detail(
         days,
         domains,
         current_domain,
+        allow_custom_slug: effective.allow_custom_slug,
+        allow_password: effective.allow_password,
+        allow_expiry: effective.allow_expiry,
+        allow_max_clicks: effective.allow_max_clicks,
+        allow_tags: effective.allow_tags,
+        allow_domain_selection: effective.allow_domain_selection,
         days_label: i18n::format(
             lang,
             "url_detail.chart.days_ago",
@@ -445,6 +460,14 @@ pub async fn update(
         optional_number(&payload.max_clicks).map(Some)
     };
 
+    // The tag field is hidden when the group disables tags; the clear checkbox
+    // is the only way for a browser user to remove existing tags.
+    let tags = if checkbox(&payload.clear_tags) {
+        Some(Vec::new())
+    } else {
+        payload.tags.as_ref().map(|_| split_tags(&payload.tags))
+    };
+
     let outcome = context
         .update(
             &existing,
@@ -453,8 +476,8 @@ pub async fn update(
                 domain: payload.domain,
                 slug: payload.slug,
                 title: Some(payload.title.clone()),
-                notes: Some(payload.notes.clone()),
-                tags: Some(split_tags(&payload.tags)),
+                notes: payload.notes.as_ref().map(|_| payload.notes.clone()),
+                tags,
                 password,
                 expires_at,
                 max_clicks,
@@ -599,7 +622,15 @@ pub fn error_code(err: &AppError) -> &'static str {
     match err {
         AppError::Conflict(_) => "conflict",
         AppError::NotFound => "not_found",
-        AppError::Forbidden(message) if message.contains("limit") => "quota",
+        AppError::Forbidden(message)
+            if message.starts_with("you have reached your limit of ")
+                && message.contains("API tokens") =>
+        {
+            "token_quota"
+        }
+        AppError::Forbidden(message) if message.starts_with("you have reached your limit of ") => {
+            "quota"
+        }
         AppError::Forbidden(_) => "denied",
         AppError::RateLimited { .. } => "rate_limited",
         AppError::Validation { field, .. } => match *field {

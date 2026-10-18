@@ -449,12 +449,15 @@ async fn invite_only_registration_requires_a_valid_code() {
     let code = "ABCD2345";
     urlet::db::invites::create(
         &app.state.db,
-        &urlet::services::secret::sha256_hex(code),
-        code,
-        Some("test"),
-        None,
-        1,
-        None,
+        &urlet::db::invites::NewInvite {
+            code_hash: &urlet::services::secret::sha256_hex(code),
+            code_prefix: code,
+            note: Some("test"),
+            group_id: None,
+            created_by: None,
+            max_uses: 1,
+            expires_at: None,
+        },
     )
     .await
     .expect("invite");

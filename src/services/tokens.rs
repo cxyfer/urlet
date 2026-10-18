@@ -6,6 +6,8 @@ use crate::db::tokens::{self, ApiToken, NewToken};
 use crate::db::users::User;
 use crate::error::{AppError, Result};
 use crate::services::audit::{action, target, Audit};
+use crate::services::limits::{self, blocked};
+use crate::services::settings::Settings;
 use crate::services::{secret, time};
 
 /// Prefix of every API token, so they are recognisable in logs and scanners.
@@ -67,6 +69,7 @@ pub fn validate_expiry(raw: Option<&str>) -> Result<Option<String>> {
 /// Create a token for a user. The plain value is returned exactly once.
 pub async fn create(
     pool: &SqlitePool,
+    settings: &Settings,
     actor: &User,
     name: &str,
     expires_at: Option<&str>,
@@ -75,29 +78,45 @@ pub async fn create(
     let name = validate_name(name)?;
     let expires_at = validate_expiry(expires_at)?;
 
+    let limits = limits::effective(pool, settings, actor).await?;
+    if !limits.allow_api_tokens {
+        return Err(AppError::forbidden(blocked::API_TOKENS));
+    }
+
     let plain = format!("{TOKEN_PREFIX}{}", secret::random_token(32));
     let token_hash = secret::sha256_hex(&plain);
     let prefix: String = plain.chars().take(DISPLAY_PREFIX_LEN).collect();
+    let now = time::now_iso();
+    let new_token = NewToken {
+        user_id: actor.id,
+        name: &name,
+        token_prefix: &prefix,
+        token_hash: &token_hash,
+        scopes: DEFAULT_SCOPES,
+        expires_at: expires_at.as_deref(),
+    };
 
-    let id = tokens::create(
-        pool,
-        &NewToken {
-            user_id: actor.id,
-            name: &name,
-            token_prefix: &prefix,
-            token_hash: &token_hash,
-            scopes: DEFAULT_SCOPES,
-            expires_at: expires_at.as_deref(),
-        },
-        &time::now_iso(),
-    )
-    .await
-    .map_err(AppError::from)?;
+    if limits.tokens_unlimited() {
+        tokens::create(pool, &new_token, &now)
+            .await
+            .map_err(AppError::from)?;
+    } else if !tokens::create_within_quota(pool, &new_token, &now, &now, limits.max_api_tokens)
+        .await
+        .map_err(AppError::from)?
+    {
+        // The insert and the count share one statement, so this is exact even
+        // when several requests race for the last slot.
+        return Err(AppError::forbidden(format!(
+            "you have reached your limit of {} API tokens",
+            limits.max_api_tokens
+        )));
+    }
 
     let record = tokens::find_by_hash(pool, &token_hash)
         .await
         .map_err(AppError::from)?
         .ok_or_else(|| AppError::internal("token disappeared after creation"))?;
+    let id = record.id;
 
     Audit::new(action::TOKEN_CREATED)
         .actor(actor.id, &actor.role)

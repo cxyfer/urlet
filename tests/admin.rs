@@ -66,6 +66,7 @@ async fn admin_pages_render_for_administrators() {
     for (uri, needle) in [
         ("/app/admin", "System overview"),
         ("/app/admin/users", "member@example.com"),
+        ("/app/admin/groups", "User groups"),
         ("/app/admin/urls", "All links"),
         ("/app/admin/invites", "Invite codes"),
         ("/app/admin/settings", "Instance settings"),
@@ -467,7 +468,7 @@ async fn settings_form_persists_values() {
         .send(post_form_as(
             "/app/admin/settings",
             "site_name=Team+Links&registration_mode=invite&default_slug_length=9\
-             &max_urls_per_user=250&default_redirect_type=301&analytics_enabled=on&click_retention_days=30",
+             &max_urls_per_user=250&max_api_tokens_per_user=7&default_redirect_type=301&analytics_enabled=on&click_retention_days=30",
             &cookie,
         ))
         .await;
@@ -479,6 +480,7 @@ async fn settings_form_persists_values() {
 
     assert_eq!(app.state.settings.site_name(), "Team Links");
     assert_eq!(app.state.settings.default_slug_length(), 9);
+    assert_eq!(app.state.settings.max_api_tokens_per_user(), 7);
     assert_eq!(app.state.settings.default_redirect_type(), 301);
     assert_eq!(app.state.settings.click_retention_days(), 30);
 

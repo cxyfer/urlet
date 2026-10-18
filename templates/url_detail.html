@@ -54,12 +54,18 @@
 <div class="alert alert-warn mt">
     <div>
         {{ lang.t("url_detail.expired_notice") }}
+        {% if allow_expiry || allow_max_clicks %}
         <form method="post" action="/app/urls/{{ url.id }}/extend" class="row mt">
+            {% if allow_expiry %}
             <button class="btn btn-sm" type="submit" name="days" value="30">{{ lang.t("url_detail.extend.days30") }}</button>
             <button class="btn btn-sm" type="submit" name="days" value="365">{{ lang.t("url_detail.extend.year1") }}</button>
+            {% endif %}
+            {% if allow_max_clicks %}
             <button class="btn btn-sm" type="submit" name="clicks" value="100">{{ lang.t("url_detail.extend.clicks100") }}</button>
             <button class="btn btn-sm" type="submit" name="clicks" value="1000">{{ lang.t("url_detail.extend.clicks1000") }}</button>
+            {% endif %}
         </form>
+        {% endif %}
     </div>
 </div>
 {% endif %}
@@ -175,11 +181,15 @@
         <span class="panel-sub" aria-hidden="true">CFG / 06</span>
     </div>
     <form method="post" action="/app/urls/{{ url.id }}">
+        {% if !allow_custom_slug || !allow_password || !allow_expiry || !allow_max_clicks || !allow_tags || !allow_domain_selection %}
+        <p class="hint">{{ lang.t("url_detail.settings.restricted") }}</p>
+        {% endif %}
         <div class="form-grid">
             <div class="field">
                 <label class="label" for="target_url">{{ lang.t("dashboard.new.destination") }}</label>
                 <input class="input" type="text" id="target_url" name="target_url" value="{{ url.target_url }}" required>
             </div>
+            {% if allow_domain_selection %}
             <div class="field">
                 <label class="label" for="domain">{{ lang.t("url_detail.settings.domain") }}</label>
                 <select class="select" id="domain" name="domain">
@@ -189,23 +199,40 @@
                 </select>
                 <span class="hint">{{ lang.t("url_detail.settings.domain_hint") }}</span>
             </div>
+            {% endif %}
+            {% if allow_custom_slug %}
             <div class="field">
                 <label class="label" for="slug">{{ lang.t("common.slug") }}</label>
                 <input class="input" type="text" id="slug" name="slug" value="{{ url.slug }}" maxlength="64">
                 <span class="hint">{{ lang.t("url_detail.settings.slug_hint") }}</span>
             </div>
+            {% endif %}
             <div class="field">
                 <label class="label" for="title">{{ lang.t("dashboard.new.title") }}</label>
                 <input class="input" type="text" id="title" name="title" maxlength="200"
                        value="{% match url.title %}{% when Some with (title) %}{{ title }}{% when None %}{% endmatch %}">
             </div>
+            {% if allow_tags %}
             <div class="field">
                 <label class="label" for="tags">{{ lang.t("dashboard.new.tags") }}</label>
                 <input class="input" type="text" id="tags" name="tags" value="{{ tags_csv }}">
             </div>
+            {% else %}
+            {% if url.tags.len() > 0 %}
+            <div class="field">
+                <label class="label">{{ lang.t("dashboard.new.tags") }}</label>
+                <label class="checkbox">
+                    <input type="checkbox" name="clear_tags" value="on">
+                    {{ lang.t("url_detail.settings.remove_tags") }}
+                </label>
+                <span class="hint">{{ tags_csv }}</span>
+            </div>
+            {% endif %}
+            {% endif %}
         </div>
 
         <div class="form-grid">
+            {% if allow_password %}
             <div class="field">
                 <label class="label" for="password">{{ lang.t("url_detail.settings.new_password") }}</label>
                 <input class="input" type="password" id="password" name="password"
@@ -216,6 +243,19 @@
                 </label>
                 {% if url.has_password %}<span class="hint">{{ lang.t("url_detail.settings.password_protected") }}</span>{% endif %}
             </div>
+            {% else %}
+            {% if url.has_password %}
+            <div class="field">
+                <label class="label">{{ lang.t("url_detail.settings.new_password") }}</label>
+                <label class="checkbox">
+                    <input type="checkbox" name="clear_password" value="on">
+                    {{ lang.t("url_detail.settings.remove_password") }}
+                </label>
+                <span class="hint">{{ lang.t("url_detail.settings.password_protected") }}</span>
+            </div>
+            {% endif %}
+            {% endif %}
+            {% if allow_expiry %}
             <div class="field">
                 <label class="label" for="expires_at">{{ lang.t("common.expires_at") }}</label>
                 <input class="input" type="text" id="expires_at" name="expires_at"
@@ -226,6 +266,20 @@
                     {{ lang.t("url_detail.settings.no_expiry") }}
                 </label>
             </div>
+            {% else %}
+            {% match url.expires_at %}
+            {% when Some with (value) %}
+            <div class="field">
+                <label class="label">{{ lang.t("common.expires_at") }}</label>
+                <p class="small">{{ value }}</p>
+                <label class="checkbox">
+                    <input type="checkbox" name="clear_expiry" value="on">
+                    {{ lang.t("url_detail.settings.no_expiry") }}
+                </label>
+            </div>
+            {% when None %}{% endmatch %}
+            {% endif %}
+            {% if allow_max_clicks %}
             <div class="field">
                 <label class="label" for="max_clicks">{{ lang.t("dashboard.advanced.max_clicks") }}</label>
                 <input class="input" type="number" id="max_clicks" name="max_clicks" min="1"
@@ -235,6 +289,19 @@
                     {{ lang.t("url_detail.settings.unlimited") }}
                 </label>
             </div>
+            {% else %}
+            {% match url.max_clicks %}
+            {% when Some with (limit) %}
+            <div class="field">
+                <label class="label">{{ lang.t("dashboard.advanced.max_clicks") }}</label>
+                <p class="small">{{ limit }}</p>
+                <label class="checkbox">
+                    <input type="checkbox" name="clear_max_clicks" value="on">
+                    {{ lang.t("url_detail.settings.unlimited") }}
+                </label>
+            </div>
+            {% when None %}{% endmatch %}
+            {% endif %}
             <div class="field">
                 <label class="label" for="redirect_type">{{ lang.t("dashboard.advanced.redirect_type") }}</label>
                 <select class="select" id="redirect_type" name="redirect_type">

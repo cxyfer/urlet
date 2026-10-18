@@ -82,6 +82,7 @@ pub async fn create(
 ) -> Result<Response, ApiError> {
     let created = tokens::create(
         &state.db,
+        &state.settings,
         &user,
         &payload.name,
         payload.expires_at.as_deref(),

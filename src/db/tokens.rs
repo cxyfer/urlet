@@ -72,6 +72,41 @@ pub async fn create(
     Ok(result.last_insert_rowid())
 }
 
+/// Insert a token only while the user has fewer than `limit` usable tokens.
+///
+/// The count and the insert are one statement, so concurrent creations cannot
+/// both pass a check made before either insert. Returns `false` when the quota
+/// is already full.
+pub async fn create_within_quota(
+    pool: &SqlitePool,
+    token: &NewToken<'_>,
+    created_at: &str,
+    now: &str,
+    limit: i64,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "INSERT INTO api_tokens (user_id, name, token_prefix, token_hash, scopes, expires_at,
+                                 created_at)
+         SELECT ?, ?, ?, ?, ?, ?, ?
+          WHERE (SELECT COUNT(*) FROM api_tokens
+                  WHERE user_id = ? AND revoked_at IS NULL
+                    AND (expires_at IS NULL OR expires_at > ?)) < ?",
+    )
+    .bind(token.user_id)
+    .bind(token.name)
+    .bind(token.token_prefix)
+    .bind(token.token_hash)
+    .bind(token.scopes)
+    .bind(token.expires_at)
+    .bind(created_at)
+    .bind(token.user_id)
+    .bind(now)
+    .bind(limit)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
 /// Record token usage (called on every authenticated API request).
 pub async fn touch_last_used(pool: &SqlitePool, id: i64, now: &str) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
@@ -88,6 +123,23 @@ pub async fn count_active(pool: &SqlitePool, now: &str) -> Result<i64, sqlx::Err
         "SELECT COUNT(*) FROM api_tokens
          WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)",
     )
+    .bind(now)
+    .fetch_one(pool)
+    .await
+}
+
+/// Number of usable tokens of one user: not revoked and not expired.
+pub async fn count_active_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    now: &str,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM api_tokens
+         WHERE user_id = ? AND revoked_at IS NULL
+           AND (expires_at IS NULL OR expires_at > ?)",
+    )
+    .bind(user_id)
     .bind(now)
     .fetch_one(pool)
     .await
