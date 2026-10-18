@@ -725,6 +725,23 @@ async fn a_disabled_group_default_falls_back_to_the_site_default() {
     let page = app.get_as("/app/admin/groups", &admin_cookie).await;
     assert!(page.body.contains(&format!("value=\"{b}\" selected")));
 
+    // A name-only PUT must keep the inactive stored default rather than 422.
+    let name_only =
+        update_group(&app, &admin_cookie, group_id, json!({ "name": "Fallback" })).await;
+    assert_eq!(name_only.status, StatusCode::OK, "{}", name_only.body);
+    assert_eq!(name_only.json()["default_domain_id"], b);
+
+    // Explicitly sending the unchanged inactive value is also allowed.
+    let unchanged = update_group(
+        &app,
+        &admin_cookie,
+        group_id,
+        json!({ "name": "Fallback", "default_domain_id": b }),
+    )
+    .await;
+    assert_eq!(unchanged.status, StatusCode::OK, "{}", unchanged.body);
+    assert_eq!(unchanged.json()["default_domain_id"], b);
+
     let canonical = app.state.domains.canonical_host().to_string();
     let options = app.get_as("/api/v1/domains", &member_cookie).await.json();
     let entries = options.as_array().expect("domain list");
