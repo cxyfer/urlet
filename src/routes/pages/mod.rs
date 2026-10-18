@@ -88,6 +88,8 @@ pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
             "domain_disabled" => "flash.ok.domain_disabled",
             "domain_default" => "flash.ok.domain_default",
             "domain_deleted" => "flash.ok.domain_deleted",
+            "group" => "flash.ok.group",
+            "group_deleted" => "flash.ok.group_deleted",
             _ => return None,
         };
         return Some(Flash {
@@ -104,6 +106,7 @@ pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
             "rate_limited" => "flash.err.rate_limited",
             "denied" => "flash.err.denied",
             "quota" => "flash.err.quota",
+            "token_quota" => "flash.err.token_quota",
             "password" => "flash.err.password",
             "login" => "flash.err.login",
             "registration" => "flash.err.registration",
@@ -425,6 +428,12 @@ pub fn router() -> Router<AppState> {
         .route("/admin/domains/{id}/disable", post(admin::disable_domain))
         .route("/admin/domains/{id}/default", post(admin::default_domain))
         .route("/admin/domains/{id}/delete", post(admin::delete_domain))
+        .route(
+            "/admin/groups",
+            get(admin::groups_page).post(admin::create_group),
+        )
+        .route("/admin/groups/{id}", post(admin::update_group))
+        .route("/admin/groups/{id}/delete", post(admin::delete_group))
         .route(
             "/admin/settings",
             get(admin::settings_page).post(admin::update_settings),

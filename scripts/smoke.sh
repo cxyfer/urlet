@@ -315,6 +315,32 @@ check "the audit log has entries" "200" "$(curl -s -o /dev/null -w '%{http_code}
     -b "$COOKIES" "$BASE/api/v1/admin/audit")"
 contains "the audit log records registrations" 'auth.register' "$(curl -s -b "$COOKIES" "$BASE/api/v1/admin/audit")"
 
+# user groups: create, assign, enforce a quota and a feature toggle, then delete
+GROUP=$(curl -s -b "$COOKIES" -X POST "$BASE/api/v1/admin/groups" -H 'content-type: application/json' \
+    -H "origin: $BASE" -d '{"name":"Smoke","max_urls":1,"allow_custom_slug":false,"allow_domain_selection":false}')
+GROUP_ID=$(echo "$GROUP" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+contains "a user group is created" '"name":"Smoke"' "$GROUP"
+contains "the group disables domain selection" '"allow_domain_selection":false' "$GROUP"
+check "a user is assigned to the group" "200" "$(curl -s -o /dev/null -w '%{http_code}' \
+    -b "$COOKIES" -X PATCH "$BASE/api/v1/admin/users/2" -H 'content-type: application/json' \
+    -H "origin: $BASE" -d "{\"group_id\":$GROUP_ID}")"
+check "a non-default domain is refused by the group" "403" "$(curl -s -o /dev/null -w '%{http_code}' \
+    -b "$COOKIES_B" -X POST "$BASE/api/v1/urls" -H 'content-type: application/json' \
+    -H "origin: $BASE" -d '{"target_url":"https://example.com/domain-blocked","domain":"go.example.com"}')"
+check "a blocked feature is refused" "403" "$(curl -s -o /dev/null -w '%{http_code}' \
+    -b "$COOKIES_B" -X POST "$BASE/api/v1/urls" -H 'content-type: application/json' \
+    -H "origin: $BASE" -d '{"target_url":"https://example.com/blocked","slug":"blocked"}')"
+check "the group quota allows the first link" "201" "$(curl -s -o /dev/null -w '%{http_code}' \
+    -b "$COOKIES_B" -X POST "$BASE/api/v1/urls" -H 'content-type: application/json' \
+    -H "origin: $BASE" -d '{"target_url":"https://example.com/group-one"}')"
+check "the group quota blocks the second link" "403" "$(curl -s -o /dev/null -w '%{http_code}' \
+    -b "$COOKIES_B" -X POST "$BASE/api/v1/urls" -H 'content-type: application/json' \
+    -H "origin: $BASE" -d '{"target_url":"https://example.com/group-two"}')"
+check "the default group cannot be deleted" "409" "$(curl -s -o /dev/null -w '%{http_code}' \
+    -b "$COOKIES" -X DELETE -H "origin: $BASE" "$BASE/api/v1/admin/groups/1?reassign_to=$GROUP_ID")"
+check "a non-default group is deleted with reassignment" "204" "$(curl -s -o /dev/null -w '%{http_code}' \
+    -b "$COOKIES" -X DELETE -H "origin: $BASE" "$BASE/api/v1/admin/groups/$GROUP_ID?reassign_to=1")"
+
 # The registration limiter is in memory and counts per IP; restart to reset it
 # so the invite flow below is not throttled by the checks above.
 stop_server
@@ -342,10 +368,12 @@ echo "pages"
 for path in /app/login /app/register; do
     check "GET $path renders" "200" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE$path")"
 done
-for path in /app /app/account /app/admin /app/admin/users /app/admin/urls /app/admin/invites /app/admin/settings /app/admin/audit; do
+for path in /app /app/account /app/admin /app/admin/users /app/admin/groups /app/admin/urls /app/admin/invites /app/admin/settings /app/admin/audit; do
     check "GET $path renders for an admin" "200" \
         "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" "$BASE$path")"
 done
+check "the admin user filter accepts an empty group" "200" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" "$BASE/app/admin/users?q=&role=&status=&group_id=")"
 check "GET /app without a session redirects" "303" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/app")"
 
 # ------------------------------------------------------------- persistence

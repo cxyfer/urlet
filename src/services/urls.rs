@@ -8,6 +8,7 @@ use crate::db::urls::{self, NewUrl, Url, UrlState, UrlUpdate};
 use crate::db::users::User;
 use crate::error::{AppError, Result};
 use crate::services::audit::{action, target, Audit};
+use crate::services::limits::{self, blocked};
 use crate::services::settings::Settings;
 use crate::services::{domains as domain_service, password, slug, target as target_url, time};
 
@@ -231,28 +232,57 @@ impl UrlContext<'_> {
     /// Create a short link for the current actor.
     pub async fn create(&self, input: CreateInput) -> Result<Url> {
         let target = target_url::validate(&input.target_url)?;
+        let limits = limits::effective(self.pool, self.settings, self.actor).await?;
 
-        let quota = self.settings.max_urls_per_user();
-        if quota > 0 {
-            let used = urls::count_for_user(self.pool, self.actor.id)
-                .await
-                .map_err(AppError::from)?;
-            if used >= quota {
-                return Err(AppError::forbidden(format!(
-                    "you have reached your limit of {quota} links"
-                )));
-            }
-        }
-
-        let domain = self.resolve_domain(input.domain.as_deref()).await?;
-        let domain_id = domain.id;
-        let tags = normalize_tags(&input.tags)?;
-        let (slug, is_custom) = match input
+        // A group toggle blocks the *use* of a feature; it never touches links
+        // that already exist.
+        let custom_slug = input
             .slug
             .as_deref()
             .map(str::trim)
-            .filter(|s| !s.is_empty())
+            .filter(|value| !value.is_empty());
+        if custom_slug.is_some() && !limits.allow_custom_slug {
+            return Err(AppError::forbidden(blocked::CUSTOM_SLUG));
+        }
+        if input.tags.iter().any(|tag| !tag.trim().is_empty()) && !limits.allow_tags {
+            return Err(AppError::forbidden(blocked::TAGS));
+        }
+        if input
+            .password
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_some()
+            && !limits.allow_password
         {
+            return Err(AppError::forbidden(blocked::PASSWORD));
+        }
+        if input
+            .expires_at
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_some()
+            && !limits.allow_expiry
+        {
+            return Err(AppError::forbidden(blocked::EXPIRY));
+        }
+        if input.max_clicks.is_some() && !limits.allow_max_clicks {
+            return Err(AppError::forbidden(blocked::MAX_CLICKS));
+        }
+
+        let domain = self.resolve_domain(input.domain.as_deref()).await?;
+        if !limits.allow_domain_selection && domain.is_default == 0 {
+            return Err(AppError::forbidden(blocked::DOMAIN_SELECTION));
+        }
+        let domain_id = domain.id;
+
+        // The quota is enforced inside the INSERT, not by a separate count:
+        // concurrent requests must not both pass the same check.
+        let quota = limits.max_urls;
+
+        let tags = normalize_tags(&input.tags)?;
+        let (slug, is_custom) = match custom_slug {
             Some(custom) => {
                 let custom = slug::validate(custom)?;
                 if urls::slug_taken(self.pool, domain_id, &custom)
@@ -291,30 +321,35 @@ impl UrlContext<'_> {
         };
         let password_hash = prepare_password_async(input.password.as_deref()).await?;
 
-        let url_id = urls::create(
-            self.pool,
-            &NewUrl {
-                user_id: self.actor.id,
-                domain_id,
-                slug: slug.clone(),
-                target_url: target.clone(),
-                title,
-                notes,
-                password_hash,
-                expires_at,
-                max_clicks,
-                redirect_type,
-                is_custom_slug: is_custom,
-            },
-        )
-        .await
-        .map_err(|err| {
-            if is_unique_violation(&err) {
-                AppError::conflict(format!("the slug '{slug}' is already taken"))
-            } else {
-                AppError::from(err)
-            }
-        })?;
+        let new_url = NewUrl {
+            user_id: self.actor.id,
+            domain_id,
+            slug: slug.clone(),
+            target_url: target.clone(),
+            title,
+            notes,
+            password_hash,
+            expires_at,
+            max_clicks,
+            redirect_type,
+            is_custom_slug: is_custom,
+        };
+        let inserted = if quota > 0 {
+            urls::create_within_quota(self.pool, &new_url, quota)
+                .await
+                .map_err(|err| map_url_insert_error(err, &slug))?
+        } else {
+            Some(
+                urls::create(self.pool, &new_url)
+                    .await
+                    .map_err(|err| map_url_insert_error(err, &slug))?,
+            )
+        };
+        let Some(url_id) = inserted else {
+            return Err(AppError::forbidden(format!(
+                "you have reached your limit of {quota} links"
+            )));
+        };
 
         self.sync_tags(url_id, &tags).await?;
 
@@ -335,6 +370,7 @@ impl UrlContext<'_> {
 
     /// Apply a partial update to a link owned by the current actor.
     pub async fn update(&self, url: &Url, input: UpdateInput) -> Result<Url> {
+        let limits = limits::effective(self.pool, self.settings, self.actor).await?;
         let mut changes = UrlUpdate::default();
 
         if let Some(raw) = input.target_url.as_deref() {
@@ -368,9 +404,17 @@ impl UrlContext<'_> {
         };
 
         let moving = target_domain.id != url.domain_id;
+        if moving && !limits.allow_domain_selection && target_domain.is_default == 0 {
+            return Err(AppError::forbidden(blocked::DOMAIN_SELECTION));
+        }
         if let Some(raw) = input.slug.as_deref() {
             let custom = slug::validate(raw)?;
             if custom != url.slug || moving {
+                // Only a *new* slug is the custom-slug feature; moving a link
+                // with its current slug is governed by domain selection.
+                if custom != url.slug && !limits.allow_custom_slug {
+                    return Err(AppError::forbidden(blocked::CUSTOM_SLUG));
+                }
                 if urls::slug_taken_excluding(self.pool, target_domain.id, &custom, url.id)
                     .await
                     .map_err(AppError::from)?
@@ -411,19 +455,49 @@ impl UrlContext<'_> {
             });
         }
         if let Some(raw) = &input.password {
+            if raw
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_some()
+                && !limits.allow_password
+            {
+                return Err(AppError::forbidden(blocked::PASSWORD));
+            }
             changes.password_hash = Some(prepare_password_async(raw.as_deref()).await?);
         }
         if let Some(raw) = &input.expires_at {
-            changes.expires_at = Some(match raw.as_deref() {
-                Some(value) if !value.trim().is_empty() => Some(validate_expiry(value)?),
-                _ => None,
-            });
+            let next = match raw
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                Some(value) => {
+                    // An expired link must remain editable from its own page:
+                    // reusing the stored instant is not a new expiry.
+                    if Some(value) == url.expires_at.as_deref() {
+                        Some(value.to_string())
+                    } else {
+                        Some(validate_expiry(value)?)
+                    }
+                }
+                None => None,
+            };
+            // Keeping the current value is not "newly enabling" the feature.
+            if next.is_some() && !limits.allow_expiry && next != url.expires_at {
+                return Err(AppError::forbidden(blocked::EXPIRY));
+            }
+            changes.expires_at = Some(next);
         }
         if let Some(raw) = &input.max_clicks {
-            changes.max_clicks = Some(match raw {
+            let next = match raw {
                 Some(value) => Some(validate_max_clicks(*value)?),
                 None => None,
-            });
+            };
+            if next.is_some() && !limits.allow_max_clicks && next != url.max_clicks {
+                return Err(AppError::forbidden(blocked::MAX_CLICKS));
+            }
+            changes.max_clicks = Some(next);
         }
         if let Some(value) = input.redirect_type {
             changes.redirect_type = Some(validate_redirect_type(value)?);
@@ -439,7 +513,20 @@ impl UrlContext<'_> {
             changes.status = Some(status);
         }
 
-        if changes.is_empty() && input.tags.is_none() {
+        let new_tags = match &input.tags {
+            Some(tags) => Some(normalize_tags(tags)?),
+            None => None,
+        };
+        if let Some(tags) = &new_tags {
+            if !tags.is_empty() && !limits.allow_tags {
+                let current = stored_tag_names(self.pool, url.id).await?;
+                if !same_tags(tags, &current) {
+                    return Err(AppError::forbidden(blocked::TAGS));
+                }
+            }
+        }
+
+        if changes.is_empty() && new_tags.is_none() {
             return Err(AppError::bad_request("no changes were submitted"));
         }
 
@@ -461,9 +548,8 @@ impl UrlContext<'_> {
             }
         }
 
-        if let Some(tags) = &input.tags {
-            let tags = normalize_tags(tags)?;
-            self.sync_tags(url.id, &tags).await?;
+        if let Some(tags) = &new_tags {
+            self.sync_tags(url.id, tags).await?;
         }
 
         Audit::new(action::URL_UPDATED)
@@ -472,7 +558,7 @@ impl UrlContext<'_> {
             .metadata(serde_json::json!({
                 "slug": url.slug,
                 "domain": target_domain.hostname,
-                "fields": describe_changes(&changes, input.tags.is_some()),
+                "fields": describe_changes(&changes, new_tags.is_some()),
             }))
             .ip_hash(self.ip_hash.map(str::to_string))
             .record(self.pool)
@@ -613,8 +699,42 @@ pub fn state_of(url: &Url) -> UrlState {
     url.state()
 }
 
-fn is_unique_violation(err: &sqlx::Error) -> bool {
+pub(crate) fn is_unique_violation(err: &sqlx::Error) -> bool {
     matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("2067"))
+}
+
+/// Turn a unique-index violation on insert into the user-facing conflict.
+fn map_url_insert_error(err: sqlx::Error, slug: &str) -> AppError {
+    if is_unique_violation(&err) {
+        AppError::conflict(format!("the slug '{slug}' is already taken"))
+    } else {
+        AppError::from(err)
+    }
+}
+
+/// Tag names currently attached to a link, lowercased for comparison.
+async fn stored_tag_names(pool: &SqlitePool, url_id: i64) -> Result<Vec<String>> {
+    Ok(tags::for_url(pool, url_id)
+        .await
+        .map_err(AppError::from)?
+        .into_iter()
+        .map(|tag| tag.name.to_lowercase())
+        .collect())
+}
+
+/// Compare tag lists regardless of order, case and duplicates.
+fn same_tags(left: &[String], right: &[String]) -> bool {
+    fn normalize(values: &[String]) -> Vec<String> {
+        let mut values: Vec<String> = values
+            .iter()
+            .map(|value| value.trim().to_lowercase())
+            .filter(|value| !value.is_empty())
+            .collect();
+        values.sort_unstable();
+        values.dedup();
+        values
+    }
+    normalize(left) == normalize(right)
 }
 
 #[cfg(test)]

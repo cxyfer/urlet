@@ -145,6 +145,49 @@ pub async fn create(pool: &SqlitePool, new_url: &NewUrl) -> Result<i64, sqlx::Er
     Ok(result.last_insert_rowid())
 }
 
+/// Insert a short link only while the user is below `limit` live links.
+///
+/// The count and the insert are one statement, so two concurrent creations
+/// cannot both pass a check made before either insert. Returns `None` when the
+/// quota is already full.
+pub async fn create_within_quota(
+    pool: &SqlitePool,
+    new_url: &NewUrl,
+    limit: i64,
+) -> Result<Option<i64>, sqlx::Error> {
+    let now = time::now_iso();
+    let result = sqlx::query(
+        "INSERT INTO urls (user_id, domain_id, slug, target_url, title, notes, password_hash,
+                           expires_at, max_clicks, redirect_type, status, is_custom_slug,
+                           created_at, updated_at)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?
+          WHERE (SELECT COUNT(*) FROM urls
+                  WHERE user_id = ? AND deleted_at IS NULL) < ?",
+    )
+    .bind(new_url.user_id)
+    .bind(new_url.domain_id)
+    .bind(&new_url.slug)
+    .bind(&new_url.target_url)
+    .bind(new_url.title.as_deref())
+    .bind(new_url.notes.as_deref())
+    .bind(new_url.password_hash.as_deref())
+    .bind(new_url.expires_at.as_deref())
+    .bind(new_url.max_clicks)
+    .bind(new_url.redirect_type)
+    .bind(i64::from(new_url.is_custom_slug))
+    .bind(&now)
+    .bind(&now)
+    .bind(new_url.user_id)
+    .bind(limit)
+    .execute(pool)
+    .await?;
+    if result.rows_affected() == 0 {
+        Ok(None)
+    } else {
+        Ok(Some(result.last_insert_rowid()))
+    }
+}
+
 /// Find a live link by id (any owner). Soft deleted links are not returned.
 pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Url>, sqlx::Error> {
     sqlx::query_as::<_, Url>(&format!("{SELECT} WHERE id = ? AND deleted_at IS NULL"))

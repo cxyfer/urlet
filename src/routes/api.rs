@@ -1,6 +1,6 @@
 //! `/api/v1` router.
 
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{delete, get, patch, post, put};
 use axum::Router;
 
 use crate::routes::{
@@ -68,6 +68,14 @@ pub fn router() -> Router<AppState> {
             get(api_admin::list_invites).post(api_admin::create_invite),
         )
         .route("/admin/invites/{id}", delete(api_admin::revoke_invite))
+        .route(
+            "/admin/groups",
+            get(api_admin::list_groups).post(api_admin::create_group),
+        )
+        .route(
+            "/admin/groups/{id}",
+            put(api_admin::update_group).delete(api_admin::delete_group),
+        )
         .route(
             "/admin/settings",
             get(api_admin::get_settings).put(api_admin::put_settings),

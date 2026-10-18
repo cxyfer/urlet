@@ -59,6 +59,9 @@
 錯誤：`409` email 重複、`422` 驗證失敗、`403` 註冊關閉或邀請碼無效、
 `400` `captcha_failed`（已啟用防機器人驗證且驗證未通過時）。
 
+邀請碼可指定使用者群組。`invite` 模式下必須帶邀請碼；`open` 模式下為選填，但一旦提供就會驗證，
+且其群組優先於預設群組。回應的 `user` 物件包含 `group_id`。
+
 `captcha_token` 是網頁註冊表單上驗證元件的 token，只在註冊流程啟用防機器人驗證時檢查，
 否則會忽略此欄位。詳見[防機器人驗證](#防機器人驗證)。
 
@@ -86,7 +89,29 @@
 
 ### `GET /api/v1/auth/me`
 
-`200` → `{ "user": { ... } }`
+`200` → 使用者、所屬群組（或 `null`）與生效額度：
+
+```json
+{
+  "user": { "id": 7, "email": "ada@example.com", "role": "user", "group_id": 2, "...": "..." },
+  "group": { "id": 2, "name": "Pro" },
+  "limits": {
+    "max_urls": 500,
+    "max_api_tokens": 5,
+    "allow_custom_slug": true,
+    "allow_password": true,
+    "allow_expiry": true,
+    "allow_max_clicks": true,
+    "allow_tags": true,
+    "allow_api_tokens": true,
+    "allow_domain_selection": true
+  }
+}
+```
+
+未分組帳號的 `group` 為 `null`，改為套用全站設定。`limits` 是解析後的值：群組配額非 `NULL` 時
+才覆蓋全站值，`0` 表示無上限。`allow_domain_selection` 為 `false` 時，在非預設網域建立連結或
+把連結移到非預設網域會回 `403`；預設網域一律允許。
 
 ### `PATCH /api/v1/auth/me`
 
@@ -130,6 +155,9 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 ```
 
 `DELETE` → `204`。
+
+群組關閉 API Token（`allow_api_tokens`）或生效的 `max_api_tokens` 用盡時，建立 Token 會回 `403`。
+配額只計算可用 Token（未撤銷、未過期），因此撤銷後會立即釋出名額。
 
 ---
 
@@ -246,6 +274,10 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
   "updated_at": "..."
 }
 ```
+
+**群組限制。** 生效的 `max_urls` 用盡時，建立短網址會回 `403`。群組功能開關會擋下建立時對應欄位
+（`slug`、`password`、`expires_at`、`max_clicks`、`tags`）的提交，`PATCH` 時也不允許「新開啟」。
+省略欄位代表維持原值，清除被封鎖的欄位則可接受；非空的連結密碼一律視為新值，在密碼被封鎖時會被拒絕。
 
 ---
 
@@ -374,30 +406,42 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 
 | 方法 | 路徑 | 說明 |
 |------|------|------|
-| GET | `/admin/users?q=&role=&status=&page=` | 使用者列表（含 `link_count`） |
-| PATCH | `/admin/users/{id}` | `{ "role"?, "status"?, "display_name"? }` |
+| GET | `/admin/users?q=&role=&status=&group_id=&page=` | 使用者列表（含 `link_count`、`group_id`、`group_name`） |
+| PATCH | `/admin/users/{id}` | `{ "role"?, "status"?, "display_name"?, "group_id"? }`；`group_id: null` 表示改為未分組 |
 | POST | `/admin/users/{id}/password` | `{ "new_password": "..." }` → `204`，撤銷該帳號所有 Session |
 | DELETE | `/admin/users/{id}` | `204`，軟刪除帳號與其所有短網址 |
 | GET | `/admin/domains` | 所有網域，含連結數、狀態與來源 |
 | POST | `/admin/domains` | `{ "hostname": "go.example.com" }` → `201`，建立為 `pending` |
 | PATCH | `/admin/domains/{id}` | `{ "status"?: "active"\|"disabled", "is_default"?: true }` |
 | DELETE | `/admin/domains/{id}` | `204`；僅限沒有連結、非預設的 UI 網域 |
+| GET | `/admin/groups?page=&per_page=` | 使用者群組列表（含成員數，分頁） |
+| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "is_default"? }` → `201` |
+| PUT | `/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`is_default: true` 會轉移唯一的預設標記 |
+| DELETE | `/admin/groups/{id}?reassign_to={id}` | `204`，先移動成員再刪除；預設群組或目標不存在/不合法回 `409` |
 | GET | `/admin/urls?q=&status=&user_id=&page=` | 全站短網址 |
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |
-| GET | `/admin/invites` | 邀請碼列表（僅顯示前綴） |
-| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"? }` → `201`，**明文邀請碼只回一次** |
+| GET | `/admin/invites` | 邀請碼列表（僅顯示前綴，另含 `group_id` / `group_name`） |
+| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201`，**明文邀請碼只回一次** |
 | DELETE | `/admin/invites/{id}` | `204`，撤銷 |
 | GET | `/admin/settings` | 目前設定 |
 | PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", ... }` |
 | GET | `/admin/audit?action=&target_type=&actor=&page=` | 稽核日誌（`metadata` 已解析為 JSON） |
 | GET | `/admin/stats` | 使用者／短網址／點擊總量、資料庫大小、版本、運行時間 |
 
+**使用者群組。** 群組物件為
+`{ id, name, description, max_urls, max_api_tokens, allow_*, is_default, members, created_at, updated_at }`。
+配額可為 `null`（跟隨全站設定）或 `0`（無上限）。功能開關預設 `true`，只影響新的使用，
+不會修改既有連結或 Token。管理員與一般使用者適用同一套規則。`PUT` 接受部分群組表示：省略欄位
+即維持原值，配額設為 `null` 代表跟隨全站，`description: null` 會清除說明，`is_default: true`
+會轉移預設標記。`POST` 仍採建立預設值（省略開關視為允許、省略配額視為跟隨全站）。
+
 **保護機制**：管理員不能變更自己的角色或狀態、不能刪除自己，且系統永遠保留至少一位
-有效管理員（否則回 `409`）。
+有效管理員（否則回 `409`）。預設群組不可刪除，請先以 `PUT` 轉移標記。
 
 可編輯的設定鍵：`site_name`、`registration_mode`（`open`/`invite`/`closed`）、
 `default_slug_length`（4–16）、`max_urls_per_user`（0 = 無限）、
+`max_api_tokens_per_user`（0 = 無限，預設 20）、
 `default_redirect_type`（301/302/307/308）、`analytics_enabled`、
 `click_retention_days`（0 = 永久保留），以及防機器人驗證的
 `captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、
@@ -416,6 +460,7 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | `token.created` / `token.revoked` | API Token |
 | `invite.created` / `invite.revoked` / `invite.redeemed` | 邀請碼 |
 | `admin.user_updated` / `admin.user_deleted` / `admin.password_reset` | 管理操作 |
+| `admin.group_created` / `admin.group_updated` / `admin.group_deleted` | 群組異動 |
 | `admin.url_updated` / `admin.settings_updated` | 管理操作 |
 
 ## 速率限制

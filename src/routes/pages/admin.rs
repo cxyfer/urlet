@@ -13,7 +13,7 @@ use crate::db::domains::DomainWithCount;
 use crate::db::invites::Invite;
 use crate::db::urls::{self, AdminUrlFilter, UrlSort};
 use crate::db::users::{User, UserFilter};
-use crate::db::{tags, users};
+use crate::db::{tags, user_groups, users};
 use crate::error::AppError;
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
@@ -26,6 +26,7 @@ use crate::routes::pages::{
 use crate::services::admin::{self, AdminContext};
 use crate::services::captcha::CaptchaProvider;
 use crate::services::domains::DomainContext;
+use crate::services::groups::{self as group_service, GroupDraft, GroupOverview};
 use crate::services::settings::Settings;
 use crate::services::time;
 use crate::state::AppState;
@@ -68,6 +69,7 @@ pub struct UsersPage {
     pub section: &'static str,
     pub chrome: Chrome,
     pub users: Vec<AdminUserRow>,
+    pub groups: Vec<GroupOption>,
     pub links: Vec<PageLink>,
     pub page: i64,
     pub total_pages: i64,
@@ -75,11 +77,19 @@ pub struct UsersPage {
     pub q: String,
     pub role: String,
     pub status: String,
+    pub group_id: String,
     /// Localised "{count} accounts" line.
     pub count_label: String,
     /// Localised "Page 2 of 5" line.
     pub pagination_note: String,
     pub lang: Lang,
+}
+
+/// One group as a filter option or assignment target.
+#[derive(Debug, Clone)]
+pub struct GroupOption {
+    pub id: i64,
+    pub name: String,
 }
 
 /// One row of the user table.
@@ -90,6 +100,9 @@ pub struct AdminUserRow {
     pub display_name: Option<String>,
     pub role: String,
     pub status: String,
+    /// Empty string when the user has no group.
+    pub group_id: String,
+    pub group_name: String,
     pub link_count: i64,
     pub created: String,
     pub last_login: String,
@@ -206,6 +219,7 @@ pub struct InvitesPage {
     pub section: &'static str,
     pub chrome: Chrome,
     pub invites: Vec<InviteRow>,
+    pub groups: Vec<GroupOption>,
     pub new_code: Option<String>,
     /// Raw token (`open` / `invite` / `closed`), used for the conditional class.
     pub registration_mode: String,
@@ -220,11 +234,114 @@ pub struct InviteRow {
     pub id: i64,
     pub prefix: String,
     pub note: String,
+    pub group_name: String,
     pub uses: String,
     pub expires: String,
     pub status: String,
     pub usable: bool,
     pub created: String,
+}
+
+/// User groups page.
+#[derive(Debug, Template)]
+#[template(path = "admin/groups.html")]
+pub struct GroupsPage {
+    pub site_name: String,
+    pub section: &'static str,
+    pub chrome: Chrome,
+    pub groups: Vec<GroupRow>,
+    pub lang: Lang,
+}
+
+/// One row of the group table, carrying both display and form values.
+#[derive(Debug, Clone)]
+pub struct GroupRow {
+    pub id: i64,
+    pub name: String,
+    pub description: String,
+    pub max_urls_input: String,
+    pub max_urls_display: String,
+    pub max_api_tokens_input: String,
+    pub max_api_tokens_display: String,
+    pub members: i64,
+    pub is_default: bool,
+    pub allow_custom_slug: bool,
+    pub allow_password: bool,
+    pub allow_expiry: bool,
+    pub allow_max_clicks: bool,
+    pub allow_tags: bool,
+    pub allow_api_tokens: bool,
+    pub allow_domain_selection: bool,
+    pub features_label: String,
+    pub created: String,
+}
+
+impl GroupRow {
+    fn new(settings: &Settings, lang: Lang, overview: &GroupOverview) -> Self {
+        let group = &overview.group;
+        let allowed_features = [
+            group.allow_custom_slug,
+            group.allow_password,
+            group.allow_expiry,
+            group.allow_max_clicks,
+            group.allow_tags,
+            group.allow_api_tokens,
+            group.allow_domain_selection,
+        ]
+        .into_iter()
+        .filter(|allowed| *allowed)
+        .count() as i64;
+
+        Self {
+            id: group.id,
+            name: group.name.clone(),
+            description: group.description.clone().unwrap_or_default(),
+            max_urls_input: group
+                .max_urls
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+            max_urls_display: quota_display(group.max_urls, settings.max_urls_per_user(), lang),
+            max_api_tokens_input: group
+                .max_api_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+            max_api_tokens_display: quota_display(
+                group.max_api_tokens,
+                settings.max_api_tokens_per_user(),
+                lang,
+            ),
+            members: overview.members,
+            is_default: group.is_default,
+            allow_custom_slug: group.allow_custom_slug,
+            allow_password: group.allow_password,
+            allow_expiry: group.allow_expiry,
+            allow_max_clicks: group.allow_max_clicks,
+            allow_tags: group.allow_tags,
+            allow_api_tokens: group.allow_api_tokens,
+            allow_domain_selection: group.allow_domain_selection,
+            features_label: i18n::format(
+                lang,
+                "admin.groups.features_count",
+                &[("count", allowed_features.to_string())],
+            ),
+            created: time::humanize_lang(lang, &group.created_at),
+        }
+    }
+}
+
+/// A quota as shown in the group table.
+fn quota_display(value: Option<i64>, site_default: i64, lang: Lang) -> String {
+    match value {
+        // An inherited unlimited quota must not read as the number zero.
+        None if site_default <= 0 => lang.t("admin.groups.unlimited_site_default").to_string(),
+        None => i18n::format(
+            lang,
+            "admin.groups.inherit_value",
+            &[("value", site_default.to_string())],
+        ),
+        Some(0) => lang.t("admin.groups.unlimited").to_string(),
+        Some(value) => value.to_string(),
+    }
 }
 
 /// Settings page.
@@ -245,6 +362,7 @@ pub struct SettingsValues {
     pub registration_mode: String,
     pub default_slug_length: i64,
     pub max_urls_per_user: i64,
+    pub max_api_tokens_per_user: i64,
     pub default_redirect_type: i64,
     pub analytics_enabled: bool,
     pub click_retention_days: i64,
@@ -296,7 +414,7 @@ pub struct AuditRow {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct AdminQuery {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::routes::dto::optional_i64")]
     pub page: Option<i64>,
     #[serde(default)]
     pub q: Option<String>,
@@ -304,7 +422,9 @@ pub struct AdminQuery {
     pub role: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::routes::dto::optional_i64")]
+    pub group_id: Option<i64>,
+    #[serde(default, deserialize_with = "crate::routes::dto::optional_i64")]
     pub user_id: Option<i64>,
     #[serde(default)]
     pub action: Option<String>,
@@ -322,6 +442,8 @@ pub struct UpdateUserForm {
     pub role: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
+    #[serde(default)]
+    pub group_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -340,9 +462,91 @@ pub struct CreateInviteForm {
     #[serde(default)]
     pub note: Option<String>,
     #[serde(default)]
+    pub group_id: Option<String>,
+    #[serde(default)]
     pub max_uses: Option<String>,
     #[serde(default)]
     pub expires_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GroupForm {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub max_urls: Option<String>,
+    #[serde(default)]
+    pub max_api_tokens: Option<String>,
+    #[serde(default)]
+    pub allow_custom_slug: Option<String>,
+    #[serde(default)]
+    pub allow_password: Option<String>,
+    #[serde(default)]
+    pub allow_expiry: Option<String>,
+    #[serde(default)]
+    pub allow_max_clicks: Option<String>,
+    #[serde(default)]
+    pub allow_tags: Option<String>,
+    #[serde(default)]
+    pub allow_api_tokens: Option<String>,
+    #[serde(default)]
+    pub allow_domain_selection: Option<String>,
+    #[serde(default)]
+    pub is_default: Option<String>,
+}
+
+impl GroupForm {
+    fn into_draft(self) -> Result<GroupDraft, AppError> {
+        GroupDraft {
+            name: self.name,
+            description: self.description,
+            max_urls: parse_quota("max_urls", self.max_urls)?,
+            max_api_tokens: parse_quota("max_api_tokens", self.max_api_tokens)?,
+            // Browsers omit unchecked boxes entirely.
+            allow_custom_slug: self.allow_custom_slug.is_some(),
+            allow_password: self.allow_password.is_some(),
+            allow_expiry: self.allow_expiry.is_some(),
+            allow_max_clicks: self.allow_max_clicks.is_some(),
+            allow_tags: self.allow_tags.is_some(),
+            allow_api_tokens: self.allow_api_tokens.is_some(),
+            allow_domain_selection: self.allow_domain_selection.is_some(),
+            make_default: self.is_default.is_some(),
+        }
+        .validate()
+    }
+}
+
+/// Empty means "inherit"; a number must parse.
+fn parse_quota(field: &'static str, raw: Option<String>) -> Result<Option<i64>, AppError> {
+    match raw
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        None => Ok(None),
+        Some(value) => value
+            .parse::<i64>()
+            .map(Some)
+            .map_err(|_| AppError::validation(field, format!("{field} must be a number"))),
+    }
+}
+
+/// Optional number from a form field: empty means missing, garbage is rejected.
+fn parse_optional_number(field: &'static str, raw: Option<&str>) -> Result<Option<i64>, AppError> {
+    match raw.map(str::trim).filter(|value| !value.is_empty()) {
+        None => Ok(None),
+        Some(value) => value
+            .parse::<i64>()
+            .map(Some)
+            .map_err(|_| AppError::validation(field, format!("{field} must be a number"))),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteGroupForm {
+    #[serde(default)]
+    pub reassign_to: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -351,6 +555,9 @@ pub struct SettingsForm {
     pub registration_mode: String,
     pub default_slug_length: String,
     pub max_urls_per_user: String,
+    /// Optional so a page cached before v1.2 still submits successfully.
+    #[serde(default)]
+    pub max_api_tokens_per_user: Option<String>,
     pub default_redirect_type: String,
     #[serde(default)]
     pub analytics_enabled: Option<String>,
@@ -445,10 +652,19 @@ pub async fn users_page(
         search: clean(&query.q),
         role: clean(&query.role),
         status: clean(&query.status),
+        group_id: query.group_id,
     };
     let rows = admin::list_users(&state.db, &filter, PER_PAGE, (page - 1) * PER_PAGE).await?;
     let total = admin::count_users(&state.db, &filter).await?;
     let counts = admin::link_counts(&state.db).await?;
+    let group_rows = user_groups::list(&state.db).await.map_err(AppError::from)?;
+    let groups: Vec<GroupOption> = group_rows
+        .iter()
+        .map(|group| GroupOption {
+            id: group.id,
+            name: group.name.clone(),
+        })
+        .collect();
     let total_pages = ((total + PER_PAGE - 1) / PER_PAGE).max(1);
     let lang = i18n::current();
 
@@ -461,6 +677,9 @@ pub async fn users_page(
     }
     if let Some(value) = clean(&query.status) {
         params.push(("status", value));
+    }
+    if let Some(value) = query.group_id {
+        params.push(("group_id", value.to_string()));
     }
 
     render(
@@ -481,6 +700,19 @@ pub async fn users_page(
                     display_name: user.display_name.clone(),
                     role: user.role.clone(),
                     status: user.status.clone(),
+                    group_id: user
+                        .group_id
+                        .map(|group_id| group_id.to_string())
+                        .unwrap_or_default(),
+                    group_name: user
+                        .group_id
+                        .and_then(|group_id| {
+                            group_rows
+                                .iter()
+                                .find(|group| group.id == group_id)
+                                .map(|group| group.name.clone())
+                        })
+                        .unwrap_or_else(|| lang.t("admin.users.ungrouped").to_string()),
                     link_count: counts.get(&user.id).copied().unwrap_or(0),
                     created: time::humanize_lang(lang, &user.created_at),
                     last_login: user
@@ -491,6 +723,7 @@ pub async fn users_page(
                     is_self: user.id == current.user.id,
                 })
                 .collect(),
+            groups,
             links: page_links("/app/admin/users", &params, page, total_pages),
             page,
             total_pages,
@@ -498,6 +731,10 @@ pub async fn users_page(
             q: clean(&query.q).unwrap_or_default(),
             role: clean(&query.role).unwrap_or_default(),
             status: clean(&query.status).unwrap_or_default(),
+            group_id: query
+                .group_id
+                .map(|group_id| group_id.to_string())
+                .unwrap_or_default(),
             count_label: i18n::format(lang, "admin.users.count", &[("count", total.to_string())]),
             pagination_note: i18n::format(
                 lang,
@@ -652,17 +889,20 @@ pub async fn create_invite(
         return Ok(redirect_err("/app/admin/invites", "invalid").into_response());
     };
 
-    let max_uses = payload
-        .max_uses
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .and_then(|value| value.parse::<i64>().ok());
+    let max_uses = match parse_optional_number("max_uses", payload.max_uses.as_deref()) {
+        Ok(value) => value,
+        Err(_) => return Ok(redirect_err("/app/admin/invites", "invalid").into_response()),
+    };
+    let group_id = match parse_optional_number("group_id", payload.group_id.as_deref()) {
+        Ok(value) => value,
+        Err(_) => return Ok(redirect_err("/app/admin/invites", "invalid").into_response()),
+    };
 
     let context = context(&state, &client, &current.user);
     match context
         .create_invite(
             payload.note.as_deref(),
+            group_id,
             max_uses,
             payload.expires_at.as_deref(),
         )
@@ -971,6 +1211,10 @@ pub async fn update_settings(
         ),
     ];
 
+    if let Some(value) = payload.max_api_tokens_per_user {
+        values.push(("max_api_tokens_per_user".to_string(), value));
+    }
+
     // Bot protection. The provider and the public site key are echoed back by
     // the form, so an empty value there is an explicit clear. The secret is
     // never echoed, so an empty value means "keep the stored one".
@@ -1119,9 +1363,32 @@ pub async fn update_user(
         return Ok(redirect_err("/app/admin/users", "invalid").into_response());
     };
 
+    let group_id = match payload.group_id.as_deref() {
+        // The form always submits the select (including the empty "Ungrouped"
+        // option), so an empty value is an explicit clear rather than "absent".
+        Some(raw) => {
+            let raw = raw.trim();
+            if raw.is_empty() {
+                Some(None)
+            } else {
+                Some(Some(raw.parse::<i64>().map_err(|_| {
+                    AppError::validation("group_id", "the selected group is invalid")
+                })?))
+            }
+        }
+        // Older cached forms may not contain the field at all.
+        None => None,
+    };
+
     Ok(
         match context(&state, &client, &current.user)
-            .update_user(id, payload.role.as_deref(), payload.status.as_deref(), None)
+            .update_user(
+                id,
+                payload.role.as_deref(),
+                payload.status.as_deref(),
+                group_id,
+                None,
+            )
             .await
         {
             Ok(_) => redirect_ok("/app/admin/users", "user").into_response(),
@@ -1231,6 +1498,125 @@ pub async fn delete_url(
     )
 }
 
+/// `GET /app/admin/groups`
+pub async fn groups_page(
+    State(state): State<AppState>,
+    MaybeUser(current): MaybeUser,
+    Query(query): Query<AdminQuery>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/groups")).into_response());
+    };
+    render_groups(
+        &state,
+        &current.user,
+        flash_from_query(query.ok.as_deref(), query.err.as_deref()),
+    )
+    .await
+}
+
+/// `POST /app/admin/groups`
+pub async fn create_group(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    MaybeUser(current): MaybeUser,
+    form: std::result::Result<Form<GroupForm>, FormRejection>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/groups")).into_response());
+    };
+    let Ok(Form(payload)) = form else {
+        return Ok(redirect_err("/app/admin/groups", "invalid").into_response());
+    };
+
+    let outcome = match payload.into_draft() {
+        Ok(draft) => {
+            context(&state, &client, &current.user)
+                .create_group(draft)
+                .await
+        }
+        Err(err) => Err(err),
+    };
+    Ok(match outcome {
+        Ok(_) => redirect_ok("/app/admin/groups", "group").into_response(),
+        Err(err) => {
+            redirect_err("/app/admin/groups", super::urls::error_code(&err)).into_response()
+        }
+    })
+}
+
+/// `POST /app/admin/groups/{id}`
+pub async fn update_group(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    MaybeUser(current): MaybeUser,
+    Path(id): Path<i64>,
+    form: std::result::Result<Form<GroupForm>, FormRejection>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/groups")).into_response());
+    };
+    let Ok(Form(payload)) = form else {
+        return Ok(redirect_err("/app/admin/groups", "invalid").into_response());
+    };
+
+    let outcome = match payload.into_draft() {
+        Ok(draft) => {
+            context(&state, &client, &current.user)
+                .update_group(id, draft)
+                .await
+        }
+        Err(err) => Err(err),
+    };
+    Ok(match outcome {
+        Ok(_) => redirect_ok("/app/admin/groups", "group").into_response(),
+        Err(err) => {
+            redirect_err("/app/admin/groups", super::urls::error_code(&err)).into_response()
+        }
+    })
+}
+
+/// `POST /app/admin/groups/{id}/delete`
+pub async fn delete_group(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    MaybeUser(current): MaybeUser,
+    Path(id): Path<i64>,
+    form: std::result::Result<Form<DeleteGroupForm>, FormRejection>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/groups")).into_response());
+    };
+    let Ok(Form(payload)) = form else {
+        return Ok(redirect_err("/app/admin/groups", "invalid").into_response());
+    };
+
+    let target = match payload
+        .reassign_to
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        Some(raw) => match raw.parse::<i64>() {
+            Ok(value) => Some(value),
+            Err(_) => return Ok(redirect_err("/app/admin/groups", "invalid").into_response()),
+        },
+        None => None,
+    };
+
+    Ok(
+        match context(&state, &client, &current.user)
+            .delete_group(id, target)
+            .await
+        {
+            Ok(()) => redirect_ok("/app/admin/groups", "group_deleted").into_response(),
+            Err(err) => {
+                redirect_err("/app/admin/groups", super::urls::error_code(&err)).into_response()
+            }
+        },
+    )
+}
+
 fn context<'a>(state: &'a AppState, client: &'a ClientInfo, user: &'a User) -> AdminContext<'a> {
     AdminContext {
         pool: &state.db,
@@ -1254,6 +1640,30 @@ fn admin_user(
     }
 }
 
+/// The admin page lists every group because the delete and assignment selects
+/// need all of them; only the JSON list endpoint is paginated.
+async fn render_groups(
+    state: &AppState,
+    user: &User,
+    flash: Option<crate::routes::pages::Flash>,
+) -> Result<Response, AppError> {
+    let overview = group_service::overview(&state.db).await?;
+    let lang = i18n::current();
+    render(
+        GroupsPage {
+            section: "groups",
+            site_name: state.settings.site_name(),
+            chrome: Chrome::new(state, user, "admin", flash),
+            groups: overview
+                .iter()
+                .map(|row| GroupRow::new(&state.settings, lang, row))
+                .collect(),
+            lang,
+        },
+        StatusCode::OK,
+    )
+}
+
 async fn render_invites(
     state: &AppState,
     user: &User,
@@ -1265,6 +1675,14 @@ async fn render_invites(
     let rows = crate::db::invites::list(&state.db, 200, 0)
         .await
         .map_err(AppError::from)?;
+    let group_rows = user_groups::list(&state.db).await.map_err(AppError::from)?;
+    let groups: Vec<GroupOption> = group_rows
+        .iter()
+        .map(|group| GroupOption {
+            id: group.id,
+            name: group.name.clone(),
+        })
+        .collect();
     render(
         InvitesPage {
             section: "invites",
@@ -1282,6 +1700,15 @@ async fn render_invites(
                         id: invite.id,
                         prefix: invite.code_prefix.clone(),
                         note: invite.note.clone().unwrap_or_default(),
+                        group_name: invite
+                            .group_id
+                            .and_then(|group_id| {
+                                group_rows
+                                    .iter()
+                                    .find(|group| group.id == group_id)
+                                    .map(|group| group.name.clone())
+                            })
+                            .unwrap_or_else(|| lang.t("admin.invites.group_default").to_string()),
                         uses: format!("{} / {}", invite.used_count, invite.max_uses),
                         expires: invite
                             .expires_at
@@ -1298,6 +1725,7 @@ async fn render_invites(
                     }
                 })
                 .collect(),
+            groups,
             new_code,
             registration_mode: state.settings.registration_mode().as_str().to_string(),
             registration_mode_label: i18n::registration_mode_label(
@@ -1362,6 +1790,7 @@ pub fn settings_values(settings: &Settings) -> SettingsValues {
         registration_mode: settings.registration_mode().as_str().to_string(),
         default_slug_length: settings.default_slug_length() as i64,
         max_urls_per_user: settings.max_urls_per_user(),
+        max_api_tokens_per_user: settings.max_api_tokens_per_user(),
         default_redirect_type: settings.default_redirect_type(),
         analytics_enabled: settings.analytics_enabled(),
         click_retention_days: settings.click_retention_days(),
@@ -1415,6 +1844,14 @@ fn human_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shows_an_inherited_unlimited_quota_as_unlimited() {
+        assert_eq!(quota_display(None, 0, Lang::En), "Unlimited (site default)");
+        assert_eq!(quota_display(None, 1000, Lang::En), "Site default (1000)");
+        assert_eq!(quota_display(Some(0), 1000, Lang::En), "Unlimited");
+        assert_eq!(quota_display(Some(5), 1000, Lang::En), "5");
+    }
 
     #[test]
     fn formats_uptime() {

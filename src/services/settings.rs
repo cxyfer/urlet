@@ -49,6 +49,7 @@ pub const EDITABLE_KEYS: &[&str] = &[
     "registration_mode",
     "default_slug_length",
     "max_urls_per_user",
+    "max_api_tokens_per_user",
     "default_redirect_type",
     "analytics_enabled",
     "click_retention_days",
@@ -209,6 +210,11 @@ impl Settings {
 
     pub fn max_urls_per_user(&self) -> i64 {
         self.raw_i64("max_urls_per_user", 1000).max(0)
+    }
+
+    /// Site-wide fallback for the number of usable API tokens per user.
+    pub fn max_api_tokens_per_user(&self) -> i64 {
+        self.raw_i64("max_api_tokens_per_user", 20).max(0)
     }
 
     pub fn default_redirect_type(&self) -> i64 {
@@ -390,7 +396,7 @@ fn validate_value(key: &str, value: &str) -> Result<String> {
             }
             Ok(parsed.to_string())
         }
-        "max_urls_per_user" => {
+        "max_urls_per_user" | "max_api_tokens_per_user" => {
             let parsed: i64 = value
                 .parse()
                 .map_err(|_| invalid("quota must be a number"))?;
@@ -471,6 +477,13 @@ mod tests {
     fn validates_editable_values() {
         assert_eq!(validate_value("default_slug_length", "9").expect("ok"), "9");
         assert!(validate_value("default_slug_length", "2").is_err());
+        assert_eq!(validate_value("max_urls_per_user", "50").expect("ok"), "50");
+        assert_eq!(
+            validate_value("max_api_tokens_per_user", "0").expect("ok"),
+            "0"
+        );
+        assert!(validate_value("max_api_tokens_per_user", "-1").is_err());
+        assert!(validate_value("max_api_tokens_per_user", "abc").is_err());
         assert!(validate_value("default_redirect_type", "200").is_err());
         assert_eq!(
             validate_value("default_redirect_type", "307").expect("ok"),

@@ -2,7 +2,7 @@
 
 # urlet — 分階段實作計畫 (Implementation Plan)
 
-> 對應規格：`docs/SPEC.md` v1.1
+> 對應規格：`docs/SPEC.md` v1.2
 > 原則：每個階段結束時程式碼必須**可編譯、可測試、可提交**；每個階段一個（或數個）本地 commit。
 
 ## 執行結果（已完成）
@@ -18,6 +18,7 @@
 | P6 管理後台與 API | ✅ 完成 | `c74302a ✨ feat(admin): add admin panel, invites, settings and maintenance` |
 | P7 測試與文件 | ✅ 完成 | 見 `git log`（smoke.sh、README、API.md、DEPLOYMENT.md） |
 | P8 最終驗證 | ✅ 完成 | 見 `git log`（release 建置、映像檔策略、收尾） |
+| P10 使用者群組 (v1.2) | ✅ 完成 | 見 `git log`（migration 0004、群組 API/UI、三語字串、文件） |
 
 驗收數據（v1.0）：`cargo test` 187 個測試全綠、`cargo clippy --all-targets -- -D warnings` 與
 `cargo fmt --check` 無警告、`scripts/smoke.sh` 81 項端對端檢查全數通過。
@@ -38,6 +39,7 @@
 | P7 | 測試與文件 | 整合測試補齊、`scripts/smoke.sh`、README、API.md、DEPLOYMENT.md | `cargo test` 全綠、smoke 全通過 | `🧪 test: ...` / `📝 docs: ...` |
 | P8 | 最終驗證與收尾 | clippy/fmt 清零、release 建置、compose 設定驗證、映像檔策略確認 | 驗收清單全數勾選 | `🔖 chore: finalize v1.0.0` |
 | P9 | 多語系、防機器人驗證與導覽首頁 | 三份內嵌語言目錄、語言協商與切換、註冊／登入／建立流程的 Turnstile／reCAPTCHA 驗證、`/` 導覽首頁 | 語言協商、cookie 切換、驗證碼失敗關閉（含登入）與導覽首頁皆有測試涵蓋；`/` 回 200 | `📝 docs: ...` / `✨ feat(i18n): ...` |
+| P10 | 使用者群組 (v1.2) | `user_groups` 提供各群組連結／Token 配額與七個功能開關（含網域選擇）；可透過使用者或邀請碼指派；含管理頁面與 API | 15 張表／30 個索引、升級不改變行為、配額與開關生效（管理員亦然）、刪組需改派、測試與 smoke 全綠 | `✨ feat(groups): ...` |
 
 ---
 
@@ -186,6 +188,23 @@
 9. 文件：更新 `docs/SPEC.md` 與中文鏡像 `docs/zh-TW/SPEC.md`（FR 表、路由清單、環境變數、設定 key）、兩份 `PLAN.md`、兩份 README、`docs/API.md`、`docs/DEPLOYMENT.md`、其 `docs/zh-TW/` 鏡像與 `.env.example`。
 
 **驗收**：`GET /` 對未登入與已登入使用者皆回 200 且不再轉址；`Accept-Language` 協商與語言 cookie 可切換介面，而 JSON API 回應維持英文；驗證碼僅在 provider ≠ `none`、兩把 key 非空、對應開關（`on_register`、`on_login` 或 `on_create`）為 true 時啟用，且逾時／非 2xx／解析失敗時在註冊、登入與建立流程一律拒絕；`POST /api/v1/urls` 對 Session Cookie 呼叫套用驗證碼，帶 `Authorization: Bearer ur_...` 者維持豁免；後台 secret key 永不回顯；`cargo test`、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過。
+
+---
+
+## P10 — 使用者群組 (v1.2)
+
+**任務**
+
+1. `migrations/0004_user_groups.sql`：`user_groups`（可空的連結／Token 配額、七個開關含 `allow_domain_selection`、`is_default`）、`users.group_id`、`invite_codes.group_id`、預設唯一的部分索引，以及 `Standard` 預設群組並把既有使用者全部遷入；種下 `max_api_tokens_per_user=20`。
+2. `src/db/user_groups.rs` + `src/services/limits.rs`：群組 CRUD、成員計數、改派刪除，以及生效額度解析（`NULL` 跟隨全站、`0` 無上限、開關只能收窄全站預設）。
+3. `src/services/groups.rs` + `AdminContext`：驗證、重名／預設保護、具稽核的建立／更新／刪除、預設標記轉移，以及使用者與邀請碼的指派。
+4. 強制點：建立／更新時的連結配額與七個開關、Token 開關與可用 Token 配額、註冊時的邀請碼群組（`open` 模式下亦會驗證）。
+5. API：`/api/v1/admin/groups` CRUD、使用者與邀請碼的 `group_id`、`GET /api/v1/auth/me` 的 `group`／`limits`。
+6. UI：`/app/admin/groups`、使用者頁的群組篩選與指派、邀請碼群組選單、Token 配額設定、儀表板／明細／帳號頁依群組調整，以及三語字串。
+7. 測試：配額繼承與群組驗證的單元測試，以及 `tests/groups.rs` 涵蓋授權、CRUD、配額、開關、邀請碼、刪組、預設轉移與頁面渲染。
+8. 文件：中英 SPEC／PLAN／API／README，以及群組的 smoke 檢查。
+
+**驗收**：15 張表、30 個索引；種下的預設群組不改變任何既有行為；配額與開關依群組生效（管理員亦然）；刪除群組必須指定改派目標；`/me` 回傳生效額度；`cargo test`、clippy、fmt 與 smoke 全數通過。
 
 ---
 

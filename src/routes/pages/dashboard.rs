@@ -7,7 +7,7 @@ use axum::response::{Html, IntoResponse, Response};
 use serde::Deserialize;
 
 use crate::db::urls::{UrlSort, UserUrlFilter};
-use crate::db::{clicks, tags, urls};
+use crate::db::{clicks, tags, urls, user_groups};
 use crate::error::AppError;
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::MaybeUser;
@@ -16,9 +16,8 @@ use crate::routes::pages::{
     flash_from_query, page_links, redirect_to_login, Chrome, Flash, PageLink, UrlRow,
 };
 use crate::services::captcha::CaptchaFlow;
-use crate::services::chart;
 use crate::services::domains::DomainOption;
-use crate::services::time;
+use crate::services::{chart, limits, time};
 use crate::state::AppState;
 
 #[derive(Debug, Template)]
@@ -41,6 +40,14 @@ pub struct DashboardPage {
     pub sort: String,
     pub quota: i64,
     pub used: i64,
+    /// Name of the user's group, empty when the account is ungrouped.
+    pub group_name: String,
+    pub allow_custom_slug: bool,
+    pub allow_password: bool,
+    pub allow_expiry: bool,
+    pub allow_max_clicks: bool,
+    pub allow_tags: bool,
+    pub allow_domain_selection: bool,
     pub default_redirect_type: i64,
     /// Domains selectable in the create form.
     pub domains: Vec<DomainOption>,
@@ -144,7 +151,16 @@ pub async fn dashboard(
         .map_err(AppError::from)?;
 
     let lang = i18n::current();
-    let quota = state.settings.max_urls_per_user();
+    let effective = limits::effective(&state.db, &state.settings, &user).await?;
+    let quota = effective.max_urls;
+    let group_name = match user.group_id {
+        Some(group_id) => user_groups::find_by_id(&state.db, group_id)
+            .await
+            .map_err(AppError::from)?
+            .map(|group| group.name)
+            .unwrap_or_default(),
+        None => String::new(),
+    };
     let used = urls::count_for_user(&state.db, user.id)
         .await
         .map_err(AppError::from)?;
@@ -167,6 +183,13 @@ pub async fn dashboard(
         sort: clean(&query.sort).unwrap_or_default(),
         quota,
         used,
+        group_name,
+        allow_custom_slug: effective.allow_custom_slug,
+        allow_password: effective.allow_password,
+        allow_expiry: effective.allow_expiry,
+        allow_max_clicks: effective.allow_max_clicks,
+        allow_tags: effective.allow_tags,
+        allow_domain_selection: effective.allow_domain_selection,
         default_redirect_type: state.settings.default_redirect_type(),
         domains: state.domains.active_options(),
         captcha: crate::routes::pages::captcha_widget(&state, CaptchaFlow::Create),

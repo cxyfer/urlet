@@ -63,6 +63,13 @@
                        value="{{ invite_code }}" required>
                 <span class="hint">{{ lang.t("auth.register.invite_hint") }}</span>
             </div>
+            {% else %}
+            <div class="field">
+                <label class="label" for="invite_code">{{ lang.t("auth.register.invite_code") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
+                <input class="input" type="text" id="invite_code" name="invite_code"
+                       value="{{ invite_code }}">
+                <span class="hint">{{ lang.t("auth.register.invite_optional_hint") }}</span>
+            </div>
             {% endif %}
             {% include "partials/captcha.html" %}
             <button class="btn btn-primary btn-block" type="submit">{{ lang.t("auth.register.submit") }}</button>

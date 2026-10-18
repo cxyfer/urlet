@@ -128,7 +128,12 @@ async fn registration_page_honours_the_registration_mode() {
     let open = app.get("/app/register").await;
     assert_eq!(open.status, StatusCode::OK);
     assert!(open.body.contains("Create account"));
-    assert!(!open.body.contains("Invite code"));
+    // Open registration still offers the invite field, but only as optional:
+    // a code can pin the new account to a group.
+    assert!(open.body.contains("name=\"invite_code\""));
+    assert!(open
+        .body
+        .contains("Optional: if you were given a group invite code"));
 
     app.state
         .settings
