@@ -449,6 +449,7 @@ fn is_foreign_key_violation(err: &sqlx::Error) -> bool {
 /// One domain as exposed to the create/edit form.
 #[derive(Debug, Clone)]
 pub struct DomainOption {
+    pub id: i64,
     pub hostname: String,
     pub is_default: bool,
 }
@@ -456,6 +457,7 @@ pub struct DomainOption {
 impl From<&Domain> for DomainOption {
     fn from(domain: &Domain) -> Self {
         Self {
+            id: domain.id,
             hostname: domain.hostname.clone(),
             is_default: domain.is_default(),
         }

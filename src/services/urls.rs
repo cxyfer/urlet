@@ -8,6 +8,7 @@ use crate::db::urls::{self, NewUrl, Url, UrlState, UrlUpdate};
 use crate::db::users::User;
 use crate::error::{AppError, Result};
 use crate::services::audit::{action, target, Audit};
+use crate::services::domain_policy;
 use crate::services::limits::{self, blocked};
 use crate::services::settings::Settings;
 use crate::services::{domains as domain_service, password, slug, target as target_url, time};
@@ -271,8 +272,21 @@ impl UrlContext<'_> {
             return Err(AppError::forbidden(blocked::MAX_CLICKS));
         }
 
-        let domain = self.resolve_domain(input.domain.as_deref()).await?;
-        if !limits.allow_domain_selection && domain.is_default == 0 {
+        let policy = domain_policy::effective(self.pool, self.actor).await?;
+        let domain = match input
+            .domain
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            Some(raw) => self.resolve_domain(Some(raw)).await?,
+            None => domain_db::find_by_id(self.pool, policy.default_domain_id)
+                .await
+                .map_err(AppError::from)?
+                .filter(|domain| domain.is_active())
+                .ok_or_else(|| AppError::internal("no active default domain"))?,
+        };
+        if !policy.allows(domain.id) {
             return Err(AppError::forbidden(blocked::DOMAIN_SELECTION));
         }
         let domain_id = domain.id;
@@ -404,8 +418,11 @@ impl UrlContext<'_> {
         };
 
         let moving = target_domain.id != url.domain_id;
-        if moving && !limits.allow_domain_selection && target_domain.is_default == 0 {
-            return Err(AppError::forbidden(blocked::DOMAIN_SELECTION));
+        if moving {
+            let policy = domain_policy::effective(self.pool, self.actor).await?;
+            if !policy.allows(target_domain.id) {
+                return Err(AppError::forbidden(blocked::DOMAIN_SELECTION));
+            }
         }
         if let Some(raw) = input.slug.as_deref() {
             let custom = slug::validate(raw)?;

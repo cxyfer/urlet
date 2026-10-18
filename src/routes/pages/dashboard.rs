@@ -16,6 +16,7 @@ use crate::routes::pages::{
     flash_from_query, page_links, redirect_to_login, Chrome, Flash, PageLink, UrlRow,
 };
 use crate::services::captcha::CaptchaFlow;
+use crate::services::domain_policy;
 use crate::services::domains::DomainOption;
 use crate::services::{chart, limits, time};
 use crate::state::AppState;
@@ -152,6 +153,7 @@ pub async fn dashboard(
 
     let lang = i18n::current();
     let effective = limits::effective(&state.db, &state.settings, &user).await?;
+    let policy = domain_policy::effective(&state.db, &user).await?;
     let quota = effective.max_urls;
     let group_name = match user.group_id {
         Some(group_id) => user_groups::find_by_id(&state.db, group_id)
@@ -189,9 +191,9 @@ pub async fn dashboard(
         allow_expiry: effective.allow_expiry,
         allow_max_clicks: effective.allow_max_clicks,
         allow_tags: effective.allow_tags,
-        allow_domain_selection: effective.allow_domain_selection,
+        allow_domain_selection: policy.allow_selection,
         default_redirect_type: state.settings.default_redirect_type(),
-        domains: state.domains.active_options(),
+        domains: policy.options(&state.domains),
         captcha: crate::routes::pages::captcha_widget(&state, CaptchaFlow::Create),
         usage: i18n::format(
             lang,

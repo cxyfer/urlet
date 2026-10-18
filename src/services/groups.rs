@@ -32,6 +32,13 @@ pub struct GroupDraft {
     pub allow_tags: bool,
     pub allow_api_tokens: bool,
     pub allow_domain_selection: bool,
+    /// Group default domain; `None` means the site-wide default.
+    pub default_domain_id: Option<i64>,
+    /// When true, only `allowed_domain_ids` (plus the default) may be selected.
+    pub restrict_domains: bool,
+    /// `None` keeps the stored allowlist on update; `Some([])` removes every row.
+    /// On create `None` and `Some([])` both mean "no restriction rows".
+    pub allowed_domain_ids: Option<Vec<i64>>,
     /// Whether this edit should move the single default marker here.
     pub make_default: bool,
 }
@@ -51,6 +58,9 @@ impl GroupDraft {
             allow_tags,
             allow_api_tokens,
             allow_domain_selection,
+            default_domain_id,
+            restrict_domains,
+            allowed_domain_ids,
             make_default,
         } = self;
 
@@ -99,6 +109,13 @@ impl GroupDraft {
             allow_tags,
             allow_api_tokens,
             allow_domain_selection,
+            default_domain_id,
+            restrict_domains,
+            allowed_domain_ids: allowed_domain_ids.map(|mut ids| {
+                ids.sort_unstable();
+                ids.dedup();
+                ids
+            }),
             make_default,
         })
     }
@@ -117,6 +134,8 @@ impl GroupDraft {
             allow_tags: self.allow_tags,
             allow_api_tokens: self.allow_api_tokens,
             allow_domain_selection: self.allow_domain_selection,
+            default_domain_id: self.default_domain_id,
+            restrict_domains: self.restrict_domains,
         }
     }
 }
@@ -136,6 +155,7 @@ fn validate_quota(field: &'static str, value: Option<i64>) -> Result<Option<i64>
 pub struct GroupOverview {
     pub group: UserGroup,
     pub members: i64,
+    pub allowed_domain_ids: Vec<i64>,
 }
 
 /// Every group, default first, with member counts.
@@ -144,10 +164,14 @@ pub async fn overview(pool: &SqlitePool) -> Result<Vec<GroupOverview>> {
     let counts = user_groups::member_counts(pool)
         .await
         .map_err(AppError::from)?;
+    let mut domain_ids = user_groups::domain_ids_by_group(pool)
+        .await
+        .map_err(AppError::from)?;
     Ok(groups
         .into_iter()
         .map(|group| GroupOverview {
             members: counts.get(&group.id).copied().unwrap_or(0),
+            allowed_domain_ids: domain_ids.remove(&group.id).unwrap_or_default(),
             group,
         })
         .collect())
@@ -180,6 +204,9 @@ mod tests {
             allow_tags: true,
             allow_api_tokens: true,
             allow_domain_selection: true,
+            default_domain_id: None,
+            restrict_domains: false,
+            allowed_domain_ids: None,
             make_default: false,
         }
     }

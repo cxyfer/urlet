@@ -7,6 +7,7 @@ pub mod captcha;
 pub mod chart;
 pub mod click;
 pub mod cookies;
+pub mod domain_policy;
 pub mod domains;
 pub mod groups;
 pub mod limits;

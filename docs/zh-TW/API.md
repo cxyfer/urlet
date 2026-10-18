@@ -104,14 +104,17 @@
     "allow_max_clicks": true,
     "allow_tags": true,
     "allow_api_tokens": true,
-    "allow_domain_selection": true
+    "allow_domain_selection": true,
+    "default_domain": "links.example.com",
+    "allowed_domains": ["links.example.com", "go.example.com"]
   }
 }
 ```
 
 未分組帳號的 `group` 為 `null`，改為套用全站設定。`limits` 是解析後的值：群組配額非 `NULL` 時
-才覆蓋全站值，`0` 表示無上限。`allow_domain_selection` 為 `false` 時，在非預設網域建立連結或
-把連結移到非預設網域會回 `403`；預設網域一律允許。
+才覆蓋全站值，`0` 表示無上限。`default_domain` 是生效的群組預設網域（不存在或停用時回退全站
+預設）；`allowed_domains` 是生效的可選清單。`allow_domain_selection` 為 `false` 時，建立連結
+或移動連結只接受該預設網域。
 
 ### `PATCH /api/v1/auth/me`
 
@@ -200,7 +203,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 - `captcha_token` 只在「使用 **Session Cookie** 認證」且「建立短網址」的防機器人驗證已啟用時才會讀取；
   以 `Bearer` Token 呼叫時會被忽略。驗證失敗回 `400` 且 `error.code = "captcha_failed"`
 - `target_url` 必填；只接受 `http`/`https`；未寫 scheme 的裸網域會自動補 `https://`
-- `domain` 可省略（使用目前預設網域）；指定時必須是 active 網域，否則回 `422`；slug 命名空間以網域為單位，同一個 slug 可以存在於兩個網域
+- `domain` 可省略（使用生效的群組預設網域）；指定時必須是 active 網域，否則回 `422`；還必須符合群組策略（`allow_domain_selection`、`restrict_domains` / `domain_ids`），否則回 `403`；slug 命名空間以網域為單位，同一個 slug 可以存在於兩個網域
 - `slug` 可省略（自動產生 7 字元 base62）；僅允許 `[A-Za-z0-9_-]`，長度 1–64，且不得為保留字；若 slug **在選定網域上**已被使用，回 `409`
 - `expires_at` 必須是未來時間；`max_clicks` ≥ 1
 - `redirect_type` ∈ {301, 302, 307, 308}
@@ -218,7 +221,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 { "title": "新標題", "domain": "links.example.com", "password": null, "max_clicks": null, "tags": ["new"], "status": "disabled" }
 ```
 
-`200` → 更新後的 `UrlDto`。空物件 → `400`。把連結搬到另一個 active 網域時，會重新檢查該網域的 slug，衝突回 `409`。若連結目前所在網域已被停用，仍可編輯，只要不搬移網域。
+`200` → 更新後的 `UrlDto`。空物件 → `400`。把連結搬到另一個 active 網域時必須符合群組策略，並重新檢查該網域的 slug，衝突回 `409`。維持目前網域（即使是已停用網域）一律允許，既有連結仍可編輯。
 
 ### `DELETE /api/v1/urls/{id}`
 
@@ -338,10 +341,11 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 ### `GET /api/v1/domains`
 
-已登入使用者可列出建立短網址時可選的 active 網域：
+已登入使用者可列出建立短網址時可選的 active 網域；清單已依其所屬群組策略過濾，
+`is_default` 標記生效的群組預設網域：
 
 ```json
-[ { "hostname": "s.example.com", "is_default": true }, { "hostname": "go.example.com", "is_default": false } ]
+[ { "id": 1, "hostname": "s.example.com", "is_default": true }, { "id": 2, "hostname": "go.example.com", "is_default": false } ]
 ```
 
 ---
@@ -415,9 +419,14 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | PATCH | `/admin/domains/{id}` | `{ "status"?: "active"\|"disabled", "is_default"?: true }` |
 | DELETE | `/admin/domains/{id}` | `204`；僅限沒有連結、非預設的 UI 網域 |
 | GET | `/admin/groups?page=&per_page=` | 使用者群組列表（含成員數，分頁） |
-| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "is_default"? }` → `201` |
-| PUT | `/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`is_default: true` 會轉移唯一的預設標記 |
+| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "default_domain_id"?, "restrict_domains"?, "domain_ids"?, "is_default"? }` → `201`；`default_domain_id` 必須指向 active 網域；`domain_ids` 必須指向存在的網域（停用的項目會保留但無法選取） |
+| PUT | `/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`default_domain_id: null` 表示全站預設；`domain_ids: null` 或 `[]` 會清空允許清單；`is_default: true` 會轉移唯一的預設標記 |
 | DELETE | `/admin/groups/{id}?reassign_to={id}` | `204`，先移動成員再刪除；預設群組或目標不存在/不合法回 `409` |
+
+`GroupDto` 另回傳 `default_domain_id`、`default_domain`（儲存值，即使網域已停用）、
+`restrict_domains`、`allowed_domain_ids`、`allowed_domains`。請求欄位是 `domain_ids`（`null` 或 `[]` 表示清空，省略則維持原值），回應使用
+`allowed_*`。`GET /api/v1/auth/me` 回傳的是*生效*的 fallback 預設，若儲存的群組預設已停用，
+可能與 `default_domain` 不同。
 | GET | `/admin/urls?q=&status=&user_id=&page=` | 全站短網址 |
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |

@@ -12,7 +12,9 @@ use crate::db::invites::Invite;
 use crate::db::urls::{self, UrlUpdate};
 use crate::db::user_groups::{self, UserGroup};
 use crate::db::users::{self, User, UserFilter};
-use crate::db::{audit, clicks, invites, sessions, settings as settings_db, tokens};
+use crate::db::{
+    audit, clicks, domains as domain_db, invites, sessions, settings as settings_db, tokens,
+};
 use crate::error::{AppError, Result};
 use crate::services::audit::{action, target, Audit};
 use crate::services::groups::GroupDraft;
@@ -467,7 +469,47 @@ impl AdminContext<'_> {
     }
 
     /// Create a user group.
+    async fn validate_group_domains(
+        &self,
+        draft: &GroupDraft,
+        existing: Option<&UserGroup>,
+    ) -> Result<()> {
+        if let Some(id) = draft.default_domain_id {
+            // Keeping an already-selected, now disabled default is not a new
+            // choice; changing to a disabled domain is.
+            let unchanged = existing.and_then(|group| group.default_domain_id) == Some(id);
+            self.require_group_domain(id, "default_domain_id", !unchanged)
+                .await?;
+        }
+        if let Some(ids) = &draft.allowed_domain_ids {
+            for id in ids {
+                // A disabled domain may stay in the allowlist (shown as a
+                // disabled option in the form) so re-enabling it later restores
+                // access without an administrator re-checking every group.
+                self.require_group_domain(*id, "domain_ids", false).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn require_group_domain(
+        &self,
+        id: i64,
+        field: &'static str,
+        must_be_active: bool,
+    ) -> Result<()> {
+        let domain = domain_db::find_by_id(self.pool, id)
+            .await
+            .map_err(AppError::from)?
+            .ok_or_else(|| AppError::validation(field, "unknown domain"))?;
+        if must_be_active && !domain.is_active() {
+            return Err(AppError::validation(field, "the domain must be active"));
+        }
+        Ok(())
+    }
+
     pub async fn create_group(&self, draft: GroupDraft) -> Result<UserGroup> {
+        self.validate_group_domains(&draft, None).await?;
         if user_groups::find_by_name(self.pool, &draft.name)
             .await
             .map_err(AppError::from)?
@@ -486,9 +528,15 @@ impl AdminContext<'_> {
             ));
         }
 
-        let id = user_groups::create(self.pool, &draft.values(), draft.make_default)
-            .await
-            .map_err(map_group_write_error)?;
+        let allowed_domain_ids = draft.allowed_domain_ids.clone().unwrap_or_default();
+        let id = user_groups::create(
+            self.pool,
+            &draft.values(),
+            draft.make_default,
+            &allowed_domain_ids,
+        )
+        .await
+        .map_err(new_group_write_error)?;
         let group = user_groups::find_by_id(self.pool, id)
             .await
             .map_err(AppError::from)?
@@ -499,6 +547,9 @@ impl AdminContext<'_> {
                 "name": &group.name,
                 "max_urls": group.max_urls,
                 "max_api_tokens": group.max_api_tokens,
+                "default_domain_id": group.default_domain_id,
+                "restrict_domains": group.restrict_domains,
+                "allowed_domain_ids": allowed_domain_ids,
                 "is_default": group.is_default
             }))
             .record(self.pool)
@@ -512,6 +563,7 @@ impl AdminContext<'_> {
             .await
             .map_err(AppError::from)?
             .ok_or_else(AppError::not_found)?;
+        self.validate_group_domains(&draft, Some(&existing)).await?;
         if let Some(other) = user_groups::find_by_name(self.pool, &draft.name)
             .await
             .map_err(AppError::from)?
@@ -521,9 +573,15 @@ impl AdminContext<'_> {
             }
         }
 
-        let updated = user_groups::update(self.pool, id, &draft.values(), draft.make_default)
-            .await
-            .map_err(map_group_write_error)?;
+        let updated = user_groups::update(
+            self.pool,
+            id,
+            &draft.values(),
+            draft.make_default,
+            draft.allowed_domain_ids.as_deref(),
+        )
+        .await
+        .map_err(new_group_write_error)?;
         if !updated {
             // The row disappeared after the load above; do not touch the marker.
             return Err(AppError::not_found());
@@ -532,6 +590,9 @@ impl AdminContext<'_> {
             .await
             .map_err(AppError::from)?
             .ok_or_else(|| AppError::internal("group disappeared after update"))?;
+        let allowed_domain_ids = user_groups::domain_ids(self.pool, id)
+            .await
+            .map_err(AppError::from)?;
 
         self.audit(action::ADMIN_GROUP_UPDATED, target::GROUP, id)
             .metadata(serde_json::json!({
@@ -539,6 +600,9 @@ impl AdminContext<'_> {
                 "previous_name": &existing.name,
                 "max_urls": group.max_urls,
                 "max_api_tokens": group.max_api_tokens,
+                "default_domain_id": group.default_domain_id,
+                "restrict_domains": group.restrict_domains,
+                "allowed_domain_ids": allowed_domain_ids,
                 "is_default": group.is_default
             }))
             .record(self.pool)
@@ -667,6 +731,14 @@ impl AdminContext<'_> {
 
 /// Map a concurrent name/default collision to the same conflict the pre-checks
 /// report, instead of leaking an internal error.
+fn new_group_write_error(err: sqlx::Error) -> AppError {
+    if crate::db::is_foreign_key_violation(&err) {
+        AppError::validation("domains", "a selected domain no longer exists")
+    } else {
+        map_group_write_error(err)
+    }
+}
+
 fn map_group_write_error(err: sqlx::Error) -> AppError {
     if crate::services::urls::is_unique_violation(&err) {
         let message = err.to_string();

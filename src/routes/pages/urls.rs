@@ -21,6 +21,7 @@ use crate::routes::pages::{
     UrlRow,
 };
 use crate::services::captcha::CaptchaFlow;
+use crate::services::domain_policy;
 use crate::services::domains::DomainOption;
 use crate::services::ratelimit::limits;
 use crate::services::urls::{CreateInput, UpdateInput, UrlContext};
@@ -334,7 +335,8 @@ pub async fn detail(
         .collect();
 
     let current_domain = state.domain_hostname(url.domain_id);
-    let mut domains = state.domains.active_options();
+    let policy = domain_policy::effective(&state.db, &user).await?;
+    let mut domains = policy.options(&state.domains);
     if !domains
         .iter()
         .any(|domain| domain.hostname == current_domain)
@@ -343,6 +345,7 @@ pub async fn detail(
         domains.insert(
             0,
             DomainOption {
+                id: url.domain_id,
                 hostname: current_domain.clone(),
                 is_default: false,
             },
@@ -386,7 +389,7 @@ pub async fn detail(
         allow_expiry: effective.allow_expiry,
         allow_max_clicks: effective.allow_max_clicks,
         allow_tags: effective.allow_tags,
-        allow_domain_selection: effective.allow_domain_selection,
+        allow_domain_selection: policy.allow_selection,
         days_label: i18n::format(
             lang,
             "url_detail.chart.days_ago",

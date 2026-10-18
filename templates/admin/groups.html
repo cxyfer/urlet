@@ -56,6 +56,28 @@
         </div>
         <p class="hint">{{ lang.t("admin.groups.feature_hint") }}</p>
 
+        <div class="form-grid">
+            <div class="field">
+                <label class="label" for="default_domain_id">{{ lang.t("admin.groups.default_domain") }}</label>
+                <select class="select" id="default_domain_id" name="default_domain_id">
+                    <option value="">{{ lang.t("admin.groups.site_default_domain") }}</option>
+                    {% for domain in domains %}
+                    <option value="{{ domain.id }}">{{ domain.hostname }}</option>
+                    {% endfor %}
+                </select>
+                <span class="hint">{{ lang.t("admin.groups.default_domain_hint") }}</span>
+            </div>
+        </div>
+        <label class="checkbox"><input type="checkbox" name="restrict_domains" value="on"> {{ lang.t("admin.groups.restrict_domains") }}</label>
+        <span class="hint">{{ lang.t("admin.groups.restrict_domains_hint") }}</span>
+        <div class="stack">
+            <span class="label">{{ lang.t("admin.groups.allowed_domains") }}</span>
+            {% for domain in domains %}
+            <label class="checkbox"><input type="checkbox" name="domain_{{ domain.id }}" value="on"> {{ domain.hostname }}</label>
+            {% endfor %}
+            <span class="hint">{{ lang.t("admin.groups.allowed_domains_hint") }}</span>
+        </div>
+
         <div class="form-actions">
             <button class="btn btn-primary" type="submit">{{ lang.t("admin.groups.create") }}</button>
         </div>
@@ -128,6 +150,32 @@
                                         <label class="checkbox"><input type="checkbox" name="allow_tags" value="on" {% if group.allow_tags %}checked{% endif %}> {{ lang.t("admin.groups.feature.tags") }}</label>
                                         <label class="checkbox"><input type="checkbox" name="allow_api_tokens" value="on" {% if group.allow_api_tokens %}checked{% endif %}> {{ lang.t("admin.groups.feature.api_tokens") }}</label>
                                         <label class="checkbox"><input type="checkbox" name="allow_domain_selection" value="on" {% if group.allow_domain_selection %}checked{% endif %}> {{ lang.t("admin.groups.feature.domain_selection") }}</label>
+                                    </div>
+
+                                    <div class="field">
+                                        <label class="label">{{ lang.t("admin.groups.default_domain") }}</label>
+                                        <select class="select" name="default_domain_id">
+                                            <option value="">{{ lang.t("admin.groups.site_default_domain") }}</option>
+                                            {% if group.has_disabled_default_domain() %}
+                                            <option value="{{ group.disabled_default_domain_id() }}" selected>{{ group.disabled_default_domain_name() }} ({{ lang.t("admin.groups.disabled_domain") }})</option>
+                                            {% endif %}
+                                            {% for domain in domains %}
+                                            <option value="{{ domain.id }}" {% if group.uses_default_domain(domain.id) %}selected{% endif %}>{{ domain.hostname }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <span class="hint">{{ lang.t("admin.groups.default_domain_hint") }}</span>
+                                    </div>
+                                    <label class="checkbox"><input type="checkbox" name="restrict_domains" value="on" {% if group.restrict_domains %}checked{% endif %}> {{ lang.t("admin.groups.restrict_domains") }}</label>
+                                    <span class="hint">{{ lang.t("admin.groups.restrict_domains_hint") }}</span>
+                                    <div class="stack">
+                                        <span class="label">{{ lang.t("admin.groups.allowed_domains") }}</span>
+                                        {% for domain in domains %}
+                                        <label class="checkbox"><input type="checkbox" name="domain_{{ domain.id }}" value="on" {% if group.allows_domain(domain.id) %}checked{% endif %}> {{ domain.hostname }}</label>
+                                        {% endfor %}
+                                        {% for domain in group.disabled_domains %}
+                                        <label class="checkbox"><input type="checkbox" name="domain_{{ domain.id }}" value="on" checked> {{ domain.hostname }} ({{ lang.t("admin.groups.disabled_domain") }})</label>
+                                        {% endfor %}
+                                        <span class="hint">{{ lang.t("admin.groups.allowed_domains_hint") }}</span>
                                     </div>
 
                                     <label class="checkbox">

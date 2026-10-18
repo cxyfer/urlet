@@ -110,15 +110,18 @@ only checked when bot verification is enabled for sign-in (`captcha_on_login` /
     "allow_max_clicks": true,
     "allow_tags": true,
     "allow_api_tokens": true,
-    "allow_domain_selection": true
+    "allow_domain_selection": true,
+    "default_domain": "links.example.com",
+    "allowed_domains": ["links.example.com", "go.example.com"]
   }
 }
 ```
 
 `group` is `null` for an ungrouped account, which falls back to the site-wide settings. The
 `limits` object is the resolved value: a group overrides a quota only when it is not `NULL`, and
-`0` means unlimited. When `allow_domain_selection` is `false`, creating a link on a non-default
-domain or moving a link there returns `403`; the default domain is always accepted.
+`0` means unlimited. `default_domain` is the effective group default (falling back to the site
+default when it is missing or disabled); `allowed_domains` is the effective selection list. When
+`allow_domain_selection` is `false`, only that default is accepted for new links or moves.
 
 ### `PATCH /api/v1/auth/me`
 
@@ -211,9 +214,10 @@ Query parameters:
   check returns `400` with `error.code = "captcha_failed"`
 - `target_url` is required; only `http`/`https` are accepted, and a bare domain without a scheme
   is given a `https://` prefix
-- `domain` may be omitted (the current default domain is used). A supplied hostname must be an
-  active domain, otherwise the request fails with `422`; the slug namespace is per domain, so
-  the same slug can exist on two domains
+- `domain` may be omitted (the effective group default is used). A supplied hostname must be an
+  active domain, otherwise the request fails with `422`; it must also satisfy the group policy
+  (`allow_domain_selection`, `restrict_domains` / `domain_ids`) or the request fails with `403`.
+  The slug namespace is per domain, so the same slug can exist on two domains
 - `slug` may be omitted (a 7-character base62 slug is generated); only `[A-Za-z0-9_-]` is
   allowed, length 1–64, and reserved words are rejected. A slug already used **on the selected
   domain** returns `409`
@@ -234,8 +238,9 @@ Partial update: **fields that are absent stay unchanged, while an explicit `null
 ```
 
 `200` → the updated `UrlDto`. An empty object → `400`. Moving a link to another active domain
-re-checks the slug there and returns `409` on a collision. A link on a since-disabled domain can
-still be edited as long as it is not moved.
+must satisfy the group policy and re-checks the slug there (`409` on a collision). Keeping a link
+on its current domain — even a disabled one — is always allowed, so existing links remain
+editable.
 
 ### `DELETE /api/v1/urls/{id}`
 
@@ -363,10 +368,11 @@ callers that predate multi-domain working for links on the default domain.
 
 ### `GET /api/v1/domains`
 
-Authenticated users can list the active domains available for new links:
+Authenticated users can list the active domains available for new links, already filtered by
+their group policy. `is_default` marks the effective group default:
 
 ```json
-[ { "hostname": "s.example.com", "is_default": true }, { "hostname": "go.example.com", "is_default": false } ]
+[ { "id": 1, "hostname": "s.example.com", "is_default": true }, { "id": 2, "hostname": "go.example.com", "is_default": false } ]
 ```
 
 ---
@@ -444,9 +450,14 @@ Every `/api/v1/admin/**` endpoint returns `403 forbidden` for non-administrators
 | PATCH | `/admin/domains/{id}` | `{ "status"?: "active"\|"disabled", "is_default"?: true }` |
 | DELETE | `/admin/domains/{id}` | `204`; only a zero-link UI domain that is not the default |
 | GET | `/admin/groups?page=&per_page=` | Group list with member counts (paginated) |
-| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "is_default"? }` → `201` |
-| PUT | `/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` set to `null` inherit the site quota; `description: null` clears it; `is_default: true` moves the single default marker |
+| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "default_domain_id"?, "restrict_domains"?, "domain_ids"?, "is_default"? }` → `201`; `default_domain_id` must reference an active domain; `domain_ids` must reference existing domains (disabled entries stay stored but are not selectable) |
+| PUT | `/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` set to `null` inherit the site quota; `description: null` clears it; `default_domain_id: null` means the site default; `domain_ids: null` or `[]` clears the allowlist; `is_default: true` moves the single default marker |
 | DELETE | `/admin/groups/{id}?reassign_to={id}` | `204`, moves the members then deletes; `409` for the default group or a missing/invalid target |
+
+`GroupDto` also returns `default_domain_id`, `default_domain` (the stored value, even if the domain
+is disabled), `restrict_domains`, `allowed_domain_ids` and `allowed_domains`. The request field is
+`domain_ids` (`null` or `[]` clears it; omitting keeps it); the response uses `allowed_*`. `GET /api/v1/auth/me` returns the *effective* fallback
+default, which can differ from `default_domain` when the stored group default is disabled.
 | GET | `/admin/urls?q=&status=&user_id=&page=` | Every short link on the instance |
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |

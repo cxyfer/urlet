@@ -20,7 +20,7 @@
 | 🧩 標籤 | 依標籤篩選與分類，附使用次數 |
 | 🔑 API Token | `Authorization: Bearer ur_...`，可設到期與撤銷 |
 | 🌐 多網域 | 可在管理後台新增額外網域；各網域有獨立 slug，僅提供轉址 |
-| 👥 使用者群組 | 各群組可設定連結與 API Token 配額及功能開關；可直接指派或透過邀請碼帶組 |
+| 👥 使用者群組 | 各群組可設定連結與 API Token 配額、功能開關、預設網域與允許網域；可直接指派或透過邀請碼帶組 |
 | 🛠 管理後台 | 使用者管理、使用者群組、全站短網址、網域、邀請碼、站台設定、稽核日誌 |
 | 🌐 多語系介面 | 介面提供 English / 繁體中文 / 简体中文 切換；初次訪問依瀏覽器 `Accept-Language` 自動選擇，無法辨識時預設英文 |
 | 🤖 防機器人驗證 | 可透過環境變數或管理後台啟用 Cloudflare Turnstile 或 Google reCAPTCHA v2，套用於註冊、登入與建立短網址表單 |
@@ -165,10 +165,10 @@ urlet/
 ## 開發
 
 ```bash
-cargo test                 # 單元 + 整合測試（362 個）
+cargo test                 # 單元 + 整合測試（374 個）
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收（101 項）
+bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收（108 項）
 bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 ```
 
