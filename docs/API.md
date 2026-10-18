@@ -60,6 +60,10 @@ Pagination envelope:
 Errors: `409` duplicate email, `422` validation failure, `403` registration closed or invalid
 invite code, `400` `captcha_failed` when bot verification is enabled and rejects the request.
 
+An invite code may carry a user group. In `invite` mode a code is mandatory; in `open` mode it is
+optional, but when one is supplied it is validated and its group wins over the default group. The
+returned `user` object includes `group_id`.
+
 `captcha_token` carries the token produced by the CAPTCHA widget on the web registration form.
 It is only checked when bot verification is enabled for registration; otherwise the field is
 ignored. See [Bot verification](#bot-verification).
@@ -91,7 +95,30 @@ only checked when bot verification is enabled for sign-in (`captcha_on_login` /
 
 ### `GET /api/v1/auth/me`
 
-`200` → `{ "user": { ... } }`
+`200` → the user, the group they belong to (or `null`) and the effective limits:
+
+```json
+{
+  "user": { "id": 7, "email": "ada@example.com", "role": "user", "group_id": 2, "...": "..." },
+  "group": { "id": 2, "name": "Pro" },
+  "limits": {
+    "max_urls": 500,
+    "max_api_tokens": 5,
+    "allow_custom_slug": true,
+    "allow_password": true,
+    "allow_expiry": true,
+    "allow_max_clicks": true,
+    "allow_tags": true,
+    "allow_api_tokens": true,
+    "allow_domain_selection": true
+  }
+}
+```
+
+`group` is `null` for an ungrouped account, which falls back to the site-wide settings. The
+`limits` object is the resolved value: a group overrides a quota only when it is not `NULL`, and
+`0` means unlimited. When `allow_domain_selection` is `false`, creating a link on a non-default
+domain or moving a link there returns `403`; the default domain is always accepted.
 
 ### `PATCH /api/v1/auth/me`
 
@@ -136,6 +163,10 @@ re-issues the cookie, so continuous use never expires.
 ```
 
 `DELETE` → `204`.
+
+Token creation is refused with `403` when the group disables API tokens (`allow_api_tokens`) or
+the effective `max_api_tokens` is exhausted. Only usable tokens count (not revoked, not expired),
+so revoking one frees a slot immediately.
 
 ---
 
@@ -261,6 +292,12 @@ and analytics data is kept.
   "updated_at": "..."
 }
 ```
+
+**Group limits.** Link creation is refused with `403` when the effective `max_urls` is exhausted.
+A group feature toggle blocks submitting the matching field on create (`slug`, `password`,
+`expires_at`, `max_clicks`, `tags`) and refuses to newly enable it on `PATCH`. Omitting a field
+keeps its current value, and clearing a blocked field is accepted; a non-empty link password is
+always a new value and is refused while passwords are blocked.
 
 ---
 
@@ -398,31 +435,45 @@ Every `/api/v1/admin/**` endpoint returns `403 forbidden` for non-administrators
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/admin/users?q=&role=&status=&page=` | User list (includes `link_count`) |
-| PATCH | `/admin/users/{id}` | `{ "role"?, "status"?, "display_name"? }` |
+| GET | `/admin/users?q=&role=&status=&group_id=&page=` | User list (includes `link_count`, `group_id`, `group_name`) |
+| PATCH | `/admin/users/{id}` | `{ "role"?, "status"?, "display_name"?, "group_id"? }`; `group_id: null` makes the user ungrouped |
 | POST | `/admin/users/{id}/password` | `{ "new_password": "..." }` → `204`, revokes every session for that account |
 | DELETE | `/admin/users/{id}` | `204`, soft-deletes the account and all of its short links |
 | GET | `/admin/domains` | Every domain with link counts, status and source |
 | POST | `/admin/domains` | `{ "hostname": "go.example.com" }` → `201`, created as `pending` |
 | PATCH | `/admin/domains/{id}` | `{ "status"?: "active"\|"disabled", "is_default"?: true }` |
 | DELETE | `/admin/domains/{id}` | `204`; only a zero-link UI domain that is not the default |
+| GET | `/admin/groups?page=&per_page=` | Group list with member counts (paginated) |
+| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "is_default"? }` → `201` |
+| PUT | `/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` set to `null` inherit the site quota; `description: null` clears it; `is_default: true` moves the single default marker |
+| DELETE | `/admin/groups/{id}?reassign_to={id}` | `204`, moves the members then deletes; `409` for the default group or a missing/invalid target |
 | GET | `/admin/urls?q=&status=&user_id=&page=` | Every short link on the instance |
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |
-| GET | `/admin/invites` | Invite code list (prefixes only) |
-| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"? }` → `201`, **the plaintext invite code is returned once** |
+| GET | `/admin/invites` | Invite code list (prefixes only, plus `group_id` / `group_name`) |
+| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201`, **the plaintext invite code is returned once** |
 | DELETE | `/admin/invites/{id}` | `204`, revoke |
 | GET | `/admin/settings` | Current settings |
 | PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", ... }` |
 | GET | `/admin/audit?action=&target_type=&actor=&page=` | Audit log (`metadata` is parsed into JSON) |
 | GET | `/admin/stats` | User / short link / click totals, database size, version, uptime |
 
+**User groups.** A group object is
+`{ id, name, description, max_urls, max_api_tokens, allow_*, is_default, members, created_at, updated_at }`.
+Quotas are nullable: `null` inherits the site-wide setting, `0` means unlimited. Feature toggles
+default to `true`; they gate new uses and never alter existing links or tokens. Administrators
+follow the same rules as other users. `PUT` accepts a partial group: omitted fields keep their
+current value, quotas set to `null` inherit the site quota, `description: null` clears it, and
+`is_default: true` moves the marker. `POST` keeps the create defaults (omitted toggles are allowed,
+omitted quotas inherit).
+
 **Guard rails**: an administrator cannot change their own role or status, cannot delete
 themselves, and the instance always keeps at least one active administrator (otherwise the
-request fails with `409`).
+request fails with `409`). The default group cannot be deleted; move the marker with `PUT` first.
 
 Editable setting keys: `site_name`, `registration_mode` (`open`/`invite`/`closed`),
 `default_slug_length` (4–16), `max_urls_per_user` (0 = unlimited),
+`max_api_tokens_per_user` (0 = unlimited, default 20),
 `default_redirect_type` (301/302/307/308), `analytics_enabled`,
 `click_retention_days` (0 = keep forever), plus the bot verification keys
 `captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`,
@@ -441,6 +492,7 @@ write-only: it is never returned in plaintext, and submitting it empty keeps the
 | `token.created` / `token.revoked` | API tokens |
 | `invite.created` / `invite.revoked` / `invite.redeemed` | Invite codes |
 | `admin.user_updated` / `admin.user_deleted` / `admin.password_reset` | Administrative actions |
+| `admin.group_created` / `admin.group_updated` / `admin.group_deleted` | Group changes |
 | `admin.url_updated` / `admin.settings_updated` | Administrative actions |
 
 ## Rate limits

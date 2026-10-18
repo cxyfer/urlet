@@ -162,14 +162,18 @@ impl AuthContext<'_> {
         // The very first account bootstraps the instance as administrator.
         let is_first_user = users::count(self.pool).await.map_err(AppError::from)? == 0;
 
-        let invite = match self.settings.registration_mode() {
-            RegistrationMode::Open => None,
-            RegistrationMode::Invite => {
-                let Some(code) = invite_code.map(str::trim).filter(|code| !code.is_empty()) else {
-                    return Err(AppError::forbidden(
-                        "an invite code is required to register",
-                    ));
-                };
+        let mode = self.settings.registration_mode();
+        if mode == RegistrationMode::Closed {
+            return Err(AppError::forbidden(
+                "registration is disabled on this instance",
+            ));
+        }
+
+        // A code supplied in open mode is still validated: it is how an invite
+        // can pin the new account to a group even when registration is open.
+        let submitted_code = invite_code.map(str::trim).filter(|code| !code.is_empty());
+        let invite = match submitted_code {
+            Some(code) => {
                 let code_hash = secret::sha256_hex(code);
                 let invite = invites::find_active_by_hash(self.pool, &code_hash, &time::now_iso())
                     .await
@@ -179,15 +183,23 @@ impl AuthContext<'_> {
                     None => return Err(AppError::forbidden("this invite code is not valid")),
                 }
             }
-            RegistrationMode::Closed => {
+            None if mode == RegistrationMode::Invite => {
                 return Err(AppError::forbidden(
-                    "registration is disabled on this instance",
+                    "an invite code is required to register",
                 ))
             }
+            None => None,
         };
 
         let password_hash = password::hash_async(password.to_string()).await?;
         let role = if is_first_user { "admin" } else { "user" };
+        // An invite code may pin the group; otherwise the default group wins.
+        let group_id = match invite.as_ref().and_then(|invite| invite.group_id) {
+            Some(group_id) => Some(group_id),
+            None => crate::db::user_groups::default_id(self.pool)
+                .await
+                .map_err(AppError::from)?,
+        };
         let user_id = users::create(
             self.pool,
             &users::NewUser {
@@ -198,6 +210,7 @@ impl AuthContext<'_> {
                     .map(str::to_string)
                     .filter(|name| !name.is_empty()),
                 role: role.to_string(),
+                group_id,
             },
         )
         .await

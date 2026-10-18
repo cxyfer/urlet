@@ -2,9 +2,9 @@
 
 # urlet — Lightweight Multi-User URL Shortener Specification
 
-> Version: 1.1
+> Version: 1.2
 > Status: Approved for implementation
-> Last updated: 2026-10-16
+> Last updated: 2026-10-17
 
 ---
 
@@ -17,7 +17,10 @@ analytics, and drive the service programmatically with a personal API token.
 The top design principle is **as lightweight as possible**: a single Rust binary plus a single
 SQLite file, deployed with one `docker compose up -d`, with no external database, cache, or
 frontend build step. The v1.1 line adds a trilingual interface (English / Traditional Chinese /
-Simplified Chinese), optional bot protection, and a public landing page.
+Simplified Chinese), optional bot protection, and a public landing page. The v1.2 line adds
+**user groups**: per-group link and API-token quotas plus feature toggles, so an instance can be
+operated with tiers (for example a free and a paid group) without changing the single-binary
+deployment model.
 
 ### 1.1 Core Design Principles (from the requester)
 
@@ -29,8 +32,8 @@ Simplified Chinese), optional bot protection, and a public landing page.
 | P4 | Docker Compose deployment | A single `docker-compose.yml` (app + named volume), with an optional Caddy TLS overlay |
 | P5 | As lightweight as possible | One binary, SQLite (no MySQL/Redis), SSR templates (no Node build), image < 40 MB |
 | P6 | Rust implementation | Rust 2021 + Axum 0.8 + Tokio + sqlx (SQLite) |
-| P7 | Well-designed schema | 14 tables, 27 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
-| P8 | Sensible extra features | Tags, click analytics, API tokens, invite codes, admin panel, audit log, daily rollups, trilingual UI, optional bot protection |
+| P7 | Well-designed schema | 15 tables, 30 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
+| P8 | Sensible extra features | Tags, click analytics, API tokens, invite codes, admin panel, audit log, daily rollups, trilingual UI, optional bot protection, quota/feature user groups |
 
 ### 1.2 Relationship to the Earlier Prototypes (OURLS / OURLS2)
 
@@ -43,13 +46,15 @@ feature ideas** but re-selects the stack to satisfy P5:
 | Deployment | docker compose (3 containers) | Wrangler / Cloudflare | **docker compose (1 container)** |
 | Auth | JWT + refresh token + OAuth | JWT + OAuth | **Server-side sessions + API tokens** |
 | Frontend | React + Vite + Tailwind (Node build) | React + Vite + Pages | **Askama SSR + vanilla CSS/JS (zero build)** |
-| Permissions | User groups + permission matrix | Groups + permission matrix | **Role (user/admin) + status** |
+| Permissions | User groups + permission matrix | Groups + permission matrix | **Role (user/admin) + quota/feature groups** (no permission matrix) |
 | Analytics | Full (GeoIP, MaxMind) | Full | **Lean (UA parsing, daily rollups, no GeoIP)** |
 | Inherited | Password protection, expiry, click cap, tags, API tokens, invite codes, audit log | Same + public preview API | All of the above, trimmed to essentials |
 
-**Deliberate non-goals**: OAuth third-party login, user-group permission matrices, GeoIP/MMDB,
+**Deliberate non-goals**: OAuth third-party login, fine-grained permission matrices, GeoIP/MMDB,
 keyword blocklists, A/B testing, webhooks, QR codes, link-in-bio pages, and email delivery.
-Multilingual support was a non-goal in v1.0 and is now in scope as of v1.1 (§4.11).
+Multilingual support was a non-goal in v1.0 and is now in scope as of v1.1 (§4.11). User groups
+were a non-goal in v1.0; v1.2 adds quota and feature-toggle groups (§4.13) but still no
+per-action permission matrix.
 
 ---
 
@@ -66,6 +71,11 @@ Multilingual support was a non-goal in v1.0 and is now in scope as of v1.1 (§4.
 | Language tag | One of the supported UI locales: `en`, `zh-Hant`, `zh-Hans` |
 | Locale catalog | The JSON file embedded in the binary (`src/i18n/<tag>.json`) that holds one language's message keys |
 | Captcha token | The provider-issued response token submitted with a form and verified server-side |
+| User group | An administrator-defined set of quotas and feature toggles (`user_groups`); every user belongs to exactly one group, or to none |
+| Group quota | `max_urls` / `max_api_tokens` on a group. `NULL` means "inherit the site-wide setting", `0` means unlimited, a positive value is the cap |
+| Feature toggle | A per-group boolean (`allow_*`) that decides whether a link feature may be used; existing data is never deleted when a toggle is turned off |
+| Default group | The single group with `is_default = 1`; new registrations and invite codes without a group land there. The marker can be moved but the group cannot be deleted |
+| Effective limits | The quotas and toggles actually applied to a user: group value when set, otherwise the site-wide default |
 
 ---
 
@@ -166,7 +176,7 @@ target is still met.
 | FR-URL-6 | List | Pagination, keyword search (slug/target/title), tag filter, status filter, sorting (creation time / click count) |
 | FR-URL-7 | Status toggle | `active` / `disabled`; a `disabled` link does not redirect (returns a 404 page) |
 | FR-URL-8 | Tags | Per-user tags with unique names (within a user); missing tags are created automatically when a link is created |
-| FR-URL-9 | Quota | The per-user link limit is controlled by the `max_urls_per_user` setting (0 = unlimited) |
+| FR-URL-9 | Quota | The per-user link limit is the effective value of `max_urls_per_user`: the user's `user_groups.max_urls` when set, otherwise the site-wide setting (0 = unlimited; FR-GROUP-2) |
 | FR-URL-10 | Ownership isolation | Every `/api/v1/urls*` query is forced to `user_id = current_user`; another user's resource always returns 404 |
 
 ### 4.3 Password Protection (FR-PWD)
@@ -222,18 +232,21 @@ target is still met.
 | FR-TOK-3 | Usage | `Authorization: Bearer <token>`; works alongside session authentication |
 | FR-TOK-4 | Lifecycle | Supports `expires_at`, revocation (`revoked_at`), and `last_used_at`; when a user changes their password, or an admin resets a password or deletes an account, all of that account's tokens are revoked too |
 | FR-TOK-5 | Scopes | The `scopes` column is reserved (v1 provides `urls:read`, `urls:write`, `admin`), but v1 only checks whether the token is an admin token |
+| FR-TOK-6 | Quota | The number of usable tokens per user (not revoked and not expired) is capped by the effective `max_api_tokens`; the site-wide default is `max_api_tokens_per_user=20` (0 = unlimited), and a group may override or inherit it (FR-GROUP-2) |
+| FR-TOK-7 | Feature toggle | When the group sets `allow_api_tokens = 0`, the account and API token creation endpoints refuse to issue a token (403); existing tokens keep working until revoked manually |
 
 ### 4.8 Admin Panel (FR-ADMIN)
 
 | ID | Requirement | Description |
 |----|-------------|-------------|
-| FR-ADMIN-1 | User management | List, search, change role, suspend/restore, reset password, soft delete |
+| FR-ADMIN-1 | User management | List, search (including by group), change role, assign a user group, suspend/restore, reset password, soft delete |
 | FR-ADMIN-2 | All links | List, search, force-disable/delete |
-| FR-ADMIN-3 | Invite codes | Create (uses/expiry/note), list, revoke; registration in `invite` mode requires an invite code |
-| FR-ADMIN-4 | Site settings | Edit the `settings` table (site name, registration mode, quotas, default redirect type, analytics switch, retention days, captcha) |
-| FR-ADMIN-5 | Audit log | Records logins, registrations, link changes, admin actions, and setting changes; filterable by action/target |
+| FR-ADMIN-3 | Invite codes | Create (uses/expiry/note/optional target group), list, revoke; registration in `invite` mode requires an invite code. A code with a group assigns the redeemer to that group (FR-GROUP-4) |
+| FR-ADMIN-4 | Site settings | Edit the `settings` table (site name, registration mode, site-wide link and token quotas, default redirect type, analytics switch, retention days, captcha) |
+| FR-ADMIN-5 | Audit log | Records logins, registrations, link changes, group changes, admin actions, and setting changes; filterable by action/target |
 | FR-ADMIN-6 | System info | Version, database size, user/link/click totals, uptime |
 | FR-ADMIN-7 | Authorization | Every `/api/v1/admin/**` and `/app/admin/**` route requires `role = admin`, otherwise 403 |
+| FR-ADMIN-8 | Group management | Create, edit, set as default and delete user groups from `/app/admin/groups` and `/api/v1/admin/groups` (FR-GROUP-1) |
 
 ### 4.9 JSON API (FR-API)
 
@@ -258,8 +271,9 @@ target is still met.
 | `/app` | Dashboard | Stat cards, daily trend chart, link list (search/filter/pagination), create form |
 | `/app/urls/{id}` | Link detail | Edit form, analytics charts, recent clicks, delete (QR codes are a non-goal) |
 | `/app/account` | Account | Profile, change password, session list, API token management |
-| `/app/admin` | Admin panel | Users, all links, domains, invite codes, settings, audit log |
+| `/app/admin` | Admin panel | Users, user groups, all links, domains, invite codes, settings, audit log |
 | `/app/admin/domains` | Domain management | Add, activate, disable, set default and delete domains |
+| `/app/admin/groups` | User groups | Create/edit/delete groups, quotas, feature toggles, default marker |
 | `/app/lang/{code}` | Language switch | Sets the `urlet_lang` cookie and 302-redirects to `next` (or to `/app`) |
 | `/{slug}` | Redirect / password page / 410 / 404 | Public |
 | Extra domain | Redirect-only | `/` shows a small landing page, `/{slug}` redirects, `/app` 308s to canonical, `/api` is 404 |
@@ -294,6 +308,19 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 | FR-BOT-7 | API token routes | `POST /api/v1/urls` is exempt from captcha **only** when it carries an API token (`Authorization: Bearer ur_...`). A session-cookie call is a browser session and is subject to `on_create`; it accepts an optional `captcha_token` |
 | FR-BOT-8 | Admin UI | The secret key field is write-only: the stored value is never rendered back, and submitting the field empty keeps the current value |
 | FR-BOT-9 | Token hostname | The `hostname` reported in the provider's siteverify response must equal the host of `URLET_BASE_URL` or one of `captcha_allowed_hostnames` (comma-separated bare hostnames, trimmed and lowercased, empty items dropped, at most 10 items of 1–253 characters with no whitespace, `/`, `:` or `@`). A response without a `hostname`, or with an empty one, is accepted; a mismatch is rejected and logged at `WARN` with the reported hostname and the accepted candidates |
+
+### 4.13 User Groups (FR-GROUP)
+
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-GROUP-1 | Group CRUD | Administrators can create, rename, edit and delete groups. A name is trimmed, 1–40 characters, case-insensitively unique (`COLLATE NOCASE`) and free of control characters; a description is optional and at most 200 characters. Each quota accepts `NULL` (inherit), `0` (unlimited) or a positive integer up to 1,000,000 |
+| FR-GROUP-2 | Quota inheritance | The effective `max_urls` / `max_api_tokens` is the group value when it is not `NULL`, otherwise `settings.max_urls_per_user` / `settings.max_api_tokens_per_user`. A user without a group uses the site-wide values |
+| FR-GROUP-3 | Feature toggles | Seven booleans, all default `true`: `allow_custom_slug`, `allow_password`, `allow_expiry`, `allow_max_clicks`, `allow_tags`, `allow_api_tokens`, `allow_domain_selection`. They gate creation, and on update they refuse to switch a blocked feature on while permitting clearing a value or omitting the field to keep it. The default domain is always allowed; `allow_domain_selection = false` refuses creating or moving a link to a non-default domain. A non-empty link password is always treated as a new value and is refused while `allow_password` is off. Existing links and tokens are never modified or deleted by a toggle |
+| FR-GROUP-4 | Assignment | A user belongs to at most one group (`users.group_id`, nullable). Registration assigns the default group; an invite code may carry a group, which wins over the default at redemption. A code supplied in `open` mode is validated too, so its group still applies. An administrator can reassign any user; the change takes effect on the next request because the user row is loaded per request |
+| FR-GROUP-5 | Default group | Exactly one row has `is_default = 1`, enforced by a partial unique index. The marker can be moved from the group edit form (one transaction unsets the previous default); the group currently marked default cannot be deleted. The migration seeds a group named `Standard` with both quotas `NULL` and assigns every existing user to it, so upgrading changes no behaviour |
+| FR-GROUP-6 | Deletion | Deleting a group requires a reassignment target (`reassign_to` on the API, a select in the web dialog). All members move to the target in the same transaction, and invite codes pointing at the deleted group fall back to the default group through `ON DELETE SET NULL`. Reassigning to the group being deleted, or deleting the default group, is rejected with 409 |
+| FR-GROUP-7 | Enforcement scope | Quotas and toggles apply equally to administrators. Lowering a quota or switching a toggle off never deletes or disables existing links or tokens; it only blocks new creations (and newly enabling a blocked feature on update) |
+| FR-GROUP-8 | Visibility | The account page shows the group name plus link usage `used / quota` and token usage `used / quota`; `GET /api/v1/auth/me` returns `group` and a `limits` object with the effective quotas and toggles so API clients can predict refusals |
 
 ---
 
@@ -363,6 +390,8 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 ### 6.1 ER Overview
 
 ```
+user_groups ─┬─< users
+             └─< invite_codes
 users ─┬─< sessions
        ├─< api_tokens
        ├─< urls ─┬─< clicks
@@ -385,16 +414,20 @@ login_attempts (auditing)
 5. **Booleans**: `INTEGER 0/1`.
 6. **Rollup table**: `url_daily_stats` is the acceleration layer for analytics queries, upserted on write.
 7. **Reserved extension columns**: `api_tokens.scopes`, `urls.notes`, `audit_logs.metadata`.
+8. **Group inheritance**: `user_groups.max_urls` and `max_api_tokens` are nullable; `NULL` means "inherit the site-wide setting", `0` means unlimited. Feature toggles are `INTEGER 0/1` booleans that default to `1` (allowed), so a group carries no behaviour change until an administrator edits it.
+9. **Referential fallbacks**: `users.group_id` and `invite_codes.group_id` are nullable with `ON DELETE SET NULL`; an ungrouped user or a code without a group resolves through the default group or the site-wide defaults.
 
 > Multi-domain support is implemented. The detailed design, routing matrix and migration notes are in [`docs/MULTI_DOMAIN.md`](MULTI_DOMAIN.md).
 
 ### 6.3 DDL (migration summary)
 
-> The complete source of truth is the migration files (`0001_init.sql` plus `0003_multi_domain.sql` for the multi-domain changes); the table below is a structural summary.
+> The complete source of truth is the migration files (`0001_init.sql`, `0003_multi_domain.sql` for the multi-domain rebuild and `0004_user_groups.sql` for groups); the table below is a structural summary.
+
 
 | Table | Main columns | Purpose |
 |-------|--------------|---------|
-| `users` | id, email, email_normalized(UNIQUE), password_hash, display_name, role, status, email_verified_at, last_login_at, created_at, updated_at, deleted_at | Users |
+| `users` | id, email, email_normalized(UNIQUE), password_hash, display_name, role, status, group_id, email_verified_at, last_login_at, created_at, updated_at, deleted_at | Users |
+| `user_groups` | id, name(UNIQUE, NOCASE), description, max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection, is_default, created_at, updated_at | Quota and feature-toggle groups |
 | `sessions` | id, user_id, token_hash(UNIQUE), user_agent, ip_hash, created_at, last_seen_at, expires_at, revoked_at | Login state |
 | `api_tokens` | id, user_id, name, token_prefix, token_hash(UNIQUE), scopes, last_used_at, expires_at, created_at, revoked_at | API credentials |
 | `domains` | id, hostname(UNIQUE, NOCASE), is_default, is_verified, status, source, created_by, created_at, updated_at | Canonical/system, `URLET_DOMAINS`/env and admin/UI domains; `pending`/`active`/`disabled` |
@@ -405,7 +438,7 @@ login_attempts (auditing)
 | `url_daily_stats` | url_id, day, clicks, unique_clicks, bot_clicks (PK: url_id+day) | Daily rollups |
 | `audit_logs` | id, actor_user_id, actor_role, action, target_type, target_id, metadata, ip_hash, created_at | Auditing |
 | `settings` | key(PK), value, updated_at, updated_by | Site settings |
-| `invite_codes` | id, code_hash(UNIQUE), code_prefix, note, created_by, max_uses, used_count, expires_at, status, created_at | Invite codes |
+| `invite_codes` | id, code_hash(UNIQUE), code_prefix, note, group_id, created_by, max_uses, used_count, expires_at, status, created_at | Invite codes |
 | `invite_redemptions` | id, invite_id, user_id, redeemed_at, UNIQUE(invite_id,user_id) | Invite redemption records |
 | `login_attempts` | id, identifier_hash, ip_hash, success, created_at | Login auditing/lockout |
 
@@ -423,9 +456,14 @@ login_attempts (auditing)
 | `url_daily_stats(day)` | Site-wide trends |
 | `audit_logs(created_at DESC)`, `audit_logs(actor_user_id, created_at DESC)`, `audit_logs(target_type,target_id)` | Audit queries |
 | `login_attempts(identifier_hash, created_at DESC)` | Brute-force detection |
+| `user_groups(is_default) WHERE is_default = 1` UNIQUE | At most one default group |
+| `users(group_id)` | Group member listing and reassignment |
+| `invite_codes(group_id)` | Invite lookup per group |
 
-The v1.1 changes add settings **keys** only; because `settings` is a key-value table, the schema
-still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
+The v1.1 changes add settings **keys** only; because `settings` is a key-value table, v1.1 kept
+the schema at 14 tables and 27 indexes. v1.2 adds the `user_groups` table, the nullable
+`users.group_id` and `invite_codes.group_id` columns and three indexes, for **15 tables and
+30 indexes** (§6.1, §6.3, §6.4).
 
 ### 6.5 Seed Data
 
@@ -435,7 +473,16 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
   `captcha_secret_key=` (empty), `captcha_on_register=false`, `captcha_on_login=false`,
   `captcha_on_create=false`, `captcha_allowed_hostnames=` (empty). A non-empty environment variable
   overrides the stored value (FR-BOT-2).
-- `domains`: at startup the canonical domain is inserted/updated from the host of `URLET_BASE_URL` (`source=system`, always active). It is made the default only when no default exists, so an administrator can choose another default. `URLET_DOMAINS` inserts missing domains as `active`/`env`; it never changes an existing row.
+- `settings` (v1.2 key): `max_api_tokens_per_user=20` (the site-wide token quota; `0` = unlimited).
+  Because it defaults to 20 rather than 0, an account that already holds more than 20 usable tokens
+  cannot create another one until it revokes some; existing tokens are never revoked by the upgrade.
+- `user_groups` (v1.2): one row named `Standard` with `max_urls = NULL`, `max_api_tokens = NULL`,
+  all seven toggles `1` (including `allow_domain_selection`) and `is_default = 1`; the migration
+  assigns every existing user to it.
+- `domains`: at startup the canonical domain is inserted/updated from the host of `URLET_BASE_URL`
+  (`source=system`, always active). It is made the default only when no default exists, so an
+  administrator can choose another default. `URLET_DOMAINS` inserts missing domains as
+  `active`/`env`; it never changes an existing row.
 
 ---
 
@@ -448,11 +495,15 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 | POST | `/api/v1/auth/register` | `{email, password, invite_code?, captcha_token?}` → 201 `{user}`; 400 `captcha_failed` when captcha verification fails |
 | POST | `/api/v1/auth/login` | `{email, password, captcha_token?}` → 200 `{user}` + Set-Cookie; 400 `captcha_failed` when captcha verification fails |
 | POST | `/api/v1/auth/logout` | Revoke the current session → 204 |
-| GET | `/api/v1/auth/me` | Current user → 200 `{user}` |
+| GET | `/api/v1/auth/me` | Current user → 200 `{user}`; also returns `group` (id/name or null) and `limits` (effective quotas and toggles, FR-GROUP-8) |
 | PATCH | `/api/v1/auth/me` | `{display_name}` → 200 `{user}` |
 | POST | `/api/v1/auth/password` | `{current_password, new_password}` → 204 |
 | GET | `/api/v1/auth/sessions` | List my sessions |
 | DELETE | `/api/v1/auth/sessions/{id}` | Revoke the given session → 204 |
+
+Registration assigns the default group; a supplied invite code is validated even in `open` mode,
+and its group wins over the default (FR-GROUP-4). The `user` object includes `group_id`; the group
+name and effective limits are exposed through `GET /api/v1/auth/me`.
 
 ### 7.2 Short Links
 
@@ -467,6 +518,11 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 | GET | `/api/v1/urls/{id}/stats?days=30` | Daily trend + dimension breakdown + summary |
 | GET | `/api/v1/urls/{id}/clicks?page=1` | Click details (paginated) |
 
+A link quota exhaustion, or a group toggle that blocks a submitted field, returns 403 `forbidden`
+with a descriptive message. On `PATCH`, omitting a field keeps its current value and clearing a
+blocked field is accepted; switching a blocked feature on is refused. A non-empty link password is
+always a new value, so it is refused while passwords are blocked (FR-GROUP-3).
+
 ### 7.3 Tags / Tokens
 
 | Method | Path | Description |
@@ -474,26 +530,40 @@ still has **14 tables and 27 indexes** (§6.1, §6.3, §6.4 are unchanged).
 | GET | `/api/v1/tags` | My tags (with usage counts) |
 | DELETE | `/api/v1/tags/{id}` | Delete a tag (only removes the association) |
 | GET | `/api/v1/tokens` | My API tokens (never includes plaintext) |
-| POST | `/api/v1/tokens` | `{name, expires_at?}` → 201 `{token: "ur_...", api_token}` **shown only once** |
+| POST | `/api/v1/tokens` | `{name, expires_at?}` → 201 `{token: "ur_...", api_token}` **shown only once**; 403 when the group disables token creation or the token quota is exhausted |
 | DELETE | `/api/v1/tokens/{id}` | Revoke → 204 |
+
+The effective token quota counts usable tokens only (not revoked and not expired), so revoking an
+old token frees a slot immediately (FR-TOK-6).
 
 ### 7.4 Admin (requires admin)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/admin/users` | User list (`q, role, status, page`) |
-| PATCH | `/api/v1/admin/users/{id}` | `{role?, status?, display_name?}` |
+| GET | `/api/v1/admin/users` | User list (`q, role, status, group_id, page`) |
+| PATCH | `/api/v1/admin/users/{id}` | `{role?, status?, display_name?, group_id?}`; `group_id: null` makes the user ungrouped (site-wide defaults apply) |
 | POST | `/api/v1/admin/users/{id}/password` | `{new_password}` reset |
 | DELETE | `/api/v1/admin/users/{id}` | Soft delete (their links are soft-deleted too) |
+| GET | `/api/v1/admin/groups` | Group list with member counts (paginated) |
+| POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, is_default?}` → 201; a duplicate name or a second default returns 409 |
+| PUT | `/api/v1/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` set to `null` inherit the site quota; `description: null` clears it; `is_default: true` moves the marker in one transaction |
+| DELETE | `/api/v1/admin/groups/{id}?reassign_to={id}` | Move members to `reassign_to`, then delete → 204; 409 for the default group or a missing/invalid target |
 | GET | `/api/v1/admin/urls` | Site-wide link list |
 | PATCH | `/api/v1/admin/urls/{id}` | Force disable/enable/delete |
-| GET | `/api/v1/admin/invites` | Invite code list |
-| POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?}` → 201 `{code: "K7M2QPX4RT", invite}` (a 10-character code with no prefix) |
+| GET | `/api/v1/admin/invites` | Invite code list (includes `group_id` / `group_name`) |
+| POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?, group_id?}` → 201 `{code: "K7M2QPX4RT", invite}` (a 10-character code with no prefix) |
 | DELETE | `/api/v1/admin/invites/{id}` | Revoke → 204 |
 | GET | `/api/v1/admin/settings` | Site settings |
-| PUT | `/api/v1/admin/settings` | Update settings (whitelisted keys) |
+| PUT | `/api/v1/admin/settings` | Update settings (whitelisted keys, including `max_api_tokens_per_user`) |
 | GET | `/api/v1/admin/audit` | Audit log (`action, target_type, actor, page`) |
 | GET | `/api/v1/admin/stats` | System info and totals |
+
+Group updates accept a partial representation: omitting a field keeps its current value,
+`max_urls` / `max_api_tokens` set to `null` inherit the site-wide quota, and `description: null`
+clears it. `POST` keeps the create defaults (omitted toggles are allowed, omitted quotas inherit).
+Every group mutation is audited (`admin.group_created`, `admin.group_updated`,
+`admin.group_deleted`), and a user's group change is recorded in the existing
+`admin.user_updated` metadata.
 
 ### 7.5 Public
 
@@ -555,7 +625,7 @@ urlet/
 ├── docker-compose.tls.yml        # optional: Caddy automatic HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql  migrations/0003_multi_domain.sql
+├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql  migrations/0003_multi_domain.sql  migrations/0004_user_groups.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama templates (base, app_base, landing.html + pages + admin/)
@@ -563,12 +633,12 @@ urlet/
 │   ├── main.rs  lib.rs  config.rs  state.rs  error.rs  server.rs  assets.rs
 │   ├── assets/{app.css,app.js,favicon.svg}
 │   ├── i18n/{mod.rs,en.json,zh-Hant.json,zh-Hans.json}
-│   ├── db/{mod,migrate,users,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
-│   ├── services/{auth,urls,admin,domains,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
+│   ├── db/{mod,migrate,users,user_groups,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
+│   ├── services/{auth,urls,admin,domains,groups,limits,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
 │   ├── middleware/{mod,auth,csrf,domain,security,locale}.rs
 │   └── routes/{mod,api,api_auth,api_urls,api_domains,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract}.rs
 │       └── pages/{mod,auth,dashboard,urls,account,admin,home}.rs
-└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs,i18n.rs,captcha.rs}
+└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs,groups.rs,i18n.rs,captcha.rs}
 ```
 
 ### 9.2 Dockerfile Strategy
@@ -602,8 +672,8 @@ urlet port, so Caddy reverse-proxies it.
 
 | Layer | Scope | Tooling |
 |-------|-------|---------|
-| Unit tests | Slug generation/validation/reserved words, UA parsing, expiry decisions, settings parsing, password hashing, IP hashing, CSRF same-origin checks, `Accept-Language` negotiation (`q=` weights, fallback to English), locale fallback, the captcha enablement matrix, and captcha fail-closed classification | `#[cfg(test)]` modules |
-| Integration tests | Register → login → create → redirect → analytics; the password protection flow; expiry and click caps; ownership isolation; admin authorization; API tokens; CSRF rejection; language negotiation and cookie switching; API JSON staying English; captcha rejection on register, sign-in and create (web forms and JSON API); the landing page | `tests/integration.rs` + `tower::ServiceExt::oneshot` + a temporary SQLite database |
+| Unit tests | Slug generation/validation/reserved words, UA parsing, expiry decisions, settings parsing, group limit inheritance (NULL / 0 / value, ungrouped fallback), password hashing, IP hashing, CSRF same-origin checks, `Accept-Language` negotiation (`q=` weights, fallback to English), locale fallback, the captcha enablement matrix, and captcha fail-closed classification | `#[cfg(test)]` modules |
+| Integration tests | Register → login → create → redirect → analytics; the password protection flow; expiry and click caps; ownership isolation; admin authorization; API tokens; group CRUD and default-marker transfer; per-group link and token quotas; feature-toggle enforcement on create and update; invite codes that carry a group; group deletion with reassignment; CSRF rejection; language negotiation and cookie switching; API JSON staying English; captcha rejection on register, sign-in and create (web forms and JSON API); the landing page | `tests/integration.rs` + `tower::ServiceExt::oneshot` + a temporary SQLite database |
 | End-to-end smoke test | Runs the main flows against the real binary with curl | `scripts/smoke.sh` |
 | Static checks | `cargo fmt --check`, `cargo clippy -D warnings` | CI commands (documented in the README) |
 
@@ -642,15 +712,29 @@ v1.1 additions (this batch):
 - [ ] `GET /` returns 200 as a landing/navigation page for anonymous and signed-in visitors, and no longer redirects to `/app`
 - [ ] `cargo test` (the full suite), `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are clean, `scripts/smoke.sh` passes all end-to-end checks, and the container image builds and runs under musl (§3.3)
 
+v1.2 additions (this batch):
+
+- [x] `user_groups` (15 tables, 30 indexes) with nullable `max_urls` / `max_api_tokens` and seven feature toggles (including domain selection), plus `users.group_id` and `invite_codes.group_id`
+- [x] The migration seeds a `Standard` group with both quotas `NULL` and assigns every existing user to it, so upgrading changes no behaviour
+- [x] Effective quotas inherit the site-wide settings when the group value is `NULL`, with `0` meaning unlimited; administrators follow the same rules as users
+- [x] Feature toggles gate creation and refuse to switch a blocked feature on during an update, while clearing or keeping the current value is accepted
+- [x] Admins can create, edit and delete groups and move the single default marker; deleting a non-default group requires a reassignment target, and the default group cannot be deleted
+- [x] Invite codes may carry a group, which wins at redemption; a deleted group falls back to the default group via `ON DELETE SET NULL`
+- [x] Group domain selection is a toggle: the default domain is always allowed, a non-default domain is refused on create/move when disabled, and both forms hide the selector
+- [x] The token quota defaults to 20 usable tokens, is shown on the account page, and is exposed in `GET /api/v1/auth/me` together with the effective link quota and toggles
+- [x] Group mutations are audited (`admin.group_created` / `updated` / `deleted`) and user reassignment is recorded in the audit metadata
+- [x] `cargo test` (362 tests, one ignored), `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are clean, and `scripts/smoke.sh` passes all 101 checks (including group CRUD, quota enforcement and reassignment)
+
 ---
 
 ## 12. Future Extension Paths (this version only reserves schema/architecture room)
 
 | Feature | Already reserved |
 |---------|------------------|
-| User groups and fine-grained permissions | `api_tokens.scopes`; `users.role` can grow into a `groups` table |
+| Per-user / per-group domain allowlists | `domains`, `user_groups` and the `allow_domain_selection` toggle exist; a `group_domains` join table can restrict which domains a group may use |
+| Fine-grained permissions | `user_groups`, `users.group_id` and the seven feature toggles; a future `group_permissions` table can add per-action permissions on top |
+| Team collaboration / shared workspaces | `users.group_id` already groups accounts; a `url_members` table can extend ownership from `urls.user_id` to a group or team |
 | Password reset / email verification | `users.email_verified_at`; a `password_resets` table can be added |
 | GeoIP country analytics | `clicks.country_code` already exists; only a resolver is missing |
 | Click export / CSV | The full `clicks` column set + indexes |
-| Team collaboration | A `url_members` table can be added, with `urls.user_id` as the owner |
 | Audit compliance | `audit_logs.metadata` keeps the full JSON context |

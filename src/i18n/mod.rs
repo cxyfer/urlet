@@ -570,6 +570,82 @@ mod tests {
     }
 
     #[test]
+    fn every_static_key_used_in_the_ui_exists() {
+        fn collect(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    collect(&path, files);
+                } else if path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext == "html" || ext == "rs")
+                    .unwrap_or(false)
+                {
+                    files.push(path);
+                }
+            }
+        }
+
+        fn collect_after(text: &str, marker: &str, keys: &mut Vec<String>) {
+            let mut rest = text;
+            while let Some(index) = rest.find(marker) {
+                let after = &rest[index + marker.len()..];
+                let Some(end) = after.find('"') else {
+                    break;
+                };
+                keys.push(after[..end].to_string());
+                rest = &after[end..];
+            }
+        }
+
+        /// `i18n::format` calls are often wrapped over several lines, so this
+        /// looks for the first string literal after the `lang` argument.
+        fn collect_format_keys(text: &str, keys: &mut Vec<String>) {
+            let mut rest = text;
+            while let Some(index) = rest.find("i18n::format(") {
+                let after = &rest[index + "i18n::format(".len()..];
+                if let Some(lang) = after.find("lang") {
+                    let after_lang = &after[lang + 4..];
+                    if let Some(start) = after_lang.find('"') {
+                        let after_quote = &after_lang[start + 1..];
+                        if let Some(end) = after_quote.find('"') {
+                            keys.push(after_quote[..end].to_string());
+                        }
+                    }
+                }
+                rest = after;
+            }
+        }
+
+        let mut files = Vec::new();
+        for dir in ["templates", "src/routes", "src/services"] {
+            collect(std::path::Path::new(dir), &mut files);
+        }
+        let mut used = Vec::new();
+        for path in files {
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            collect_after(&text, "lang.t(\"", &mut used);
+            collect_format_keys(&text, &mut used);
+        }
+        assert!(!used.is_empty(), "the i18n key scan found no keys");
+
+        let catalog = Lang::En.keys();
+        let mut missing: Vec<String> = used
+            .into_iter()
+            .filter(|key| !catalog.contains(&key.as_str()))
+            .collect();
+        missing.sort();
+        missing.dedup();
+        assert!(missing.is_empty(), "missing i18n keys: {missing:?}");
+    }
+
+    #[test]
     fn every_catalogue_has_the_same_keys() {
         let english = Lang::En.keys();
         assert!(!english.is_empty());

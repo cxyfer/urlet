@@ -13,7 +13,7 @@
 
 use sha2::{Digest, Sha256};
 use sqlx::sqlite::SqliteConnectOptions;
-use sqlx::{Connection, Row, SqliteConnection, SqlitePool};
+use sqlx::{Connection, SqliteConnection, SqlitePool};
 
 use crate::error::{AppError, Result};
 use crate::services::time::now_iso;
@@ -53,6 +53,11 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/0003_multi_domain.sql"),
         kind: MigrationKind::Rebuild,
     },
+    Migration {
+        version: "0004_user_groups",
+        sql: include_str!("../../migrations/0004_user_groups.sql"),
+        kind: MigrationKind::Transactional,
+    },
 ];
 
 /// Apply all pending migrations.
@@ -88,38 +93,19 @@ async fn run_inner(
     .execute(pool)
     .await?;
 
-    let applied: Vec<(String, String)> =
-        sqlx::query("SELECT version, checksum FROM schema_migrations")
-            .fetch_all(pool)
-            .await?
-            .into_iter()
-            .map(|row| {
-                (
-                    row.get::<String, _>("version"),
-                    row.get::<String, _>("checksum"),
-                )
-            })
-            .collect();
-
     for migration in MIGRATIONS {
         let checksum = checksum(migration.sql);
-        match applied.iter().find(|(v, _)| v == migration.version) {
-            Some((_, stored)) if stored == &checksum => {}
-            Some(_) => {
-                return Err(AppError::internal(format!(
-                    "migration {} was modified after being applied",
-                    migration.version
-                )))
+        if is_applied(pool, migration.version, &checksum).await? {
+            if last_version == Some(migration.version) {
+                break;
             }
-            None => {
-                tracing::info!(version = migration.version, "applying migration");
-                match migration.kind {
-                    MigrationKind::Transactional => {
-                        apply_transactional(pool, migration, &checksum).await?
-                    }
-                    MigrationKind::Rebuild => apply_rebuild(options, migration, &checksum).await?,
-                }
-            }
+            continue;
+        }
+
+        tracing::info!(version = migration.version, "applying migration");
+        match migration.kind {
+            MigrationKind::Transactional => apply_transactional(pool, migration, &checksum).await?,
+            MigrationKind::Rebuild => apply_rebuild(options, migration, &checksum).await?,
         }
 
         if last_version == Some(migration.version) {
@@ -136,8 +122,20 @@ async fn apply_transactional(
     checksum: &str,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
-    sqlx::raw_sql(migration.sql).execute(&mut *tx).await?;
-    insert_migration(&mut *tx, migration.version, checksum).await?;
+    if let Err(err) = sqlx::raw_sql(migration.sql).execute(&mut *tx).await {
+        tx.rollback().await?;
+        if is_applied(pool, migration.version, checksum).await? {
+            return Ok(());
+        }
+        return Err(AppError::from(err));
+    }
+    if let Err(err) = insert_migration(&mut *tx, migration.version, checksum).await {
+        tx.rollback().await?;
+        if is_applied(pool, migration.version, checksum).await? {
+            return Ok(());
+        }
+        return Err(err);
+    }
     tx.commit().await?;
     Ok(())
 }
@@ -176,6 +174,44 @@ async fn apply_rebuild(
             "cannot start rebuild for {}: {err}",
             migration.version
         )));
+    }
+
+    // Another process may have applied the rebuild while this connection waited
+    // for the write lock. Re-check after BEGIN IMMEDIATE, before running DDL.
+    let already =
+        sqlx::query_scalar::<_, String>("SELECT checksum FROM schema_migrations WHERE version = ?")
+            .bind(migration.version)
+            .fetch_optional(&mut connection)
+            .await;
+    match already {
+        Ok(Some(stored)) if stored == checksum => {
+            let _ = sqlx::query("ROLLBACK").execute(&mut connection).await;
+            let _ = sqlx::query("PRAGMA foreign_keys = ON")
+                .execute(&mut connection)
+                .await;
+            let _ = connection.close().await;
+            return Ok(());
+        }
+        Ok(Some(_)) => {
+            let _ = sqlx::query("ROLLBACK").execute(&mut connection).await;
+            let _ = sqlx::query("PRAGMA foreign_keys = ON")
+                .execute(&mut connection)
+                .await;
+            let _ = connection.close().await;
+            return Err(AppError::internal(format!(
+                "migration {} was modified after being applied",
+                migration.version
+            )));
+        }
+        Ok(None) => {}
+        Err(err) => {
+            let _ = sqlx::query("ROLLBACK").execute(&mut connection).await;
+            let _ = sqlx::query("PRAGMA foreign_keys = ON")
+                .execute(&mut connection)
+                .await;
+            let _ = connection.close().await;
+            return Err(AppError::from(err));
+        }
     }
 
     let result = apply_rebuild_inner(&mut connection, migration, checksum).await;
@@ -240,6 +276,23 @@ async fn insert_migration(
     Ok(())
 }
 
+/// Whether `version` is recorded with exactly this checksum.
+async fn is_applied(pool: &SqlitePool, version: &str, checksum: &str) -> Result<bool> {
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT checksum FROM schema_migrations WHERE version = ?")
+            .bind(version)
+            .fetch_optional(pool)
+            .await
+            .map_err(AppError::from)?;
+    match stored {
+        None => Ok(false),
+        Some(stored) if stored == checksum => Ok(true),
+        Some(_) => Err(AppError::internal(format!(
+            "migration {version} was modified after being applied"
+        ))),
+    }
+}
+
 /// Number of migrations recorded as applied.
 pub async fn applied_count(pool: &SqlitePool) -> Result<i64> {
     sqlx::query_scalar("SELECT COUNT(*) FROM schema_migrations")
@@ -257,6 +310,7 @@ fn checksum(sql: &str) -> String {
 mod tests {
     use super::*;
     use sqlx::sqlite::SqliteConnectOptions;
+    use sqlx::Row;
     use std::str::FromStr;
 
     fn test_options(path: &str) -> SqliteConnectOptions {
@@ -293,6 +347,7 @@ mod tests {
                 .collect();
         for expected in [
             "users",
+            "user_groups",
             "urls",
             "clicks",
             "sessions",
@@ -312,6 +367,19 @@ mod tests {
             .expect("settings")
             .get("c");
         assert!(seeded >= 7, "default settings seeded");
+
+        let default_groups: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM user_groups WHERE is_default = 1")
+                .fetch_one(&pool)
+                .await
+                .expect("default group");
+        assert_eq!(default_groups, 1, "exactly one default group is seeded");
+        let token_quota: String =
+            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'max_api_tokens_per_user'")
+                .fetch_one(&pool)
+                .await
+                .expect("token quota");
+        assert_eq!(token_quota, "20");
 
         pool.close().await;
         let _ = std::fs::remove_dir_all(&dir);
@@ -847,6 +915,133 @@ mod tests {
             .await
             .expect("foreign key check");
         assert!(violations.is_empty());
+
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn migrates_a_populated_v2_database() {
+        let dir =
+            std::env::temp_dir().join(format!("urlet-migrate-populated-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = format!("{}/populated.db", dir.display());
+        let options = test_options(&path);
+        let pool = test_pool(&options).await;
+
+        run_until(&pool, &options, "0002_clicks_indexes")
+            .await
+            .expect("v2 schema");
+        let now = now_iso();
+        sqlx::query(
+            "INSERT INTO users
+                 (email, email_normalized, password_hash, role, status, created_at, updated_at,
+                  deleted_at)
+             VALUES
+                 ('live@example.com', 'live@example.com', 'x', 'user', 'active', ?, ?, NULL),
+                 ('gone@example.com', 'gone@example.com', 'x', 'user', 'active', ?, ?, ?)",
+        )
+        .bind(&now)
+        .bind(&now)
+        .bind(&now)
+        .bind(&now)
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("users");
+        sqlx::query(
+            "INSERT INTO invite_codes
+                 (code_hash, code_prefix, created_by, max_uses, used_count, status, created_at)
+             VALUES ('hash', 'ABCD', 1, 1, 0, 'active', ?)",
+        )
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("invite");
+
+        run(&pool, &options).await.expect("upgrade");
+
+        let group: (String, i64, Option<i64>, Option<i64>) =
+            sqlx::query_as("SELECT name, is_default, max_urls, max_api_tokens FROM user_groups")
+                .fetch_one(&pool)
+                .await
+                .expect("group");
+        assert_eq!(group, ("Standard".to_string(), 1, None, None));
+
+        let group_ids: Vec<Option<i64>> =
+            sqlx::query_scalar("SELECT group_id FROM users ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .expect("user groups");
+        assert_eq!(
+            group_ids,
+            vec![Some(1), Some(1)],
+            "live and soft-deleted users both backfill"
+        );
+
+        let invite_group: Option<i64> = sqlx::query_scalar("SELECT group_id FROM invite_codes")
+            .fetch_one(&pool)
+            .await
+            .expect("invite group");
+        assert_eq!(invite_group, None, "existing invites stay unpinned");
+
+        let quota: String =
+            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'max_api_tokens_per_user'")
+                .fetch_one(&pool)
+                .await
+                .expect("token quota");
+        assert_eq!(quota, "20");
+
+        let violations: Vec<String> = sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(&pool)
+            .await
+            .expect("fk check")
+            .into_iter()
+            .map(|row| row.get::<String, _>("table"))
+            .collect();
+        assert!(
+            violations.is_empty(),
+            "foreign key violations: {violations:?}"
+        );
+        assert_eq!(
+            applied_count(&pool).await.expect("count"),
+            MIGRATIONS.len() as i64
+        );
+
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn concurrent_runs_apply_each_migration_once() {
+        use std::time::Duration;
+
+        let dir =
+            std::env::temp_dir().join(format!("urlet-migrate-concurrent-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = format!("{}/concurrent.db", dir.display());
+        let options = test_options(&path).busy_timeout(Duration::from_secs(5));
+        let pool = test_pool(&options).await;
+
+        let (first, second, third) = tokio::join!(
+            run(&pool, &options),
+            run(&pool, &options),
+            run(&pool, &options)
+        );
+        first.expect("first migrator");
+        second.expect("second migrator");
+        third.expect("third migrator");
+        assert_eq!(
+            applied_count(&pool).await.expect("count"),
+            MIGRATIONS.len() as i64,
+            "each migration is recorded exactly once"
+        );
+        let default_groups: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM user_groups WHERE is_default = 1")
+                .fetch_one(&pool)
+                .await
+                .expect("default group");
+        assert_eq!(default_groups, 1, "the seed is applied once");
 
         pool.close().await;
         let _ = std::fs::remove_dir_all(&dir);

@@ -8,6 +8,8 @@ pub mod chart;
 pub mod click;
 pub mod cookies;
 pub mod domains;
+pub mod groups;
+pub mod limits;
 pub mod password;
 pub mod ratelimit;
 pub mod secret;

@@ -6,6 +6,7 @@ use crate::db::sessions::Session;
 use crate::db::tags::TagWithCount;
 use crate::db::urls::{Url, UrlState};
 use crate::db::users::User;
+use crate::services::limits::Limits;
 use crate::services::time;
 
 /// Deserialize `Option<Option<T>>` so that a missing field and an explicit
@@ -22,6 +23,30 @@ where
     Option::<T>::deserialize(deserializer).map(Some)
 }
 
+/// Query-string integer that treats an empty value as "not provided".
+///
+/// `serde_urlencoded` hands `""` straight to the integer parser, which would
+/// reject the whole request. A filter form submits every select, including the
+/// empty "any" option, so empty must mean `None`; garbage still fails.
+pub fn optional_i64<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match Option::<String>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(raw) => {
+            let raw = raw.trim();
+            if raw.is_empty() {
+                Ok(None)
+            } else {
+                raw.parse::<i64>()
+                    .map(Some)
+                    .map_err(serde::de::Error::custom)
+            }
+        }
+    }
+}
+
 /// Public representation of a user. Never contains a password hash.
 #[derive(Debug, Clone, Serialize)]
 pub struct UserDto {
@@ -30,6 +55,7 @@ pub struct UserDto {
     pub display_name: Option<String>,
     pub role: String,
     pub status: String,
+    pub group_id: Option<i64>,
     pub created_at: String,
     pub last_login_at: Option<String>,
 }
@@ -42,10 +68,56 @@ impl From<&User> for UserDto {
             display_name: user.display_name.clone(),
             role: user.role.clone(),
             status: user.status.clone(),
+            group_id: user.group_id,
             created_at: user.created_at.clone(),
             last_login_at: user.last_login_at.clone(),
         }
     }
+}
+
+/// Group reference embedded in `/api/v1/auth/me`.
+#[derive(Debug, Clone, Serialize)]
+pub struct GroupRefDto {
+    pub id: i64,
+    pub name: String,
+}
+
+/// Effective quotas and feature toggles of the current user.
+#[derive(Debug, Clone, Serialize)]
+pub struct LimitsDto {
+    pub max_urls: i64,
+    pub max_api_tokens: i64,
+    pub allow_custom_slug: bool,
+    pub allow_password: bool,
+    pub allow_expiry: bool,
+    pub allow_max_clicks: bool,
+    pub allow_tags: bool,
+    pub allow_api_tokens: bool,
+    pub allow_domain_selection: bool,
+}
+
+impl From<Limits> for LimitsDto {
+    fn from(limits: Limits) -> Self {
+        Self {
+            max_urls: limits.max_urls,
+            max_api_tokens: limits.max_api_tokens,
+            allow_custom_slug: limits.allow_custom_slug,
+            allow_password: limits.allow_password,
+            allow_expiry: limits.allow_expiry,
+            allow_max_clicks: limits.allow_max_clicks,
+            allow_tags: limits.allow_tags,
+            allow_api_tokens: limits.allow_api_tokens,
+            allow_domain_selection: limits.allow_domain_selection,
+        }
+    }
+}
+
+/// `GET /api/v1/auth/me`: the user plus the rules that apply to them.
+#[derive(Debug, Clone, Serialize)]
+pub struct MeDto {
+    pub user: UserDto,
+    pub group: Option<GroupRefDto>,
+    pub limits: LimitsDto,
 }
 
 /// Public representation of a session.
@@ -123,7 +195,9 @@ impl Pagination {
     }
 
     pub fn offset(&self) -> i64 {
-        (self.page() - 1) * self.per_page()
+        self.page()
+            .saturating_sub(1)
+            .saturating_mul(self.per_page())
     }
 }
 
@@ -324,6 +398,13 @@ mod tests {
             per_page: Some(10),
         };
         assert_eq!(pagination.offset(), 20);
+
+        // An absurd page must not overflow (debug builds panic on `*`).
+        let pagination = Pagination {
+            page: Some(i64::MAX),
+            per_page: Some(100),
+        };
+        assert_eq!(pagination.offset(), i64::MAX);
     }
 
     #[test]

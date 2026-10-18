@@ -52,6 +52,16 @@
             <input class="input" type="number" id="max_uses" name="max_uses" min="1" value="1">
         </div>
         <div class="field">
+            <label class="label" for="group_id">{{ lang.t("admin.invites.group") }}</label>
+            <select class="select" id="group_id" name="group_id">
+                <option value="">{{ lang.t("admin.invites.group_default") }}</option>
+                {% for group in groups %}
+                <option value="{{ group.id }}">{{ group.name }}</option>
+                {% endfor %}
+            </select>
+            <span class="hint">{{ lang.t("admin.invites.group_hint") }}</span>
+        </div>
+        <div class="field">
             <label class="label" for="expires_at">{{ lang.t("common.expires_at") }}</label>
             <input class="input" type="text" id="expires_at" name="expires_at" placeholder="{{ lang.t("common.password_placeholder") }}">
         </div>
@@ -64,13 +74,14 @@
     <div class="table-wrap">
         <table class="table">
             <thead>
-                <tr><th>{{ lang.t("common.prefix") }}</th><th>{{ lang.t("common.note") }}</th><th class="num">{{ lang.t("admin.invites.uses") }}</th><th>{{ lang.t("common.expires") }}</th><th>{{ lang.t("common.status") }}</th><th>{{ lang.t("common.created") }}</th><th></th></tr>
+                <tr><th>{{ lang.t("common.prefix") }}</th><th>{{ lang.t("common.note") }}</th><th>{{ lang.t("admin.invites.group") }}</th><th class="num">{{ lang.t("admin.invites.uses") }}</th><th>{{ lang.t("common.expires") }}</th><th>{{ lang.t("common.status") }}</th><th>{{ lang.t("common.created") }}</th><th></th></tr>
             </thead>
             <tbody>
                 {% for invite in invites %}
                 <tr>
                     <td class="mono">{{ invite.prefix }}…</td>
                     <td class="truncate">{{ invite.note }}</td>
+                    <td class="small">{{ invite.group_name }}</td>
                     <td class="num">{{ invite.uses }}</td>
                     <td class="small">{{ invite.expires }}</td>
                     <td>

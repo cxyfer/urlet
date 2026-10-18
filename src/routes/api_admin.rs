@@ -6,12 +6,13 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::db::audit::{AuditFilter, AuditLog};
 use crate::db::domains::{Domain, DomainWithCount};
 use crate::db::invites::Invite;
 use crate::db::urls::{AdminUrlFilter, UrlSort};
+use crate::db::user_groups::UserGroup;
 use crate::db::users::{User, UserFilter};
 use crate::db::{tags, urls};
 use crate::error::{ApiError, AppError};
@@ -19,14 +20,15 @@ use crate::middleware::auth::{ClientInfo, CurrentUser};
 use crate::routes::dto::{Page, Pagination, UrlDto, UserDto};
 use crate::services::admin::{self, AdminContext, SystemStats};
 use crate::services::domains::DomainContext;
+use crate::services::groups::{self as group_service, GroupDraft};
 use crate::state::AppState;
 
 /// Query for the admin user listing.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct AdminUsersQuery {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::routes::dto::optional_i64")]
     pub page: Option<i64>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::routes::dto::optional_i64")]
     pub per_page: Option<i64>,
     #[serde(default)]
     pub q: Option<String>,
@@ -34,20 +36,22 @@ pub struct AdminUsersQuery {
     pub role: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
+    #[serde(default, deserialize_with = "crate::routes::dto::optional_i64")]
+    pub group_id: Option<i64>,
 }
 
 /// Query for the admin link listing.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct AdminUrlsQuery {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::routes::dto::optional_i64")]
     pub page: Option<i64>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::routes::dto::optional_i64")]
     pub per_page: Option<i64>,
     #[serde(default)]
     pub q: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::routes::dto::optional_i64")]
     pub user_id: Option<i64>,
     #[serde(default)]
     pub sort: Option<String>,
@@ -56,16 +60,25 @@ pub struct AdminUrlsQuery {
 /// Query for the audit listing.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct AdminAuditQuery {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::routes::dto::optional_i64")]
     pub page: Option<i64>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::routes::dto::optional_i64")]
     pub per_page: Option<i64>,
     #[serde(default)]
     pub action: Option<String>,
     #[serde(default)]
     pub target_type: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::routes::dto::optional_i64")]
     pub actor: Option<i64>,
+}
+
+/// Query for the admin group listing.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AdminGroupsQuery {
+    #[serde(default, deserialize_with = "crate::routes::dto::optional_i64")]
+    pub page: Option<i64>,
+    #[serde(default, deserialize_with = "crate::routes::dto::optional_i64")]
+    pub per_page: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -76,6 +89,17 @@ pub struct UpdateUserPayload {
     pub status: Option<String>,
     #[serde(default)]
     pub display_name: Option<String>,
+    /// Absent = unchanged, `null` = ungroup (site defaults apply), a value = assign.
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    pub group_id: Option<Option<i64>>,
+}
+
+/// Distinguish "field absent" (`None`) from an explicit JSON `null` (`Some(None)`).
+fn deserialize_double_option<'de, D>(deserializer: D) -> Result<Option<Option<i64>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<i64>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -96,6 +120,8 @@ pub struct CreateInvitePayload {
     #[serde(default)]
     pub note: Option<String>,
     #[serde(default)]
+    pub group_id: Option<i64>,
+    #[serde(default)]
     pub max_uses: Option<i64>,
     #[serde(default)]
     pub expires_at: Option<String>,
@@ -107,6 +133,126 @@ pub struct AdminUserDto {
     #[serde(flatten)]
     pub user: UserDto,
     pub link_count: i64,
+    pub group_name: Option<String>,
+}
+
+/// Query for deleting a group.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct DeleteGroupQuery {
+    #[serde(default, deserialize_with = "crate::routes::dto::optional_i64")]
+    pub reassign_to: Option<i64>,
+}
+
+/// Group representation, including its live member count.
+#[derive(Debug, Clone, Serialize)]
+pub struct GroupDto {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub max_urls: Option<i64>,
+    pub max_api_tokens: Option<i64>,
+    pub allow_custom_slug: bool,
+    pub allow_password: bool,
+    pub allow_expiry: bool,
+    pub allow_max_clicks: bool,
+    pub allow_tags: bool,
+    pub allow_api_tokens: bool,
+    pub allow_domain_selection: bool,
+    pub is_default: bool,
+    pub members: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl GroupDto {
+    fn new(group: &UserGroup, members: i64) -> Self {
+        Self {
+            id: group.id,
+            name: group.name.clone(),
+            description: group.description.clone(),
+            max_urls: group.max_urls,
+            max_api_tokens: group.max_api_tokens,
+            allow_custom_slug: group.allow_custom_slug,
+            allow_password: group.allow_password,
+            allow_expiry: group.allow_expiry,
+            allow_max_clicks: group.allow_max_clicks,
+            allow_tags: group.allow_tags,
+            allow_api_tokens: group.allow_api_tokens,
+            allow_domain_selection: group.allow_domain_selection,
+            is_default: group.is_default,
+            members,
+            created_at: group.created_at.clone(),
+            updated_at: group.updated_at.clone(),
+        }
+    }
+}
+
+/// Group fields. `name` is required; other omitted fields keep their current
+/// value on `PUT` and take the create defaults on `POST`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct GroupPayload {
+    pub name: String,
+    /// `null` clears the description; omitting it keeps the current one.
+    #[serde(default, deserialize_with = "crate::routes::dto::double_option")]
+    pub description: Option<Option<String>>,
+    /// `null` inherits the site-wide quota; omitting it keeps the current value.
+    #[serde(default, deserialize_with = "crate::routes::dto::double_option")]
+    pub max_urls: Option<Option<i64>>,
+    #[serde(default, deserialize_with = "crate::routes::dto::double_option")]
+    pub max_api_tokens: Option<Option<i64>>,
+    #[serde(default)]
+    pub allow_custom_slug: Option<bool>,
+    #[serde(default)]
+    pub allow_password: Option<bool>,
+    #[serde(default)]
+    pub allow_expiry: Option<bool>,
+    #[serde(default)]
+    pub allow_max_clicks: Option<bool>,
+    #[serde(default)]
+    pub allow_tags: Option<bool>,
+    #[serde(default)]
+    pub allow_api_tokens: Option<bool>,
+    #[serde(default)]
+    pub allow_domain_selection: Option<bool>,
+    #[serde(default)]
+    pub is_default: Option<bool>,
+}
+
+impl GroupPayload {
+    /// Build a validated draft. `existing` is `None` on create (omitted fields
+    /// take the create defaults) and `Some` on update (omitted fields keep the
+    /// current value, so a PUT cannot silently re-enable a disabled toggle).
+    fn into_draft(self, existing: Option<&UserGroup>) -> Result<GroupDraft, ApiError> {
+        let current = |value: Option<bool>, get: fn(&UserGroup) -> bool| {
+            value.unwrap_or_else(|| existing.map(get).unwrap_or(true))
+        };
+        Ok(GroupDraft {
+            name: self.name,
+            description: match self.description {
+                Some(value) => value,
+                None => existing.and_then(|group| group.description.clone()),
+            },
+            max_urls: match self.max_urls {
+                Some(value) => value,
+                None => existing.and_then(|group| group.max_urls),
+            },
+            max_api_tokens: match self.max_api_tokens {
+                Some(value) => value,
+                None => existing.and_then(|group| group.max_api_tokens),
+            },
+            allow_custom_slug: current(self.allow_custom_slug, |group| group.allow_custom_slug),
+            allow_password: current(self.allow_password, |group| group.allow_password),
+            allow_expiry: current(self.allow_expiry, |group| group.allow_expiry),
+            allow_max_clicks: current(self.allow_max_clicks, |group| group.allow_max_clicks),
+            allow_tags: current(self.allow_tags, |group| group.allow_tags),
+            allow_api_tokens: current(self.allow_api_tokens, |group| group.allow_api_tokens),
+            allow_domain_selection: current(self.allow_domain_selection, |group| {
+                group.allow_domain_selection
+            }),
+            make_default: self.is_default.unwrap_or(false),
+        }
+        .validate()?)
+    }
 }
 
 /// Invite representation. The plain code is never stored.
@@ -115,6 +261,8 @@ pub struct InviteDto {
     pub id: i64,
     pub prefix: String,
     pub note: Option<String>,
+    pub group_id: Option<i64>,
+    pub group_name: Option<String>,
     pub created_by: Option<i64>,
     pub max_uses: i64,
     pub used_count: i64,
@@ -136,6 +284,8 @@ impl InviteDto {
             id: invite.id,
             prefix: invite.code_prefix.clone(),
             note: invite.note.clone(),
+            group_id: invite.group_id,
+            group_name: None,
             created_by: invite.created_by,
             max_uses: invite.max_uses,
             used_count: invite.used_count,
@@ -145,6 +295,11 @@ impl InviteDto {
             created_at: invite.created_at.clone(),
             usable: invite.status == "active" && !invite.is_exhausted() && !expired,
         }
+    }
+
+    fn with_group_name(mut self, group_name: Option<String>) -> Self {
+        self.group_name = group_name;
+        self
     }
 }
 
@@ -390,6 +545,7 @@ pub async fn list_users(
         search: clean(&query.q),
         role: clean(&query.role),
         status: clean(&query.status),
+        group_id: query.group_id,
     };
 
     let rows = admin::list_users(
@@ -401,12 +557,16 @@ pub async fn list_users(
     .await?;
     let total = admin::count_users(&state.db, &filter).await?;
     let counts = admin::link_counts(&state.db).await?;
+    let group_names = group_service::name_map(&state.db).await?;
 
     let items = rows
         .iter()
         .map(|row| AdminUserDto {
             user: UserDto::from(row),
             link_count: counts.get(&row.id).copied().unwrap_or(0),
+            group_name: row
+                .group_id
+                .and_then(|group_id| group_names.get(&group_id).cloned()),
         })
         .collect();
 
@@ -433,6 +593,7 @@ pub async fn update_user(
             id,
             payload.role.as_deref(),
             payload.status.as_deref(),
+            payload.group_id,
             payload.display_name.as_deref().map(Some),
         )
         .await?;
@@ -569,8 +730,17 @@ pub async fn list_invites(
     require_admin(&user)?;
     let now = crate::services::time::now_iso();
     let rows = crate::db::invites::list(&state.db, 200, 0).await?;
+    let group_names = group_service::name_map(&state.db).await?;
     Ok(Json(InviteList {
-        items: rows.iter().map(|row| InviteDto::new(row, &now)).collect(),
+        items: rows
+            .iter()
+            .map(|row| {
+                let group_name = row
+                    .group_id
+                    .and_then(|group_id| group_names.get(&group_id).cloned());
+                InviteDto::new(row, &now).with_group_name(group_name)
+            })
+            .collect(),
     }))
 }
 
@@ -585,14 +755,19 @@ pub async fn create_invite(
     let created = context(&state, &client, &user)
         .create_invite(
             payload.note.as_deref(),
+            payload.group_id,
             payload.max_uses,
             payload.expires_at.as_deref(),
         )
         .await?;
     let now = crate::services::time::now_iso();
+    let group_name = match created.invite.group_id {
+        Some(group_id) => group_service::name_map(&state.db).await?.remove(&group_id),
+        None => None,
+    };
     let body = CreatedInviteResponse {
         code: created.plain_code,
-        invite: InviteDto::new(&created.invite, &now),
+        invite: InviteDto::new(&created.invite, &now).with_group_name(group_name),
     };
     Ok((StatusCode::CREATED, Json(body)).into_response())
 }
@@ -606,6 +781,84 @@ pub async fn revoke_invite(
 ) -> Result<Response, ApiError> {
     require_admin(&user)?;
     context(&state, &client, &user).revoke_invite(id).await?;
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// `GET /api/v1/admin/groups`
+pub async fn list_groups(
+    State(state): State<AppState>,
+    CurrentUser { user, .. }: CurrentUser,
+    Query(query): Query<AdminGroupsQuery>,
+) -> Result<Json<Page<GroupDto>>, ApiError> {
+    require_admin(&user)?;
+    let pagination = Pagination {
+        page: query.page,
+        per_page: query.per_page,
+    };
+    let rows = group_service::overview(&state.db).await?;
+    let total = rows.len() as i64;
+    let offset = usize::try_from(pagination.offset().max(0)).unwrap_or(usize::MAX);
+    let limit = usize::try_from(pagination.per_page().max(0)).unwrap_or(usize::MAX);
+    let items = rows
+        .iter()
+        .skip(offset)
+        .take(limit)
+        .map(|row| GroupDto::new(&row.group, row.members))
+        .collect();
+    Ok(Json(Page::new(
+        items,
+        pagination.page(),
+        pagination.per_page(),
+        total,
+    )))
+}
+
+/// `POST /api/v1/admin/groups`
+pub async fn create_group(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    CurrentUser { user, .. }: CurrentUser,
+    Json(payload): Json<GroupPayload>,
+) -> Result<Response, ApiError> {
+    require_admin(&user)?;
+    let draft = payload.into_draft(None)?;
+    let group = context(&state, &client, &user).create_group(draft).await?;
+    let members = crate::db::user_groups::count_members(&state.db, group.id).await?;
+    Ok((StatusCode::CREATED, Json(GroupDto::new(&group, members))).into_response())
+}
+
+/// `PUT /api/v1/admin/groups/{id}`
+pub async fn update_group(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    CurrentUser { user, .. }: CurrentUser,
+    Path(id): Path<i64>,
+    Json(payload): Json<GroupPayload>,
+) -> Result<Json<GroupDto>, ApiError> {
+    require_admin(&user)?;
+    let existing = crate::db::user_groups::find_by_id(&state.db, id)
+        .await?
+        .ok_or_else(AppError::not_found)?;
+    let draft = payload.into_draft(Some(&existing))?;
+    let group = context(&state, &client, &user)
+        .update_group(id, draft)
+        .await?;
+    let members = crate::db::user_groups::count_members(&state.db, group.id).await?;
+    Ok(Json(GroupDto::new(&group, members)))
+}
+
+/// `DELETE /api/v1/admin/groups/{id}?reassign_to={id}`
+pub async fn delete_group(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    CurrentUser { user, .. }: CurrentUser,
+    Path(id): Path<i64>,
+    Query(query): Query<DeleteGroupQuery>,
+) -> Result<Response, ApiError> {
+    require_admin(&user)?;
+    context(&state, &client, &user)
+        .delete_group(id, query.reassign_to)
+        .await?;
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -715,6 +968,7 @@ mod tests {
             code_hash: "hash".into(),
             code_prefix: "ABCD".into(),
             note: None,
+            group_id: None,
             created_by: Some(1),
             max_uses: 2,
             used_count: 2,

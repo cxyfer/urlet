@@ -2,7 +2,7 @@
 
 # urlet — Phased Implementation Plan
 
-> Spec: `docs/SPEC.md` v1.1
+> Spec: `docs/SPEC.md` v1.2
 > Principle: at the end of every phase the code must **compile, test, and commit**; each phase gets one (or a few) local commits.
 
 ## Results (completed)
@@ -18,6 +18,7 @@
 | P6 Admin panel and API | ✅ Done | `c74302a ✨ feat(admin): add admin panel, invites, settings and maintenance` |
 | P7 Tests and documentation | ✅ Done | See `git log` (smoke.sh, README, API.md, DEPLOYMENT.md) |
 | P8 Final verification | ✅ Done | See `git log` (release build, image strategy, wrap-up) |
+| P10 User groups (v1.2) | ✅ Done | See `git log` (migration 0004, group API/UI, trilingual strings, docs) |
 
 Acceptance data (v1.0): `cargo test` is all green with 187 tests, `cargo clippy --all-targets -- -D warnings`
 and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scripts/smoke.sh` pass.
@@ -38,6 +39,7 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 | P7 | Tests and documentation | Completed integration tests, `scripts/smoke.sh`, README, API.md, DEPLOYMENT.md | `cargo test` all green, smoke tests all pass | `🧪 test: ...` / `📝 docs: ...` |
 | P8 | Final verification and wrap-up | clippy/fmt clean, release build, compose config validation, image strategy confirmed | Every acceptance item checked | `🔖 chore: finalize v1.0.0` |
 | P9 | i18n, bot protection and navigation homepage | Three embedded locale catalogs, language negotiation and switching, optional Turnstile/reCAPTCHA on register, sign-in and create, landing page at `/` | Negotiation, cookie switching, captcha fail-closed (including sign-in) and the landing page covered by tests; `/` returns 200 | `📝 docs: ...` / `✨ feat(i18n): ...` |
+| P10 | User groups (v1.2) | `user_groups` with per-group link/token quotas and seven feature toggles (including domain selection), assignment through users and invite codes, admin page and API | 15 tables / 30 indexes, upgrade changes no behaviour, quotas/toggles enforced (admins included), deletion reassigns members, tests and smoke green | `✨ feat(groups): ...` |
 
 ---
 
@@ -186,6 +188,23 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 9. Docs: update `docs/SPEC.md` and the Chinese mirror `docs/zh-TW/SPEC.md` (FR tables, route list, environment variables, settings keys), both `PLAN.md` files, both READMEs, `docs/API.md`, `docs/DEPLOYMENT.md`, their `docs/zh-TW/` mirrors and `.env.example`.
 
 **Acceptance**: `GET /` returns 200 for anonymous and signed-in visitors and no longer redirects; `Accept-Language` negotiation and the language cookie switch the UI, while JSON API responses stay English; captcha is enabled only when provider ≠ `none`, both keys are non-empty, and the matching switch (`on_register`, `on_login` or `on_create`) is true, and it fails closed on timeout/non-2xx/parse failure on register, sign-in and create; on `POST /api/v1/urls` captcha applies to session-cookie calls and `Authorization: Bearer ur_...` calls stay exempt; the admin secret key is never rendered back; `cargo test`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check` are clean.
+
+---
+
+## P10 — User Groups (v1.2)
+
+**Tasks**
+
+1. `migrations/0004_user_groups.sql`: `user_groups` (nullable link/token quotas, seven toggles including `allow_domain_selection`, `is_default`), `users.group_id`, `invite_codes.group_id`, the partial unique default index, and a seeded `Standard` group that every existing user joins; seed `max_api_tokens_per_user=20`.
+2. `src/db/user_groups.rs` + `src/services/limits.rs`: group CRUD helpers, member counts, reassignment delete, and the effective-limits resolver (`NULL` inherits, `0` is unlimited, toggles can only narrow the site defaults).
+3. `src/services/groups.rs` + `AdminContext`: validation, duplicate/default guards, audited create/update/delete, default-marker transfer, and user/invite assignment.
+4. Enforcement: link quota and the seven toggles on create/update, token toggle and usable-token quota, and the invite-code group at registration (validated in open mode too).
+5. API: `/api/v1/admin/groups` CRUD, `group_id` on users and invites, and `group`/`limits` in `GET /api/v1/auth/me`.
+6. UI: `/app/admin/groups`, group filter and assignment on the users page, invite group select, token quota setting, group-aware dashboard/detail/account pages, and trilingual strings.
+7. Tests: unit coverage for limit inheritance and group validation, plus `tests/groups.rs` for authorization, CRUD, quotas, toggles, invites, deletion, default transfer and page rendering.
+8. Docs: SPEC/PLAN/API/README in both languages, and a smoke section for groups.
+
+**Acceptance**: 15 tables and 30 indexes; the seeded default group changes no behaviour; quotas and toggles are enforced per group (administrators included); deletion requires a reassignment target; `/me` exposes the effective limits; `cargo test`, clippy, fmt and smoke are clean.
 
 ---
 

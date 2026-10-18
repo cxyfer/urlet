@@ -14,6 +14,7 @@ pub mod settings;
 pub mod tags;
 pub mod tokens;
 pub mod urls;
+pub mod user_groups;
 pub mod users;
 
 use std::str::FromStr;
@@ -70,6 +71,16 @@ pub async fn checkpoint_wal(pool: &SqlitePool) -> Result<()> {
         .await
         .map_err(|err| AppError::internal(format!("wal checkpoint failed: {err}")))?;
     Ok(())
+}
+
+/// True when SQLite rejected a write because a referenced row is missing.
+///
+/// Used to turn races with a concurrent delete into a domain error instead of a
+/// 500: the group a request selected may disappear between the lookup and the
+/// write, and the foreign key is the authoritative re-check.
+pub fn is_foreign_key_violation(err: &sqlx::Error) -> bool {
+    matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("787")
+        || db.message().contains("FOREIGN KEY"))
 }
 
 /// Connect and run migrations.

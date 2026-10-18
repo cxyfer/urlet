@@ -13,6 +13,7 @@ pub struct User {
     pub display_name: Option<String>,
     pub role: String,
     pub status: String,
+    pub group_id: Option<i64>,
     pub email_verified_at: Option<String>,
     pub last_login_at: Option<String>,
     pub created_at: String,
@@ -39,6 +40,10 @@ impl User {
 }
 
 /// Fields required to create a user.
+///
+/// `group_id` is a *preferred* group: the insert resolves it against the current
+/// table and falls back to the default group in the same statement, so a group
+/// deleted between the invite lookup and the insert cannot fail registration.
 #[derive(Debug, Clone)]
 pub struct NewUser {
     pub email: String,
@@ -46,25 +51,30 @@ pub struct NewUser {
     pub password_hash: String,
     pub display_name: Option<String>,
     pub role: String,
+    pub group_id: Option<i64>,
 }
 
 const SELECT: &str = "SELECT id, email, email_normalized, password_hash, display_name, role, \
-                      status, email_verified_at, last_login_at, created_at, updated_at, deleted_at \
-                      FROM users";
+                      status, group_id, email_verified_at, last_login_at, created_at, updated_at, \
+                      deleted_at FROM users";
 
 /// Insert a user and return its id.
 pub async fn create(pool: &SqlitePool, new_user: &NewUser) -> Result<i64, sqlx::Error> {
     let now = now_iso();
     let result = sqlx::query(
         "INSERT INTO users (email, email_normalized, password_hash, display_name, role, status,
-                            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'active', ?, ?)",
+                            group_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'active',
+                 COALESCE((SELECT id FROM user_groups WHERE id = ?),
+                          (SELECT id FROM user_groups WHERE is_default = 1)),
+                 ?, ?)",
     )
     .bind(&new_user.email)
     .bind(&new_user.email_normalized)
     .bind(&new_user.password_hash)
     .bind(new_user.display_name.as_deref())
     .bind(&new_user.role)
+    .bind(new_user.group_id)
     .bind(&now)
     .bind(&now)
     .execute(pool)
@@ -104,6 +114,7 @@ pub struct UserFilter {
     pub search: Option<String>,
     pub role: Option<String>,
     pub status: Option<String>,
+    pub group_id: Option<i64>,
 }
 
 /// List users for the admin panel.
@@ -121,12 +132,14 @@ pub async fn list(
            AND (?2 IS NULL OR status = ?2)
            AND (?3 IS NULL OR email LIKE ?3 ESCAPE '\\'
                           OR IFNULL(display_name, '') LIKE ?3 ESCAPE '\\')
+           AND (?4 IS NULL OR group_id = ?4)
          ORDER BY created_at DESC, id DESC
-         LIMIT ?4 OFFSET ?5"
+         LIMIT ?5 OFFSET ?6"
     ))
     .bind(filter.role.as_deref())
     .bind(filter.status.as_deref())
     .bind(search.as_deref())
+    .bind(filter.group_id)
     .bind(limit)
     .bind(offset)
     .fetch_all(pool)
@@ -142,11 +155,13 @@ pub async fn count_filtered(pool: &SqlitePool, filter: &UserFilter) -> Result<i6
            AND (?1 IS NULL OR role = ?1)
            AND (?2 IS NULL OR status = ?2)
            AND (?3 IS NULL OR email LIKE ?3 ESCAPE '\\'
-                          OR IFNULL(display_name, '') LIKE ?3 ESCAPE '\\')",
+                          OR IFNULL(display_name, '') LIKE ?3 ESCAPE '\\')
+           AND (?4 IS NULL OR group_id = ?4)",
     )
     .bind(filter.role.as_deref())
     .bind(filter.status.as_deref())
     .bind(search.as_deref())
+    .bind(filter.group_id)
     .fetch_one(pool)
     .await
 }
@@ -227,16 +242,108 @@ pub async fn set_role_status(
     Ok(())
 }
 
-/// Soft delete a user together with their links.
-pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> {
+/// The fields an administrative user update applies together.
+///
+/// `None` means "leave unchanged" for every field; the inner `None` of the
+/// double options clears the value.
+pub struct AdminUserUpdate<'a> {
+    pub role: Option<&'a str>,
+    pub status: Option<&'a str>,
+    pub group_id: Option<Option<i64>>,
+    pub display_name: Option<Option<&'a str>>,
+}
+
+/// Apply role, status, group, display name and the suspension revocation in one
+/// transaction.
+///
+/// Only explicitly submitted fields are written: a group-only PATCH must not
+/// restore a role or status that another administrator changed after the
+/// service-level read. The group is validated by the foreign key *inside* this
+/// transaction, so a concurrently deleted group rolls everything back instead of
+/// leaving a partial update behind.
+pub async fn apply_admin_update(
+    pool: &SqlitePool,
+    user_id: i64,
+    update: &AdminUserUpdate<'_>,
+) -> Result<bool, sqlx::Error> {
     let now = now_iso();
     let mut tx = pool.begin().await?;
-    sqlx::query("UPDATE users SET deleted_at = ?, updated_at = ? WHERE id = ?")
-        .bind(&now)
-        .bind(&now)
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
+    let result = sqlx::query(
+        "UPDATE users
+            SET role = COALESCE(?1, role),
+                status = COALESCE(?2, status),
+                group_id = CASE WHEN ?3 = 1 THEN ?4 ELSE group_id END,
+                updated_at = ?5
+          WHERE id = ?6
+            AND (
+              NOT (role = 'admin' AND status = 'active'
+                   AND (COALESCE(?1, role) <> 'admin' OR COALESCE(?2, status) <> 'active'))
+              OR (SELECT COUNT(*) FROM users
+                   WHERE role = 'admin' AND status = 'active'
+                     AND deleted_at IS NULL AND id <> ?6) > 0
+            )",
+    )
+    .bind(update.role)
+    .bind(update.status)
+    .bind(i64::from(update.group_id.is_some()))
+    .bind(update.group_id.flatten())
+    .bind(&now)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    if result.rows_affected() == 0 {
+        // Either the row vanished or this would remove the last active
+        // administrator; the caller distinguishes the two after the rollback.
+        tx.rollback().await?;
+        return Ok(false);
+    }
+    if let Some(display_name) = update.display_name {
+        sqlx::query("UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?")
+            .bind(display_name)
+            .bind(&now)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    if update.status == Some("suspended") {
+        sqlx::query("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
+            .bind(&now)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(true)
+}
+
+/// Soft delete a user together with their links.
+///
+/// The update is conditional on the account not being the last active
+/// administrator, so two concurrent demotions/deletions cannot both pass a
+/// pre-check and leave the instance without one.
+pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error> {
+    let now = now_iso();
+    let mut tx = pool.begin().await?;
+    let result = sqlx::query(
+        "UPDATE users SET deleted_at = ?, updated_at = ?
+          WHERE id = ?
+            AND (
+              NOT (role = 'admin' AND status = 'active')
+              OR (SELECT COUNT(*) FROM users
+                   WHERE role = 'admin' AND status = 'active'
+                     AND deleted_at IS NULL AND id <> ?) > 0
+            )",
+    )
+    .bind(&now)
+    .bind(&now)
+    .bind(id)
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+    if result.rows_affected() == 0 {
+        tx.rollback().await?;
+        return Ok(false);
+    }
     sqlx::query(
         "UPDATE urls SET deleted_at = ?, updated_at = ? WHERE user_id = ? AND deleted_at IS NULL",
     )
@@ -256,5 +363,5 @@ pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> 
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok(())
+    Ok(true)
 }

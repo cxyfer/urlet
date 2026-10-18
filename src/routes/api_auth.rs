@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::{sessions, users};
 use crate::error::{ApiError, AppError};
 use crate::middleware::auth::{ClientInfo, CurrentUser, MaybeUser};
-use crate::routes::dto::{SessionDto, UserDto};
+use crate::routes::dto::{GroupRefDto, MeDto, SessionDto, UserDto};
 use crate::routes::verify_captcha;
 use crate::services::audit::{action, target, Audit};
 use crate::services::auth;
@@ -175,10 +175,25 @@ pub async fn logout(
 }
 
 /// `GET /api/v1/auth/me`
-pub async fn me(CurrentUser { user, .. }: CurrentUser) -> Json<UserEnvelope> {
-    Json(UserEnvelope {
+pub async fn me(
+    State(state): State<AppState>,
+    CurrentUser { user, .. }: CurrentUser,
+) -> Result<Json<MeDto>, ApiError> {
+    let limits = crate::services::limits::effective(&state.db, &state.settings, &user).await?;
+    let group = match user.group_id {
+        Some(id) => crate::db::user_groups::find_by_id(&state.db, id)
+            .await?
+            .map(|group| GroupRefDto {
+                id: group.id,
+                name: group.name,
+            }),
+        None => None,
+    };
+    Ok(Json(MeDto {
         user: UserDto::from(&user),
-    })
+        group,
+        limits: limits.into(),
+    }))
 }
 
 /// `PATCH /api/v1/auth/me`

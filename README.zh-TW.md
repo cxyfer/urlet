@@ -20,7 +20,8 @@
 | 🧩 標籤 | 依標籤篩選與分類，附使用次數 |
 | 🔑 API Token | `Authorization: Bearer ur_...`，可設到期與撤銷 |
 | 🌐 多網域 | 可在管理後台新增額外網域；各網域有獨立 slug，僅提供轉址 |
-| 🛠 管理後台 | 使用者管理、全站短網址、網域、邀請碼、站台設定、稽核日誌 |
+| 👥 使用者群組 | 各群組可設定連結與 API Token 配額及功能開關；可直接指派或透過邀請碼帶組 |
+| 🛠 管理後台 | 使用者管理、使用者群組、全站短網址、網域、邀請碼、站台設定、稽核日誌 |
 | 🌐 多語系介面 | 介面提供 English / 繁體中文 / 简体中文 切換；初次訪問依瀏覽器 `Accept-Language` 自動選擇，無法辨識時預設英文 |
 | 🤖 防機器人驗證 | 可透過環境變數或管理後台啟用 Cloudflare Turnstile 或 Google reCAPTCHA v2，套用於註冊、登入與建立短網址表單 |
 | 🐳 部署 | 單一容器 + named volume；GHCR 提供多架構映像；附 Caddy 自動 HTTPS overlay |
@@ -130,7 +131,7 @@ urlet version | help
 | 認證 | 伺服器端 Session + API Token | 可即時撤銷，不必引入 JWT 相依 |
 | 密碼 | Argon2id（19 MiB, t=2, p=1） | OWASP 建議參數 |
 
-**刻意不做**：OAuth、使用者群組權限矩陣、GeoIP、關鍵字黑名單、Webhook、郵件寄送。
+**刻意不做**：OAuth、細緻權限矩陣、GeoIP、關鍵字黑名單、Webhook、郵件寄送。
 資料表與架構已為這些功能預留空間（見 `docs/SPEC.md` §12）。
 
 ## 專案結構
@@ -164,10 +165,10 @@ urlet/
 ## 開發
 
 ```bash
-cargo test                 # 單元 + 整合測試（285 個）
+cargo test                 # 單元 + 整合測試（362 個）
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收
+bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收（101 項）
 bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 ```
 
