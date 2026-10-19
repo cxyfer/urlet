@@ -435,6 +435,61 @@ at `WARN`.
 
 ---
 
+## Invite codes (member)
+
+Members can issue invite codes for their **own group** when that group has
+`allow_invites` enabled. Codes are pinned to the group, so anyone who redeems one
+joins it. The group's calendar quota (`max_invites` / `invite_period`) applies and
+is shared with administrator-issued codes; revoking a code does not free its slot.
+
+### `GET /api/v1/invites`
+
+`GET /api/v1/invites?page=&per_page=` → `200`: the caller's own codes (prefixes
+only, newest first) plus the effective quota.
+
+```json
+{
+  "items": [
+    { "id": 4, "prefix": "RW6M", "note": "team", "group_id": 4, "max_uses": 2,
+      "used_count": 1, "remaining": 1, "expires_at": null, "status": "active",
+      "usable": true, "created_at": "2026-03-18T10:00:00.000Z" }
+  ],
+  "page": 1, "per_page": 20, "total": 1,
+  "quota": { "group_id": 4, "group_name": "Invite Team", "allowed": true,
+             "limit": 5, "period": "month", "used": 1, "remaining": 4 }
+}
+```
+
+`per_page` defaults to 20 and is capped at 100. `quota.allowed` is `false` when
+the group does not enable member invites: creating a code then returns `403`,
+but codes issued before the toggle was turned off remain listed and revocable.
+`remaining` is `null` when `limit` is `0` (unlimited). Accounts whose group link
+is missing fall back to the default group.
+
+Member issuance is throttled to 20 codes per hour per account (`429` when the
+burst is exhausted); the group's invite quota remains the primary limit. A group
+with no finite quota is otherwise unlimited.
+
+### `POST /api/v1/invites`
+
+`{ "note"?: "team", "max_uses"?: 2 }` → `201`:
+
+```json
+{ "code": "RW6MF6C6JG", "invite": { "...": "..." }, "quota": { "...": "..." } }
+```
+
+The plaintext code is returned exactly once. `max_uses` must be between 1 and 10
+for member codes. `403` when the group does not allow invites or the period quota
+is exhausted (`error.code = "forbidden"`), and `429` when the hourly burst limit
+is exhausted.
+
+### `DELETE /api/v1/invites/{id}`
+
+`204`, revokes one of the caller's own codes. Another member's code is reported
+as `404`; administrators use `DELETE /api/v1/admin/invites/{id}` for any code.
+
+---
+
 ## Administration (requires `role = admin`)
 
 Every `/api/v1/admin/**` endpoint returns `403 forbidden` for non-administrators.
@@ -450,19 +505,21 @@ Every `/api/v1/admin/**` endpoint returns `403 forbidden` for non-administrators
 | PATCH | `/admin/domains/{id}` | `{ "status"?: "active"\|"disabled", "is_default"?: true }` |
 | DELETE | `/admin/domains/{id}` | `204`; only a zero-link UI domain that is not the default |
 | GET | `/admin/groups?page=&per_page=` | Group list with member counts (paginated) |
-| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "default_domain_id"?, "restrict_domains"?, "domain_ids"?, "is_default"? }` → `201`; `default_domain_id` must reference an active domain; `domain_ids` must reference existing domains (disabled entries stay stored but are not selectable) |
-| PUT | `/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` set to `null` inherit the site quota; `description: null` clears it; `default_domain_id: null` means the site default; `domain_ids: null` or `[]` clears the allowlist; `is_default: true` moves the single default marker |
+| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "max_invites"?, "invite_period"?, "allow_invites"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "default_domain_id"?, "restrict_domains"?, "domain_ids"?, "is_default"? }` → `201`; `default_domain_id` must reference an active domain; `domain_ids` must reference existing domains (disabled entries stay stored but are not selectable) |
+| PUT | `/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` / `max_invites` set to `null` inherit the site quota; `description: null` clears it; `default_domain_id: null` means the site default; `domain_ids: null` or `[]` clears the allowlist; `is_default: true` moves the single default marker |
 | DELETE | `/admin/groups/{id}?reassign_to={id}` | `204`, moves the members then deletes; `409` for the default group or a missing/invalid target |
 
 `GroupDto` also returns `default_domain_id`, `default_domain` (the stored value, even if the domain
-is disabled), `restrict_domains`, `allowed_domain_ids` and `allowed_domains`. The request field is
+is disabled), `restrict_domains`, `allowed_domain_ids` and `allowed_domains`, plus the invite
+quota (`max_invites`, `invite_period`) and its live counters (`invites_used`,
+`invites_remaining`; the latter is `null` when unlimited). The request field is
 `domain_ids` (`null` or `[]` clears it; omitting keeps it); the response uses `allowed_*`. `GET /api/v1/auth/me` returns the *effective* fallback
 default, which can differ from `default_domain` when the stored group default is disabled.
 | GET | `/admin/urls?q=&status=&user_id=&page=` | Every short link on the instance |
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |
 | GET | `/admin/invites` | Invite code list (prefixes only, plus `group_id` / `group_name`) |
-| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201`, **the plaintext invite code is returned once** |
+| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201`, **the plaintext invite code is returned once**; `403` when the group's per-period invite quota is exhausted |
 | DELETE | `/admin/invites/{id}` | `204`, revoke |
 | GET | `/admin/settings` | Current settings |
 | PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", ... }` |
@@ -470,13 +527,24 @@ default, which can differ from `default_domain` when the stored group default is
 | GET | `/admin/stats` | User / short link / click totals, database size, version, uptime |
 
 **User groups.** A group object is
-`{ id, name, description, max_urls, max_api_tokens, allow_*, is_default, members, created_at, updated_at }`.
+`{ id, name, description, max_urls, max_api_tokens, max_invites, invite_period, allow_*,
+is_default, members, created_at, updated_at }`. `allow_invites` is opt-in (`false` on create) and
+lets the group's members issue their own codes, drawn from the same quota as administrator-issued
+codes.
 Quotas are nullable: `null` inherits the site-wide setting, `0` means unlimited. Feature toggles
 default to `true`; they gate new uses and never alter existing links or tokens. Administrators
 follow the same rules as other users. `PUT` accepts a partial group: omitted fields keep their
 current value, quotas set to `null` inherit the site quota, `description: null` clears it, and
 `is_default: true` moves the marker. `POST` keeps the create defaults (omitted toggles are allowed,
 omitted quotas inherit).
+
+**Invite quotas.** Each group may issue a limited number of invite codes per calendar period.
+`max_invites` is nullable (`null` inherits the site-wide `max_invites_per_period`, `0` is
+unlimited) and `invite_period` is `day`, `week` (Monday start) or `month`, evaluated in UTC.
+Issuing past the limit returns `403` with `error.code = "forbidden"` and a message naming the
+limit. The counter lives in an issuance ledger, so revoking a code does **not** return its slot;
+it resets by itself at the next period boundary. Invites created without `group_id` consume the
+site-wide quota instead.
 
 **Guard rails**: an administrator cannot change their own role or status, cannot delete
 themselves, and the instance always keeps at least one active administrator (otherwise the
@@ -485,7 +553,8 @@ request fails with `409`). The default group cannot be deleted; move the marker 
 Editable setting keys: `site_name`, `registration_mode` (`open`/`invite`/`closed`),
 `default_slug_length` (4–16), `max_urls_per_user` (0 = unlimited),
 `max_api_tokens_per_user` (0 = unlimited, default 20),
-`default_redirect_type` (301/302/307/308), `analytics_enabled`,
+`max_invites_per_period` (0 = unlimited, default 0), `invite_period` (`day`/`week`/`month`,
+default `month`), `default_redirect_type` (301/302/307/308), `analytics_enabled`,
 `click_retention_days` (0 = keep forever), plus the bot verification keys
 `captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`,
 `captcha_on_login`, `captcha_on_create` and `captcha_allowed_hostnames`. The secret key is

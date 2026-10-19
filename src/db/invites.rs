@@ -1,6 +1,6 @@
 //! `invite_codes` and `invite_redemptions`.
 
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, SqliteConnection, SqlitePool};
 
 #[derive(Debug, Clone, FromRow)]
 pub struct Invite {
@@ -54,8 +54,13 @@ pub struct NewInvite<'a> {
     pub expires_at: Option<&'a str>,
 }
 
-/// Create an invite. `group_id` optionally pins the redeemer's group.
-pub async fn create(pool: &SqlitePool, invite: &NewInvite<'_>) -> Result<i64, sqlx::Error> {
+/// Create an invite on an explicit connection so the caller can commit it in the
+/// same transaction as its quota reservation. `group_id` optionally pins the
+/// redeemer's group.
+pub async fn create(
+    conn: &mut SqliteConnection,
+    invite: &NewInvite<'_>,
+) -> Result<i64, sqlx::Error> {
     let result = sqlx::query(
         "INSERT INTO invite_codes (code_hash, code_prefix, note, group_id, created_by, max_uses,
                                    used_count, expires_at, status, created_at)
@@ -69,7 +74,7 @@ pub async fn create(pool: &SqlitePool, invite: &NewInvite<'_>) -> Result<i64, sq
     .bind(invite.max_uses)
     .bind(invite.expires_at)
     .bind(crate::services::time::now_iso())
-    .execute(pool)
+    .execute(&mut *conn)
     .await?;
     Ok(result.last_insert_rowid())
 }
@@ -120,6 +125,31 @@ pub async fn list(pool: &SqlitePool, limit: i64, offset: i64) -> Result<Vec<Invi
         .bind(limit)
         .bind(offset)
         .fetch_all(pool)
+        .await
+}
+
+/// Invites created by one account, newest first (member self-service).
+pub async fn list_by_creator(
+    pool: &SqlitePool,
+    creator_id: i64,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<Invite>, sqlx::Error> {
+    sqlx::query_as::<_, Invite>(&format!(
+        "{SELECT} WHERE created_by = ? ORDER BY id DESC LIMIT ? OFFSET ?"
+    ))
+    .bind(creator_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+}
+
+/// Number of invites created by one account.
+pub async fn count_by_creator(pool: &SqlitePool, creator_id: i64) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("SELECT COUNT(*) FROM invite_codes WHERE created_by = ?")
+        .bind(creator_id)
+        .fetch_one(pool)
         .await
 }
 

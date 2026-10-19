@@ -123,6 +123,8 @@ pub mod blocked {
     pub const TAGS: &str = "your group does not allow tags";
     pub const API_TOKENS: &str = "your group does not allow API tokens";
     pub const DOMAIN_SELECTION: &str = "your group does not allow choosing another domain";
+    pub const INVITES: &str = "your group does not allow invite codes";
+    pub const NO_GROUP: &str = "your account has no group that can issue invite codes";
 }
 
 #[cfg(test)]

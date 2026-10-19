@@ -1,0 +1,108 @@
+{% extends "app_base.html" %}
+
+{% block title %}{{ lang.t("invites.title") }} — {{ site_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div class="page-head-main">
+        <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ lang.t("nav.invites") }}</span>
+        <h1 class="page-title">{{ lang.t("invites.heading") }}</h1>
+    </div>
+    <div class="page-head-side">
+        <span class="page-note">{{ quota_label }}{% if group_name.len() > 0 %} · {{ group_name }}{% endif %}</span>
+    </div>
+</div>
+
+{% match new_code %}
+{% when Some with (code) %}
+<div class="alert alert-info">
+    <div>
+        <strong>{{ lang.t("invites.copy_now") }}</strong> {{ lang.t("invites.copy_once") }}
+        <div class="copy-row mt">
+            <input class="input" id="new-invite" type="text" value="{{ code }}" readonly>
+            <button class="btn btn-sage" type="button" data-copy="#new-invite">{{ lang.t("common.copy") }}</button>
+        </div>
+    </div>
+</div>
+{% when None %}
+{% endmatch %}
+
+{% if !allowed %}
+<div class="panel mt">
+    <h2>{{ lang.t("invites.disabled_heading") }}</h2>
+    <p class="hint mt">{{ lang.t("invites.disabled") }}</p>
+</div>
+{% else %}
+<div class="panel mt">
+    <div class="panel-head">
+        <h2>{{ lang.t("invites.create") }}</h2>
+        <span class="panel-sub" aria-hidden="true">INV / 01</span>
+    </div>
+    <form method="post" action="/app/invites" class="filters-invite">
+        <div class="field">
+            <label class="label" for="note">{{ lang.t("common.note") }}</label>
+            <input class="input" type="text" id="note" name="note" maxlength="120"
+                   placeholder="{{ lang.t("invites.note_placeholder") }}">
+        </div>
+        <div class="field">
+            <label class="label" for="max_uses">{{ lang.t("invites.max_uses") }}</label>
+            <input class="input" type="number" id="max_uses" name="max_uses" min="1" max="{{ max_uses_cap }}" value="1">
+            <span class="hint">{{ lang.t("invites.max_uses_hint") }}</span>
+        </div>
+        <button class="btn btn-primary" type="submit">{{ lang.t("invites.create") }}</button>
+    </form>
+    <p class="hint">{{ lang.t("invites.create_hint") }}</p>
+</div>
+{% endif %}
+
+{% if items.len() > 0 || allowed %}
+<div class="panel panel-flush mt">
+    <div class="table-toolbar">
+        <h2>{{ lang.t("invites.list_heading") }}</h2>
+        <span class="panel-sub" aria-hidden="true">INV / 02</span>
+    </div>
+    {% if items.len() > 0 %}
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr><th>{{ lang.t("common.prefix") }}</th><th>{{ lang.t("common.note") }}</th><th class="num">{{ lang.t("admin.invites.uses") }}</th><th>{{ lang.t("common.expires") }}</th><th>{{ lang.t("common.status") }}</th><th>{{ lang.t("common.created") }}</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for invite in items %}
+                <tr>
+                    <td class="mono">{{ invite.prefix }}…</td>
+                    <td class="truncate">{{ invite.note }}</td>
+                    <td class="num">{{ invite.uses }}</td>
+                    <td class="small">{{ invite.expires }}</td>
+                    <td>
+                        <span class="badge {% if invite.usable %}badge-ok{% else %}badge-muted{% endif %}">{{ invite.status }}</span>
+                    </td>
+                    <td class="small">{{ invite.created }}</td>
+                    <td>
+                        {% if invite.usable %}
+                        <form method="post" action="/app/invites/{{ invite.id }}/delete">
+                            <button class="btn btn-ghost btn-sm" type="submit"
+                                    data-confirm="{{ lang.t("invites.confirm") }}">{{ lang.t("common.revoke") }}</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        <span class="muted small">{{ page_note }}</span>
+        {% for link in links %}
+        {% if link.current %}<span class="current">{{ link.label }}</span>
+        {% else %}<a class="btn btn-sm" href="{{ link.url }}">{{ link.label }}</a>{% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% else %}
+    <p class="empty">{{ lang.t("invites.empty") }}</p>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

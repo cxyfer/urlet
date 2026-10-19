@@ -631,6 +631,12 @@ pub fn error_code(err: &AppError) -> &'static str {
         {
             "token_quota"
         }
+        AppError::Forbidden(message) if message.starts_with("invite quota reached") => {
+            "invite_quota"
+        }
+        AppError::Forbidden(message) if message.starts_with("your group does not allow invite") => {
+            "invites_disabled"
+        }
         AppError::Forbidden(message) if message.starts_with("you have reached your limit of ") => {
             "quota"
         }

@@ -447,8 +447,9 @@ async fn invite_only_registration_requires_a_valid_code() {
 
     // Create a single-use invite directly in the database.
     let code = "ABCD2345";
+    let mut conn = app.state.db.acquire().await.expect("connection");
     urlet::db::invites::create(
-        &app.state.db,
+        &mut conn,
         &urlet::db::invites::NewInvite {
             code_hash: &urlet::services::secret::sha256_hex(code),
             code_prefix: code,

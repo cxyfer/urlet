@@ -10,6 +10,7 @@ use sqlx::SqlitePool;
 
 use crate::db::user_groups::{self, GroupValues, UserGroup};
 use crate::error::{AppError, Result};
+use crate::services::invite_quota::InvitePeriod;
 
 /// Longest accepted group name.
 pub const MAX_NAME: usize = 40;
@@ -25,6 +26,11 @@ pub struct GroupDraft {
     pub description: Option<String>,
     pub max_urls: Option<i64>,
     pub max_api_tokens: Option<i64>,
+    /// Invite codes this group may issue per `invite_period`; `None` inherits.
+    pub max_invites: Option<i64>,
+    pub invite_period: InvitePeriod,
+    /// Whether group members may issue their own invite codes.
+    pub allow_invites: bool,
     pub allow_custom_slug: bool,
     pub allow_password: bool,
     pub allow_expiry: bool,
@@ -51,6 +57,9 @@ impl GroupDraft {
             description,
             max_urls,
             max_api_tokens,
+            max_invites,
+            invite_period,
+            allow_invites,
             allow_custom_slug,
             allow_password,
             allow_expiry,
@@ -102,6 +111,9 @@ impl GroupDraft {
             description,
             max_urls: validate_quota("max_urls", max_urls)?,
             max_api_tokens: validate_quota("max_api_tokens", max_api_tokens)?,
+            max_invites: validate_quota("max_invites", max_invites)?,
+            invite_period,
+            allow_invites,
             allow_custom_slug,
             allow_password,
             allow_expiry,
@@ -127,6 +139,9 @@ impl GroupDraft {
             description: self.description.as_deref(),
             max_urls: self.max_urls,
             max_api_tokens: self.max_api_tokens,
+            max_invites: self.max_invites,
+            invite_period: self.invite_period.as_str(),
+            allow_invites: self.allow_invites,
             allow_custom_slug: self.allow_custom_slug,
             allow_password: self.allow_password,
             allow_expiry: self.allow_expiry,
@@ -197,6 +212,9 @@ mod tests {
             description: Some("  paid tier  ".into()),
             max_urls: Some(100),
             max_api_tokens: None,
+            max_invites: Some(3),
+            invite_period: InvitePeriod::Week,
+            allow_invites: false,
             allow_custom_slug: true,
             allow_password: true,
             allow_expiry: true,
@@ -247,6 +265,17 @@ mod tests {
         let mut huge = draft();
         huge.max_api_tokens = Some(MAX_QUOTA + 1);
         assert!(huge.validate().is_err());
+
+        let mut invites_negative = draft();
+        invites_negative.max_invites = Some(-1);
+        assert!(invites_negative.validate().is_err());
+
+        let mut invites_free = draft();
+        invites_free.max_invites = Some(0);
+        invites_free.invite_period = InvitePeriod::Month;
+        let validated = invites_free.validate().expect("valid");
+        assert_eq!(validated.max_invites, Some(0));
+        assert_eq!(validated.invite_period, InvitePeriod::Month);
     }
 
     #[test]

@@ -154,6 +154,11 @@ pub mod limits {
     /// Shortening: 120 new links per hour per user.
     pub const CREATE_URL_CAPACITY: f64 = 120.0;
     pub const CREATE_URL_REFILL_PER_SEC: f64 = 120.0 / 3600.0;
+
+    /// Member-issued invite codes: 20 per hour per user. The group quota is the
+    /// primary control; this caps a runaway client on groups set to unlimited.
+    pub const CREATE_INVITE_CAPACITY: f64 = 20.0;
+    pub const CREATE_INVITE_REFILL_PER_SEC: f64 = 20.0 / 3600.0;
 }
 
 #[cfg(test)]

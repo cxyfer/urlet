@@ -13,6 +13,9 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("default_slug_length", "7"),
     ("max_urls_per_user", "1000"),
     ("max_api_tokens_per_user", "20"),
+    // Invites not pinned to a group consume this site-wide quota.
+    ("max_invites_per_period", "0"),
+    ("invite_period", "month"),
     ("default_redirect_type", "302"),
     ("analytics_enabled", "true"),
     ("click_retention_days", "0"),

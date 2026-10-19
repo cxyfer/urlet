@@ -4,8 +4,8 @@ use axum::routing::{delete, get, patch, post, put};
 use axum::Router;
 
 use crate::routes::{
-    api_admin, api_auth, api_domains, api_not_found, api_public, api_stats, api_tags, api_tokens,
-    api_urls,
+    api_admin, api_auth, api_domains, api_invites, api_not_found, api_public, api_stats, api_tags,
+    api_tokens, api_urls,
 };
 use crate::state::AppState;
 
@@ -32,6 +32,9 @@ pub fn router() -> Router<AppState> {
         .route("/urls/{id}/clicks", get(api_stats::clicks_log))
         // active domains available to the signed-in user
         .route("/domains", get(api_domains::list))
+        // the signed-in member's own invite codes
+        .route("/invites", get(api_invites::list).post(api_invites::create))
+        .route("/invites/{id}", delete(api_invites::revoke))
         // tags
         .route("/tags", get(api_tags::list))
         .route("/tags/{id}", delete(api_tags::delete))

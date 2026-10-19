@@ -27,6 +27,7 @@ use crate::services::admin::{self, AdminContext};
 use crate::services::captcha::CaptchaProvider;
 use crate::services::domains::{DomainContext, DomainOption, DomainRegistry};
 use crate::services::groups::{self as group_service, GroupDraft, GroupOverview};
+use crate::services::invite_quota::{usage_for, usage_map, InvitePeriod, InviteUsage};
 use crate::services::settings::Settings;
 use crate::services::time;
 use crate::state::AppState;
@@ -90,6 +91,15 @@ pub struct UsersPage {
 pub struct GroupOption {
     pub id: i64,
     pub name: String,
+}
+
+/// A group option on the invite form, annotated with its current quota.
+#[derive(Debug, Clone)]
+pub struct InviteGroupOption {
+    pub id: i64,
+    pub name: String,
+    /// `2 of 5 per month` style summary; empty when the group is unlimited.
+    pub quota_label: String,
 }
 
 /// One row of the user table.
@@ -219,7 +229,9 @@ pub struct InvitesPage {
     pub section: &'static str,
     pub chrome: Chrome,
     pub invites: Vec<InviteRow>,
-    pub groups: Vec<GroupOption>,
+    pub groups: Vec<InviteGroupOption>,
+    /// Quota of invites that are not pinned to a group, when it is limited.
+    pub site_quota_label: String,
     pub new_code: Option<String>,
     /// Raw token (`open` / `invite` / `closed`), used for the conditional class.
     pub registration_mode: String,
@@ -265,8 +277,19 @@ pub struct GroupRow {
     pub max_urls_display: String,
     pub max_api_tokens_input: String,
     pub max_api_tokens_display: String,
+    pub max_invites_input: String,
+    pub max_invites_display: String,
+    /// Effective period of the invite counter (`day` / `week` / `month`).
+    pub invite_period: String,
+    /// Localised period label, used in the table and the form select.
+    pub invite_period_label: String,
+    /// `used / limit per period`, or the localised "Unlimited" when `0`.
+    pub invite_usage_display: String,
+    /// True when the current period is used up; the table marks it.
+    pub invite_quota_exhausted: bool,
     pub members: i64,
     pub is_default: bool,
+    pub allow_invites: bool,
     pub allow_custom_slug: bool,
     pub allow_password: bool,
     pub allow_expiry: bool,
@@ -294,6 +317,7 @@ impl GroupRow {
         overview: &GroupOverview,
         active_domain_ids: &[i64],
         domains: &DomainRegistry,
+        invite_usage: InviteUsage,
     ) -> Self {
         let group = &overview.group;
         let default_domain_disabled_id = group
@@ -314,6 +338,7 @@ impl GroupRow {
             })
             .collect();
         let allowed_features = [
+            group.allow_invites,
             group.allow_custom_slug,
             group.allow_password,
             group.allow_expiry,
@@ -325,6 +350,21 @@ impl GroupRow {
         .into_iter()
         .filter(|allowed| *allowed)
         .count() as i64;
+        let invite_period = InvitePeriod::parse(&group.invite_period).unwrap_or_default();
+        let invite_period_label = super::period_label(lang, invite_period);
+        let invite_usage_display = if invite_usage.unlimited() {
+            lang.t("admin.groups.unlimited").to_string()
+        } else {
+            i18n::format(
+                lang,
+                "admin.groups.invite_usage",
+                &[
+                    ("used", invite_usage.used.to_string()),
+                    ("limit", invite_usage.quota.limit.to_string()),
+                    ("period", invite_period_label.clone()),
+                ],
+            )
+        };
 
         Self {
             id: group.id,
@@ -344,8 +384,22 @@ impl GroupRow {
                 settings.max_api_tokens_per_user(),
                 lang,
             ),
+            max_invites_input: group
+                .max_invites
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+            max_invites_display: quota_display(
+                group.max_invites,
+                settings.max_invites_per_period(),
+                lang,
+            ),
+            invite_period: invite_period.as_str().to_string(),
+            invite_period_label,
+            invite_usage_display,
+            invite_quota_exhausted: invite_usage.exhausted(),
             members: overview.members,
             is_default: group.is_default,
+            allow_invites: group.allow_invites,
             allow_custom_slug: group.allow_custom_slug,
             allow_password: group.allow_password,
             allow_expiry: group.allow_expiry,
@@ -393,6 +447,24 @@ impl GroupRow {
     }
 }
 
+/// `2 of 5 per month` (plus a used-up suffix) for the invite form. Empty when
+/// the group has unlimited invites, so the option stays uncluttered.
+fn invite_usage_label(lang: Lang, usage: InviteUsage) -> String {
+    if usage.unlimited() {
+        return String::new();
+    }
+    let values = [
+        ("used", usage.used.to_string()),
+        ("limit", usage.quota.limit.to_string()),
+        ("period", super::period_label(lang, usage.quota.period)),
+    ];
+    if usage.exhausted() {
+        i18n::format(lang, "admin.invites.quota_option_exhausted", &values)
+    } else {
+        i18n::format(lang, "admin.invites.quota_option", &values)
+    }
+}
+
 /// A quota as shown in the group table.
 fn quota_display(value: Option<i64>, site_default: i64, lang: Lang) -> String {
     match value {
@@ -427,6 +499,8 @@ pub struct SettingsValues {
     pub default_slug_length: i64,
     pub max_urls_per_user: i64,
     pub max_api_tokens_per_user: i64,
+    pub max_invites_per_period: i64,
+    pub invite_period: String,
     pub default_redirect_type: i64,
     pub analytics_enabled: bool,
     pub click_retention_days: i64,
@@ -543,6 +617,13 @@ pub struct GroupForm {
     #[serde(default)]
     pub max_api_tokens: Option<String>,
     #[serde(default)]
+    pub max_invites: Option<String>,
+    /// `day`, `week` or `month`; empty keeps the month default.
+    #[serde(default)]
+    pub invite_period: Option<String>,
+    #[serde(default)]
+    pub allow_invites: Option<String>,
+    #[serde(default)]
     pub allow_custom_slug: Option<String>,
     #[serde(default)]
     pub allow_password: Option<String>,
@@ -574,7 +655,18 @@ impl GroupForm {
             description: self.description,
             max_urls: parse_quota("max_urls", self.max_urls)?,
             max_api_tokens: parse_quota("max_api_tokens", self.max_api_tokens)?,
+            max_invites: parse_quota("max_invites", self.max_invites)?,
+            invite_period: match self.invite_period.as_deref().map(str::trim) {
+                None | Some("") => InvitePeriod::default(),
+                Some(value) => InvitePeriod::parse(value).ok_or_else(|| {
+                    AppError::validation(
+                        "invite_period",
+                        "invite period must be day, week or month",
+                    )
+                })?,
+            },
             // Browsers omit unchecked boxes entirely.
+            allow_invites: self.allow_invites.is_some(),
             allow_custom_slug: self.allow_custom_slug.is_some(),
             allow_password: self.allow_password.is_some(),
             allow_expiry: self.allow_expiry.is_some(),
@@ -643,6 +735,10 @@ pub struct SettingsForm {
     /// Optional so a page cached before v1.2 still submits successfully.
     #[serde(default)]
     pub max_api_tokens_per_user: Option<String>,
+    #[serde(default)]
+    pub max_invites_per_period: Option<String>,
+    #[serde(default)]
+    pub invite_period: Option<String>,
     pub default_redirect_type: String,
     #[serde(default)]
     pub analytics_enabled: Option<String>,
@@ -1299,6 +1395,15 @@ pub async fn update_settings(
     if let Some(value) = payload.max_api_tokens_per_user {
         values.push(("max_api_tokens_per_user".to_string(), value));
     }
+    if let Some(value) = payload.max_invites_per_period {
+        values.push(("max_invites_per_period".to_string(), value));
+    }
+    if let Some(value) = payload
+        .invite_period
+        .filter(|value| !value.trim().is_empty())
+    {
+        values.push(("invite_period".to_string(), value));
+    }
 
     // Bot protection. The provider and the public site key are echoed back by
     // the form, so an empty value there is an explicit clear. The secret is
@@ -1736,23 +1841,26 @@ async fn render_groups(
     let lang = i18n::current();
     let domains = state.domains.active_options();
     let active_domain_ids: Vec<i64> = domains.iter().map(|domain| domain.id).collect();
+    let groups: Vec<crate::db::user_groups::UserGroup> =
+        overview.iter().map(|row| row.group.clone()).collect();
+    let usage = usage_map(&state.db, &state.settings, &groups, time::now()).await?;
+    let mut rows = Vec::with_capacity(overview.len());
+    for row in &overview {
+        rows.push(GroupRow::new(
+            &state.settings,
+            lang,
+            row,
+            &active_domain_ids,
+            &state.domains,
+            usage[&row.group.id],
+        ));
+    }
     render(
         GroupsPage {
             section: "groups",
             site_name: state.settings.site_name(),
             chrome: Chrome::new(state, user, "admin", flash),
-            groups: overview
-                .iter()
-                .map(|row| {
-                    GroupRow::new(
-                        &state.settings,
-                        lang,
-                        row,
-                        &active_domain_ids,
-                        &state.domains,
-                    )
-                })
-                .collect(),
+            groups: rows,
             domains,
             lang,
         },
@@ -1772,13 +1880,17 @@ async fn render_invites(
         .await
         .map_err(AppError::from)?;
     let group_rows = user_groups::list(&state.db).await.map_err(AppError::from)?;
-    let groups: Vec<GroupOption> = group_rows
+    let usage = usage_map(&state.db, &state.settings, &group_rows, time::now()).await?;
+    let groups: Vec<InviteGroupOption> = group_rows
         .iter()
-        .map(|group| GroupOption {
+        .map(|group| InviteGroupOption {
             id: group.id,
             name: group.name.clone(),
+            quota_label: invite_usage_label(lang, usage[&group.id]),
         })
         .collect();
+    let site_usage = usage_for(&state.db, &state.settings, None, time::now()).await?;
+    let site_quota_label = invite_usage_label(lang, site_usage);
     render(
         InvitesPage {
             section: "invites",
@@ -1822,6 +1934,7 @@ async fn render_invites(
                 })
                 .collect(),
             groups,
+            site_quota_label,
             new_code,
             registration_mode: state.settings.registration_mode().as_str().to_string(),
             registration_mode_label: i18n::registration_mode_label(
@@ -1887,6 +2000,8 @@ pub fn settings_values(settings: &Settings) -> SettingsValues {
         default_slug_length: settings.default_slug_length() as i64,
         max_urls_per_user: settings.max_urls_per_user(),
         max_api_tokens_per_user: settings.max_api_tokens_per_user(),
+        max_invites_per_period: settings.max_invites_per_period(),
+        invite_period: settings.invite_period().as_str().to_string(),
         default_redirect_type: settings.default_redirect_type(),
         analytics_enabled: settings.analytics_enabled(),
         click_retention_days: settings.click_retention_days(),

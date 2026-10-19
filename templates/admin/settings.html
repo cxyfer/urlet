@@ -58,6 +58,21 @@
                     <span class="hint">{{ lang.t("admin.settings.tokens_per_user_hint") }}</span>
                 </div>
                 <div class="field">
+                    <label class="label" for="max_invites_per_period">{{ lang.t("admin.settings.invites_per_period") }}</label>
+                    <input class="input" type="number" id="max_invites_per_period" name="max_invites_per_period"
+                           min="0" max="1000000" step="1" value="{{ values.max_invites_per_period }}" required>
+                    <span class="hint">{{ lang.t("admin.settings.invites_per_period_hint") }}</span>
+                </div>
+                <div class="field">
+                    <label class="label" for="invite_period">{{ lang.t("admin.settings.invite_period") }}</label>
+                    <select class="select" id="invite_period" name="invite_period">
+                        <option value="day" {% if values.invite_period == "day" %}selected{% endif %}>{{ lang.t("admin.groups.period.day") }}</option>
+                        <option value="week" {% if values.invite_period == "week" %}selected{% endif %}>{{ lang.t("admin.groups.period.week") }}</option>
+                        <option value="month" {% if values.invite_period == "month" %}selected{% endif %}>{{ lang.t("admin.groups.period.month") }}</option>
+                    </select>
+                    <span class="hint">{{ lang.t("admin.settings.invite_period_hint") }}</span>
+                </div>
+                <div class="field">
                     <label class="label" for="default_redirect_type">{{ lang.t("admin.settings.default_redirect") }}</label>
                     <select class="select" id="default_redirect_type" name="default_redirect_type">
                         <option value="302" {% if values.default_redirect_type == 302 %}selected{% endif %}>{{ lang.t("dashboard.redirect.302") }}</option>

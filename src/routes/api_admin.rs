@@ -21,6 +21,8 @@ use crate::routes::dto::{Page, Pagination, UrlDto, UserDto};
 use crate::services::admin::{self, AdminContext, SystemStats};
 use crate::services::domains::DomainContext;
 use crate::services::groups::{self as group_service, GroupDraft};
+use crate::services::invite_quota::{usage_for, usage_map, InvitePeriod, InviteUsage};
+use crate::services::time;
 use crate::state::AppState;
 
 /// Query for the admin user listing.
@@ -151,6 +153,16 @@ pub struct GroupDto {
     pub description: Option<String>,
     pub max_urls: Option<i64>,
     pub max_api_tokens: Option<i64>,
+    /// Invite codes per `invite_period`; `null` inherits the site setting and
+    /// `0` means unlimited.
+    pub max_invites: Option<i64>,
+    pub invite_period: String,
+    /// Whether the group's members may issue their own invite codes.
+    pub allow_invites: bool,
+    /// Issued invite codes in the current period.
+    pub invites_used: i64,
+    /// Slots left in the current period; `null` when unlimited.
+    pub invites_remaining: Option<i64>,
     pub allow_custom_slug: bool,
     pub allow_password: bool,
     pub allow_expiry: bool,
@@ -175,6 +187,7 @@ impl GroupDto {
         members: i64,
         allowed_domain_ids: &[i64],
         domains: &crate::services::domains::DomainRegistry,
+        invite_usage: InviteUsage,
     ) -> Self {
         Self {
             id: group.id,
@@ -182,6 +195,11 @@ impl GroupDto {
             description: group.description.clone(),
             max_urls: group.max_urls,
             max_api_tokens: group.max_api_tokens,
+            max_invites: group.max_invites,
+            invite_period: group.invite_period.clone(),
+            allow_invites: group.allow_invites,
+            invites_used: invite_usage.used,
+            invites_remaining: invite_usage.remaining(),
             allow_custom_slug: group.allow_custom_slug,
             allow_password: group.allow_password,
             allow_expiry: group.allow_expiry,
@@ -218,6 +236,14 @@ pub struct GroupPayload {
     pub max_urls: Option<Option<i64>>,
     #[serde(default, deserialize_with = "crate::routes::dto::double_option")]
     pub max_api_tokens: Option<Option<i64>>,
+    /// `null` inherits the site-wide invite quota; omitting it keeps the value.
+    #[serde(default, deserialize_with = "crate::routes::dto::double_option")]
+    pub max_invites: Option<Option<i64>>,
+    /// `day`, `week` or `month`; omitted keeps the current period.
+    #[serde(default)]
+    pub invite_period: Option<String>,
+    #[serde(default)]
+    pub allow_invites: Option<bool>,
     #[serde(default)]
     pub allow_custom_slug: Option<bool>,
     #[serde(default)]
@@ -266,6 +292,27 @@ impl GroupPayload {
                 Some(value) => value,
                 None => existing.and_then(|group| group.max_api_tokens),
             },
+            max_invites: match self.max_invites {
+                Some(value) => value,
+                None => existing.and_then(|group| group.max_invites),
+            },
+            invite_period: match self.invite_period {
+                Some(value) => InvitePeriod::parse(&value).ok_or_else(|| {
+                    ApiError::from(AppError::validation(
+                        "invite_period",
+                        "invite period must be day, week or month",
+                    ))
+                })?,
+                None => existing
+                    .and_then(|group| InvitePeriod::parse(&group.invite_period))
+                    .unwrap_or_default(),
+            },
+            // Inviting is opt-in: unlike the other toggles, the create default
+            // is false so a new group cannot hand out codes by accident.
+            allow_invites: self
+                .allow_invites
+                .or_else(|| existing.map(|group| group.allow_invites))
+                .unwrap_or(false),
             allow_custom_slug: current(self.allow_custom_slug, |group| group.allow_custom_slug),
             allow_password: current(self.allow_password, |group| group.allow_password),
             allow_expiry: current(self.allow_expiry, |group| group.allow_expiry),
@@ -838,6 +885,8 @@ pub async fn list_groups(
     let total = rows.len() as i64;
     let offset = usize::try_from(pagination.offset().max(0)).unwrap_or(usize::MAX);
     let limit = usize::try_from(pagination.per_page().max(0)).unwrap_or(usize::MAX);
+    let groups: Vec<UserGroup> = rows.iter().map(|row| row.group.clone()).collect();
+    let usage = usage_map(&state.db, &state.settings, &groups, time::now()).await?;
     let items = rows
         .iter()
         .skip(offset)
@@ -848,6 +897,7 @@ pub async fn list_groups(
                 row.members,
                 &row.allowed_domain_ids,
                 &state.domains,
+                usage[&row.group.id],
             )
         })
         .collect();
@@ -871,6 +921,7 @@ pub async fn create_group(
     let group = context(&state, &client, &user).create_group(draft).await?;
     let members = crate::db::user_groups::count_members(&state.db, group.id).await?;
     let allowed_domain_ids = crate::db::user_groups::domain_ids(&state.db, group.id).await?;
+    let usage = usage_for(&state.db, &state.settings, Some(&group), time::now()).await?;
     Ok((
         StatusCode::CREATED,
         Json(GroupDto::new(
@@ -878,6 +929,7 @@ pub async fn create_group(
             members,
             &allowed_domain_ids,
             &state.domains,
+            usage,
         )),
     )
         .into_response())
@@ -901,11 +953,13 @@ pub async fn update_group(
         .await?;
     let members = crate::db::user_groups::count_members(&state.db, group.id).await?;
     let allowed_domain_ids = crate::db::user_groups::domain_ids(&state.db, group.id).await?;
+    let usage = usage_for(&state.db, &state.settings, Some(&group), time::now()).await?;
     Ok(Json(GroupDto::new(
         &group,
         members,
         &allowed_domain_ids,
         &state.domains,
+        usage,
     )))
 }
 

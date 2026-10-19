@@ -10,6 +10,8 @@ pub mod cookies;
 pub mod domain_policy;
 pub mod domains;
 pub mod groups;
+pub mod invite_quota;
+pub mod invites;
 pub mod limits;
 pub mod password;
 pub mod ratelimit;

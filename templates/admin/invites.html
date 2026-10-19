@@ -56,10 +56,13 @@
             <select class="select" id="group_id" name="group_id">
                 <option value="">{{ lang.t("admin.invites.group_default") }}</option>
                 {% for group in groups %}
-                <option value="{{ group.id }}">{{ group.name }}</option>
+                <option value="{{ group.id }}">{{ group.name }}{% if group.quota_label.len() > 0 %} · {{ group.quota_label }}{% endif %}</option>
                 {% endfor %}
             </select>
             <span class="hint">{{ lang.t("admin.invites.group_hint") }}</span>
+            {% if site_quota_label.len() > 0 %}
+            <span class="hint">{{ lang.t("admin.invites.site_quota") }} {{ site_quota_label }}</span>
+            {% endif %}
         </div>
         <div class="field">
             <label class="label" for="expires_at">{{ lang.t("common.expires_at") }}</label>

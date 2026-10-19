@@ -12,6 +12,7 @@ use crate::config::Config;
 use crate::db;
 use crate::error::{AppError, Result};
 use crate::services::captcha::{self, CaptchaProvider};
+use crate::services::invite_quota::InvitePeriod;
 
 /// Who may register.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +51,8 @@ pub const EDITABLE_KEYS: &[&str] = &[
     "default_slug_length",
     "max_urls_per_user",
     "max_api_tokens_per_user",
+    "max_invites_per_period",
+    "invite_period",
     "default_redirect_type",
     "analytics_enabled",
     "click_retention_days",
@@ -215,6 +218,18 @@ impl Settings {
     /// Site-wide fallback for the number of usable API tokens per user.
     pub fn max_api_tokens_per_user(&self) -> i64 {
         self.raw_i64("max_api_tokens_per_user", 20).max(0)
+    }
+
+    /// Site-wide fallback for invite codes issued per period; 0 is unlimited.
+    /// It also caps invites that are not pinned to a group.
+    pub fn max_invites_per_period(&self) -> i64 {
+        self.raw_i64("max_invites_per_period", 0).max(0)
+    }
+
+    /// Period of the site-wide invite quota (invites without a group).
+    pub fn invite_period(&self) -> InvitePeriod {
+        InvitePeriod::parse(&self.raw("invite_period").unwrap_or_default())
+            .unwrap_or(InvitePeriod::Month)
     }
 
     pub fn default_redirect_type(&self) -> i64 {
@@ -396,7 +411,7 @@ fn validate_value(key: &str, value: &str) -> Result<String> {
             }
             Ok(parsed.to_string())
         }
-        "max_urls_per_user" | "max_api_tokens_per_user" => {
+        "max_urls_per_user" | "max_api_tokens_per_user" | "max_invites_per_period" => {
             let parsed: i64 = value
                 .parse()
                 .map_err(|_| invalid("quota must be a number"))?;
@@ -407,6 +422,10 @@ fn validate_value(key: &str, value: &str) -> Result<String> {
             }
             Ok(parsed.to_string())
         }
+        "invite_period" => match InvitePeriod::parse(value) {
+            Some(period) => Ok(period.as_str().to_string()),
+            None => Err(invalid("invite period must be day, week or month")),
+        },
         "default_redirect_type" => match value.parse::<i64>() {
             Ok(code @ (301 | 302 | 307 | 308)) => Ok(code.to_string()),
             _ => Err(invalid("redirect type must be 301, 302, 307 or 308")),
