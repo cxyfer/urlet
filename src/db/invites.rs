@@ -123,6 +123,21 @@ pub async fn list(pool: &SqlitePool, limit: i64, offset: i64) -> Result<Vec<Invi
         .await
 }
 
+/// Invites created by one account, newest first (member self-service).
+pub async fn list_by_creator(
+    pool: &SqlitePool,
+    creator_id: i64,
+    limit: i64,
+) -> Result<Vec<Invite>, sqlx::Error> {
+    sqlx::query_as::<_, Invite>(&format!(
+        "{SELECT} WHERE created_by = ? ORDER BY id DESC LIMIT ?"
+    ))
+    .bind(creator_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
 /// Find one invite by id.
 pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Invite>, sqlx::Error> {
     sqlx::query_as::<_, Invite>(&format!("{SELECT} WHERE id = ?"))

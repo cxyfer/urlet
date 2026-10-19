@@ -21,7 +21,7 @@ service, no frontend build step.
 | 🧩 Tags | Filter and group links by tag, with usage counts |
 | 🔑 API tokens | `Authorization: Bearer ur_...`, with optional expiry and revocation |
 | 🌐 Multi-domain | Add extra domains in the admin panel; each domain has its own slug namespace and serves redirects only |
-| 👥 User groups | Per-group link and API-token quotas, feature toggles, default domains and domain allowlists; assign users directly or through an invite code |
+| 👥 User groups | Per-group link, API-token and invite quotas (per day/week/month), feature toggles, default domains and domain allowlists; members can issue their own invite codes when the group allows it |
 | 🛠 Admin panel | User management, user groups, all site links, domains, invite codes, site settings, audit log |
 | 🌐 Localized UI | English, Traditional Chinese, and Simplified Chinese; the first visit follows the browser's `Accept-Language` header and falls back to English |
 | 🤖 Bot protection | Cloudflare Turnstile or Google reCAPTCHA v2, enabled through environment variables or the admin panel; applies to the registration, sign-in and link creation forms |

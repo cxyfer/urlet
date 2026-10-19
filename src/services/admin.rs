@@ -8,7 +8,6 @@ use std::sync::Arc;
 use sqlx::SqlitePool;
 
 use crate::config::Config;
-use crate::db::invites::Invite;
 use crate::db::urls::{self, UrlUpdate};
 use crate::db::user_groups::{self, UserGroup};
 use crate::db::users::{self, User, UserFilter};
@@ -18,20 +17,13 @@ use crate::db::{
 use crate::error::{AppError, Result};
 use crate::services::audit::{action, target, Audit};
 use crate::services::groups::GroupDraft;
+pub use crate::services::invites::IssuedInvite as CreatedInvite;
+use crate::services::invites::{Issuer, Request as InviteRequest};
 use crate::services::settings::Settings;
-use crate::services::{password, secret, time, tokens as token_service};
+use crate::services::{password, time, tokens as token_service};
 
 /// Longest accepted invite note.
-pub const MAX_INVITE_NOTE: usize = 120;
-/// Invite codes are 10 characters from an unambiguous alphabet.
-const INVITE_CODE_LEN: usize = 10;
-
-/// A freshly created invite: the plain code is returned exactly once.
-#[derive(Debug, Clone)]
-pub struct CreatedInvite {
-    pub invite: Invite,
-    pub plain_code: String,
-}
+pub use crate::services::invites::MAX_INVITE_NOTE;
 
 /// Instance level statistics for the admin dashboard.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -358,100 +350,20 @@ impl AdminContext<'_> {
         max_uses: Option<i64>,
         expires_at: Option<&str>,
     ) -> Result<CreatedInvite> {
-        let max_uses = match max_uses {
-            Some(value) if !(1..=10_000).contains(&value) => {
-                return Err(AppError::validation(
-                    "max_uses",
-                    "uses must be between 1 and 10000",
-                ))
-            }
-            Some(value) => value,
-            None => 1,
-        };
-        let group_id = match group_id {
-            Some(group_id) => {
-                if user_groups::find_by_id(self.pool, group_id)
-                    .await
-                    .map_err(AppError::from)?
-                    .is_none()
-                {
-                    return Err(AppError::validation(
-                        "group_id",
-                        "the selected group does not exist",
-                    ));
-                }
-                Some(group_id)
-            }
-            None => None,
-        };
-        let note = match note.map(str::trim).filter(|value| !value.is_empty()) {
-            Some(note) => {
-                if note.chars().count() > MAX_INVITE_NOTE {
-                    return Err(AppError::validation(
-                        "note",
-                        format!("the note must be at most {MAX_INVITE_NOTE} characters"),
-                    ));
-                }
-                Some(note.to_string())
-            }
-            None => None,
-        };
-        let expires_at = match expires_at.map(str::trim).filter(|value| !value.is_empty()) {
-            Some(value) => {
-                let parsed = time::parse_flexible(value).ok_or_else(|| {
-                    AppError::validation("expires_at", "expiry must look like 2030-01-31T12:00:00Z")
-                })?;
-                if parsed <= time::now() {
-                    return Err(AppError::validation(
-                        "expires_at",
-                        "expiry must be in the future",
-                    ));
-                }
-                Some(time::to_iso(parsed))
-            }
-            None => None,
-        };
-
-        let plain_code = secret::random_code(INVITE_CODE_LEN);
-        let code_hash = secret::sha256_hex(&plain_code);
-        let prefix: String = plain_code.chars().take(4).collect();
-        let id = invites::create(
-            self.pool,
-            &crate::db::invites::NewInvite {
-                code_hash: &code_hash,
-                code_prefix: &prefix,
-                note: note.as_deref(),
-                group_id,
-                created_by: Some(self.actor.id),
-                max_uses,
-                expires_at: expires_at.as_deref(),
-            },
-        )
+        Issuer {
+            pool: self.pool,
+            settings: self.settings,
+            actor: self.actor,
+            ip_hash: self.ip_hash,
+        }
+        .create(InviteRequest {
+            group_id,
+            note,
+            max_uses,
+            max_uses_cap: crate::services::invites::MAX_ADMIN_USES,
+            expires_at,
+        })
         .await
-        .map_err(|err| {
-            // The selected group may have been deleted after the check above.
-            if crate::db::is_foreign_key_violation(&err) {
-                AppError::validation("group_id", "the selected group no longer exists")
-            } else {
-                AppError::from(err)
-            }
-        })?;
-
-        let invite = invites::find_by_id(self.pool, id)
-            .await
-            .map_err(AppError::from)?
-            .ok_or_else(|| AppError::internal("invite disappeared after creation"))?;
-
-        self.audit(action::INVITE_CREATED, target::INVITE, id)
-            .metadata(serde_json::json!({
-                "max_uses": max_uses,
-                "prefix": prefix,
-                "group_id": group_id
-            }))
-            .record(self.pool)
-            .await;
-
-        Ok(CreatedInvite { invite, plain_code })
     }
 
     /// Revoke an invite code.

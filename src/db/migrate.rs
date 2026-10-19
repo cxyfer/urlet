@@ -63,6 +63,16 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/0005_group_domains.sql"),
         kind: MigrationKind::Transactional,
     },
+    Migration {
+        version: "0006_group_invite_quotas",
+        sql: include_str!("../../migrations/0006_group_invite_quotas.sql"),
+        kind: MigrationKind::Transactional,
+    },
+    Migration {
+        version: "0007_member_invites",
+        sql: include_str!("../../migrations/0007_member_invites.sql"),
+        kind: MigrationKind::Transactional,
+    },
 ];
 
 /// Apply all pending migrations.

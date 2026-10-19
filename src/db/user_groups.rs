@@ -18,6 +18,13 @@ pub struct UserGroup {
     pub description: Option<String>,
     pub max_urls: Option<i64>,
     pub max_api_tokens: Option<i64>,
+    /// Invite codes this group may issue per `invite_period`; NULL inherits the
+    /// site-wide setting, 0 means unlimited.
+    pub max_invites: Option<i64>,
+    /// Calendar period of the invite counter: `day`, `week` or `month`.
+    pub invite_period: String,
+    /// Whether the group's members may issue invite codes themselves.
+    pub allow_invites: bool,
     pub allow_custom_slug: bool,
     pub allow_password: bool,
     pub allow_expiry: bool,
@@ -32,10 +39,11 @@ pub struct UserGroup {
     pub updated_at: String,
 }
 
-const SELECT: &str = "SELECT id, name, description, max_urls, max_api_tokens, allow_custom_slug, \
-                      allow_password, allow_expiry, allow_max_clicks, allow_tags, \
-                      allow_api_tokens, allow_domain_selection, default_domain_id, \
-                      restrict_domains, is_default, created_at, updated_at FROM user_groups";
+const SELECT: &str = "SELECT id, name, description, max_urls, max_api_tokens, max_invites, \
+                      invite_period, allow_invites, allow_custom_slug, allow_password, allow_expiry, \
+                      allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection, \
+                      default_domain_id, restrict_domains, is_default, created_at, updated_at \
+                      FROM user_groups";
 
 /// Every field an administrator can write, already validated and canonicalised.
 #[derive(Debug, Clone, Copy)]
@@ -44,6 +52,9 @@ pub struct GroupValues<'a> {
     pub description: Option<&'a str>,
     pub max_urls: Option<i64>,
     pub max_api_tokens: Option<i64>,
+    pub max_invites: Option<i64>,
+    pub invite_period: &'a str,
+    pub allow_invites: bool,
     pub allow_custom_slug: bool,
     pub allow_password: bool,
     pub allow_expiry: bool,
@@ -127,16 +138,19 @@ pub async fn create(
     let mut tx = pool.begin().await?;
     let result = sqlx::query(
         "INSERT INTO user_groups
-            (name, description, max_urls, max_api_tokens, allow_custom_slug, allow_password,
-             allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens,
-             allow_domain_selection, default_domain_id, restrict_domains, is_default,
-             created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (name, description, max_urls, max_api_tokens, max_invites, invite_period,
+             allow_invites, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks,
+             allow_tags, allow_api_tokens, allow_domain_selection, default_domain_id,
+             restrict_domains, is_default, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(values.name)
     .bind(values.description)
     .bind(values.max_urls)
     .bind(values.max_api_tokens)
+    .bind(values.max_invites)
+    .bind(values.invite_period)
+    .bind(values.allow_invites)
     .bind(values.allow_custom_slug)
     .bind(values.allow_password)
     .bind(values.allow_expiry)
@@ -180,6 +194,7 @@ pub async fn update(
     let updated = sqlx::query(
         "UPDATE user_groups
             SET name = ?, description = ?, max_urls = ?, max_api_tokens = ?,
+                max_invites = ?, invite_period = ?, allow_invites = ?,
                 allow_custom_slug = ?, allow_password = ?, allow_expiry = ?,
                 allow_max_clicks = ?, allow_tags = ?, allow_api_tokens = ?,
                 allow_domain_selection = ?, default_domain_id = ?, restrict_domains = ?,
@@ -190,6 +205,9 @@ pub async fn update(
     .bind(values.description)
     .bind(values.max_urls)
     .bind(values.max_api_tokens)
+    .bind(values.max_invites)
+    .bind(values.invite_period)
+    .bind(values.allow_invites)
     .bind(values.allow_custom_slug)
     .bind(values.allow_password)
     .bind(values.allow_expiry)

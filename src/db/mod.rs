@@ -6,6 +6,7 @@
 pub mod audit;
 pub mod clicks;
 pub mod domains;
+pub mod invite_issuance;
 pub mod invites;
 pub mod login_attempts;
 pub mod migrate;

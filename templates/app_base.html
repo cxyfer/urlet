@@ -12,6 +12,7 @@
             <span class="nav-pills">
                 <a href="/app" class="nav-link{% if chrome.active == "dashboard" %} active{% endif %}">{{ lang.t("nav.links") }}</a>
                 <a href="/app/account" class="nav-link{% if chrome.active == "account" %} active{% endif %}">{{ lang.t("nav.account") }}</a>
+                <a href="/app/invites" class="nav-link{% if chrome.active == "invites" %} active{% endif %}">{{ lang.t("nav.invites") }}</a>
                 {% if chrome.is_admin %}
                 <a href="/app/admin" class="nav-link{% if chrome.active == "admin" %} active{% endif %}">{{ lang.t("nav.admin") }}</a>
                 {% endif %}

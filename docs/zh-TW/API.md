@@ -404,6 +404,49 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 
 ---
 
+## 邀請碼（成員）
+
+當群組開啟 `allow_invites` 時，成員可為**自己的群組**產生邀請碼。邀請碼會綁定該群組，
+兌換者加入同一個群組。群組的日曆配額（`max_invites` / `invite_period`）同樣適用，且與
+管理員發出的邀請碼共用；撤銷邀請碼不會退回額度。
+
+### `GET /api/v1/invites`
+
+`200` → 自己產生的邀請碼（僅前綴）與生效配額：
+
+```json
+{
+  "items": [
+    { "id": 4, "prefix": "RW6M", "note": "team", "group_id": 4, "max_uses": 2,
+      "used_count": 1, "remaining": 1, "expires_at": null, "status": "active",
+      "usable": true, "created_at": "2026-03-18T10:00:00.000Z" }
+  ],
+  "quota": { "group_id": 4, "group_name": "Invite Team", "allowed": true,
+             "limit": 5, "period": "month", "used": 1, "remaining": 4 }
+}
+```
+
+`quota.allowed` 為 `false` 表示群組未開放成員發碼，此時列表為空。`limit` 為 `0`
+（無上限）時 `remaining` 為 `null`。
+
+### `POST /api/v1/invites`
+
+`{ "note"?: "team", "max_uses"?: 2 }` → `201`：
+
+```json
+{ "code": "RW6MF6C6JG", "invite": { "...": "..." }, "quota": { "...": "..." } }
+```
+
+明文邀請碼只回傳一次。成員發碼的 `max_uses` 必須介於 1–10。群組未開放或本週期配額
+用盡時回 `403`（`error.code = "forbidden"`）。
+
+### `DELETE /api/v1/invites/{id}`
+
+`204`，撤銷自己的邀請碼。他人的邀請碼一律回 `404`；管理員可用
+`DELETE /api/v1/admin/invites/{id}` 撤銷任何邀請碼。
+
+---
+
 ## 管理（需 `role = admin`）
 
 所有 `/api/v1/admin/**` 端點對非管理員回 `403 forbidden`。
@@ -419,19 +462,21 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | PATCH | `/admin/domains/{id}` | `{ "status"?: "active"\|"disabled", "is_default"?: true }` |
 | DELETE | `/admin/domains/{id}` | `204`；僅限沒有連結、非預設的 UI 網域 |
 | GET | `/admin/groups?page=&per_page=` | 使用者群組列表（含成員數，分頁） |
-| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "default_domain_id"?, "restrict_domains"?, "domain_ids"?, "is_default"? }` → `201`；`default_domain_id` 必須指向 active 網域；`domain_ids` 必須指向存在的網域（停用的項目會保留但無法選取） |
-| PUT | `/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`default_domain_id: null` 表示全站預設；`domain_ids: null` 或 `[]` 會清空允許清單；`is_default: true` 會轉移唯一的預設標記 |
+| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "max_invites"?, "invite_period"?, "allow_invites"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "default_domain_id"?, "restrict_domains"?, "domain_ids"?, "is_default"? }` → `201`；`default_domain_id` 必須指向 active 網域；`domain_ids` 必須指向存在的網域（停用的項目會保留但無法選取） |
+| PUT | `/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` / `max_invites` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`default_domain_id: null` 表示全站預設；`domain_ids: null` 或 `[]` 會清空允許清單；`is_default: true` 會轉移唯一的預設標記 |
 | DELETE | `/admin/groups/{id}?reassign_to={id}` | `204`，先移動成員再刪除；預設群組或目標不存在/不合法回 `409` |
 
 `GroupDto` 另回傳 `default_domain_id`、`default_domain`（儲存值，即使網域已停用）、
-`restrict_domains`、`allowed_domain_ids`、`allowed_domains`。請求欄位是 `domain_ids`（`null` 或 `[]` 表示清空，省略則維持原值），回應使用
+`restrict_domains`、`allowed_domain_ids`、`allowed_domains`，以及邀請碼配額
+（`max_invites`、`invite_period`）與目前用量（`invites_used`、`invites_remaining`，
+無上限時為 `null`）。請求欄位是 `domain_ids`（`null` 或 `[]` 表示清空，省略則維持原值），回應使用
 `allowed_*`。`GET /api/v1/auth/me` 回傳的是*生效*的 fallback 預設，若儲存的群組預設已停用，
 可能與 `default_domain` 不同。
 | GET | `/admin/urls?q=&status=&user_id=&page=` | 全站短網址 |
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |
 | GET | `/admin/invites` | 邀請碼列表（僅顯示前綴，另含 `group_id` / `group_name`） |
-| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201`，**明文邀請碼只回一次** |
+| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201`，**明文邀請碼只回一次**；群組的週期配額用盡時回 `403` |
 | DELETE | `/admin/invites/{id}` | `204`，撤銷 |
 | GET | `/admin/settings` | 目前設定 |
 | PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", ... }` |
@@ -439,11 +484,19 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | GET | `/admin/stats` | 使用者／短網址／點擊總量、資料庫大小、版本、運行時間 |
 
 **使用者群組。** 群組物件為
-`{ id, name, description, max_urls, max_api_tokens, allow_*, is_default, members, created_at, updated_at }`。
+`{ id, name, description, max_urls, max_api_tokens, max_invites, invite_period, allow_*,
+is_default, members, created_at, updated_at }`。`allow_invites` 預設為 `false`（需明確開啟），
+開啟後成員可自行發碼，並與管理員發出的邀請碼共用同一份配額。
 配額可為 `null`（跟隨全站設定）或 `0`（無上限）。功能開關預設 `true`，只影響新的使用，
 不會修改既有連結或 Token。管理員與一般使用者適用同一套規則。`PUT` 接受部分群組表示：省略欄位
 即維持原值，配額設為 `null` 代表跟隨全站，`description: null` 會清除說明，`is_default: true`
 會轉移預設標記。`POST` 仍採建立預設值（省略開關視為允許、省略配額視為跟隨全站）。
+
+**邀請碼配額。** 每個群組可限制每個日曆週期能「產生」的邀請碼數量。`max_invites` 可為
+`null`（跟隨全站 `max_invites_per_period`）或 `0`（無上限）；`invite_period` 為 `day`、
+`week`（週一起算）或 `month`，以 UTC 計算。超過上限會回 `403`，訊息會標明上限。計數保存在
+發放流水帳中，因此**撤銷邀請碼不會退回額度**，額度會在週期交界自動重置。未指定 `group_id`
+的邀請碼改為消耗全站配額。
 
 **保護機制**：管理員不能變更自己的角色或狀態、不能刪除自己，且系統永遠保留至少一位
 有效管理員（否則回 `409`）。預設群組不可刪除，請先以 `PUT` 轉移標記。
@@ -451,6 +504,8 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 可編輯的設定鍵：`site_name`、`registration_mode`（`open`/`invite`/`closed`）、
 `default_slug_length`（4–16）、`max_urls_per_user`（0 = 無限）、
 `max_api_tokens_per_user`（0 = 無限，預設 20）、
+`max_invites_per_period`（0 = 無限，預設 0）、`invite_period`（`day`/`week`/`month`，預設
+`month`）、
 `default_redirect_type`（301/302/307/308）、`analytics_enabled`、
 `click_retention_days`（0 = 永久保留），以及防機器人驗證的
 `captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、
