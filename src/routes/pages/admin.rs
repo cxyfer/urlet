@@ -27,7 +27,7 @@ use crate::services::admin::{self, AdminContext};
 use crate::services::captcha::CaptchaProvider;
 use crate::services::domains::{DomainContext, DomainOption, DomainRegistry};
 use crate::services::groups::{self as group_service, GroupDraft, GroupOverview};
-use crate::services::invite_quota::{InvitePeriod, InviteQuota, InviteUsage};
+use crate::services::invite_quota::{usage_for, usage_map, InvitePeriod, InviteUsage};
 use crate::services::settings::Settings;
 use crate::services::time;
 use crate::state::AppState;
@@ -351,7 +351,7 @@ impl GroupRow {
         .filter(|allowed| *allowed)
         .count() as i64;
         let invite_period = InvitePeriod::parse(&group.invite_period).unwrap_or_default();
-        let invite_period_label = invite_period_label(lang, invite_period);
+        let invite_period_label = super::period_label(lang, invite_period);
         let invite_usage_display = if invite_usage.unlimited() {
             lang.t("admin.groups.unlimited").to_string()
         } else {
@@ -447,15 +447,6 @@ impl GroupRow {
     }
 }
 
-/// Invite usage snapshot for a group (`None` = the site-wide pool).
-async fn invite_usage_for(
-    state: &AppState,
-    group: Option<&crate::db::user_groups::UserGroup>,
-) -> Result<InviteUsage, AppError> {
-    let quota = InviteQuota::resolve(&state.settings, group);
-    InviteUsage::load(quota, &state.db, group.map(|group| group.id), time::now()).await
-}
-
 /// `2 of 5 per month` (plus a used-up suffix) for the invite form. Empty when
 /// the group has unlimited invites, so the option stays uncluttered.
 fn invite_usage_label(lang: Lang, usage: InviteUsage) -> String {
@@ -465,21 +456,12 @@ fn invite_usage_label(lang: Lang, usage: InviteUsage) -> String {
     let values = [
         ("used", usage.used.to_string()),
         ("limit", usage.quota.limit.to_string()),
-        ("period", invite_period_label(lang, usage.quota.period)),
+        ("period", super::period_label(lang, usage.quota.period)),
     ];
     if usage.exhausted() {
         i18n::format(lang, "admin.invites.quota_option_exhausted", &values)
     } else {
         i18n::format(lang, "admin.invites.quota_option", &values)
-    }
-}
-
-/// Localised calendar period name, used in quota hints and selects.
-fn invite_period_label(lang: Lang, period: InvitePeriod) -> String {
-    match period {
-        InvitePeriod::Day => lang.t("admin.groups.period.day").to_string(),
-        InvitePeriod::Week => lang.t("admin.groups.period.week").to_string(),
-        InvitePeriod::Month => lang.t("admin.groups.period.month").to_string(),
     }
 }
 
@@ -1859,16 +1841,18 @@ async fn render_groups(
     let lang = i18n::current();
     let domains = state.domains.active_options();
     let active_domain_ids: Vec<i64> = domains.iter().map(|domain| domain.id).collect();
+    let groups: Vec<crate::db::user_groups::UserGroup> =
+        overview.iter().map(|row| row.group.clone()).collect();
+    let usage = usage_map(&state.db, &state.settings, &groups, time::now()).await?;
     let mut rows = Vec::with_capacity(overview.len());
     for row in &overview {
-        let usage = invite_usage_for(state, Some(&row.group)).await?;
         rows.push(GroupRow::new(
             &state.settings,
             lang,
             row,
             &active_domain_ids,
             &state.domains,
-            usage,
+            usage[&row.group.id],
         ));
     }
     render(
@@ -1896,16 +1880,16 @@ async fn render_invites(
         .await
         .map_err(AppError::from)?;
     let group_rows = user_groups::list(&state.db).await.map_err(AppError::from)?;
-    let mut groups = Vec::with_capacity(group_rows.len());
-    for group in &group_rows {
-        let usage = invite_usage_for(state, Some(group)).await?;
-        groups.push(InviteGroupOption {
+    let usage = usage_map(&state.db, &state.settings, &group_rows, time::now()).await?;
+    let groups: Vec<InviteGroupOption> = group_rows
+        .iter()
+        .map(|group| InviteGroupOption {
             id: group.id,
             name: group.name.clone(),
-            quota_label: invite_usage_label(lang, usage),
-        });
-    }
-    let site_usage = invite_usage_for(state, None).await?;
+            quota_label: invite_usage_label(lang, usage[&group.id]),
+        })
+        .collect();
+    let site_usage = usage_for(&state.db, &state.settings, None, time::now()).await?;
     let site_quota_label = invite_usage_label(lang, site_usage);
     render(
         InvitesPage {

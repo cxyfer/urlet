@@ -22,9 +22,6 @@ use crate::services::invites::{Issuer, Request as InviteRequest};
 use crate::services::settings::Settings;
 use crate::services::{password, time, tokens as token_service};
 
-/// Longest accepted invite note.
-pub use crate::services::invites::MAX_INVITE_NOTE;
-
 /// Instance level statistics for the admin dashboard.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SystemStats {

@@ -123,17 +123,18 @@ impl Issuer<'_> {
         let code_hash = secret::sha256_hex(&plain_code);
         let prefix: String = plain_code.chars().take(4).collect();
 
-        // Claim a slot before the invite exists. The ledger insert is the
-        // authoritative check, so two concurrent requests cannot both take the
-        // last slot of a period.
+        // Reserve the slot and create the code in one transaction. The
+        // conditional INSERT is the authoritative quota check, and committing
+        // both rows together means a cancelled or crashed request cannot leave
+        // an orphan reservation consuming the group's budget.
         let quota = InviteQuota::resolve(self.settings, group.as_ref());
+        let mut tx = self.pool.begin().await.map_err(AppError::from)?;
         let issuance_id = quota
-            .reserve(self.pool, group_id, Some(self.actor.id), time::now())
+            .reserve(&mut tx, group_id, Some(self.actor.id), time::now())
             .await?
             .ok_or_else(|| quota.exceeded())?;
-
-        let created = invites::create(
-            self.pool,
+        let id = invites::create(
+            &mut tx,
             &crate::db::invites::NewInvite {
                 code_hash: &code_hash,
                 code_prefix: &prefix,
@@ -144,29 +145,20 @@ impl Issuer<'_> {
                 expires_at: expires_at.as_deref(),
             },
         )
-        .await;
-        let id = match created {
-            Ok(id) => id,
-            Err(err) => {
-                // The group may have been deleted between the lookup and the
-                // write. Give the slot back so a failed request does not burn the
-                // group's quota.
-                if let Err(release_err) = invite_issuance::release(self.pool, issuance_id).await {
-                    tracing::warn!(error = %release_err, "cannot release invite issuance slot");
-                }
-                return Err(if crate::db::is_foreign_key_violation(&err) {
-                    AppError::validation("group_id", "the selected group no longer exists")
-                } else {
-                    AppError::from(err)
-                });
+        .await
+        .map_err(|err| {
+            // The group may have been deleted between the lookup and the write;
+            // dropping `tx` rolls the reservation back with it.
+            if crate::db::is_foreign_key_violation(&err) {
+                AppError::validation("group_id", "the selected group no longer exists")
+            } else {
+                AppError::from(err)
             }
-        };
-
-        if let Err(err) = invite_issuance::attach(self.pool, issuance_id, id).await {
-            // The invite exists and the slot is still charged; linking the row is
-            // bookkeeping only.
-            tracing::warn!(error = %err, invite_id = id, "cannot link invite issuance slot");
-        }
+        })?;
+        invite_issuance::attach(&mut tx, issuance_id, id)
+            .await
+            .map_err(AppError::from)?;
+        tx.commit().await.map_err(AppError::from)?;
 
         let invite = invites::find_by_id(self.pool, id)
             .await

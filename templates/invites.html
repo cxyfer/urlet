@@ -53,7 +53,9 @@
     </form>
     <p class="hint">{{ lang.t("invites.create_hint") }}</p>
 </div>
+{% endif %}
 
+{% if items.len() > 0 || allowed %}
 <div class="panel panel-flush mt">
     <div class="table-toolbar">
         <h2>{{ lang.t("invites.list_heading") }}</h2>
@@ -89,6 +91,15 @@
             </tbody>
         </table>
     </div>
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        <span class="muted small">{{ page_note }}</span>
+        {% for link in links %}
+        {% if link.current %}<span class="current">{{ link.label }}</span>
+        {% else %}<a class="btn btn-sm" href="{{ link.url }}">{{ link.label }}</a>{% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
     {% else %}
     <p class="empty">{{ lang.t("invites.empty") }}</p>
     {% endif %}

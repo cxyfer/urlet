@@ -21,7 +21,7 @@ use crate::routes::dto::{Page, Pagination, UrlDto, UserDto};
 use crate::services::admin::{self, AdminContext, SystemStats};
 use crate::services::domains::DomainContext;
 use crate::services::groups::{self as group_service, GroupDraft};
-use crate::services::invite_quota::{InvitePeriod, InviteQuota, InviteUsage};
+use crate::services::invite_quota::{usage_for, usage_map, InvitePeriod, InviteUsage};
 use crate::services::time;
 use crate::state::AppState;
 
@@ -221,14 +221,6 @@ impl GroupDto {
             updated_at: group.updated_at.clone(),
         }
     }
-}
-
-/// Invite usage snapshot for one group, used by the group API.
-async fn invite_usage_for(state: &AppState, group: &UserGroup) -> Result<InviteUsage, ApiError> {
-    let quota = InviteQuota::resolve(&state.settings, Some(group));
-    InviteUsage::load(quota, &state.db, Some(group.id), time::now())
-        .await
-        .map_err(ApiError::from)
 }
 
 /// Group fields. `name` is required; other omitted fields keep their current
@@ -893,25 +885,22 @@ pub async fn list_groups(
     let total = rows.len() as i64;
     let offset = usize::try_from(pagination.offset().max(0)).unwrap_or(usize::MAX);
     let limit = usize::try_from(pagination.per_page().max(0)).unwrap_or(usize::MAX);
-    let items = {
-        let mut usage = HashMap::new();
-        for row in &rows {
-            usage.insert(row.group.id, invite_usage_for(&state, &row.group).await?);
-        }
-        rows.iter()
-            .skip(offset)
-            .take(limit)
-            .map(|row| {
-                GroupDto::new(
-                    &row.group,
-                    row.members,
-                    &row.allowed_domain_ids,
-                    &state.domains,
-                    usage[&row.group.id],
-                )
-            })
-            .collect()
-    };
+    let groups: Vec<UserGroup> = rows.iter().map(|row| row.group.clone()).collect();
+    let usage = usage_map(&state.db, &state.settings, &groups, time::now()).await?;
+    let items = rows
+        .iter()
+        .skip(offset)
+        .take(limit)
+        .map(|row| {
+            GroupDto::new(
+                &row.group,
+                row.members,
+                &row.allowed_domain_ids,
+                &state.domains,
+                usage[&row.group.id],
+            )
+        })
+        .collect();
     Ok(Json(Page::new(
         items,
         pagination.page(),
@@ -932,7 +921,7 @@ pub async fn create_group(
     let group = context(&state, &client, &user).create_group(draft).await?;
     let members = crate::db::user_groups::count_members(&state.db, group.id).await?;
     let allowed_domain_ids = crate::db::user_groups::domain_ids(&state.db, group.id).await?;
-    let usage = invite_usage_for(&state, &group).await?;
+    let usage = usage_for(&state.db, &state.settings, Some(&group), time::now()).await?;
     Ok((
         StatusCode::CREATED,
         Json(GroupDto::new(
@@ -964,7 +953,7 @@ pub async fn update_group(
         .await?;
     let members = crate::db::user_groups::count_members(&state.db, group.id).await?;
     let allowed_domain_ids = crate::db::user_groups::domain_ids(&state.db, group.id).await?;
-    let usage = invite_usage_for(&state, &group).await?;
+    let usage = usage_for(&state.db, &state.settings, Some(&group), time::now()).await?;
     Ok(Json(GroupDto::new(
         &group,
         members,

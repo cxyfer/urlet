@@ -10,7 +10,9 @@
 //! revoking a code does not free its slot. Periods are calendar based: the
 //! counter resets on its own at the next boundary, with no scheduled job.
 
-use sqlx::SqlitePool;
+use std::collections::HashMap;
+
+use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::db::invite_issuance;
 use crate::db::user_groups::UserGroup;
@@ -110,32 +112,18 @@ impl InviteQuota {
             .map_err(AppError::from)
     }
 
-    /// Slots left in the current period; `None` when unlimited.
-    pub async fn remaining(
-        self,
-        pool: &SqlitePool,
-        group_id: Option<i64>,
-        now: OffsetDateTime,
-    ) -> Result<Option<i64>> {
-        if self.unlimited() {
-            return Ok(None);
-        }
-        let used = self.used(pool, group_id, now).await?;
-        Ok(Some((self.limit - used).max(0)))
-    }
-
     /// Claim one slot. Returns the ledger row id, or `None` when the period is
     /// exhausted. `quota.limit == 0` always grants.
     pub async fn reserve(
         self,
-        pool: &SqlitePool,
+        conn: &mut SqliteConnection,
         group_id: Option<i64>,
         actor_id: Option<i64>,
         now: OffsetDateTime,
     ) -> Result<Option<i64>> {
         let window_start = self.period.window_start(now);
         invite_issuance::reserve(
-            pool,
+            conn,
             group_id,
             actor_id,
             self.limit,
@@ -148,8 +136,13 @@ impl InviteQuota {
 
     /// User facing error when the quota is used up.
     pub fn exceeded(self) -> AppError {
+        let noun = if self.limit == 1 {
+            "invite code"
+        } else {
+            "invite codes"
+        };
         AppError::forbidden(format!(
-            "invite quota reached: at most {} invite codes per {}",
+            "invite quota reached: at most {} {noun} per {}",
             self.limit,
             self.period.as_str()
         ))
@@ -192,6 +185,54 @@ impl InviteUsage {
     pub fn exhausted(self) -> bool {
         self.remaining() == Some(0)
     }
+}
+
+/// Usage snapshot for one group (`None` = the site-wide pool).
+pub async fn usage_for(
+    pool: &SqlitePool,
+    settings: &Settings,
+    group: Option<&UserGroup>,
+    now: OffsetDateTime,
+) -> Result<InviteUsage> {
+    let quota = InviteQuota::resolve(settings, group);
+    InviteUsage::load(quota, pool, group.map(|group| group.id), now).await
+}
+
+/// Usage snapshots for many groups, with at most one grouped query per distinct
+/// period instead of one query per group.
+pub async fn usage_map(
+    pool: &SqlitePool,
+    settings: &Settings,
+    groups: &[UserGroup],
+    now: OffsetDateTime,
+) -> Result<HashMap<i64, InviteUsage>> {
+    let mut windows: HashMap<&'static str, String> = HashMap::new();
+    for group in groups {
+        let quota = InviteQuota::resolve(settings, Some(group));
+        windows
+            .entry(quota.period.as_str())
+            .or_insert_with(|| quota.period.window_start(now));
+    }
+
+    let mut counts_by_period: HashMap<&'static str, HashMap<i64, i64>> = HashMap::new();
+    for (period, start) in &windows {
+        let rows = invite_issuance::counts_since(pool, start)
+            .await
+            .map_err(AppError::from)?;
+        counts_by_period.insert(period, rows.into_iter().collect());
+    }
+
+    let mut usages = HashMap::with_capacity(groups.len());
+    for group in groups {
+        let quota = InviteQuota::resolve(settings, Some(group));
+        let used = counts_by_period
+            .get(quota.period.as_str())
+            .and_then(|counts| counts.get(&group.id))
+            .copied()
+            .unwrap_or(0);
+        usages.insert(group.id, InviteUsage { quota, used });
+    }
+    Ok(usages)
 }
 
 #[cfg(test)]

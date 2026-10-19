@@ -159,7 +159,7 @@ async fn a_null_group_quota_inherits_the_site_setting() {
     assert!(blocked.json()["error"]["message"]
         .as_str()
         .expect("message")
-        .contains("at most 1 invite codes per week"));
+        .contains("at most 1 invite code per week"));
 
     // 0 is unlimited, not "inherit".
     let unlimited = create_group(
@@ -713,5 +713,356 @@ async fn member_invites_require_a_session() {
     assert_eq!(
         app.post_json("/api/v1/invites", json!({})).await.status,
         StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
+async fn existing_codes_stay_visible_when_invites_are_disabled() {
+    let app = TestApp::spawn().await;
+    let admin_cookie = admin(&app).await;
+    let group = create_group(
+        &app,
+        &admin_cookie,
+        json!({ "name": "Revocable", "allow_invites": true, "max_invites": 5 }),
+    )
+    .await;
+    let group_id = group["id"].as_i64().expect("group id");
+    let (member_cookie, _) =
+        member_in_group(&app, &admin_cookie, "kept@example.com", group_id).await;
+
+    let created = member_create(&app, &member_cookie, Some(1)).await;
+    assert_eq!(created.status, StatusCode::CREATED);
+    let invite_id = created.json()["invite"]["id"].as_i64().expect("invite id");
+
+    // An administrator turns the toggle off again.
+    let disabled = app
+        .send(put_json_as(
+            &format!("/api/v1/admin/groups/{group_id}"),
+            json!({ "name": "Revocable", "allow_invites": false }),
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(disabled.status, StatusCode::OK, "{}", disabled.body);
+
+    // The creation form disappears, but the existing code stays visible and
+    // revocable from the page.
+    let page = app.get_as("/app/invites", &member_cookie).await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(
+        page.body.contains("Invite codes are not enabled"),
+        "{}",
+        page.body
+    );
+    assert!(
+        !page.body.contains("action=\"/app/invites\""),
+        "{}",
+        page.body
+    );
+    assert!(page.body.contains("team"), "{}", page.body);
+    assert!(
+        page.body
+            .contains(&format!("/app/invites/{invite_id}/delete")),
+        "{}",
+        page.body
+    );
+
+    let revoked = app
+        .send(common::post_form_as(
+            &format!("/app/invites/{invite_id}/delete"),
+            "",
+            &member_cookie,
+        ))
+        .await;
+    assert_eq!(revoked.status, StatusCode::SEE_OTHER);
+}
+
+#[tokio::test]
+async fn member_codes_are_paginated() {
+    let app = TestApp::spawn().await;
+    let admin_cookie = admin(&app).await;
+    let group = create_group(
+        &app,
+        &admin_cookie,
+        json!({ "name": "Paged", "allow_invites": true, "max_invites": 0 }),
+    )
+    .await;
+    let group_id = group["id"].as_i64().expect("group id");
+    let (member_cookie, member_id) =
+        member_in_group(&app, &admin_cookie, "paged@example.com", group_id).await;
+
+    // Seed one older code directly so the page needs a second page without
+    // tripping the 20-per-hour burst limit.
+    let mut conn = app.state.db.acquire().await.expect("connection");
+    urlet::db::invites::create(
+        &mut conn,
+        &urlet::db::invites::NewInvite {
+            code_hash: "seeded-oldest-code",
+            code_prefix: "OLD0",
+            note: Some("code 0"),
+            group_id: Some(group_id),
+            created_by: Some(member_id),
+            max_uses: 1,
+            expires_at: None,
+        },
+    )
+    .await
+    .expect("seed oldest code");
+    drop(conn);
+
+    // The burst limit is 20 codes, which is exactly what this test needs.
+    for index in 1..=20 {
+        let response = app
+            .post_json_as(
+                "/api/v1/invites",
+                json!({ "note": format!("code {index}"), "max_uses": 1 }),
+                &member_cookie,
+            )
+            .await;
+        assert_eq!(response.status, StatusCode::CREATED, "{}", response.body);
+    }
+
+    let second = app
+        .get_as("/api/v1/invites?page=2&per_page=10", &member_cookie)
+        .await;
+    assert_eq!(second.status, StatusCode::OK, "{}", second.body);
+    let second = second.json();
+    assert_eq!(second["page"], 2);
+    assert_eq!(second["per_page"], 10);
+    assert_eq!(second["total"], 21);
+    assert_eq!(second["items"].as_array().expect("items").len(), 10);
+    assert_eq!(second["items"][0]["note"], "code 10");
+
+    let first_page = app.get_as("/app/invites", &member_cookie).await;
+    assert_eq!(first_page.status, StatusCode::OK);
+    assert!(
+        first_page.body.contains("Page 1 of 2"),
+        "{}",
+        first_page.body
+    );
+    assert!(
+        first_page.body.contains("/app/invites?page=2"),
+        "{}",
+        first_page.body
+    );
+    assert!(!first_page.body.contains("code 0"), "{}", first_page.body);
+
+    let second_page = app.get_as("/app/invites?page=2", &member_cookie).await;
+    assert_eq!(second_page.status, StatusCode::OK);
+    assert!(second_page.body.contains("code 0"), "{}", second_page.body);
+    assert!(
+        second_page.body.contains("Page 2 of 2"),
+        "{}",
+        second_page.body
+    );
+}
+
+#[tokio::test]
+async fn a_rolled_back_issuance_does_not_consume_quota() {
+    let app = TestApp::spawn().await;
+    let admin_cookie = admin(&app).await;
+    let group = create_group(
+        &app,
+        &admin_cookie,
+        json!({ "name": "Rollback", "allow_invites": true, "max_invites": 1 }),
+    )
+    .await;
+    let group_id = group["id"].as_i64().expect("group id");
+    let stored = urlet::db::user_groups::find_by_id(&app.state.db, group_id)
+        .await
+        .expect("group lookup")
+        .expect("group");
+    let quota =
+        urlet::services::invite_quota::InviteQuota::resolve(&app.state.settings, Some(&stored));
+
+    // Reserving then dropping the transaction (cancellation/crash) must not
+    // leave an orphan slot behind.
+    let mut tx = app.state.db.begin().await.expect("transaction");
+    let reserved = quota
+        .reserve(&mut tx, Some(group_id), None, urlet::services::time::now())
+        .await
+        .expect("reserve");
+    assert!(reserved.is_some());
+    drop(tx);
+
+    let used = quota
+        .used(&app.state.db, Some(group_id), urlet::services::time::now())
+        .await
+        .expect("usage");
+    assert_eq!(used, 0);
+
+    // The slot is still available through the normal path.
+    let (member_cookie, _) =
+        member_in_group(&app, &admin_cookie, "rollback@example.com", group_id).await;
+    assert_eq!(
+        member_create(&app, &member_cookie, Some(1)).await.status,
+        StatusCode::CREATED
+    );
+}
+
+#[tokio::test]
+async fn member_creation_is_rate_limited() {
+    let app = TestApp::spawn().await;
+    let admin_cookie = admin(&app).await;
+    let group = create_group(
+        &app,
+        &admin_cookie,
+        json!({ "name": "Burst", "allow_invites": true, "max_invites": 0 }),
+    )
+    .await;
+    let group_id = group["id"].as_i64().expect("group id");
+    let (member_cookie, _) =
+        member_in_group(&app, &admin_cookie, "burst@example.com", group_id).await;
+
+    for index in 0..20 {
+        let response = member_create(&app, &member_cookie, Some(1)).await;
+        assert_eq!(
+            response.status,
+            StatusCode::CREATED,
+            "code {index}: {}",
+            response.body
+        );
+    }
+    let blocked = member_create(&app, &member_cookie, Some(1)).await;
+    assert_eq!(blocked.status, StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
+async fn a_partial_group_update_keeps_allow_invites() {
+    let app = TestApp::spawn().await;
+    let admin_cookie = admin(&app).await;
+    let group = create_group(
+        &app,
+        &admin_cookie,
+        json!({ "name": "Keep toggle", "allow_invites": true }),
+    )
+    .await;
+    let group_id = group["id"].as_i64().expect("group id");
+
+    let updated = app
+        .send(put_json_as(
+            &format!("/api/v1/admin/groups/{group_id}"),
+            json!({ "name": "Still inviting" }),
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(updated.status, StatusCode::OK, "{}", updated.body);
+    assert_eq!(updated.json()["allow_invites"], true);
+}
+
+#[tokio::test]
+async fn deleting_a_group_removes_its_issuance_rows() {
+    let app = TestApp::spawn().await;
+    let admin_cookie = admin(&app).await;
+    let group = create_group(
+        &app,
+        &admin_cookie,
+        json!({ "name": "Doomed", "allow_invites": true, "max_invites": 5 }),
+    )
+    .await;
+    let group_id = group["id"].as_i64().expect("group id");
+    let (_, member_id) = member_in_group(&app, &admin_cookie, "doomed@example.com", group_id).await;
+    let default_id = group_in_listing(&app, &admin_cookie, "Standard").await["id"]
+        .as_i64()
+        .expect("default id");
+
+    // Issue through the administrator path so the member's group change does
+    // not matter for this cascade check.
+    assert_eq!(
+        create_invite(&app, &admin_cookie, Some(group_id))
+            .await
+            .status,
+        StatusCode::CREATED
+    );
+    let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM invite_issuance WHERE group_id = ?")
+        .bind(group_id)
+        .fetch_one(&app.state.db)
+        .await
+        .expect("issuance count");
+    assert_eq!(before, 1);
+
+    let deleted = app
+        .send(delete_as(
+            &format!("/api/v1/admin/groups/{group_id}?reassign_to={default_id}"),
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(deleted.status, StatusCode::NO_CONTENT, "{}", deleted.body);
+    let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM invite_issuance WHERE group_id = ?")
+        .bind(group_id)
+        .fetch_one(&app.state.db)
+        .await
+        .expect("issuance count");
+    assert_eq!(after, 0);
+    let _ = member_id;
+}
+
+#[tokio::test]
+async fn an_ungrouped_account_uses_the_default_group() {
+    let app = TestApp::spawn().await;
+    let admin_cookie = admin(&app).await;
+    let standard = group_in_listing(&app, &admin_cookie, "Standard").await;
+    let default_id = standard["id"].as_i64().expect("default id");
+    let enabled = app
+        .send(put_json_as(
+            &format!("/api/v1/admin/groups/{default_id}"),
+            json!({ "name": "Standard", "allow_invites": true, "max_invites": 2 }),
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(enabled.status, StatusCode::OK, "{}", enabled.body);
+
+    let (member_cookie, member_id) =
+        member_in_group(&app, &admin_cookie, "orphan@example.com", default_id).await;
+    // Simulate an account whose group link was lost outside the normal paths.
+    sqlx::query("UPDATE users SET group_id = NULL WHERE id = ?")
+        .bind(member_id)
+        .execute(&app.state.db)
+        .await
+        .expect("detach group");
+
+    let listing = app.get_as("/api/v1/invites", &member_cookie).await.json();
+    assert_eq!(listing["quota"]["allowed"], true);
+    assert_eq!(listing["quota"]["group_id"], default_id);
+    assert_eq!(listing["quota"]["group_name"], "Standard");
+
+    let created = member_create(&app, &member_cookie, Some(1)).await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    assert_eq!(created.json()["invite"]["group_id"], default_id);
+}
+
+#[tokio::test]
+async fn concurrent_member_issuance_cannot_exceed_the_quota() {
+    let app = TestApp::spawn().await;
+    let admin_cookie = admin(&app).await;
+    let group = create_group(
+        &app,
+        &admin_cookie,
+        json!({ "name": "Member race", "allow_invites": true, "max_invites": 1 }),
+    )
+    .await;
+    let group_id = group["id"].as_i64().expect("group id");
+    let (member_cookie, _) =
+        member_in_group(&app, &admin_cookie, "member-race@example.com", group_id).await;
+
+    let (left, right) = tokio::join!(
+        member_create(&app, &member_cookie, Some(1)),
+        member_create(&app, &member_cookie, Some(1))
+    );
+    let statuses = [left.status, right.status];
+    assert_eq!(
+        statuses
+            .iter()
+            .filter(|status| **status == StatusCode::CREATED)
+            .count(),
+        1,
+        "{statuses:?}"
+    );
+    assert_eq!(
+        statuses
+            .iter()
+            .filter(|status| **status == StatusCode::FORBIDDEN)
+            .count(),
+        1,
+        "{statuses:?}"
     );
 }

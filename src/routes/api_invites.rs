@@ -5,7 +5,7 @@
 //! `invite_period`) and the shared issuance ledger apply exactly as they do for
 //! administrators, so both paths draw from the same budget.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -14,8 +14,10 @@ use serde::{Deserialize, Serialize};
 use crate::db::invites::Invite;
 use crate::error::ApiError;
 use crate::middleware::auth::{ClientInfo, CurrentUser};
-use crate::services::invite_quota::{InviteQuota, InviteUsage};
+use crate::routes::dto::Pagination;
+use crate::services::invite_quota::{usage_for, InviteQuota};
 use crate::services::invites::{self, Issuer};
+use crate::services::ratelimit::limits;
 use crate::services::time;
 use crate::state::AppState;
 
@@ -76,6 +78,9 @@ pub struct MemberQuotaDto {
 #[derive(Debug, Serialize)]
 pub struct MemberInviteList {
     pub items: Vec<MemberInviteDto>,
+    pub page: i64,
+    pub per_page: i64,
+    pub total: i64,
     pub quota: MemberQuotaDto,
 }
 
@@ -101,13 +106,7 @@ async fn quota_for(
 ) -> Result<MemberQuotaDto, ApiError> {
     let group = invites::member_group(&state.db, user).await?;
     let quota = InviteQuota::resolve(&state.settings, group.as_ref());
-    let usage = InviteUsage::load(
-        quota,
-        &state.db,
-        group.as_ref().map(|group| group.id),
-        time::now(),
-    )
-    .await?;
+    let usage = usage_for(&state.db, &state.settings, group.as_ref(), time::now()).await?;
     Ok(MemberQuotaDto {
         group_id: group.as_ref().map(|group| group.id),
         group_name: group.as_ref().map(|group| group.name.clone()),
@@ -126,14 +125,22 @@ async fn quota_for(
 pub async fn list(
     State(state): State<AppState>,
     CurrentUser { user, .. }: CurrentUser,
+    Query(pagination): Query<Pagination>,
 ) -> Result<Json<MemberInviteList>, ApiError> {
-    let rows = crate::db::invites::list_by_creator(&state.db, user.id, 100).await?;
+    let per_page = pagination.per_page();
+    let rows =
+        crate::db::invites::list_by_creator(&state.db, user.id, per_page, pagination.offset())
+            .await?;
+    let total = crate::db::invites::count_by_creator(&state.db, user.id).await?;
     let now = time::now_iso();
     Ok(Json(MemberInviteList {
         items: rows
             .iter()
             .map(|invite| MemberInviteDto::new(invite, &now))
             .collect(),
+        page: pagination.page(),
+        per_page,
+        total,
         quota: quota_for(&state, &user).await?,
     }))
 }
@@ -145,6 +152,15 @@ pub async fn create(
     CurrentUser { user, .. }: CurrentUser,
     Json(payload): Json<CreateMemberInvitePayload>,
 ) -> Result<Response, ApiError> {
+    state
+        .limiter
+        .check(
+            &format!("create-invite:{}", user.id),
+            limits::CREATE_INVITE_CAPACITY,
+            limits::CREATE_INVITE_REFILL_PER_SEC,
+        )
+        .map_err(|retry| ApiError(crate::error::AppError::rate_limited(retry)))?;
+
     let created = Issuer {
         pool: &state.db,
         settings: &state.settings,

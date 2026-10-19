@@ -17,10 +17,12 @@ use crate::error::AppError;
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::routes::pages::{
-    flash_from_query, redirect_err, redirect_ok, redirect_to_login, Chrome, Flash,
+    flash_from_query, page_links, redirect_err, redirect_ok, redirect_to_login, Chrome, Flash,
+    PageLink,
 };
-use crate::services::invite_quota::{InvitePeriod, InviteQuota, InviteUsage};
+use crate::services::invite_quota::usage_for;
 use crate::services::invites::{self as invite_service, Issuer, MAX_MEMBER_USES};
+use crate::services::ratelimit::limits;
 use crate::services::time;
 use crate::state::AppState;
 
@@ -35,11 +37,16 @@ pub struct InvitesPage {
     pub group_name: String,
     /// Localised "2 of 5 per month", or "Unlimited".
     pub quota_label: String,
-    pub remaining: Option<i64>,
     pub items: Vec<InviteRow>,
     /// Plaintext code created by the current request (shown once).
     pub new_code: Option<String>,
     pub max_uses_cap: i64,
+    pub page: i64,
+    pub total_pages: i64,
+    pub total: i64,
+    pub links: Vec<PageLink>,
+    /// Localised "Page 1 of 3".
+    pub page_note: String,
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +67,8 @@ pub struct InvitesQuery {
     pub ok: Option<String>,
     #[serde(default)]
     pub err: Option<String>,
+    #[serde(default, deserialize_with = "crate::routes::dto::optional_i64")]
+    pub page: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,14 +77,6 @@ pub struct CreateInviteForm {
     pub note: Option<String>,
     #[serde(default)]
     pub max_uses: Option<String>,
-}
-
-fn period_label(lang: Lang, period: InvitePeriod) -> String {
-    match period {
-        InvitePeriod::Day => lang.t("invites.period.day").to_string(),
-        InvitePeriod::Week => lang.t("invites.period.week").to_string(),
-        InvitePeriod::Month => lang.t("invites.period.month").to_string(),
-    }
 }
 
 /// `GET /app/invites`
@@ -92,6 +93,7 @@ pub async fn page(
         &current.user,
         flash_from_query(query.ok.as_deref(), query.err.as_deref()),
         None,
+        query.page.unwrap_or(1).max(1),
     )
     .await
 }
@@ -122,6 +124,18 @@ pub async fn create(
         },
     };
 
+    if state
+        .limiter
+        .check(
+            &format!("create-invite:{}", current.user.id),
+            limits::CREATE_INVITE_CAPACITY,
+            limits::CREATE_INVITE_REFILL_PER_SEC,
+        )
+        .is_err()
+    {
+        return Ok(redirect_err("/app/invites", "rate_limited").into_response());
+    }
+
     let outcome = Issuer {
         pool: &state.db,
         settings: &state.settings,
@@ -141,6 +155,7 @@ pub async fn create(
                     message: i18n::current().t("invites.created_flash").to_string(),
                 }),
                 Some(created.plain_code),
+                1,
             )
             .await
         }
@@ -172,11 +187,14 @@ pub async fn revoke(
     })
 }
 
+const PER_PAGE: i64 = 20;
+
 async fn render(
     state: &AppState,
     user: &crate::db::users::User,
     flash: Option<Flash>,
     new_code: Option<String>,
+    page: i64,
 ) -> Result<Response, AppError> {
     let lang = i18n::current();
     let now = time::now_iso();
@@ -185,14 +203,7 @@ async fn render(
         .as_ref()
         .map(|group| group.allow_invites)
         .unwrap_or(false);
-    let quota = InviteQuota::resolve(&state.settings, group.as_ref());
-    let usage = InviteUsage::load(
-        quota,
-        &state.db,
-        group.as_ref().map(|group| group.id),
-        time::now(),
-    )
-    .await?;
+    let usage = usage_for(&state.db, &state.settings, group.as_ref(), time::now()).await?;
     let quota_label = if usage.unlimited() {
         lang.t("invites.unlimited").to_string()
     } else {
@@ -202,14 +213,22 @@ async fn render(
             &[
                 ("used", usage.used.to_string()),
                 ("limit", usage.quota.limit.to_string()),
-                ("period", period_label(lang, usage.quota.period)),
+                (
+                    "period",
+                    crate::routes::pages::period_label(lang, usage.quota.period),
+                ),
             ],
         )
     };
 
-    let rows = crate::db::invites::list_by_creator(&state.db, user.id, 100)
+    let total = crate::db::invites::count_by_creator(&state.db, user.id)
         .await
         .map_err(AppError::from)?;
+    let total_pages = ((total + PER_PAGE - 1) / PER_PAGE).max(1);
+    let rows =
+        crate::db::invites::list_by_creator(&state.db, user.id, PER_PAGE, (page - 1) * PER_PAGE)
+            .await
+            .map_err(AppError::from)?;
     let invites = rows
         .iter()
         .map(|invite: &Invite| {
@@ -249,10 +268,21 @@ async fn render(
             .map(|group| group.name.clone())
             .unwrap_or_default(),
         quota_label,
-        remaining: usage.remaining(),
         items: invites,
         new_code,
         max_uses_cap: MAX_MEMBER_USES,
+        page,
+        total_pages,
+        total,
+        links: page_links("/app/invites", &[], page, total_pages),
+        page_note: i18n::format(
+            lang,
+            "common.page_of",
+            &[
+                ("page", page.to_string()),
+                ("total", total_pages.to_string()),
+            ],
+        ),
     }
     .render()
     .map_err(|err| AppError::internal(format!("template error: {err}")))?;

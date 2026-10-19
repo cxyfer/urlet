@@ -412,7 +412,8 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 
 ### `GET /api/v1/invites`
 
-`200` → 自己產生的邀請碼（僅前綴）與生效配額：
+`GET /api/v1/invites?page=&per_page=` → `200`：自己產生的邀請碼（僅前綴，新到舊）
+與生效配額。
 
 ```json
 {
@@ -421,13 +422,18 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
       "used_count": 1, "remaining": 1, "expires_at": null, "status": "active",
       "usable": true, "created_at": "2026-03-18T10:00:00.000Z" }
   ],
+  "page": 1, "per_page": 20, "total": 1,
   "quota": { "group_id": 4, "group_name": "Invite Team", "allowed": true,
              "limit": 5, "period": "month", "used": 1, "remaining": 4 }
 }
 ```
 
-`quota.allowed` 為 `false` 表示群組未開放成員發碼，此時列表為空。`limit` 為 `0`
-（無上限）時 `remaining` 為 `null`。
+`per_page` 預設 20、上限 100。`quota.allowed` 為 `false` 表示群組未開放成員發碼：
+此時建立邀請碼會回 `403`，但關閉開關前已發出的邀請碼仍會列出並可撤銷。`limit` 為 `0`
+（無上限）時 `remaining` 為 `null`。若帳號的群組連結遺失，會回退到預設群組。
+
+成員發碼另有節流：每個帳號每小時最多 20 個（超過回 `429`）；群組配額仍是主要限制。
+群組未設定有限配額時，除節流外即為無上限。
 
 ### `POST /api/v1/invites`
 
@@ -438,7 +444,7 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 ```
 
 明文邀請碼只回傳一次。成員發碼的 `max_uses` 必須介於 1–10。群組未開放或本週期配額
-用盡時回 `403`（`error.code = "forbidden"`）。
+用盡時回 `403`（`error.code = "forbidden"`）；每小時爆量上限用盡時回 `429`。
 
 ### `DELETE /api/v1/invites/{id}`
 

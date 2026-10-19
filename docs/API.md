@@ -444,7 +444,8 @@ is shared with administrator-issued codes; revoking a code does not free its slo
 
 ### `GET /api/v1/invites`
 
-`200` → the caller's own codes (prefixes only) plus the effective quota:
+`GET /api/v1/invites?page=&per_page=` → `200`: the caller's own codes (prefixes
+only, newest first) plus the effective quota.
 
 ```json
 {
@@ -453,13 +454,21 @@ is shared with administrator-issued codes; revoking a code does not free its slo
       "used_count": 1, "remaining": 1, "expires_at": null, "status": "active",
       "usable": true, "created_at": "2026-03-18T10:00:00.000Z" }
   ],
+  "page": 1, "per_page": 20, "total": 1,
   "quota": { "group_id": 4, "group_name": "Invite Team", "allowed": true,
              "limit": 5, "period": "month", "used": 1, "remaining": 4 }
 }
 ```
 
-`quota.allowed` is `false` when the group does not enable member invites; the
-list then stays empty. `remaining` is `null` when `limit` is `0` (unlimited).
+`per_page` defaults to 20 and is capped at 100. `quota.allowed` is `false` when
+the group does not enable member invites: creating a code then returns `403`,
+but codes issued before the toggle was turned off remain listed and revocable.
+`remaining` is `null` when `limit` is `0` (unlimited). Accounts whose group link
+is missing fall back to the default group.
+
+Member issuance is throttled to 20 codes per hour per account (`429` when the
+burst is exhausted); the group's invite quota remains the primary limit. A group
+with no finite quota is otherwise unlimited.
 
 ### `POST /api/v1/invites`
 
@@ -471,7 +480,8 @@ list then stays empty. `remaining` is `null` when `limit` is `0` (unlimited).
 
 The plaintext code is returned exactly once. `max_uses` must be between 1 and 10
 for member codes. `403` when the group does not allow invites or the period quota
-is exhausted (`error.code = "forbidden"`).
+is exhausted (`error.code = "forbidden"`), and `429` when the hourly burst limit
+is exhausted.
 
 ### `DELETE /api/v1/invites/{id}`
 

@@ -24,6 +24,7 @@ use crate::db::users::User;
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::ClientInfo;
 use crate::services::captcha::{CaptchaFlow, CaptchaGuard, CaptchaWidget};
+use crate::services::invite_quota::InvitePeriod;
 use crate::state::AppState;
 
 /// A banner shown at the top of a page.
@@ -54,6 +55,15 @@ impl Chrome {
             active,
             flash,
         }
+    }
+}
+
+/// Localised calendar period name, shared by the admin and member pages.
+pub fn period_label(lang: Lang, period: InvitePeriod) -> String {
+    match period {
+        InvitePeriod::Day => lang.t("admin.groups.period.day").to_string(),
+        InvitePeriod::Week => lang.t("admin.groups.period.week").to_string(),
+        InvitePeriod::Month => lang.t("admin.groups.period.month").to_string(),
     }
 }
 
