@@ -3,7 +3,7 @@
 # Every `v*` tag publishes a multi-arch image (linux/amd64 + linux/arm64) to
 # GHCR. Use this overlay on top of docker-compose.yml:
 #
-#   export URLET_IMAGE=ghcr.io/cxyfer/urlet:1.1.0   # pin a version in production
+#   export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.2.0   # pin a version in production
 #   docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 #
 # `build` is reset so compose never falls back to a local build; a missing image

@@ -56,7 +56,7 @@ Every `v*` tag publishes a multi-arch image (`linux/amd64`, `linux/arm64`) to GH
 published release instead of building locally:
 
 ```bash
-export URLET_IMAGE=ghcr.io/cxyfer/urlet:1.1.0   # pin the release you want
+export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.2.0   # pin the release you want
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 
@@ -339,7 +339,7 @@ docker compose up -d --build      # migrations are applied at startup
 With a prebuilt image, change `URLET_IMAGE` to the new version and recreate the container:
 
 ```bash
-export URLET_IMAGE=ghcr.io/cxyfer/urlet:1.2.0
+export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.2.0
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 

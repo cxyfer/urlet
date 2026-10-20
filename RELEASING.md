@@ -161,10 +161,19 @@ If anonymous `docker compose pull` should work, open the package page and set
 
 - `tag`: the existing tag to rebuild (for example `v1.2.3`).
 - `update_moving_tags`: leave **off** unless you are rebuilding the **newest stable** release and
-  want `X`, `X.Y` and `latest` to follow the new digest. The newest-stable guard rejects moving
+  want `vX`, `vX.Y` and `latest` to follow the new digest. The newest-stable guard rejects moving
   tags for older releases.
 
 Typical uses: a base-image CVE fix or a runner/toolchain change without a new application version.
+
+## Cleaning up a rebuilt version
+
+A rebuild produces a new digest under the same tag and leaves the old package version behind.
+GHCR deletes versions, not tags, so removing the old one removes every tag on it. Check that the
+`v`-prefixed tags and `latest` already point at the new digest, then run *Actions → Delete a
+container image version* with the now-unused bare tag (for example `1.3.0-rc.1`). The workflow
+refuses to delete a v-prefixed tag, or a version that still carries one or `latest`; the old
+version's bare tags disappear with it.
 
 ## Failure handling
 

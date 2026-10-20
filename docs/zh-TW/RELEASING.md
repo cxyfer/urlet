@@ -153,10 +153,18 @@ gh release create v1.2.3 --title "urlet 1.2.3" \
 *Actions → Release container image → Run workflow*：
 
 - `tag`：要重建的既有標籤（例如 `v1.2.3`）。
-- `update_moving_tags`：除非你重建的是**最新正式版本**，且希望 `X`、`X.Y`、`latest` 跟著
+- `update_moving_tags`：除非你重建的是**最新正式版本**，且希望 `vX`、`vX.Y`、`latest` 跟著
   新 digest 移動，否則請保持**關閉**。最新版檢查會拒絕對較舊版本移動浮動標籤。
 
 常見用途：修補基底映像的 CVE，或 runner/toolchain 變更，但不需要新的應用程式版本。
+
+## 清理重建留下的版本
+
+重建會以相同標籤產生新 digest，舊的 package version 會留在 registry。GHCR 只能刪 version、
+不能刪單一 tag，所以刪掉舊 version 會一併移除它上面的所有標籤。確認 `v` 開頭的標籤與
+`latest` 都已指向新 digest 後，執行 *Actions → Delete a container image version*，輸入已不再
+使用的裸標籤（例如 `1.3.0-rc.1`）。workflow 會拒絕刪除 v 開頭的標籤，以及仍帶有 v 標籤或
+`latest` 的 version；舊 version 的裸標籤會一起消失。
 
 ## 失敗處理
 

@@ -55,7 +55,7 @@ docker compose exec urlet /usr/local/bin/urlet healthcheck
 建置，可直接執行已發布的版本：
 
 ```bash
-export URLET_IMAGE=ghcr.io/cxyfer/urlet:1.1.0   # 固定要使用的版本
+export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.2.0   # 固定要使用的版本
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 
@@ -317,7 +317,7 @@ docker compose up -d --build      # 啟動時自動套用遷移
 使用預先建置的映像時，把 `URLET_IMAGE` 改成新版本並重建容器即可：
 
 ```bash
-export URLET_IMAGE=ghcr.io/cxyfer/urlet:1.2.0
+export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.2.0
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 
