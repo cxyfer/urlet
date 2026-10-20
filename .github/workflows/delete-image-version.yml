@@ -46,6 +46,15 @@ jobs:
             exit 1
           fi
 
+      - name: List repository packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          gh api "/repos/$REPO/packages?package_type=container" || true
+          gh api "/repos/$REPO" --jq '.full_name' || true
+
       - name: Find the package version
         id: find
         env:
