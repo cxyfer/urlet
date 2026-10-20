@@ -5,6 +5,9 @@ name: Delete a container image version
 # version that a rebuild left behind — the bare 1.3.0-rc.1 published before the
 # tag-prefix change, for example.
 #
+# The package belongs to the user namespace rather than to the repository, so
+# these calls use the user-scoped endpoints; the repository-scoped ones 404.
+#
 # Guard rails:
 #   * workflow_dispatch only, so repository write access is required;
 #   * the confirmation input must repeat the tag;
@@ -46,21 +49,6 @@ jobs:
             exit 1
           fi
 
-      - name: List repository packages
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -uo pipefail
-          owner="${REPO%%/*}"
-          package="${REPO#*/}"
-          echo "== repo-scoped =="
-          gh api "/repos/$REPO/packages?package_type=container" || true
-          echo "== user-scoped list =="
-          gh api "/users/$owner/packages?package_type=container" || true
-          echo "== user-scoped package =="
-          gh api "/users/$owner/packages/container/$package" || true
-
       - name: Find the package version
         id: find
         env:
@@ -69,10 +57,11 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
+          owner="${REPO%%/*}"
           package="${REPO#*/}"
           # One JSON object per line, so pagination does not get in the way.
           match="$(gh api --paginate \
-              "/repos/$REPO/packages/container/$package/versions?per_page=100" \
+              "/users/$owner/packages/container/$package/versions?per_page=100" \
               --jq '.[]' \
             | jq -r --arg tag "$TAG" '
                 select(.metadata.container.tags | index($tag))
@@ -99,6 +88,7 @@ jobs:
           ID: ${{ steps.find.outputs.id }}
         run: |
           set -euo pipefail
+          owner="${REPO%%/*}"
           package="${REPO#*/}"
-          gh api -X DELETE "/repos/$REPO/packages/container/$package/versions/$ID"
+          gh api -X DELETE "/users/$owner/packages/container/$package/versions/$ID"
           echo "Deleted package version $ID"
