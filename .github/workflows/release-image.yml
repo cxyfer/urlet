@@ -212,8 +212,12 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           # The image tag mirrors the git tag, so it keeps the `v` prefix.
           # `latest` is the only tag that does not carry it.
+          #
+          # The exact tag uses `{{raw}}` on purpose: for a pre-release the
+          # metadata action ignores every pattern except a bare `{{raw}}` and
+          # falls back to `{{version}}`, which has no `v` prefix.
           tags: |
-            type=semver,pattern=v{{version}},value=${{ needs.validate.outputs.tag }}
+            type=semver,pattern={{raw}},value=${{ needs.validate.outputs.tag }}
             type=semver,pattern=v{{major}}.{{minor}},value=${{ needs.validate.outputs.tag }},enable=${{ needs.validate.outputs.is_latest == 'true' && (github.event_name == 'push' || inputs.update_moving_tags) }}
             type=semver,pattern=v{{major}},value=${{ needs.validate.outputs.tag }},enable=${{ needs.validate.outputs.is_latest == 'true' && (github.event_name == 'push' || inputs.update_moving_tags) }}
             type=raw,value=latest,enable=${{ needs.validate.outputs.is_latest == 'true' && (github.event_name == 'push' || inputs.update_moving_tags) }}
