@@ -55,7 +55,9 @@ publishes to its own namespace.
    `X.Y`) back at the old version. Use the default (exact version only) for old tags; the
    newest-stable guard also blocks it, but the default makes the intent explicit.
 8. **Pre-releases never get `latest`.** Use suffixes such as `-rc.1`, `-beta.1`, `-alpha.1`.
-9. **The GitHub Release is manual.** Write the notes yourself after the image is published.
+9. **The GitHub Release is manual, in the standard format.** Publish it after the image exists,
+   with notes scaffolded by [`scripts/release-notes.sh`](scripts/release-notes.sh) and shaped by
+   [`.github/release-notes-template.md`](.github/release-notes-template.md).
 10. **GHCR visibility is a repository setting.** A private repository produces a private package.
     Authenticate with `docker login ghcr.io` (token scope `read:packages`) or make the package
     public.
@@ -128,7 +130,20 @@ docker run --rm ghcr.io/cxyfer/urlet:1.2.3 version   # prints "urlet 1.2.3"
 
 ### 5. Publish the GitHub Release
 
-*Releases → Draft a new release → choose the existing tag → write the notes → publish.*
+Generate the skeleton, then write the summary and the highlights:
+
+```bash
+./scripts/release-notes.sh v1.2.3      # What's Changed, New Contributors, Full Changelog
+$EDITOR .tmp/release-notes-v1.2.3.md   # the callout and the ## Highlights list
+
+gh release create v1.2.3 --title "urlet 1.2.3" \
+  --notes-file .tmp/release-notes-v1.2.3.md --verify-tag
+```
+
+Add `--prerelease` for a `-rc.N` tag. The shape is fixed by
+[`.github/release-notes-template.md`](.github/release-notes-template.md): a short
+`> [!IMPORTANT]` summary with the upgrade notes, a `## Highlights` list grouped by area, then
+`## What's Changed`, `## New Contributors` when it applies, and `**Full Changelog**`.
 The image is already available at this point.
 
 ### 6. Optional: allow anonymous pulls
@@ -176,6 +191,12 @@ git commit -m "🔖 release: v$VERSION"
 git push origin master
 git tag -a "v$VERSION" -m "v$VERSION"
 git push origin "v$VERSION"
+
+# After the image is published:
+./scripts/release-notes.sh "v$VERSION"
+$EDITOR ".tmp/release-notes-v$VERSION.md"
+gh release create "v$VERSION" --title "urlet $VERSION" \
+  --notes-file ".tmp/release-notes-v$VERSION.md" --verify-tag
 ```
 
 Check the current version with:

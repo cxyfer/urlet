@@ -50,7 +50,9 @@
 7. **不要對舊標籤勾選浮動標籤重建。** 那會把 `latest`（以及 `X`、`X.Y`）指回舊版本。舊標籤請
    使用預設值（只重建精確版本）；最新版檢查也會阻擋，但預設值讓意圖更明確。
 8. **預發布版永遠不會有 `latest`。** 請使用 `-rc.1`、`-beta.1`、`-alpha.1` 之類的後綴。
-9. **GitHub Release 由人工發布。** 映像發布完成後，自行撰寫 release notes。
+9. **GitHub Release 由人工發布，格式固定。** 映像發布完成後，用
+   [`scripts/release-notes.sh`](../../scripts/release-notes.sh) 產生草稿，並依
+   [`.github/release-notes-template.md`](../../.github/release-notes-template.md) 撰寫。
 10. **GHCR 可見性是儲存庫設定。** 私有儲存庫會產生私有套件；請執行
     `docker login ghcr.io`（token 需要 `read:packages`），或把套件設為公開。
 11. **[docker-compose.yml](../../docker-compose.yml) 的 `image:` 只是本機建置標籤。** 更新它
@@ -122,7 +124,20 @@ docker run --rm ghcr.io/cxyfer/urlet:1.2.3 version   # 印出 "urlet 1.2.3"
 
 ### 5. 發布 GitHub Release
 
-*Releases → Draft a new release → 選擇既有標籤 → 撰寫說明 → 發布。*
+先產生草稿，再補上摘要與重點：
+
+```bash
+./scripts/release-notes.sh v1.2.3      # 產生 What's Changed、New Contributors、Full Changelog
+$EDITOR .tmp/release-notes-v1.2.3.md   # 補上 callout 與 ## Highlights
+
+gh release create v1.2.3 --title "urlet 1.2.3" \
+  --notes-file .tmp/release-notes-v1.2.3.md --verify-tag
+```
+
+`-rc.N` 標籤請加上 `--prerelease`。格式由
+[`.github/release-notes-template.md`](../../.github/release-notes-template.md) 固定：開頭是
+`> [!IMPORTANT]` 摘要與升級注意事項，接著是依領域分組的 `## Highlights`，然後是
+`## What's Changed`、`## New Contributors`（有人首次貢獻時才出現）與 `**Full Changelog**`。
 此時映像已經可以使用。
 
 ### 6. 選用：允許匿名拉取
@@ -169,6 +184,12 @@ git commit -m "🔖 release: v$VERSION"
 git push origin master
 git tag -a "v$VERSION" -m "v$VERSION"
 git push origin "v$VERSION"
+
+# 映像發布完成後：
+./scripts/release-notes.sh "v$VERSION"
+$EDITOR ".tmp/release-notes-v$VERSION.md"
+gh release create "v$VERSION" --title "urlet $VERSION" \
+  --notes-file ".tmp/release-notes-v$VERSION.md" --verify-tag
 ```
 
 查看目前版本：
