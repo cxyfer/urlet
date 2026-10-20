@@ -52,8 +52,14 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -uo pipefail
+          owner="${REPO%%/*}"
+          package="${REPO#*/}"
+          echo "== repo-scoped =="
           gh api "/repos/$REPO/packages?package_type=container" || true
-          gh api "/repos/$REPO" --jq '.full_name' || true
+          echo "== user-scoped list =="
+          gh api "/users/$owner/packages?package_type=container" || true
+          echo "== user-scoped package =="
+          gh api "/users/$owner/packages/container/$package" || true
 
       - name: Find the package version
         id: find
