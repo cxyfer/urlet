@@ -21,11 +21,15 @@ manual on purpose (see [Rules](#rules)).
 
 | Release | Tags pushed | Notes |
 |---------|-------------|-------|
-| `v1.2.3` (newest stable) | `1.2.3`, `1.2`, `1`, `latest` | Stable release |
-| `v1.2.4` (older than newest) | `1.2.4` | Only the exact tag; moving tags stay on the newest release |
-| `v1.2.3-rc.1` | `1.2.3-rc.1` | Pre-release: never gets moving tags |
-| Manual rebuild, defaults | `1.2.3` | Exact version only |
-| Manual rebuild + “update moving tags” | `1.2.3`, `1.2`, `1`, `latest` | Only when `1.2.3` is the newest stable tag |
+| `v1.2.3` (newest stable) | `v1.2.3`, `v1.2`, `v1`, `latest` | Stable release |
+| `v1.2.4` (older than newest) | `v1.2.4` | Only the exact tag; moving tags stay on the newest release |
+| `v1.2.3-rc.1` | `v1.2.3-rc.1` | Pre-release: never gets moving tags |
+| Manual rebuild, defaults | `v1.2.3` | Exact version only |
+| Manual rebuild + “update moving tags” | `v1.2.3`, `v1.2`, `v1`, `latest` | Only when `v1.2.3` is the newest stable tag |
+
+The image tag mirrors the git tag, including the `v` prefix; `latest` is the only tag without it.
+Tags published before 1.3.0 used bare versions (`1.2.0`, `1.2`, `1`) and no longer move — pin
+`vX.Y.Z` or `latest` from 1.3.0 onwards.
 
 The full image name is `ghcr.io/cxyfer/urlet`. It is derived from `github.repository`, so a fork
 publishes to its own namespace.
@@ -44,7 +48,7 @@ publishes to its own namespace.
    `master` before the tag.
 4. **Never move or reuse a published tag.** The tag is the immutable identity of an image.
    Publish a new patch version instead.
-5. **Only the newest stable tag moves `X`, `X.Y` and `latest`.** A maintenance or backport release
+5. **Only the newest stable tag moves `vX`, `vX.Y` and `latest`.** A maintenance or backport release
    older than the newest stable version publishes only its exact tag. The workflow compares
    against all fetched tags before building.
 6. **Release runs are serialized and queued.** A single `release-image` concurrency group with
@@ -122,8 +126,8 @@ gh run list --workflow=release-image.yml --limit 5
 gh run watch <run-id>
 
 docker login ghcr.io      # only if the package is private
-docker buildx imagetools inspect ghcr.io/cxyfer/urlet:1.2.3
-docker run --rm ghcr.io/cxyfer/urlet:1.2.3 version   # prints "urlet 1.2.3"
+docker buildx imagetools inspect ghcr.io/cxyfer/urlet:v1.2.3
+docker run --rm ghcr.io/cxyfer/urlet:v1.2.3 version   # prints "urlet 1.2.3"
 ```
 
 `imagetools inspect` must list both `linux/amd64` and `linux/arm64`.

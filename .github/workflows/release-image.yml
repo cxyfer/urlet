@@ -4,7 +4,7 @@ name: Release container image
 #   1. checks the tag matches the version in Cargo.toml,
 #   2. builds linux/amd64 and linux/arm64 in parallel, each on a native runner,
 #   3. merges the two single-platform digests into one multi-arch manifest and
-#      moves X, X.Y and latest only when the tag is the newest stable release.
+#      moves vX, vX.Y and latest only when the tag is the newest stable release.
 #
 # The GitHub release itself is still published by hand, so its notes are yours.
 # Manual runs (workflow_dispatch) rebuild an existing tag; by default they push
@@ -21,7 +21,7 @@ on:
         required: true
         type: string
       update_moving_tags:
-        description: "Also move the X, X.Y and latest tags to this build"
+        description: "Also move the vX, vX.Y and latest tags to this build"
         required: false
         type: boolean
         default: false
@@ -70,7 +70,7 @@ jobs:
         with:
           ref: ${{ steps.release.outputs.tag }}
           # All tags are needed to decide whether this release is the newest
-          # stable one and may therefore move X, X.Y and latest.
+          # stable one and may therefore move vX, vX.Y and latest.
           fetch-depth: 0
 
       - name: Check that Cargo.toml matches the tag
@@ -100,7 +100,7 @@ jobs:
           TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
-          # Only stable tags (no -rc/-beta suffix) can move X, X.Y and latest.
+          # Only stable tags (no -rc/-beta suffix) can move vX, vX.Y and latest.
           latest=$(git tag --list 'v*' \
             | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
             | sort -V \
@@ -210,10 +210,12 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # The image tag mirrors the git tag, so it keeps the `v` prefix.
+          # `latest` is the only tag that does not carry it.
           tags: |
-            type=semver,pattern={{version}},value=${{ needs.validate.outputs.tag }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.validate.outputs.tag }},enable=${{ needs.validate.outputs.is_latest == 'true' && (github.event_name == 'push' || inputs.update_moving_tags) }}
-            type=semver,pattern={{major}},value=${{ needs.validate.outputs.tag }},enable=${{ needs.validate.outputs.is_latest == 'true' && (github.event_name == 'push' || inputs.update_moving_tags) }}
+            type=semver,pattern=v{{version}},value=${{ needs.validate.outputs.tag }}
+            type=semver,pattern=v{{major}}.{{minor}},value=${{ needs.validate.outputs.tag }},enable=${{ needs.validate.outputs.is_latest == 'true' && (github.event_name == 'push' || inputs.update_moving_tags) }}
+            type=semver,pattern=v{{major}},value=${{ needs.validate.outputs.tag }},enable=${{ needs.validate.outputs.is_latest == 'true' && (github.event_name == 'push' || inputs.update_moving_tags) }}
             type=raw,value=latest,enable=${{ needs.validate.outputs.is_latest == 'true' && (github.event_name == 'push' || inputs.update_moving_tags) }}
           flavor: |
             latest=false
@@ -231,4 +233,4 @@ jobs:
         run: |
           set -euo pipefail
           docker buildx imagetools inspect \
-            "${REGISTRY}/${IMAGE_NAME}:${{ steps.meta.outputs.version }}"
+            "${REGISTRY}/${IMAGE_NAME}:${{ needs.validate.outputs.tag }}"

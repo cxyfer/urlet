@@ -21,11 +21,14 @@
 
 | 發布 | 推送的標籤 | 說明 |
 |------|------------|------|
-| `v1.2.3`（最新正式版） | `1.2.3`、`1.2`、`1`、`latest` | 正式版本 |
-| `v1.2.4`（比最新版舊） | `1.2.4` | 只推精確標籤；浮動標籤留在最新正式版 |
-| `v1.2.3-rc.1` | `1.2.3-rc.1` | 預發布版：不會有浮動標籤 |
-| 手動重建（預設） | `1.2.3` | 只重建精確版本 |
-| 手動重建 + 勾選「update moving tags」 | `1.2.3`、`1.2`、`1`、`latest` | 僅當 `1.2.3` 是最新正式版時適用 |
+| `v1.2.3`（最新正式版） | `v1.2.3`、`v1.2`、`v1`、`latest` | 正式版本 |
+| `v1.2.4`（比最新版舊） | `v1.2.4` | 只推精確標籤；浮動標籤留在最新正式版 |
+| `v1.2.3-rc.1` | `v1.2.3-rc.1` | 預發布版：不會有浮動標籤 |
+| 手動重建（預設） | `v1.2.3` | 只重建精確版本 |
+| 手動重建 + 勾選「update moving tags」 | `v1.2.3`、`v1.2`、`v1`、`latest` | 僅當 `v1.2.3` 是最新正式版時適用 |
+
+映像標籤與 git 標籤一致，包含 `v` 前綴；`latest` 是唯一不帶前綴的標籤。1.3.0 之前的版本使用
+裸版號（`1.2.0`、`1.2`、`1`），這些標籤不會再移動——請改用 `vX.Y.Z` 或 `latest`。
 
 完整映像名稱為 `ghcr.io/cxyfer/urlet`，由 `github.repository` 推導；fork 會發布到自己的命名空間。
 
@@ -42,7 +45,7 @@
 3. **只能標記已合併的 commit。** workflow 檔案必須存在於被標記的 commit 上，因此請先推送
    `master`，再推送標籤。
 4. **不要移動或重複使用已發布的標籤。** 標籤是映像的不可變身分；修正請發布新的 patch 版本。
-5. **只有最新正式版會移動 `X`、`X.Y`、`latest`。** 比最新版舊的維護／backport 版本只會推送
+5. **只有最新正式版會移動 `vX`、`vX.Y`、`latest`。** 比最新版舊的維護／backport 版本只會推送
    精確標籤。workflow 會在建置前比對所有已抓取的標籤。
 6. **發布流程會序列化並排隊。** 固定使用同一個 `release-image` concurrency group 並設定
    `queue: max`，最多保留 100 個 pending 發布；因此連續推送多個標籤時每個精確版本都會發布，
@@ -116,8 +119,8 @@ gh run list --workflow=release-image.yml --limit 5
 gh run watch <run-id>
 
 docker login ghcr.io      # 只有私有套件需要
-docker buildx imagetools inspect ghcr.io/cxyfer/urlet:1.2.3
-docker run --rm ghcr.io/cxyfer/urlet:1.2.3 version   # 印出 "urlet 1.2.3"
+docker buildx imagetools inspect ghcr.io/cxyfer/urlet:v1.2.3
+docker run --rm ghcr.io/cxyfer/urlet:v1.2.3 version   # 印出 "urlet 1.2.3"
 ```
 
 `imagetools inspect` 必須同時列出 `linux/amd64` 與 `linux/arm64`。
