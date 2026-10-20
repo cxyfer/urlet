@@ -48,6 +48,9 @@ ship GitHub's generated notes as the final body.
    then `## What's Changed`, `## New Contributors` when it applies, and `**Full Changelog**`.
 4. English only. The docs are bilingual; the release notes are not.
 5. A `-rc.N` tag is published with `--prerelease` and never moves `latest`.
+6. Image tags mirror the git tag and keep the `v` prefix (`v1.3.0`, `v1.3`, `v1`); `latest` is
+   the only tag without it. The exact tag is generated with `pattern={{raw}}` because
+   `metadata-action` ignores custom patterns for pre-releases.
 
 Never push a release tag until the version bump and a refreshed `Cargo.lock` are on `master`: the
 workflow validates the tag against `Cargo.toml`, and a published tag cannot be reused.
