@@ -306,7 +306,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 ### `GET /health`
 
 ```json
-{ "status": "ok", "version": "1.2.0", "database": "ok", "uptime_seconds": 42 }
+{ "status": "ok", "version": "1.3.0-rc.1", "database": "ok", "uptime_seconds": 42 }
 ```
 
 資料庫無法查詢時回 `503` 且 `status` 為 `degraded`。`/healthz` 是同一端點的別名。
