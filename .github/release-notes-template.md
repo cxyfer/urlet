@@ -5,10 +5,15 @@ Every GitHub Release uses this format. Do not write notes from scratch.
 ```bash
 ./scripts/release-notes.sh vX.Y.Z          # writes .tmp/release-notes-vX.Y.Z.md
 $EDITOR .tmp/release-notes-vX.Y.Z.md       # fill in the TODO markers
+./scripts/release-notes-lint.sh .tmp/release-notes-vX.Y.Z.md
 ```
 
 The script fills in `What's Changed`, `New Contributors` and `Full Changelog` from the commits
 and pull requests since the previous tag, and leaves the summary and the highlights for you.
+
+GitHub renders a newline inside a release body as a hard line break. Every paragraph and every
+bullet below is therefore a single source line: write the whole paragraph on one line and let the
+editor soft-wrap it. The lint script rejects a draft that still has wrapped prose.
 
 ## The shape
 
@@ -16,8 +21,7 @@ and pull requests since the previous tag, and leaves the summary and the highlig
 > [!IMPORTANT]
 > One paragraph on what this release is and why it matters.
 >
-> What changes for an existing install: migrations that run at startup, defaults that moved,
-> anything the reader must do. Drop this paragraph when there is nothing to say.
+> What changes for an existing install: migrations that run at startup, defaults that moved, anything the reader must do. Drop this paragraph when there is nothing to say.
 
 ## Highlights
 
@@ -51,3 +55,8 @@ and pull requests since the previous tag, and leaves the summary and the highlig
 5. **English only.** The docs are bilingual; the release notes are not.
 6. **Pre-releases stay pre-releases.** A `-rc.N` tag is published with `--prerelease` and never
    takes `latest`. See [RELEASING.md](../RELEASING.md).
+7. **Never hard-wrap prose in the release body.** GitHub turns a newline inside a release body
+   into a hard line break, so a paragraph wrapped at 80 columns reaches the reader broken
+   mid-sentence. Keep each callout paragraph and each highlight bullet on one source line;
+   [`scripts/release-notes-lint.sh`](../scripts/release-notes-lint.sh) fails a draft that is
+   still wrapped.

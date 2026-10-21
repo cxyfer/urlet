@@ -61,7 +61,10 @@ publishes to its own namespace.
 8. **Pre-releases never get `latest`.** Use suffixes such as `-rc.1`, `-beta.1`, `-alpha.1`.
 9. **The GitHub Release is manual, in the standard format.** Publish it after the image exists,
    with notes scaffolded by [`scripts/release-notes.sh`](scripts/release-notes.sh) and shaped by
-   [`.github/release-notes-template.md`](.github/release-notes-template.md).
+   [`.github/release-notes-template.md`](.github/release-notes-template.md). Keep every prose
+   paragraph and highlight bullet on one source line — GitHub turns a newline inside a release
+   body into a hard break — and run
+   [`scripts/release-notes-lint.sh`](scripts/release-notes-lint.sh) on the draft.
 10. **GHCR visibility is a repository setting.** A private repository produces a private package.
     Authenticate with `docker login ghcr.io` (token scope `read:packages`) or make the package
     public.
@@ -139,10 +142,15 @@ Generate the skeleton, then write the summary and the highlights:
 ```bash
 ./scripts/release-notes.sh v1.2.3      # What's Changed, New Contributors, Full Changelog
 $EDITOR .tmp/release-notes-v1.2.3.md   # the callout and the ## Highlights list
+./scripts/release-notes-lint.sh .tmp/release-notes-v1.2.3.md
 
 gh release create v1.2.3 --title "urlet 1.2.3" \
   --notes-file .tmp/release-notes-v1.2.3.md --verify-tag
 ```
+
+Write each callout paragraph and each highlight bullet on one line; the lint command fails the
+draft if the prose is still wrapped. GitHub turns a newline inside a release body into a hard
+line break, so wrapped source reaches the release page broken mid-sentence.
 
 Add `--prerelease` for a `-rc.N` tag. The shape is fixed by
 [`.github/release-notes-template.md`](.github/release-notes-template.md): a short
@@ -208,6 +216,7 @@ git push origin "v$VERSION"
 # After the image is published:
 ./scripts/release-notes.sh "v$VERSION"
 $EDITOR ".tmp/release-notes-v$VERSION.md"
+./scripts/release-notes-lint.sh ".tmp/release-notes-v$VERSION.md"
 gh release create "v$VERSION" --title "urlet $VERSION" \
   --notes-file ".tmp/release-notes-v$VERSION.md" --verify-tag
 ```
