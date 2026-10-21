@@ -89,6 +89,11 @@ pub const MIGRATIONS: &[Migration] = &[
         kind: MigrationKind::Transactional,
     },
     Migration {
+        version: "0011_splash_pages",
+        sql: include_str!("../../migrations/0011_splash_pages.sql"),
+        kind: MigrationKind::Transactional,
+    },
+    Migration {
         version: "0012_custom_themes",
         sql: include_str!("../../migrations/0012_custom_themes.sql"),
         kind: MigrationKind::Transactional,
@@ -1270,6 +1275,111 @@ mod tests {
                 .await
                 .expect("default group");
         assert_eq!(default_groups, 1, "the seed is applied once");
+
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn upgrades_a_pre_splash_database_with_direct_links_and_choice_policy() {
+        let dir = std::env::temp_dir().join(format!("urlet-migrate-splash-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = format!("{}/splash.db", dir.display());
+        let options = test_options(&path);
+        let pool = test_pool(&options).await;
+
+        run_until(&pool, &options, "0010_themes")
+            .await
+            .expect("pre-splash schema");
+        let now = now_iso();
+        sqlx::query(
+            "INSERT INTO users (email, email_normalized, password_hash, created_at, updated_at)
+             VALUES ('splash@example.com', 'splash@example.com', 'hash', ?, ?)",
+        )
+        .bind(&now)
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("user");
+        let user_id: i64 =
+            sqlx::query_scalar("SELECT id FROM users WHERE email = 'splash@example.com'")
+                .fetch_one(&pool)
+                .await
+                .expect("user id");
+        sqlx::query(
+            "INSERT INTO domains (hostname, is_default, is_verified, created_at)
+             VALUES ('s.example.com', 1, 1, ?)",
+        )
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("domain");
+        let domain_id: i64 =
+            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = 's.example.com'")
+                .fetch_one(&pool)
+                .await
+                .expect("domain id");
+        let url_id = sqlx::query(
+            "INSERT INTO urls (user_id, domain_id, slug, target_url, created_at, updated_at)
+             VALUES (?, ?, 'promo', 'https://example.com/old', ?, ?)",
+        )
+        .bind(user_id)
+        .bind(domain_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("url")
+        .last_insert_rowid();
+
+        run(&pool, &options).await.expect("splash upgrade");
+
+        let redirect: (String, i64, Option<String>, Option<String>) = sqlx::query_as(
+            "SELECT redirect_mode, splash_delay_seconds, splash_title, splash_message
+               FROM urls WHERE id = ?",
+        )
+        .bind(url_id)
+        .fetch_one(&pool)
+        .await
+        .expect("upgraded url");
+        assert_eq!(
+            redirect,
+            ("direct".to_string(), 5, None, None),
+            "existing links keep redirecting immediately"
+        );
+
+        let policies: Vec<String> =
+            sqlx::query_scalar("SELECT redirect_mode_policy FROM user_groups")
+                .fetch_all(&pool)
+                .await
+                .expect("group policies");
+        assert!(
+            !policies.is_empty(),
+            "the pre-existing default group is upgraded"
+        );
+        assert!(
+            policies.iter().all(|policy| policy == "choice"),
+            "an upgrade keeps the permissive policy: {policies:?}"
+        );
+
+        let invalid_mode =
+            sqlx::query("UPDATE urls SET redirect_mode = 'interstitial' WHERE id = ?")
+                .bind(url_id)
+                .execute(&pool)
+                .await;
+        assert!(invalid_mode.is_err(), "the mode column stays constrained");
+        let invalid_policy =
+            sqlx::query("UPDATE user_groups SET redirect_mode_policy = 'sometimes'")
+                .execute(&pool)
+                .await;
+        assert!(
+            invalid_policy.is_err(),
+            "the group policy column stays constrained"
+        );
+        assert_eq!(
+            applied_count(&pool).await.expect("count"),
+            MIGRATIONS.len() as i64
+        );
 
         pool.close().await;
         let _ = std::fs::remove_dir_all(&dir);

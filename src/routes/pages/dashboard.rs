@@ -50,6 +50,14 @@ pub struct DashboardPage {
     pub allow_tags: bool,
     pub allow_domain_selection: bool,
     pub default_redirect_type: i64,
+    /// `direct`, `splash` or `choice`: the group's redirect-mode policy.
+    pub redirect_mode_policy: String,
+    /// Whether the mode select may offer immediate redirects.
+    pub allow_direct_mode: bool,
+    /// Whether the mode select may offer the splash page.
+    pub allow_splash_mode: bool,
+    /// Mode preselected in the create form.
+    pub default_redirect_mode: String,
     /// Domains selectable in the create form.
     pub domains: Vec<DomainOption>,
     /// Provider widget for the create form, or `None` when it is not protected.
@@ -202,6 +210,18 @@ pub async fn dashboard(
         allow_tags: effective.allow_tags,
         allow_domain_selection: policy.allow_selection,
         default_redirect_type: state.settings.default_redirect_type(),
+        redirect_mode_policy: effective.redirect_mode_policy.as_str().to_string(),
+        allow_direct_mode: effective
+            .redirect_mode_policy
+            .allows(crate::services::redirect_mode::RedirectMode::Direct),
+        allow_splash_mode: effective
+            .redirect_mode_policy
+            .allows(crate::services::redirect_mode::RedirectMode::Splash),
+        default_redirect_mode: effective
+            .redirect_mode_policy
+            .default_mode()
+            .as_str()
+            .to_string(),
         domains: policy.options(&state.domains),
         captcha: crate::routes::pages::captcha_widget(&state, CaptchaFlow::Create),
         usage: i18n::format(

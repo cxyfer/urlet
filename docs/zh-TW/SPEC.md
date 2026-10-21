@@ -2,7 +2,7 @@
 
 # urlet — 輕量化多用戶短網址系統規格書 (Spec)
 
-> 版本：1.4
+> 版本：1.5
 > 狀態：Approved for implementation
 > 最後更新：2026-10-21
 
@@ -19,6 +19,7 @@ v1.1 起介面提供三種語言（英文／繁體中文／簡體中文）、可
 v1.2 起新增**使用者群組**：可為不同群組設定各自的連結與 API Token 配額及功能開關，
 讓同一套單一二進位部署能支援分級方案（例如免費組與付費組）。
 v1.4 起新增**可切換主題**：視覺識別可由編譯進 binary 的模板集與樣式表組成，管理員也可上傳純 CSS 的自訂主題；管理員決定提供哪些設計與誰能切換，使用者則以 cookie 記住選擇。
+v1.5 起新增**中轉頁 (Splash Page)**：連結可先顯示帶倒數的宣傳頁，再由分組政策決定成員只能用直接跳轉、只能中轉頁，或可自行選擇。
 
 ### 1.1 核心設計原則 (來自需求方)
 
@@ -31,7 +32,7 @@ v1.4 起新增**可切換主題**：視覺識別可由編譯進 binary 的模板
 | P5 | 盡可能輕量化 | 單一二進位、SQLite（無 MySQL/Redis）、SSR 模板（無 Node 建置）、映像檔 < 40 MB |
 | P6 | Rust 實作 | Rust 2021 + Axum 0.8 + Tokio + sqlx(SQLite) |
 | P7 | 完善的資料表設計 | 19 張表、35 個索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
-| P8 | 適度添加功能 | 標籤、點擊分析、API Token、邀請碼、管理後台、稽核日誌、每日彙總、三語介面、可選防機器人驗證、配額／功能開關使用者群組、可切換與可上傳主題 |
+| P8 | 適度添加功能 | 標籤、點擊分析、API Token、邀請碼、管理後台、稽核日誌、每日彙總、三語介面、可選防機器人驗證、配額／功能開關使用者群組、可切換與可上傳主題、中轉頁 |
 
 ### 1.2 與先前半成品 (OURLS / OURLS2) 的關係
 
@@ -73,6 +74,9 @@ Non-Goal，v1.2 起納入配額與功能開關（見 §4.13），但仍不做逐
 | 功能開關 (Feature toggle) | 群組上的 `allow_*` 布林值，決定某項連結功能可否使用；關閉開關不會刪除既有資料 |
 | 預設群組 (Default group) | `is_default = 1` 的唯一群組；新註冊與未指定群組的邀請碼會進到這裡。標記可轉移，但該群組不可刪除 |
 | 生效額度 (Effective limits) | 實際套用到使用者的配額與開關：群組有設定就用群組值，否則用全站預設 |
+| 中轉頁 (Splash page) | `redirect_mode` 為 `splash` 的連結所顯示的中間頁；呈現選填的宣傳文案、目的地主機與倒數，之後再前往目標 |
+| 轉址方式 (Redirect mode) | 連結如何把訪客交給目標：`direct`（立刻回 30x）或 `splash`（先顯示中轉頁）。儲存在 `urls.redirect_mode` |
+| 轉址方式政策 (Redirect-mode policy) | 群組上的 `redirect_mode_policy`（`direct`、`splash` 或 `choice`），限制**新**連結可用的模式；既有連結維持原模式 |
 
 ---
 
@@ -86,7 +90,7 @@ Non-Goal，v1.2 起納入配額與功能開關（見 §4.13），但仍不做逐
 Browser / curl          │                                                 │
 ───────────────────►    │ Axum Router                                     │
 :8080                   │  ├─ /                 導覽首頁                  │
-                        │  ├─ /{slug}           跳轉 / 密碼頁             │
+                        │  ├─ /{slug}           跳轉 / 密碼 / 中轉頁       │
                         │  ├─ /api/v1/**        JSON API                  │
                         │  ├─ /app/**           SSR 使用者與管理介面      │
                         │  ├─ /app/lang/{code}  語言切換（302）           │
@@ -163,10 +167,10 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 
 | ID | 需求 | 說明 |
 |----|------|------|
-| FR-URL-1 | 建立 | 必填 `target_url`；可選 `slug`、標題、備註、標籤、密碼、過期時間、點擊上限、轉址類型 |
+| FR-URL-1 | 建立 | 必填 `target_url`；可選 `slug`、標題、備註、標籤、密碼、過期時間、點擊上限、轉址類型、轉址方式與中轉頁文案 |
 | FR-URL-2 | 自動 Slug | 未指定時產生 7 字元 base62 隨機 Slug，碰撞時重試（最多 5 次） |
 | FR-URL-3 | 自訂 Slug | 長度 1–64，僅 `[A-Za-z0-9_-]`，不得為保留字，全域唯一 |
-| FR-URL-4 | 編輯 | 可改 target、標題、備註、標籤、密碼（設定/清除）、過期、點擊上限、轉址類型、狀態 |
+| FR-URL-4 | 編輯 | 可改 target、標題、備註、標籤、密碼（設定/清除）、過期、點擊上限、轉址類型、轉址方式、中轉頁文案與狀態 |
 | FR-URL-5 | 刪除 | 軟刪除（`deleted_at`），Slug 保留不釋出（避免連結被劫持），點擊紀錄保留 |
 | FR-URL-6 | 列表 | 分頁、關鍵字搜尋（slug/target/標題）、標籤篩選、狀態篩選、排序（建立時間/點擊數） |
 | FR-URL-7 | 狀態切換 | `active` / `disabled`；`disabled` 不轉址（回 404 頁面） |
@@ -206,8 +210,9 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | FR-REDIR-4 | 使用者代理分析 | 解析 device_type / browser / os；機器人（bot UA）標記 `is_bot = 1` |
 | FR-REDIR-5 | 隱私 | 僅存 `ip_hash = HMAC(secret, ip)` 與 `visitor_hash = HMAC(secret, "{ip_hash}\|{user_agent}\|{day}")`（HMAC 的材料是已雜湊的 IP，不是原始位址）；**不存原始 IP** |
 | FR-REDIR-6 | 唯一訪客 | 同一 `visitor_hash` 於同一 URL 首次點擊記 `is_unique = 1` |
-| FR-REDIR-7 | 快取控制 | 密碼頁／410／404 為 `no-store`；302/307 轉址為 `private, no-store`；301/308 轉址為 `private, max-age=300`（永久轉址可短期快取，其餘一律不快取以維持點擊準確） |
+| FR-REDIR-7 | 快取控制 | 密碼頁／中轉頁／410／404 為 `no-store`；302/307 轉址為 `private, no-store`；301/308 轉址為 `private, max-age=300`（永久轉址可短期快取，其餘一律不快取以維持點擊準確） |
 | FR-REDIR-8 | 統計開關 | 設定 `analytics_enabled = false` 時不寫入點擊 |
+| FR-REDIR-9 | 轉址方式 | `urls.redirect_mode` 為 `direct` 或 `splash`。中轉頁連結改回 200 中間頁而不是 30x；點擊在中間頁送出時記錄。受密碼保護的連結不會顯示中轉頁（FR-SPLASH-4） |
 
 ### 4.6 統計與分析 (FR-STAT)
 
@@ -269,16 +274,16 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | `/app/account` | 帳號 | 個人資料、修改密碼、Session 清單、API Token 管理 |
 | `/app/admin` | 管理後台 | 使用者、使用者群組、全站網址、網域、邀請碼、設定、稽核日誌 |
 | `/app/admin/domains` | 網域管理 | 新增、啟用、停用、設為預設、刪除網域 |
-| `/app/admin/groups` | 使用者群組 | 建立/編輯/刪除群組、配額、功能開關、預設網域、允許網域與預設標記 |
+| `/app/admin/groups` | 使用者群組 | 建立/編輯/刪除群組、配額、功能開關、轉址方式政策、預設網域、允許網域與預設標記 |
 | `/app/lang/{code}` | 語言切換 | 設定 `urlet_lang` cookie 並 302 至 `next`（未帶時轉往 `/app`） |
 | `/app/theme/{key}` | 主題切換 | 需要登入與切換權限；設定 `urlet_theme` cookie 並轉往同站 `next`（或 `Referer`，或 `/app`）。`?preview=1` 設定管理員專用預覽 cookie，可包含已停用主題 |
 | `/app/theme/default` | 網站預設 | 清除明確選擇與預覽 cookie，重新跟隨管理員預設 |
 | `/app/theme/preview/stop` | 結束預覽 | 清除管理員預覽 cookie |
 | `/app/admin/themes` | 主題管理 | 啟用/停用內建與上傳主題、上傳自訂樣式表、選擇預設與設定 `theme_switching` 政策 |
-| `/app/admin/themes/custom` | 自訂主題上傳 | `POST` multipart 上傳（名稱、說明、僅深色、CSS）；僅限管理員 |
+| `/app/admin/themes/custom` | 自訂主題上傳 | `POST` multipart 上傳（名稱、說明、外觀、CSS）；僅限管理員 |
 | `/app/admin/themes/custom/{id}` | 自訂主題編輯 | `GET` 編輯表單、`POST` 更新中介資料與選填的樣式表替換 |
 | `/app/admin/themes/custom/{id}/delete` | 自訂主題刪除 | `POST` 移除目錄資料列與 CSS 檔；預設主題不可刪除 |
-| `/{slug}` | 轉址 / 密碼頁 / 410 / 404 | 公開 |
+| `/{slug}` | 轉址 / 密碼頁 / 中轉頁 / 410 / 404 | 公開 |
 | 額外網域 | 僅轉址 | `/` 顯示簡單首頁、`/{slug}` 轉址、`/app` 308 回 canonical、`/api` 回 404 |
 
 **UI 技術**：Askama 模板 + 手寫 CSS（含 `prefers-color-scheme` 深色模式）+ 約 150 行原生 JS
@@ -322,8 +327,9 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | FR-GROUP-5 | 預設群組 | 恰有一筆 `is_default = 1`，由部分唯一索引保證。可於群組編輯表單轉移標記（同一交易內取消舊預設）；目前為預設的群組不可刪除。遷移時建立名為 `Standard`、兩個配額皆為 `NULL` 的群組，並把所有既有使用者指派進去，因此升級後行為不變 |
 | FR-GROUP-6 | 刪除 | 刪除群組必須指定改派目標（API 用 `reassign_to`，網頁用下拉選單）。同一交易內把所有成員搬到目標群組；指向該群組的邀請碼透過 `ON DELETE SET NULL` 回退到預設群組。改派到即將刪除的群組本身、或刪除預設群組，一律回 409 |
 | FR-GROUP-7 | 強制範圍 | 配額與開關對管理員一體適用。調降配額或關閉開關不會刪除或停用既有連結與 Token，只會擋下新的建立（以及更新時新開啟被封鎖的功能） |
-| FR-GROUP-8 | 可見性 | 帳號頁顯示群組名稱、連結用量 `已用 / 配額` 與 Token 用量 `已用 / 配額`；`GET /api/v1/auth/me` 回傳 `group` 與 `limits`（生效配額、開關、預設網域與允許網域），讓 API 客戶端能預先判斷請求是否會被拒絕 |
+| FR-GROUP-8 | 可見性 | 帳號頁顯示群組名稱、連結用量 `已用 / 配額` 與 Token 用量 `已用 / 配額`；`GET /api/v1/auth/me` 回傳 `group` 與 `limits`（生效配額、開關、轉址方式政策、預設網域與允許網域），讓 API 客戶端能預先判斷請求是否會被拒絕 |
 | FR-GROUP-9 | 網域策略 | `user_groups.default_domain_id` 是群組預設網域（`NULL` = 全站預設）；未指定網域的新連結會使用它，若該網域不存在、停用或刪除則回退全站預設。`restrict_domains = 1` 時只允許 `group_domains` 內的網域與生效預設；開啟限制但沒有資料列時只能使用預設。`allow_domain_selection = false` 時也只能使用群組預設。既有連結維持目前網域一律允許；未分組使用者使用全站預設與所有 active 網域。 |
+| FR-GROUP-10 | 轉址方式政策 | `user_groups.redirect_mode_policy` 為 `direct`、`splash` 或 `choice`，預設 `choice`，因此升級後行為不變。建立連結時使用被封鎖的模式、或把既有連結切換到該模式，回 `403`；維持目前模式與清除中轉頁文案則可接受。政策只影響新連結與模式切換，永不改寫既有行為（FR-GROUP-7） |
 
 ### 4.14 可切換主題 (FR-THEME)
 
@@ -339,6 +345,18 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | FR-THEME-8 | 外觀 | Verdant 保留持久化的明暗控制；五個舊設計跟隨 `prefers-color-scheme`，因此保留作業系統選擇；Aurora 僅有深色，隱藏明暗控制。上傳主題有管理員選擇的外觀：`auto` 保留明暗控制，`light`／`dark` 透過 `data-theme`／`data-theme-lock` 強制調色盤、隱藏控制，且瀏覽器儲存的偏好無法覆寫 |
 | FR-THEME-9 | 持久化 | 選擇存在 cookie，而非每位使用者的資料庫欄位。已停用的主題在下一個請求即被拒絕，管理員可隨時為沒有偏好的訪客更改預設。上傳主題的中介資料在 `custom_themes`、樣式表在持久化 volume 的 `URLET_THEMES_DIR`、目錄狀態在 `themes`，重啟後仍可選用。主題切換不觸碰任何連結、使用者或點擊資料 |
 | FR-THEME-10 | 上傳 | 上傳、編輯與刪除僅限管理員。上傳內容為單一 UTF-8 `.css` 檔、最大 256 KiB；名稱 1–60 字元、說明最多 200 字元、外觀為 `auto`／`light`／`dark`；每個執行個體最多 32 個上傳。CSS 以 `text/css` 與 `nosniff` 提供，接在 Verdant 基礎樣式表之後，且不可使用外部 `url(...)`、`@import`、`expression(...)` 或舊式 `behavior`。替換樣式表會改變內容雜湊 URL；刪除會移除檔案；預設主題不可刪除 |
+
+### 4.15 中轉頁 (FR-SPLASH)
+
+| ID | 需求 | 說明 |
+|----|------|------|
+| FR-SPLASH-1 | 模式 | 每個連結都有 `redirect_mode`：`direct`（預設，也就是既有行為）或 `splash`。建立與編輯表單及 `POST/PATCH /api/v1/urls` 皆接受此欄位；資料庫中的未知值在轉址路徑回退為 `direct` |
+| FR-SPLASH-2 | 渲染 | 有效且未受密碼保護的中轉頁連結回 `200` HTML，並帶 `Cache-Control: no-store`。頁面顯示自訂（或在地化預設）標題與說明、目的地主機、倒數與「立即前往」按鈕，並以 `<meta http-equiv="refresh">` 自動轉往目標。除了共用同源網站資源外，不額外載入腳本或外部資源，因此維持嚴格 CSP |
+| FR-SPLASH-3 | 點擊記錄 | 中轉頁曝光即為一次點擊，於頁面送出時排入佇列。meta refresh 與「立即前往」都直接連到目標，因此不會重複計算一次目標造訪 |
+| FR-SPLASH-4 | 密碼優先 | 有密碼的連結一律顯示密碼頁，絕不顯示中轉頁。解鎖成功後直接前往目標；密碼頁是唯一的中間頁 |
+| FR-SPLASH-5 | 文案 | `splash_title` 最多 120 字元且不得含控制字元。`splash_message` 最多 500 字元，允許換行、拒絕其他控制字元。兩者皆為選填；空白時使用在地化預設文案。標題與說明都會進行 HTML 跳脫 |
+| FR-SPLASH-6 | 倒數 | `splash_delay_seconds` 為 `1..=60` 的整數，預設 `5`。超出範圍時表單與 API 皆拒絕；資料庫中的超範圍值在渲染時會被夾回範圍，避免手動改庫弄壞頁面 |
+| FR-SPLASH-7 | 群組政策 | `user_groups.redirect_mode_policy` 為 `direct`（新連結必須直接跳轉）、`splash`（新連結必須使用中轉頁）或 `choice`（預設，兩者皆可）。它在建立與更新切換模式時把關，永不改寫既有連結；網頁表單會隱藏被封鎖的選項，被拒絕的請求回 `403`。政策透過 `GET /api/v1/auth/me` 的 `limits.redirect_mode_policy` 曝光 |
 
 ---
 
@@ -448,12 +466,12 @@ login_attempts (稽核用)
 | 表 | 主要欄位 | 用途 |
 |----|----------|------|
 | `users` | id, email, email_normalized(UNIQUE), password_hash, display_name, role, status, group_id, email_verified_at, last_login_at, created_at, updated_at, deleted_at | 使用者 |
-| `user_groups` | id, name(UNIQUE, NOCASE), description, max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection, default_domain_id, restrict_domains, is_default, created_at, updated_at | 配額、功能開關與網域策略群組 |
+| `user_groups` | id, name(UNIQUE, NOCASE), description, max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection, redirect_mode_policy, default_domain_id, restrict_domains, is_default, created_at, updated_at | 配額、功能開關、轉址方式與網域策略群組 |
 | `group_domains` | group_id, domain_id (PK) | 各群組的明確網域允許清單 |
 | `sessions` | id, user_id, token_hash(UNIQUE), user_agent, ip_hash, created_at, last_seen_at, expires_at, revoked_at | 登入狀態 |
 | `api_tokens` | id, user_id, name, token_prefix, token_hash(UNIQUE), scopes, last_used_at, expires_at, created_at, revoked_at | API 憑證 |
 | `domains` | id, hostname(UNIQUE, NOCASE), is_default, is_verified, status, source, created_by, created_at, updated_at | Canonical/system、`URLET_DOMAINS`/env 與管理員/UI 網域；`pending`/`active`/`disabled` |
-| `urls` | id, user_id, domain_id(NOT NULL), slug, target_url, title, notes, password_hash, expires_at, max_clicks, click_count, unique_click_count, redirect_type, status, is_custom_slug, last_clicked_at, created_at, updated_at, deleted_at, UNIQUE(domain_id,slug) | 短網址；slug 命名空間以網域為單位 |
+| `urls` | id, user_id, domain_id(NOT NULL), slug, target_url, title, notes, password_hash, expires_at, max_clicks, click_count, unique_click_count, redirect_type, redirect_mode, splash_delay_seconds, splash_title, splash_message, status, is_custom_slug, last_clicked_at, created_at, updated_at, deleted_at, UNIQUE(domain_id,slug) | 短網址；slug 命名空間以網域為單位 |
 | `tags` | id, user_id, name, color, created_at, UNIQUE(user_id,name) | 標籤 |
 | `url_tags` | url_id, tag_id (PK) | 標籤關聯 |
 | `clicks` | id, url_id, clicked_at, ip_hash, visitor_hash, user_agent, referrer, referrer_host, country_code, device_type, browser, os, is_bot, is_unique, password_protected | 點擊明細 |
@@ -492,7 +510,8 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` / `invite_codes.group_id` 欄位、
 `user_groups.default_domain_id` / `restrict_domains` 欄位及四個索引，共 **16 張表、31 個索引**（§6.1、§6.3、§6.4）。
 邀請碼配額工作新增 `invite_issuance` 表與索引，使 schema 成為 **17 張表、33 個索引**；v1.3 僅新增可空的
-`invite_codes.code_sealed` 欄位，表與索引數量不變；v1.4 新增 `themes` 表及其唯一預設索引；
+`invite_codes.code_sealed` 欄位，表與索引數量不變；v1.4 新增 `themes` 表及其唯一預設索引。
+v1.5 新增 `urls` 的中轉頁欄位與 `user_groups.redirect_mode_policy`（表／索引數量不變），
 可上傳主題再新增 `custom_themes` 與其建立者索引，共 **19 張表、35 個索引**。
 
 ### 6.5 預設資料 (seed)
@@ -509,6 +528,8 @@ v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` /
 - `user_groups`（v1.2）：建立一筆名為 `Standard`、`max_urls = NULL`、`max_api_tokens = NULL`、
   七個開關皆為 `1`（含 `allow_domain_selection`）、`default_domain_id = NULL`、
   `restrict_domains = 0`、`is_default = 1` 的群組；遷移會把所有既有使用者指派進去。
+- 中轉頁預設值（v1.5）：欄位預設值讓既有連結成為 `redirect_mode = direct`、`splash_delay_seconds = 5`
+  且沒有自訂文案，既有群組則為 `redirect_mode_policy = choice`，因此升級後行為不變。
 - `group_domains`：不種任何資料；沒有資料列的既有或新群組可使用所有 active 網域。
 - `domains`：啟動時依 `URLET_BASE_URL` 的 host 插入/更新 canonical 網域（`source=system`，永遠 active）。
   只有在沒有任何預設網域時才會設為預設，讓管理員可以改選其他預設。`URLET_DOMAINS` 只插入缺少的
@@ -525,7 +546,7 @@ v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` /
 | POST | `/api/v1/auth/register` | `{email, password, invite_code?, captcha_token?}` → 201 `{user}`；驗證碼驗證失敗回 400 `captcha_failed` |
 | POST | `/api/v1/auth/login` | `{email, password, captcha_token?}` → 200 `{user}` + Set-Cookie；驗證碼驗證失敗回 400 `captcha_failed` |
 | POST | `/api/v1/auth/logout` | 撤銷當前 Session → 204 |
-| GET | `/api/v1/auth/me` | 當前使用者 → 200 `{user}`；另含 `group`（id/name 或 null）與 `limits`（生效配額、開關、預設網域與允許網域，FR-GROUP-8） |
+| GET | `/api/v1/auth/me` | 當前使用者 → 200 `{user}`；另含 `group`（id/name 或 null）與 `limits`（生效配額、開關、轉址方式政策、預設網域與允許網域，FR-GROUP-8） |
 | PATCH | `/api/v1/auth/me` | `{display_name}` → 200 `{user}` |
 | POST | `/api/v1/auth/password` | `{current_password, new_password}` → 204 |
 | GET | `/api/v1/auth/sessions` | 我的 Session 清單 |
@@ -540,17 +561,18 @@ v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` /
 | 方法 | 路徑 | 說明 |
 |------|------|------|
 | GET | `/api/v1/urls` | 查詢參數：`q, tag, status, page, per_page, sort(created_at\|clicks\|slug\|updated\|expires)` |
-| POST | `/api/v1/urls` | `{target_url, domain?, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?, captcha_token?}`；API Token 呼叫豁免驗證碼，Session Cookie 呼叫受 `on_create` 約束 |
+| POST | `/api/v1/urls` | `{target_url, domain?, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?, redirect_mode?, splash_delay_seconds?, splash_title?, splash_message?, captcha_token?}`；API Token 呼叫豁免驗證碼，Session Cookie 呼叫受 `on_create` 約束 |
 | GET | `/api/v1/domains` | 建立短網址時可選的 active 網域，已依呼叫者的群組策略過濾（含生效的 `is_default`） |
 | GET | `/api/v1/urls/{id}` | 單筆（含 `short_url`、`is_expired`、`has_password`） |
-| PATCH | `/api/v1/urls/{id}` | 部分更新；`domain` 可搬移連結；`password: null` 清除密碼；`expires_at: null` 清除過期 |
+| PATCH | `/api/v1/urls/{id}` | 部分更新；`domain` 可搬移連結；`password: null` 清除密碼；`expires_at: null` 清除過期；`splash_title` / `splash_message: null` 清除自訂文案 |
 | DELETE | `/api/v1/urls/{id}` | 軟刪除 → 204 |
 | GET | `/api/v1/urls/{id}/stats?days=30` | 每日趨勢 + 維度分佈 + 摘要 |
 | GET | `/api/v1/urls/{id}/clicks?page=1` | 點擊明細（分頁） |
 
-連結配額用盡，或群組開關封鎖了送入的欄位時，回 403 `forbidden` 並附說明訊息。
+連結配額用盡、群組開關封鎖了送入的欄位，或轉址方式不符合群組政策時，回 403 `forbidden` 並附說明訊息。
 `PATCH` 時省略欄位代表維持原值，清除被封鎖的欄位則可接受；新開啟被封鎖的功能會被拒絕。
 非空的連結密碼一律視為新值，因此在密碼被封鎖時會被拒絕（FR-GROUP-3）。
+轉址方式政策會拒絕新的 `redirect_mode`（或 `PATCH` 時切換到被封鎖的模式），但允許維持目前模式與清除中轉頁文案。
 
 ### 7.3 標籤 / Token
 
@@ -573,7 +595,7 @@ v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` /
 | POST | `/api/v1/admin/users/{id}/password` | `{new_password}` 重設 |
 | DELETE | `/api/v1/admin/users/{id}` | 軟刪除（其網址一併軟刪除） |
 | GET | `/api/v1/admin/groups` | 使用者群組列表（含成員數、儲存的預設/允許網域欄位，分頁） |
-| POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, default_domain_id?, restrict_domains?, domain_ids?, is_default?}` → 201；domain_ids 必須存在，default_domain_id 必須 active；名稱重複或第二個預設群組回 409 |
+| POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, redirect_mode_policy?, default_domain_id?, restrict_domains?, domain_ids?, is_default?}` → 201；domain_ids 必須存在，default_domain_id 必須 active；名稱重複或第二個預設群組回 409 |
 | PUT | `/api/v1/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`default_domain_id: null` 表示全站預設；`domain_ids: null` 或 `[]` 會清空允許清單；`is_default: true` 會在同一交易內轉移預設標記 |
 | DELETE | `/api/v1/admin/groups/{id}?reassign_to={id}` | 先把成員搬到 `reassign_to`，再刪除 → 204；預設群組或目標不存在/不合法回 409 |
 | GET | `/api/v1/admin/themes` | 主題目錄：key、名稱、說明、`enabled`、`default`、`appearance`、`dark_only`、`light_only`、`css_url`、`custom`，以及目前的 `switching` 政策 |
@@ -601,9 +623,9 @@ v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` /
 | GET | `/` | 導覽首頁（HTML） |
 | GET | `/health` | `{status, version, database, uptime_seconds}` |
 | GET | `/app/lang/{code}` | 設定 `urlet_lang` cookie 並 302 至 `next`；`next` 未帶或不是同站相對路徑時轉往 `/app` |
-| GET | `/{slug}` | 轉址（302 等）或密碼頁（HTML）或 410/404 頁 |
+| GET | `/{slug}` | 轉址（302 等）、中轉頁（HTML）或密碼頁（HTML）或 410/404 頁 |
 | POST | `/{slug}/unlock` | 表單或 JSON `{password}`；成功時 JSON 回 200 `{ok, redirect}`、表單 303 → `/{slug}` |
-| GET | `/api/v1/public/urls/{slug}?domain=<hostname>` | 公開中介資料：`{domain, slug, has_password, is_expired, state, title?}`（**不含 target**）；省略 `domain` 時使用預設網域 |
+| GET | `/api/v1/public/urls/{slug}?domain=<hostname>` | 公開中介資料：`{domain, slug, has_password, redirect_mode, is_expired, state, title?}`（**不含 target**）；省略 `domain` 時使用預設網域 |
 
 ---
 
@@ -654,7 +676,7 @@ urlet/
 ├── docker-compose.tls.yml        # 可選：Caddy 自動 HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0012_custom_themes.sql 0013_custom_theme_appearance.sql
+├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_splash_pages.sql 0012_custom_themes.sql 0013_custom_theme_appearance.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama 模板（base、app_base、landing.html + 各頁面 + admin/）
@@ -663,11 +685,11 @@ urlet/
 │   ├── assets/{app.css,app.js,favicon.svg}
 │   ├── i18n/{mod.rs,en.json,zh-Hant.json,zh-Hans.json}
 │   ├── db/{mod,migrate,users,user_groups,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
-│   ├── services/{auth,urls,admin,domains,domain_policy,groups,invite_code,invite_quota,invites,limits,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
+│   ├── services/{auth,urls,admin,domains,domain_policy,groups,invite_code,invite_quota,invites,limits,redirect_mode,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
 │   ├── middleware/{mod,auth,csrf,domain,security,locale}.rs
 │   └── routes/{mod,api,api_auth,api_urls,api_domains,api_tags,api_tokens,api_stats,api_admin,api_invites,api_public,redirect,health,assets,dto,extract}.rs
 │       └── pages/{mod,auth,dashboard,urls,account,admin,home,invites}.rs
-└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs,groups.rs,invites.rs,i18n.rs,captcha.rs}
+└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,splash.rs,pages.rs,admin.rs,groups.rs,invites.rs,i18n.rs,captcha.rs}
 ```
 
 ### 9.2 Dockerfile 策略
@@ -703,7 +725,7 @@ urlet 不對外暴露連接埠，由 Caddy 反向代理。
 | 層級 | 範圍 | 工具 |
 |------|------|------|
 | 單元測試 | slug 產生/驗證/保留字、UA 解析、過期判定、設定解析、群組配額繼承（NULL／0／自訂值、未分組回退）、密碼雜湊、IP 雜湊、CSRF 同源判斷、`Accept-Language` 協商（`q=` 權重、回退英文）、語言目錄回退、驗證碼啟用條件矩陣、驗證碼失敗關閉判定 | `#[cfg(test)]` 模組 |
-| 整合測試 | 註冊→登入→建立→轉址→統計；密碼保護流程；過期與點擊上限；所有權隔離；admin 授權；API Token；群組 CRUD 與預設標記轉移；各群組的連結與 Token 配額；建立與更新時的功能開關強制；帶群組的邀請碼；刪除群組並改派；CSRF 拒絕；語言協商與 cookie 切換；API JSON 維持英文；註冊、登入與建立時的驗證碼拒絕（網頁與 JSON API）；導覽首頁 | `tests/integration.rs` + `tower::ServiceExt::oneshot` + 臨時 SQLite |
+| 整合測試 | 註冊→登入→建立→轉址→統計；密碼保護流程；過期與點擊上限；所有權隔離；admin 授權；API Token；群組 CRUD 與預設標記轉移；各群組的連結與 Token 配額；建立與更新時的功能開關強制；帶群組的邀請碼；刪除群組並改派；CSRF 拒絕；語言協商與 cookie 切換；API JSON 維持英文；註冊、登入與建立時的驗證碼拒絕（網頁與 JSON API）；導覽首頁；中轉頁渲染、密碼優先與轉址方式政策 | `tests/integration.rs` + `tower::ServiceExt::oneshot` + 臨時 SQLite |
 | 端對端煙霧測試 | 以真實二進位 + curl 走完主要流程 | `scripts/smoke.sh` |
 | 靜態檢查 | `cargo fmt --check`、`cargo clippy -D warnings` | CI 指令（README 說明） |
 
@@ -741,6 +763,15 @@ v1.1 新增項目（本批次）：
 - [ ] `POST /api/v1/urls` 僅在 API Token 呼叫時豁免驗證碼（Session Cookie 呼叫受 `on_create` 約束）；後台 secret key 欄位為唯寫
 - [ ] `GET /` 對未登入與已登入使用者皆回 200 的導覽首頁，不再 302 至 `/app`
 - [ ] `cargo test`（完整測試套件）、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過，`scripts/smoke.sh` 端對端檢查全過，且容器映像可在 musl 下建置並執行（§3.3）
+
+v1.5 新增項目（本批次）：
+
+- [x] `urls.redirect_mode`（`direct` / `splash`）、`splash_delay_seconds`（1–60，預設 5）、`splash_title`（≤120）與 `splash_message`（≤500，可換行）；既有連結維持 `direct`
+- [x] 中轉頁連結回 200 中間頁，顯示自訂或在地化文案、目的地主機、倒數、meta refresh 與立即前往按鈕；送出時記錄點擊、設定 `no-store`，且不載入外部資源
+- [x] 受密碼保護的連結以密碼頁為唯一中間頁，解鎖後直接前往目標
+- [x] `user_groups.redirect_mode_policy`（`direct` / `splash` / `choice`，預設 `choice`）只把關建立與模式切換，透過 `GET /api/v1/auth/me` 曝光，兩個網頁表單都會隱藏被封鎖的選項
+- [x] 六個主題皆提供中轉頁模板，三份語言目錄涵蓋所有新字串
+- [x] `cargo test`、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`scripts/smoke.sh` 與 `scripts/merge-check.sh` 全綠
 
 v1.4 新增項目（本批次）：
 - [x] `themes`（19 張表、35 個索引）：六個內建設計與管理員 CSS 上傳、啟用/預設切換、全站切換權限、`urlet_theme` cookie、各主題模板目錄，以及持久化於 `/data/themes` 的 `custom_themes` 目錄與檔案

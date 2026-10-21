@@ -40,7 +40,7 @@ rather than frozen at their original feature set.
    the theme page.
 7. Save. The selection is applied immediately; no restart is needed.
 
-An uploaded theme can be renamed, marked dark-only and have its stylesheet
+An uploaded theme can be renamed, have its appearance and stylesheet
 replaced from its edit page. **Delete** removes the catalogue row and the CSS
 file; a theme that is currently the default cannot be deleted, so choose another
 default first. The original file name is kept for display only; the stored path
@@ -135,6 +135,7 @@ templates/
     │   ├── base.html
     │   ├── app_base.html
     │   ├── landing.html
+    │   ├── link_splash.html   # public interstitial page
     │   ├── dashboard.html     # thin wrapper around content/dashboard.html
     │   └── ...
     ├── paper/
@@ -165,7 +166,7 @@ stylesheet URL.
    `src/assets.rs` and the `/assets/themes/{key}` route.
 3. Add the catalogue strings to the three `src/i18n/*.json` files.
 4. Create `templates/themes/<key>/` with at least `base.html`, `app_base.html`,
-   `landing.html`, the auth/link/error pages, the admin tabs and the app pages.
+   `landing.html`, the auth/link/splash/error pages, the admin tabs and the app pages.
    Reuse the content macros for the dense app pages.
 5. Add `templates/themes/<key>/...` paths to every `themed_page!` call. Keep the
    `Verdant` entry in each invocation: it is also the fallback used when a page

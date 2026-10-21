@@ -94,6 +94,8 @@ pub struct LimitsDto {
     pub allow_tags: bool,
     pub allow_api_tokens: bool,
     pub allow_domain_selection: bool,
+    /// `direct`, `splash` or `choice`: which redirect modes the account may use.
+    pub redirect_mode_policy: String,
     pub default_domain: Option<String>,
     pub allowed_domains: Vec<String>,
 }
@@ -110,6 +112,7 @@ impl From<Limits> for LimitsDto {
             allow_tags: limits.allow_tags,
             allow_api_tokens: limits.allow_api_tokens,
             allow_domain_selection: limits.allow_domain_selection,
+            redirect_mode_policy: limits.redirect_mode_policy.as_str().to_string(),
             default_domain: None,
             allowed_domains: Vec::new(),
         }
@@ -235,6 +238,11 @@ pub struct UrlDto {
     pub click_count: i64,
     pub unique_click_count: i64,
     pub redirect_type: i64,
+    /// `direct` (immediate redirect) or `splash` (interstitial first).
+    pub redirect_mode: String,
+    pub splash_delay_seconds: i64,
+    pub splash_title: Option<String>,
+    pub splash_message: Option<String>,
     pub status: String,
     /// `true` when the link no longer redirects because it expired or reached
     /// its click limit.
@@ -266,6 +274,10 @@ impl UrlDto {
             click_count: url.click_count,
             unique_click_count: url.unique_click_count,
             redirect_type: url.redirect_type,
+            redirect_mode: url.redirect_mode.clone(),
+            splash_delay_seconds: url.splash_delay_seconds,
+            splash_title: url.splash_title.clone(),
+            splash_message: url.splash_message.clone(),
             status: url.status.clone(),
             is_expired: matches!(state, UrlState::Expired | UrlState::LimitReached),
             state: state.as_str().to_string(),

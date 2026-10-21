@@ -65,6 +65,16 @@ macro_rules! themed_page {
                         $crate::services::theme::current_css_url()
                     }
 
+                    /// Build version appended to embedded asset URLs.
+                    ///
+                    /// Browsers may serve a CSS file from cache for an hour
+                    /// (`public, max-age=3600`), so an unversioned URL keeps
+                    /// the old stylesheet after an upgrade. Tying the URL to
+                    /// the release makes every deploy fetch fresh assets.
+                    pub fn asset_version(&self) -> &'static str {
+                        $crate::VERSION
+                    }
+
                     /// Stable key, exposed as `data-theme-key` for CSS hooks.
                     pub fn theme_key(&self) -> String {
                         $crate::services::theme::current_key()

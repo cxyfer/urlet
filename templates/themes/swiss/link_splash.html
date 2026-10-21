@@ -1,0 +1,45 @@
+{% extends "themes/swiss/base.html" %}
+
+{% block title %}{{ heading }} — {{ site_name }}{% endblock %}
+
+{% block head %}
+<meta name="robots" content="noindex">
+<meta http-equiv="refresh" content="{{ delay_seconds }};url={{ target_url }}">
+{% endblock %}
+
+{% block body %}
+<main class="link-page">
+    <div class="link-grid">
+        <div class="link-num">
+            <svg class="link-glyph" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                <path d="M8 24h26"></path>
+                <path d="m26 14 10 10-10 10"></path>
+            </svg>
+            <div class="link-code" aria-hidden="true">→</div>
+            <div class="link-mark">
+                <span>{{ site_name }}</span>
+                <span aria-hidden="true">/// — 02</span>
+            </div>
+        </div>
+        <div class="link-body">
+            <p class="error-meta" aria-hidden="true">/// — 02</p>
+            <h1>{{ heading }}</h1>
+            <p class="muted splash-message">{{ message }}</p>
+            <div class="splash-meter" style="--splash-delay: {{ delay_seconds }}s" aria-hidden="true"><span></span></div>
+            <p class="small muted splash-countdown">{{ countdown }}</p>
+            <div class="splash-destination">
+                <span class="label">{{ lang.t("link.splash.destination") }}</span>
+                <span class="splash-host">{{ destination_host }}</span>
+            </div>
+            <div class="link-form">
+                <a class="btn btn-primary btn-block mt" href="{{ target_url }}" rel="noopener">{{ lang.t("link.splash.continue") }}</a>
+            </div>
+            <p class="hint">{{ lang.t("link.splash.manual") }}</p>
+            <div class="link-foot">
+                <span>{{ site_name }}</span>
+                <span aria-hidden="true">→ / 02</span>
+            </div>
+        </div>
+    </div>
+</main>
+{% endblock %}

@@ -214,6 +214,52 @@ contains "statistics report a bot click" '"bot_clicks":1' "$STATS"
 contains "statistics never expose hashes" '"unique_clicks"' "$STATS"
 missing "statistics never expose ip hashes" 'ip_hash' "$STATS"
 
+# --------------------------------------------------------------- splash
+echo
+echo "splash pages"
+SPLASH=$(create_link '{"target_url":"https://example.com/promo","slug":"splash-demo","redirect_mode":"splash","splash_delay_seconds":7,"splash_title":"Launch day","splash_message":"Welcome aboard"}')
+SPLASH_ID=$(echo "$SPLASH" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+contains "a splash link stores its mode" '"redirect_mode":"splash"' "$SPLASH"
+contains "a splash link stores its countdown" '"splash_delay_seconds":7' "$SPLASH"
+SPLASH_PAGE=$(curl -s -A "$UA_DESKTOP" "$BASE/splash-demo")
+contains "the splash page shows the custom heading" "Launch day" "$SPLASH_PAGE"
+contains "the splash page shows the custom message" "Welcome aboard" "$SPLASH_PAGE"
+contains "the splash page counts down" "Redirecting in 7 seconds" "$SPLASH_PAGE"
+contains "the splash page auto-redirects" "7;url=https://example.com/promo" "$SPLASH_PAGE"
+check "the splash page returns 200" "200" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -A "$UA_DESKTOP" "$BASE/splash-demo")"
+SPLASH_HEADERS=$(curl -s -D - -o /dev/null -A "$UA_DESKTOP" "$BASE/splash-demo")
+contains "the splash page is not cached" "no-store" "$SPLASH_HEADERS"
+missing "the splash page does not leak the target in public metadata" "example.com/promo" \
+    "$(curl -s "$BASE/api/v1/public/urls/splash-demo")"
+contains "public metadata reports the mode" '"redirect_mode":"splash"' \
+    "$(curl -s "$BASE/api/v1/public/urls/splash-demo")"
+
+SPLASH_BEFORE=$(curl -s -b "$COOKIES" "$BASE/api/v1/urls/$SPLASH_ID" | sed -n 's/.*"click_count":\([0-9]*\).*/\1/p')
+for _ in 1 2 3; do
+    curl -s -o /dev/null -A "$UA_DESKTOP" "$BASE/splash-demo"
+done
+sleep 0.5
+SPLASH_AFTER=$(curl -s -b "$COOKIES" "$BASE/api/v1/urls/$SPLASH_ID" | sed -n 's/.*"click_count":\([0-9]*\).*/\1/p')
+check "each splash view counts one click" "3" "$((SPLASH_AFTER - SPLASH_BEFORE))"
+
+curl -s -o /dev/null -b "$COOKIES" -X PATCH "$BASE/api/v1/urls/$SPLASH_ID" \
+    -H 'content-type: application/json' -H "origin: $BASE" -d '{"redirect_mode":"direct"}'
+check "a link switched to direct redirects immediately" "302" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -A "$UA_DESKTOP" "$BASE/splash-demo")"
+
+create_link '{"target_url":"https://secret.example.com/splash","slug":"vault-splash","password":"linkpass","redirect_mode":"splash","splash_title":"Secret promo"}' > /dev/null
+VAULT_SPLASH=$(curl -s "$BASE/vault-splash")
+contains "a password link shows the password page, not the splash" "Protected link" "$VAULT_SPLASH"
+missing "the password page hides splash copy" "Secret promo" "$VAULT_SPLASH"
+missing "the password page hides the target" "secret.example.com/splash" "$VAULT_SPLASH"
+curl -s -o /dev/null -c "$DATA/splash-unlock.txt" -X POST "$BASE/vault-splash/unlock" \
+    -H 'content-type: application/json' -d '{"password":"linkpass"}'
+check "the unlocked password link skips the splash" "302" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -b "$DATA/splash-unlock.txt" "$BASE/vault-splash")"
+check "the unlocked password link goes straight to the target" "https://secret.example.com/splash" \
+    "$(curl -s -o /dev/null -w '%{redirect_url}' -b "$DATA/splash-unlock.txt" "$BASE/vault-splash")"
+
 # ------------------------------------------------------- password protect
 echo
 echo "password protection"
@@ -317,10 +363,11 @@ contains "the audit log records registrations" 'auth.register' "$(curl -s -b "$C
 
 # user groups: create, assign, enforce a quota and a feature toggle, then delete
 GROUP=$(curl -s -b "$COOKIES" -X POST "$BASE/api/v1/admin/groups" -H 'content-type: application/json' \
-    -H "origin: $BASE" -d '{"name":"Smoke","max_urls":1,"allow_custom_slug":false,"allow_domain_selection":false}')
+    -H "origin: $BASE" -d '{"name":"Smoke","max_urls":1,"allow_custom_slug":false,"allow_domain_selection":false,"redirect_mode_policy":"direct"}')
 GROUP_ID=$(echo "$GROUP" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
 contains "a user group is created" '"name":"Smoke"' "$GROUP"
 contains "the group disables domain selection" '"allow_domain_selection":false' "$GROUP"
+contains "the group stores the redirect mode policy" '"redirect_mode_policy":"direct"' "$GROUP"
 check "a user is assigned to the group" "200" "$(curl -s -o /dev/null -w '%{http_code}' \
     -b "$COOKIES" -X PATCH "$BASE/api/v1/admin/users/2" -H 'content-type: application/json' \
     -H "origin: $BASE" -d "{\"group_id\":$GROUP_ID}")"
@@ -330,9 +377,12 @@ check "a non-default domain is refused by the group" "403" "$(curl -s -o /dev/nu
 check "a blocked feature is refused" "403" "$(curl -s -o /dev/null -w '%{http_code}' \
     -b "$COOKIES_B" -X POST "$BASE/api/v1/urls" -H 'content-type: application/json' \
     -H "origin: $BASE" -d '{"target_url":"https://example.com/blocked","slug":"blocked"}')"
-check "the group quota allows the first link" "201" "$(curl -s -o /dev/null -w '%{http_code}' \
+check "a splash link is refused by a direct-only group" "403" "$(curl -s -o /dev/null -w '%{http_code}' \
     -b "$COOKIES_B" -X POST "$BASE/api/v1/urls" -H 'content-type: application/json' \
-    -H "origin: $BASE" -d '{"target_url":"https://example.com/group-one"}')"
+    -H "origin: $BASE" -d '{"target_url":"https://example.com/no-splash","redirect_mode":"splash"}')"
+GROUP_LINK=$(curl -s -b "$COOKIES_B" -X POST "$BASE/api/v1/urls" -H 'content-type: application/json' \
+    -H "origin: $BASE" -d '{"target_url":"https://example.com/group-one"}')
+contains "the group policy defaults a new link to direct" '"redirect_mode":"direct"' "$GROUP_LINK"
 check "the group quota blocks the second link" "403" "$(curl -s -o /dev/null -w '%{http_code}' \
     -b "$COOKIES_B" -X POST "$BASE/api/v1/urls" -H 'content-type: application/json' \
     -H "origin: $BASE" -d '{"target_url":"https://example.com/group-two"}')"

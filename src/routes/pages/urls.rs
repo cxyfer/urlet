@@ -54,6 +54,17 @@ pub struct UrlDetailPage {
     pub allow_max_clicks: bool,
     pub allow_tags: bool,
     pub allow_domain_selection: bool,
+    /// `direct`, `splash` or `choice`: the group's redirect-mode policy.
+    pub redirect_mode_policy: String,
+    /// Whether the edit form may offer immediate redirects (the current mode is
+    /// always offered, so an existing link can keep it).
+    pub allow_direct_mode: bool,
+    /// Whether the edit form may offer the splash page.
+    pub allow_splash_mode: bool,
+    /// False when the stored mode is not `direct`/`splash`; the form then keeps
+    /// the raw value selected through a disabled placeholder instead of
+    /// silently rewriting it on the next save.
+    pub mode_known: bool,
     /// Localised "30 days ago" label of the chart axis.
     pub days_label: String,
     /// Localised "42 clicks in this window; grey segments are bots" legend.
@@ -147,6 +158,14 @@ pub struct CreateForm {
     pub max_clicks: Option<String>,
     #[serde(default)]
     pub redirect_type: Option<String>,
+    #[serde(default)]
+    pub redirect_mode: Option<String>,
+    #[serde(default)]
+    pub splash_delay_seconds: Option<String>,
+    #[serde(default)]
+    pub splash_title: Option<String>,
+    #[serde(default)]
+    pub splash_message: Option<String>,
     /// Cloudflare Turnstile token, submitted by the rendered widget.
     #[serde(default, rename = "cf-turnstile-response")]
     pub turnstile_token: Option<String>,
@@ -194,6 +213,14 @@ pub struct UpdateForm {
     pub clear_max_clicks: Option<String>,
     #[serde(default)]
     pub redirect_type: Option<String>,
+    #[serde(default)]
+    pub redirect_mode: Option<String>,
+    #[serde(default)]
+    pub splash_delay_seconds: Option<String>,
+    #[serde(default)]
+    pub splash_title: Option<String>,
+    #[serde(default)]
+    pub splash_message: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
 }
@@ -281,6 +308,10 @@ pub async fn create(
             expires_at: payload.expires_at,
             max_clicks: optional_number(&payload.max_clicks),
             redirect_type: optional_number(&payload.redirect_type),
+            redirect_mode: payload.redirect_mode,
+            splash_delay_seconds: optional_number(&payload.splash_delay_seconds),
+            splash_title: payload.splash_title,
+            splash_message: payload.splash_message,
         })
         .await;
 
@@ -368,6 +399,9 @@ pub async fn detail(
     );
     let lang = i18n::current();
     let effective = crate::services::limits::effective(&state.db, &state.settings, &user).await?;
+    let mode_policy = effective.redirect_mode_policy;
+    let mode_known = matches!(url.redirect_mode.as_str(), "direct" | "splash");
+    let current_mode = crate::services::redirect_mode::RedirectMode::from_db(&url.redirect_mode);
     let daily_total: i64 = daily.iter().map(|point| point.clicks).sum();
     let page = UrlDetailPage {
         site_name: state.settings.site_name(),
@@ -399,6 +433,12 @@ pub async fn detail(
         allow_max_clicks: effective.allow_max_clicks,
         allow_tags: effective.allow_tags,
         allow_domain_selection: policy.allow_selection,
+        redirect_mode_policy: mode_policy.as_str().to_string(),
+        allow_direct_mode: mode_policy.allows(crate::services::redirect_mode::RedirectMode::Direct)
+            || current_mode == crate::services::redirect_mode::RedirectMode::Direct,
+        allow_splash_mode: mode_policy.allows(crate::services::redirect_mode::RedirectMode::Splash)
+            || current_mode == crate::services::redirect_mode::RedirectMode::Splash,
+        mode_known,
         days_label: i18n::format(
             lang,
             "url_detail.chart.days_ago",
@@ -495,6 +535,18 @@ pub async fn update(
                 expires_at,
                 max_clicks,
                 redirect_type: optional_number(&payload.redirect_type),
+                redirect_mode: payload
+                    .redirect_mode
+                    .filter(|value| !value.trim().is_empty()),
+                splash_delay_seconds: optional_number(&payload.splash_delay_seconds),
+                splash_title: payload
+                    .splash_title
+                    .as_ref()
+                    .map(|_| payload.splash_title.clone()),
+                splash_message: payload
+                    .splash_message
+                    .as_ref()
+                    .map(|_| payload.splash_message.clone()),
                 status: payload.status,
             },
         )
@@ -646,6 +698,9 @@ pub fn error_code(err: &AppError) -> &'static str {
         }
         AppError::Forbidden(message) if message.starts_with("your group does not allow invite") => {
             "invites_disabled"
+        }
+        AppError::Forbidden(message) if message.starts_with("your group only allows") => {
+            "mode_denied"
         }
         AppError::Forbidden(message) if message.starts_with("you have reached your limit of ") => {
             "quota"

@@ -17,6 +17,7 @@ pub mod invites;
 pub mod limits;
 pub mod password;
 pub mod ratelimit;
+pub mod redirect_mode;
 pub mod secret;
 pub mod settings;
 pub mod slug;

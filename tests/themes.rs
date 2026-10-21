@@ -250,6 +250,33 @@ async fn theme_assets_are_embedded_and_unknown_keys_are_404() {
 }
 
 #[tokio::test]
+async fn embedded_asset_urls_are_versioned() {
+    let app = TestApp::spawn().await;
+    let version = urlet::VERSION;
+
+    // The default theme carries the build version on every CSS/JS URL, so a
+    // browser cannot keep a previous release's stylesheet for an hour.
+    let page = app.get("/").await;
+    for asset in [
+        "/assets/theme.js",
+        "/assets/app.css",
+        "/assets/app.js",
+        "/assets/theme-ui.css",
+    ] {
+        let expected = format!("{asset}?v={version}");
+        assert!(page.body.contains(&expected), "missing {expected}");
+    }
+
+    // Non-default themes version their own stylesheet URL too.
+    let cookie = admin(&app).await;
+    let themed = app
+        .get_as("/app", &format!("{cookie}; urlet_theme=aurora"))
+        .await;
+    let expected = format!("/assets/themes/aurora?v={version}");
+    assert!(themed.body.contains(&expected), "missing {expected}");
+}
+
+#[tokio::test]
 async fn the_theme_picker_menu_paints_its_own_text_and_background() {
     let app = TestApp::spawn().await;
     let response = app.get("/assets/theme-ui.css").await;
@@ -1461,4 +1488,55 @@ async fn a_light_only_custom_theme_forces_the_light_palette() {
     assert!(!landing.body.contains("data-theme=\"dark\""));
     assert!(!landing.body.contains("data-theme-lock"));
     assert!(landing.body.contains("data-theme-toggle"));
+}
+
+#[tokio::test]
+async fn every_theme_renders_the_splash_page() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+    let created = app
+        .send(common::post_json_as(
+            "/api/v1/urls",
+            json!({
+                "target_url": "https://example.com/themed",
+                "slug": "themed-splash",
+                "redirect_mode": "splash",
+                "splash_title": "Theme <b>splash</b>"
+            }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+
+    for key in ["verdant", "aurora", "paper", "signal", "gilded", "swiss"] {
+        let switched = app
+            .send(get_as(&format!("/app/theme/{key}?next=/app"), &cookie))
+            .await;
+        assert_eq!(
+            switched.status,
+            StatusCode::FOUND,
+            "{key}: {}",
+            switched.body
+        );
+        let theme_cookie = switched.cookie_named("urlet_theme").expect("theme cookie");
+        let both = format!("{cookie}; {theme_cookie}");
+        let page = app.get_as("/themed-splash", &both).await;
+        assert_eq!(page.status, StatusCode::OK, "{key}: {}", page.body);
+        assert!(
+            page.body.contains("Theme &lt;b&gt;splash&lt;/b&gt;"),
+            "{key} lost or failed to escape the copy"
+        );
+        assert!(
+            !page.body.contains("<b>splash</b>"),
+            "{key} rendered the custom heading as HTML"
+        );
+        assert!(
+            page.body.contains(&format!("data-theme-key=\"{key}\"")),
+            "{key} did not render its own shell"
+        );
+        assert!(
+            page.body.contains("Continue now"),
+            "{key} did not render the splash body"
+        );
+    }
 }

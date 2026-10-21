@@ -2,7 +2,7 @@
 
 # urlet — 分階段實作計畫 (Implementation Plan)
 
-> 對應規格：`docs/SPEC.md` v1.2
+> 對應規格：`docs/SPEC.md` v1.5
 > 原則：每個階段結束時程式碼必須**可編譯、可測試、可提交**；每個階段一個（或數個）本地 commit。
 
 ## 執行結果（已完成）
@@ -21,7 +21,8 @@
 | P10 使用者群組 (v1.2) | ✅ 完成 | 見 `git log`（migration 0004、群組 API/UI、三語字串、文件） |
 | P11 群組網域策略 (v1.2) | ✅ 完成 | 見 `git log`（migration 0005、預設網域 + 允許清單、管理 UI/API、測試） |
 | P12 可切換主題 (v1.4) | ✅ 完成 | 見 `git log`（migration 0010、主題 registry、管理目錄、六套模板、測試） |
-| P13 可上傳主題 (v1.4) | ✅ 完成 | 見 `git log`（migration 0012、CSS 上傳/編輯/刪除、雜湊資產、持久化 theme volume、測試） |
+| P13 中轉頁與轉址方式政策 (v1.5) | ✅ 完成 | 見 `git log`（migration 0011、六個主題的中轉頁模板、群組政策、三語字串、文件、測試） |
+| P14 可上傳主題 (v1.5) | ✅ 完成 | 見 `git log`（migration 0012、CSS 上傳/編輯/刪除、雜湊資產、持久化 theme volume、測試） |
 
 驗收數據（v1.0）：`cargo test` 187 個測試全綠、`cargo clippy --all-targets -- -D warnings` 與
 `cargo fmt --check` 無警告、`scripts/smoke.sh` 81 項端對端檢查全數通過。
@@ -45,7 +46,8 @@
 | P10 | 使用者群組 (v1.2) | `user_groups` 提供各群組連結／Token 配額與七個功能開關（含網域選擇）；可透過使用者或邀請碼指派；含管理頁面與 API | 16 張表／31 個索引、升級不改變行為、配額與開關生效（管理員亦然）、刪組需改派、測試與 smoke 全綠 | `✨ feat(groups): ...` |
 | P11 | 群組網域策略 (v1.2) | 各群組 `default_domain_id`、`restrict_domains` 與 `group_domains` 允許清單；建立/移動連結時強制，透過 `/api/v1/auth/me` 與 `/api/v1/domains` 曝光，管理群組表單可編輯 | 16 張表／31 個索引、既有群組維持所有 active 網域、限制清單為空時只能用預設、預設網域停用時回退全站預設、測試與 smoke 全綠 | `✨ feat(domains): ...` |
 | P12 | 可切換主題 (v1.4) | 六個內建模板／CSS 主題、`themes` 表與 registry、管理啟用／預設／政策頁面與 API、`urlet_theme` cookie、主題切換器與共享回退內容 | 18 張表／34 個索引、每個主題都能渲染每個頁面、權限與回退皆有測試、fmt/clippy/test/smoke 全綠 | `✨ feat(themes): ...` |
-| P13 | 可上傳主題 (v1.4) | `custom_themes` 中介資料、管理主題頁的 CSS 上傳/編輯/刪除、內容雜湊 `/assets/custom-themes/{key}`、`auto`/`light`/`dark` 外觀、驗證與限制、`URLET_THEMES_DIR` + `urlet-themes` volume | 19 張表／35 個索引、重載/重啟後上傳仍在、明暗強制、預設/刪除規則與成員授權皆有測試、fmt/clippy/test/smoke 全綠 | `✨ feat(themes): ...` |
+| P13 | 中轉頁與轉址方式政策 (v1.5) | `urls.redirect_mode` 與中轉頁文案、六個主題模板、`user_groups.redirect_mode_policy`、表單/API/`/auth/me`、語言目錄 | 既有連結維持直接跳轉、密碼頁仍是唯一中間頁、政策只把關建立與更新、fmt/clippy/test/smoke 全綠 | `✨ feat(splash): ...` |
+| P14 | 可上傳主題 (v1.5) | `custom_themes` 中介資料、管理主題頁的 CSS 上傳/編輯/刪除、內容雜湊 `/assets/custom-themes/{key}`、`auto`/`light`/`dark` 外觀、驗證與限制、`URLET_THEMES_DIR` + `urlet-themes` volume | 19 張表／35 個索引、重載/重啟後上傳仍在、明暗強制、預設/刪除規則與成員授權皆有測試、fmt/clippy/test/smoke 全綠 | `✨ feat(themes): ...` |
 
 ---
 
@@ -243,7 +245,7 @@
 
 ---
 
-## P13 — 可上傳主題 (v1.4)
+## P14 — 可上傳主題 (v1.5)
 
 上傳在不改變編譯期模板模型的前提下擴充主題目錄。
 

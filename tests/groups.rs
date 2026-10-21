@@ -978,6 +978,99 @@ async fn group_domain_policy_works_through_the_html_form() {
 }
 
 #[tokio::test]
+async fn group_domain_policy_radio_drives_the_form() {
+    let app = TestApp::spawn().await;
+    let (admin_cookie, _) = admin(&app).await;
+    let a = app.add_domain("a.example.com", "active").await;
+    let b = app.add_domain("b.example.com", "active").await;
+
+    // "default": members cannot choose, so no allowlist is needed.
+    let body = format!(
+        "name=Radio+Scope&max_urls=&max_api_tokens=&domain_policy=default\
+         &default_domain_id={a}"
+    );
+    let response = app
+        .send(post_form_as("/app/admin/groups", &body, &admin_cookie))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    let list = groups(&app, &admin_cookie).await;
+    let row = group_named(&list, "Radio Scope");
+    assert_eq!(row["allow_domain_selection"], false);
+    assert_eq!(row["restrict_domains"], false);
+    assert_eq!(row["allowed_domain_ids"], json!([]));
+    let group_id = row["id"].as_i64().expect("id");
+
+    // The drawer preselects the radio matching the stored booleans. The create
+    // form never checks "default", so this can only come from that group.
+    let page = app.get_as("/app/admin/groups", &admin_cookie).await;
+    assert!(page
+        .body
+        .contains("name=\"domain_policy\" value=\"default\" checked"));
+
+    // "list": selection on, narrowed to the checked domains.
+    let body = format!(
+        "name=Radio+Scope&max_urls=&max_api_tokens=&domain_policy=list\
+         &default_domain_id={a}&domain_{a}=on&domain_{b}=on"
+    );
+    let response = app
+        .send(post_form_as(
+            &format!("/app/admin/groups/{group_id}"),
+            &body,
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    let list = groups(&app, &admin_cookie).await;
+    let row = group_named(&list, "Radio Scope");
+    assert_eq!(row["allow_domain_selection"], true);
+    assert_eq!(row["restrict_domains"], true);
+    let mut ids: Vec<i64> = row["allowed_domain_ids"]
+        .as_array()
+        .expect("ids")
+        .iter()
+        .map(|value| value.as_i64().expect("id"))
+        .collect();
+    ids.sort_unstable();
+    assert_eq!(ids, vec![a, b]);
+
+    // "all": the restriction is off again, but the submitted allowlist stays
+    // stored so switching back to "list" does not lose the domains.
+    let body = format!(
+        "name=Radio+Scope&max_urls=&max_api_tokens=&domain_policy=all\
+         &default_domain_id={a}&domain_{a}=on&domain_{b}=on"
+    );
+    let response = app
+        .send(post_form_as(
+            &format!("/app/admin/groups/{group_id}"),
+            &body,
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    let list = groups(&app, &admin_cookie).await;
+    let row = group_named(&list, "Radio Scope");
+    assert_eq!(row["allow_domain_selection"], true);
+    assert_eq!(row["restrict_domains"], false);
+    assert_eq!(row["allowed_domain_ids"].as_array().expect("ids").len(), 2);
+
+    // An unknown value is refused instead of silently picking a scope.
+    let response = app
+        .send(post_form_as(
+            "/app/admin/groups",
+            "name=Bad+Scope&domain_policy=everything",
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    let list = groups(&app, &admin_cookie).await;
+    assert!(list["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .all(|item| item["name"] != "Bad Scope"));
+}
+
+#[tokio::test]
 async fn invalid_or_inactive_group_domains_are_rejected() {
     let app = TestApp::spawn().await;
     let (admin_cookie, _) = admin(&app).await;
@@ -1485,7 +1578,7 @@ async fn admin_group_pages_and_restricted_user_views_render() {
     assert!(page.body.contains("Standard"));
     assert!(page.body.contains("id=\"max_api_tokens\""));
     assert!(page.body.contains("name=\"default_domain_id\""));
-    assert!(page.body.contains("name=\"restrict_domains\""));
+    assert!(page.body.contains("name=\"domain_policy\""));
 
     // Create a group through the browser form: custom slugs and tags are off.
     let created = app
@@ -2022,6 +2115,7 @@ async fn updating_a_missing_group_does_not_clear_the_default() {
         allow_tags: true,
         allow_api_tokens: true,
         allow_domain_selection: true,
+        redirect_mode_policy: "choice",
         default_domain_id: None,
         restrict_domains: false,
     };

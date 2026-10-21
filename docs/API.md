@@ -114,6 +114,7 @@ only checked when bot verification is enabled for sign-in (`captcha_on_login` /
     "allow_tags": true,
     "allow_api_tokens": true,
     "allow_domain_selection": true,
+    "redirect_mode_policy": "choice",
     "default_domain": "links.example.com",
     "allowed_domains": ["links.example.com", "go.example.com"]
   }
@@ -125,6 +126,8 @@ only checked when bot verification is enabled for sign-in (`captcha_on_login` /
 `0` means unlimited. `default_domain` is the effective group default (falling back to the site
 default when it is missing or disabled); `allowed_domains` is the effective selection list. When
 `allow_domain_selection` is `false`, only that default is accepted for new links or moves.
+`redirect_mode_policy` is `direct`, `splash` or `choice`; it limits the redirect mode of **new**
+links and never rewrites existing ones. An ungrouped account gets `choice`.
 
 ### `PATCH /api/v1/auth/me`
 
@@ -206,6 +209,10 @@ Query parameters:
   "expires_at": "2030-06-30 12:00",
   "max_clicks": 500,
   "redirect_type": 302,
+  "redirect_mode": "splash",
+  "splash_delay_seconds": 7,
+  "splash_title": "Launch day",
+  "splash_message": "Welcome aboard",
   "captcha_token": "0.abc..."
 }
 ```
@@ -226,6 +233,12 @@ Query parameters:
   domain** returns `409`
 - `expires_at` must be in the future; `max_clicks` ≥ 1
 - `redirect_type` ∈ {301, 302, 307, 308}
+- `redirect_mode` is `direct` (default) or `splash`. Omitted, it takes the group policy's default
+  (splash under a splash-only policy, otherwise direct). A mode the group blocks returns `403`
+- `splash_delay_seconds` is 1–60 (default 5). `splash_title` (at most 120 characters) and
+  `splash_message` (at most 500 characters, newlines allowed) are optional; empty/omitted uses the
+  localised built-in copy. They are stored even while the link is direct, so switching modes keeps
+  the copy
 - Exceeding the `max_urls_per_user` quota → `403`
 
 ### `GET /api/v1/urls/{id}`
@@ -291,6 +304,10 @@ and analytics data is kept.
   "click_count": 42,
   "unique_click_count": 3,
   "redirect_type": 302,
+  "redirect_mode": "splash",
+  "splash_delay_seconds": 7,
+  "splash_title": "Launch day",
+  "splash_message": "Welcome aboard",
   "status": "active",
   "is_expired": false,
   "state": "active",
@@ -305,7 +322,9 @@ and analytics data is kept.
 A group feature toggle blocks submitting the matching field on create (`slug`, `password`,
 `expires_at`, `max_clicks`, `tags`) and refuses to newly enable it on `PATCH`. Omitting a field
 keeps its current value, and clearing a blocked field is accepted; a non-empty link password is
-always a new value and is refused while passwords are blocked.
+always a new value and is refused while passwords are blocked. The redirect-mode policy blocks a
+new `redirect_mode` (or switching to it on `PATCH`) but accepts keeping the current mode and
+clearing splash copy.
 
 ---
 
@@ -333,7 +352,7 @@ dashboard.
 ### `GET /health`
 
 ```json
-{ "status": "ok", "version": "1.3.0-rc.3", "database": "ok", "uptime_seconds": 42 }
+{ "status": "ok", "version": "1.3.0-rc.4", "database": "ok", "uptime_seconds": 42 }
 ```
 
 When the database cannot be queried the response is `503` with `status` set to `degraded`.
@@ -341,9 +360,15 @@ When the database cannot be queried the response is `503` with `status` set to `
 
 ### `GET /{slug}`
 
-- Valid and unprotected → `30x` + `Location` (301/308 send `private, max-age=300`; 302/307 send
-  `private, no-store`)
-- Password protected → `200` password prompt (**the target URL is never disclosed**)
+- Valid, unprotected and `redirect_mode = direct` → `30x` + `Location` (301/308 send
+  `private, max-age=300`; 302/307 send `private, no-store`)
+- Valid, unprotected and `redirect_mode = splash` → `200` splash page (`no-store`). It
+  shows the custom copy, the destination host and a countdown, sends the visitor on with a
+  `<meta http-equiv="refresh">` and also offers a "Continue now" link. The click is recorded when
+  the splash page is served, not when the visitor leaves
+- Password protected → `200` password prompt (**the target URL is never disclosed**). After a
+  successful unlock the destination is served directly: the password page is the only
+  interstitial, so a splash page is never shown for a protected link
 - Expired or click limit reached → `410`
 - Missing / deleted / disabled → `404`
 
@@ -366,7 +391,7 @@ Public metadata without the target URL. Without `domain` the default domain is u
 callers that predate multi-domain working for links on the default domain.
 
 ```json
-{ "domain": "go.example.com", "slug": "promo", "title": "Launch", "has_password": true, "is_expired": false, "state": "active" }
+{ "domain": "go.example.com", "slug": "promo", "title": "Launch", "has_password": true, "redirect_mode": "splash", "is_expired": false, "state": "active" }
 ```
 
 ### `GET /api/v1/domains`
@@ -519,8 +544,8 @@ Every `/api/v1/admin/**` endpoint returns `403 forbidden` for non-administrators
 | PATCH | `/admin/domains/{id}` | `{ "status"?: "active"\|"disabled", "is_default"?: true }` |
 | DELETE | `/admin/domains/{id}` | `204`; only a zero-link UI domain that is not the default |
 | GET | `/admin/groups?page=&per_page=` | Group list with member counts (paginated) |
-| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "max_invites"?, "invite_period"?, "allow_invites"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "default_domain_id"?, "restrict_domains"?, "domain_ids"?, "is_default"? }` → `201`; `default_domain_id` must reference an active domain; `domain_ids` must reference existing domains (disabled entries stay stored but are not selectable) |
-| PUT | `/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` / `max_invites` set to `null` inherit the site quota; `description: null` clears it; `default_domain_id: null` means the site default; `domain_ids: null` or `[]` clears the allowlist; `is_default: true` moves the single default marker |
+| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "max_invites"?, "invite_period"?, "allow_invites"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "redirect_mode_policy"?, "default_domain_id"?, "restrict_domains"?, "domain_ids"?, "is_default"? }` → `201`; `default_domain_id` must reference an active domain; `domain_ids` must reference existing domains (disabled entries stay stored but are not selectable) |
+| PUT | `/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` / `max_invites` set to `null` inherit the site quota; `description: null` clears it; `redirect_mode_policy` is `direct`, `splash` or `choice` and is omitted to keep the current value; `default_domain_id: null` means the site default; `domain_ids: null` or `[]` clears the allowlist; `is_default: true` moves the single default marker |
 | DELETE | `/admin/groups/{id}?reassign_to={id}` | `204`, moves the members then deletes; `409` for the default group or a missing/invalid target |
 | GET | `/admin/themes` | Theme catalogue (key, name, description, `enabled`, `default`, `appearance`, `dark_only`, `light_only`, `css_url`, `custom`) plus `switching` (`all` or `admin`); includes administrator uploads |
 | PUT | `/admin/themes` | `{ "enabled"?: ["verdant", ...], "default"?: "verdant", "switching"?: "all"\|"admin" }`; omitted fields keep their value; at least one enabled theme and an enabled default are required (`422` otherwise). `enabled` and `default` may name `custom-…` uploads |
@@ -549,7 +574,8 @@ default, which can differ from `default_domain` when the stored group default is
 
 **User groups.** A group object is
 `{ id, name, description, max_urls, max_api_tokens, max_invites, invite_period, allow_*,
-is_default, members, created_at, updated_at }`. `allow_invites` is opt-in (`false` on create) and
+is_default, members, created_at, updated_at }`. `redirect_mode_policy` is `direct`, `splash` or
+`choice` (create default `choice`). `allow_invites` is opt-in (`false` on create) and
 lets the group's members issue their own codes, drawn from the same quota as administrator-issued
 codes.
 Quotas are nullable: `null` inherits the site-wide setting, `0` means unlimited. Feature toggles

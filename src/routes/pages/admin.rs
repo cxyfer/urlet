@@ -37,6 +37,7 @@ use crate::services::domains::{DomainContext, DomainOption, DomainRegistry};
 use crate::services::groups::{self as group_service, GroupDraft, GroupOverview};
 use crate::services::invite_quota::{usage_for, usage_map, InvitePeriod, InviteUsage};
 use crate::services::invites::{registration_link, reveal};
+use crate::services::redirect_mode::RedirectModePolicy;
 use crate::services::settings::{Settings, ThemeSwitching};
 use crate::services::theme::{self as theme_service, AdminThemeRow};
 use crate::services::time;
@@ -365,6 +366,10 @@ pub struct GroupRow {
     pub allow_tags: bool,
     pub allow_api_tokens: bool,
     pub allow_domain_selection: bool,
+    /// Stored policy value (`direct` / `splash` / `choice`), for the radio group.
+    pub redirect_mode_policy: String,
+    /// Localised label of the policy, for the table.
+    pub redirect_mode_policy_label: String,
     pub default_domain_id: Option<i64>,
     pub restrict_domains: bool,
     pub allowed_domain_ids: Vec<i64>,
@@ -420,6 +425,7 @@ impl GroupRow {
         .count() as i64;
         let invite_period = InvitePeriod::parse(&group.invite_period).unwrap_or_default();
         let invite_period_label = super::period_label(lang, invite_period);
+        let redirect_mode_policy = RedirectModePolicy::from_db(&group.redirect_mode_policy);
         let invite_usage_display = if invite_usage.unlimited() {
             lang.t("admin.groups.unlimited").to_string()
         } else {
@@ -475,6 +481,8 @@ impl GroupRow {
             allow_tags: group.allow_tags,
             allow_api_tokens: group.allow_api_tokens,
             allow_domain_selection: group.allow_domain_selection,
+            redirect_mode_policy: redirect_mode_policy.as_str().to_string(),
+            redirect_mode_policy_label: lang.t(redirect_mode_policy.label_key()).to_string(),
             default_domain_id: group.default_domain_id,
             restrict_domains: group.restrict_domains,
             allowed_domain_ids: overview.allowed_domain_ids.clone(),
@@ -512,6 +520,17 @@ impl GroupRow {
 
     pub fn disabled_default_domain_name(&self) -> &str {
         self.default_domain_disabled_name.as_deref().unwrap_or("")
+    }
+
+    /// Which `domain_policy` radio the form should preselect. Selection off
+    /// wins over the allowlist, because a member who cannot choose never
+    /// reaches the list.
+    pub fn domain_policy(&self) -> &'static str {
+        match (self.allow_domain_selection, self.restrict_domains) {
+            (false, _) => "default",
+            (true, true) => "list",
+            (true, false) => "all",
+        }
     }
 }
 
@@ -793,10 +812,17 @@ pub struct GroupForm {
     pub allow_api_tokens: Option<String>,
     #[serde(default)]
     pub allow_domain_selection: Option<String>,
+    /// `direct`, `splash` or `choice`; missing falls back to `choice`.
+    #[serde(default)]
+    pub redirect_mode_policy: Option<String>,
     #[serde(default)]
     pub default_domain_id: Option<String>,
     #[serde(default)]
     pub restrict_domains: Option<String>,
+    /// `all`, `default` or `list`; the radio that replaces the old
+    /// `allow_domain_selection` + `restrict_domains` checkbox pair in the form.
+    #[serde(default)]
+    pub domain_policy: Option<String>,
     /// Dynamic `domain_<id>` checkboxes; serde cannot model them statically.
     #[serde(flatten)]
     pub extra: std::collections::HashMap<String, String>,
@@ -805,7 +831,31 @@ pub struct GroupForm {
 }
 
 impl GroupForm {
-    fn into_draft(self) -> Result<GroupDraft, AppError> {
+    /// Resolve the domain controls into the two booleans the database keeps.
+    ///
+    /// The form posts one `domain_policy` radio: `all` lets members pick any
+    /// active domain, `default` pins them to the group default, and `list`
+    /// narrows the choice to the checked `domain_<id>` boxes. The older
+    /// `allow_domain_selection` / `restrict_domains` pair is still accepted so
+    /// API-shaped posts and existing scripts keep their meaning.
+    fn domain_policy(&self) -> Result<(bool, bool), AppError> {
+        match self.domain_policy.as_deref().map(str::trim) {
+            Some("all") => Ok((true, false)),
+            Some("default") => Ok((false, false)),
+            Some("list") => Ok((true, true)),
+            None | Some("") => Ok((
+                self.allow_domain_selection.is_some(),
+                self.restrict_domains.is_some(),
+            )),
+            Some(other) => Err(AppError::validation(
+                "domain_policy",
+                format!("domain policy must be all, default or list, not {other:?}"),
+            )),
+        }
+    }
+
+    fn into_draft(self, existing: Option<&user_groups::UserGroup>) -> Result<GroupDraft, AppError> {
+        let (allow_domain_selection, restrict_domains) = self.domain_policy()?;
         GroupDraft {
             name: self.name,
             description: self.description,
@@ -829,12 +879,28 @@ impl GroupForm {
             allow_max_clicks: self.allow_max_clicks.is_some(),
             allow_tags: self.allow_tags.is_some(),
             allow_api_tokens: self.allow_api_tokens.is_some(),
-            allow_domain_selection: self.allow_domain_selection.is_some(),
+            allow_domain_selection,
+            redirect_mode_policy: match self
+                .redirect_mode_policy
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                None => existing
+                    .map(|group| RedirectModePolicy::from_db(&group.redirect_mode_policy))
+                    .unwrap_or_default(),
+                Some(value) => RedirectModePolicy::parse(value).ok_or_else(|| {
+                    AppError::validation(
+                        "redirect_mode_policy",
+                        "redirect mode policy must be direct, splash or choice",
+                    )
+                })?,
+            },
             default_domain_id: parse_optional_number(
                 "default_domain_id",
                 self.default_domain_id.as_deref(),
             )?,
-            restrict_domains: self.restrict_domains.is_some(),
+            restrict_domains,
             allowed_domain_ids: Some(
                 self.extra
                     .iter()
@@ -2298,7 +2364,7 @@ pub async fn create_group(
         return Ok(redirect_err("/app/admin/groups", "invalid").into_response());
     };
 
-    let outcome = match payload.into_draft() {
+    let outcome = match payload.into_draft(None) {
         Ok(draft) => {
             context(&state, &client, &current.user)
                 .create_group(draft)
@@ -2329,7 +2395,15 @@ pub async fn update_group(
         return Ok(redirect_err("/app/admin/groups", "invalid").into_response());
     };
 
-    let outcome = match payload.into_draft() {
+    // The form is a full representation, but a scripted or cached post may omit
+    // the redirect-mode radios. Keep the stored policy in that case instead of
+    // silently widening the group to `choice`.
+    let existing = match user_groups::find_by_id(&state.db, id).await {
+        Ok(Some(group)) => group,
+        Ok(None) => return Ok(redirect_err("/app/admin/groups", "not_found").into_response()),
+        Err(err) => return Err(AppError::from(err)),
+    };
+    let outcome = match payload.into_draft(Some(&existing)) {
         Ok(draft) => {
             context(&state, &client, &current.user)
                 .update_group(id, draft)

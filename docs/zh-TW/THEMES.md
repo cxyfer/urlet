@@ -34,7 +34,7 @@ CSS 檔。**上傳主題**則是存放於持久化 volume 的 CSS 檔；由於 A
 6. **預覽**只會套用到目前的管理員，之後回到主題頁。
 7. 儲存。選擇會立即生效，不需要重啟。
 
-上傳主題可在編輯頁重新命名、標記為僅深色，或替換樣式表。**刪除**會移除目錄
+上傳主題可在編輯頁重新命名、調整外觀，或替換樣式表。**刪除**會移除目錄
 資料列與 CSS 檔；目前是預設的主題不能刪除，請先選擇其他預設。原始檔名僅供
 顯示；實際路徑由產生的 key 與內容雜湊決定。
 
@@ -112,6 +112,7 @@ templates/
     │   ├── base.html
     │   ├── app_base.html
     │   ├── landing.html
+    │   ├── link_splash.html   # 公開中轉頁
     │   ├── dashboard.html     # content/dashboard.html 的薄包裝
     │   └── ...
     ├── paper/
@@ -137,10 +138,10 @@ Verdant 包裝，只替換樣式表 URL。
    `/assets/themes/{key}` 路由註冊。
 3. 在三個 `src/i18n/*.json` 加入目錄字串。
 4. 建立 `templates/themes/<key>/`，至少包含 `base.html`、`app_base.html`、
-   `landing.html`、登入／連結／錯誤頁、管理分頁與應用頁面。密集的應用頁面請
-   重用 content macro。
-5. 在每個 `themed_page!` 呼叫加入 `templates/themes/<key>/...` 路徑。每個呼叫
-   都要保留 `Verdant` 項目，它也是頁面尚未列出新主題時的回退。
+   `landing.html`、登入／註冊／連結中轉頁／錯誤頁、管理 tabs 與應用頁面；密集頁面可重用
+   content macro。
+5. 在每個 `themed_page!` 呼叫加入 `templates/themes/<key>/...` 路徑。每個呼叫都要保留
+   `Verdant` 項目，它也是頁面尚未列出新主題時的回退。
 6. 將主題加入 `ALL`、migration 種子與管理測試；既有資料庫在啟動時也可依賴
    `db::themes::ensure_defaults` 補上。
 7. 執行 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、

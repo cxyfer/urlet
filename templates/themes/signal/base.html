@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#f4f0e6" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
     <title>{% block title %}{{ site_name }}{% endblock %}</title>
-    <link rel="stylesheet" href="{{ self.theme_css_url() }}">
-    <link rel="stylesheet" href="/assets/theme-ui.css">
+    <link rel="stylesheet" href="{{ self.theme_css_url() }}?v={{ self.asset_version() }}">
+    <link rel="stylesheet" href="/assets/theme-ui.css?v={{ self.asset_version() }}">
     <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
     {% block head %}{% endblock %}
 </head>
@@ -30,6 +30,6 @@
         </div>
     </div>
 </footer>
-<script src="/assets/app.js" defer></script>
+<script src="/assets/app.js?v={{ self.asset_version() }}" defer></script>
 </body>
 </html>

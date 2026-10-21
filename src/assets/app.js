@@ -114,6 +114,58 @@
         if (target) { target.hidden = !toggle.checked; }
     });
 
+    /* Group form: count the capabilities and offer the bulk switches. Both stay
+       hidden until here, so a form without JavaScript is not left with dead
+       buttons; the checkboxes themselves work either way. */
+    document.querySelectorAll("[data-cap-block]").forEach(function (block) {
+        var boxes = block.querySelectorAll('.cap-item input[type="checkbox"]');
+        var count = block.querySelector("[data-cap-count]");
+        var template = count ? (count.getAttribute("data-cap-template") || "") : "";
+
+        function refresh() {
+            if (!count || !template) { return; }
+            var on = 0;
+            boxes.forEach(function (box) { if (box.checked) { on += 1; } });
+            count.textContent = template
+                .replace("{on}", String(on))
+                .replace("{total}", String(boxes.length));
+            count.hidden = false;
+        }
+
+        block.querySelectorAll("[data-cap-bulk]").forEach(function (button) {
+            button.hidden = false;
+            button.addEventListener("click", function () {
+                var on = button.getAttribute("data-cap-bulk") === "on";
+                boxes.forEach(function (box) { box.checked = on; });
+                refresh();
+            });
+        });
+        boxes.forEach(function (box) { box.addEventListener("change", refresh); });
+        refresh();
+    });
+
+    /* The domain allowlist only applies to the "list" policy. Mark the rest
+       inert instead of hiding it, so the checked domains still submit and the
+       group keeps its allowlist while another policy is selected. */
+    document.querySelectorAll("[data-policy-block]").forEach(function (block) {
+        var radios = block.querySelectorAll('input[name="domain_policy"]');
+        var pane = block.querySelector("[data-policy-pane]");
+        if (!pane || !radios.length) { return; }
+
+        function refresh() {
+            var chosen = block.querySelector('input[name="domain_policy"]:checked');
+            var active = chosen ? chosen.value === "list" : false;
+            pane.classList.toggle("is-inactive", !active);
+            if (active) {
+                pane.removeAttribute("inert");
+            } else {
+                pane.setAttribute("inert", "");
+            }
+        }
+
+        radios.forEach(function (radio) { radio.addEventListener("change", refresh); });
+        refresh();
+    });
     /* Theme uploads: turn the styled label into a real drop target. The native
        input remains the form control, so selecting a file still works when
        JavaScript is unavailable. */

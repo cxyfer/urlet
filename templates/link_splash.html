@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}{{ heading }} — {{ site_name }}{% endblock %}
+
+{% block head %}
+<meta name="robots" content="noindex">
+<meta http-equiv="refresh" content="{{ delay_seconds }};url={{ target_url }}">
+{% endblock %}
+
+{% block body %}
+<div class="status-shell">
+    <div class="link-page">
+        <div class="status-card">
+            <span class="status-code" aria-hidden="true">GO · 02</span>
+            <span class="status-glyph" aria-hidden="true">
+                <svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6 16h18"></path>
+                    <path d="m18 9 7 7-7 7"></path>
+                </svg>
+            </span>
+            <h1>{{ heading }}</h1>
+            <p class="muted splash-message">{{ message }}</p>
+            <div class="splash-meter" style="--splash-delay: {{ delay_seconds }}s" aria-hidden="true"><span></span></div>
+            <p class="small muted splash-countdown">{{ countdown }}</p>
+            <div class="splash-destination">
+                <span class="label">{{ lang.t("link.splash.destination") }}</span>
+                <span class="splash-host">{{ destination_host }}</span>
+            </div>
+            <div class="status-actions">
+                <a class="btn btn-primary" href="{{ target_url }}" rel="noopener">{{ lang.t("link.splash.continue") }}</a>
+            </div>
+            <p class="hint">{{ lang.t("link.splash.manual") }}</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
