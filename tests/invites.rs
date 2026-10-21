@@ -439,6 +439,13 @@ async fn members_can_issue_codes_when_the_group_allows_it() {
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
     let created = created.json();
     let code = created["code"].as_str().expect("code").to_string();
+    let link = created["link"].as_str().expect("link").to_string();
+    assert_eq!(
+        link,
+        format!("http://localhost:8080/app/register?invite={code}")
+    );
+    assert_eq!(created["invite"]["code"], code.as_str());
+    assert_eq!(created["invite"]["link"], link.as_str());
     assert_eq!(created["invite"]["max_uses"], 2);
     assert_eq!(created["invite"]["group_id"], group_id);
     assert_eq!(created["quota"]["used"], 1);
@@ -467,6 +474,8 @@ async fn members_can_issue_codes_when_the_group_allows_it() {
     let listing = app.get_as("/api/v1/invites", &member_cookie).await.json();
     assert_eq!(listing["items"][0]["used_count"], 1);
     assert_eq!(listing["items"][0]["remaining"], 1);
+    assert_eq!(listing["items"][0]["code"], code.as_str());
+    assert_eq!(listing["items"][0]["link"], link.as_str());
 
     assert_eq!(
         member_create(&app, &member_cookie, Some(1)).await.status,
@@ -798,6 +807,7 @@ async fn member_codes_are_paginated() {
         &urlet::db::invites::NewInvite {
             code_hash: "seeded-oldest-code",
             code_prefix: "OLD0",
+            code_sealed: None,
             note: Some("code 0"),
             group_id: Some(group_id),
             created_by: Some(member_id),

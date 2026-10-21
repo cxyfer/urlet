@@ -78,6 +78,11 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/0008_invite_creator_index.sql"),
         kind: MigrationKind::Transactional,
     },
+    Migration {
+        version: "0009_invite_code_sealed",
+        sql: include_str!("../../migrations/0009_invite_code_sealed.sql"),
+        kind: MigrationKind::Transactional,
+    },
 ];
 
 /// Apply all pending migrations.

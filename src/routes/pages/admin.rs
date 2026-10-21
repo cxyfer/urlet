@@ -28,6 +28,7 @@ use crate::services::captcha::CaptchaProvider;
 use crate::services::domains::{DomainContext, DomainOption, DomainRegistry};
 use crate::services::groups::{self as group_service, GroupDraft, GroupOverview};
 use crate::services::invite_quota::{usage_for, usage_map, InvitePeriod, InviteUsage};
+use crate::services::invites::{registration_link, reveal};
 use crate::services::settings::Settings;
 use crate::services::time;
 use crate::state::AppState;
@@ -233,6 +234,11 @@ pub struct InvitesPage {
     /// Quota of invites that are not pinned to a group, when it is limited.
     pub site_quota_label: String,
     pub new_code: Option<String>,
+    /// Registration link for `new_code`.
+    pub new_link: Option<String>,
+    /// At least one row cannot show its code again (legacy row or rotated
+    /// secret); the page explains why.
+    pub has_legacy: bool,
     /// Raw token (`open` / `invite` / `closed`), used for the conditional class.
     pub registration_mode: String,
     /// Localised label of the same mode, used for display.
@@ -245,6 +251,10 @@ pub struct InvitesPage {
 pub struct InviteRow {
     pub id: i64,
     pub prefix: String,
+    /// Recoverable plaintext, or `None` for a legacy/sealed-unreadable row.
+    pub code: Option<String>,
+    /// Registration link when `code` is available.
+    pub link: Option<String>,
     pub note: String,
     pub group_name: String,
     pub uses: String,
@@ -1891,51 +1901,67 @@ async fn render_invites(
         .collect();
     let site_usage = usage_for(&state.db, &state.settings, None, time::now()).await?;
     let site_quota_label = invite_usage_label(lang, site_usage);
+    let new_link = new_code
+        .as_deref()
+        .map(|code| registration_link(&state.config.base_url, code));
+    let mut has_legacy = false;
+    let invites = rows
+        .iter()
+        .map(|invite: &Invite| {
+            let expired = invite
+                .expires_at
+                .as_deref()
+                .map(|value| value <= now.as_str())
+                .unwrap_or(false);
+            let code = reveal(state.config.secret.as_slice(), invite);
+            if code.is_none() {
+                has_legacy = true;
+            }
+            let link = code
+                .as_deref()
+                .map(|code| registration_link(&state.config.base_url, code));
+            InviteRow {
+                id: invite.id,
+                prefix: invite.code_prefix.clone(),
+                code,
+                link,
+                note: invite.note.clone().unwrap_or_default(),
+                group_name: invite
+                    .group_id
+                    .and_then(|group_id| {
+                        group_rows
+                            .iter()
+                            .find(|group| group.id == group_id)
+                            .map(|group| group.name.clone())
+                    })
+                    .unwrap_or_else(|| lang.t("admin.invites.group_default").to_string()),
+                uses: format!("{} / {}", invite.used_count, invite.max_uses),
+                expires: invite
+                    .expires_at
+                    .as_deref()
+                    .map(|value| time::humanize_lang(lang, value))
+                    .unwrap_or_else(|| lang.t("common.never").to_string()),
+                status: if invite.status == "active" {
+                    lang.t("admin.invites.status.active").to_string()
+                } else {
+                    lang.t("admin.invites.status.revoked").to_string()
+                },
+                usable: invite.status == "active" && !invite.is_exhausted() && !expired,
+                created: time::humanize_lang(lang, &invite.created_at),
+            }
+        })
+        .collect();
     render(
         InvitesPage {
             section: "invites",
             site_name: state.settings.site_name(),
             chrome: Chrome::new(state, user, "admin", flash),
-            invites: rows
-                .iter()
-                .map(|invite: &Invite| {
-                    let expired = invite
-                        .expires_at
-                        .as_deref()
-                        .map(|value| value <= now.as_str())
-                        .unwrap_or(false);
-                    InviteRow {
-                        id: invite.id,
-                        prefix: invite.code_prefix.clone(),
-                        note: invite.note.clone().unwrap_or_default(),
-                        group_name: invite
-                            .group_id
-                            .and_then(|group_id| {
-                                group_rows
-                                    .iter()
-                                    .find(|group| group.id == group_id)
-                                    .map(|group| group.name.clone())
-                            })
-                            .unwrap_or_else(|| lang.t("admin.invites.group_default").to_string()),
-                        uses: format!("{} / {}", invite.used_count, invite.max_uses),
-                        expires: invite
-                            .expires_at
-                            .as_deref()
-                            .map(|value| time::humanize_lang(lang, value))
-                            .unwrap_or_else(|| lang.t("common.never").to_string()),
-                        status: if invite.status == "active" {
-                            lang.t("admin.invites.status.active").to_string()
-                        } else {
-                            lang.t("admin.invites.status.revoked").to_string()
-                        },
-                        usable: invite.status == "active" && !invite.is_exhausted() && !expired,
-                        created: time::humanize_lang(lang, &invite.created_at),
-                    }
-                })
-                .collect(),
+            invites,
             groups,
             site_quota_label,
             new_code,
+            new_link,
+            has_legacy,
             registration_mode: state.settings.registration_mode().as_str().to_string(),
             registration_mode_label: i18n::registration_mode_label(
                 lang,

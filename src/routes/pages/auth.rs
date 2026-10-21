@@ -12,7 +12,7 @@ use crate::error::{AppError, Result};
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::routes::pages::{
-    captcha_rejected, captcha_widget, redirect_err, redirect_ok, safe_next,
+    captcha_rejected, captcha_widget, query_string, redirect_err, redirect_ok, safe_next,
 };
 use crate::services::auth::{self, AuthContext};
 use crate::services::captcha::{CaptchaFlow, CaptchaWidget};
@@ -58,6 +58,10 @@ pub struct LoginQuery {
     pub ok: Option<String>,
     #[serde(default)]
     pub err: Option<String>,
+    /// Invite code carried by a registration link (`/app/register?invite=...`).
+    /// Ignored by the sign-in page.
+    #[serde(default)]
+    pub invite: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -249,7 +253,7 @@ pub async fn register_page(
         next: safe_next(query.next.as_deref()).unwrap_or_default(),
         email: String::new(),
         display_name: String::new(),
-        invite_code: String::new(),
+        invite_code: invite_from_query(query.invite.as_deref()),
         captcha: captcha_widget(&state, CaptchaFlow::Register),
         lang,
     }))
@@ -263,8 +267,12 @@ pub async fn register_submit(
 ) -> Result<Response> {
     let mode = state.settings.registration_mode();
     let Ok(Form(payload)) = form else {
-        return Ok(Redirect::to("/app/register?err=invalid").into_response());
+        return Ok(register_redirect("invalid", None, None));
     };
+    // Keep the code and destination across the redirects below: a link visitor
+    // must not have to retype the code after a transient error.
+    let submitted_invite = payload.invite_code.clone();
+    let submitted_next = payload.next.clone();
 
     if state
         .limiter
@@ -275,7 +283,11 @@ pub async fn register_submit(
         )
         .is_err()
     {
-        return Ok(Redirect::to("/app/register?err=rate_limited").into_response());
+        return Ok(register_redirect(
+            "rate_limited",
+            submitted_invite.as_deref(),
+            submitted_next.as_deref(),
+        ));
     }
 
     // Bot protection runs before the account is created.
@@ -288,7 +300,11 @@ pub async fn register_submit(
     )
     .await
     {
-        return Ok(redirect_err("/app/register", "captcha").into_response());
+        return Ok(register_redirect(
+            "captcha",
+            submitted_invite.as_deref(),
+            submitted_next.as_deref(),
+        ));
     }
 
     let context = AuthContext {
@@ -353,9 +369,38 @@ pub async fn register_submit(
                 }
                 _ => "invalid",
             };
-            Ok(Redirect::to(&format!("/app/register?err={code}")).into_response())
+            Ok(register_redirect(
+                code,
+                submitted_invite.as_deref(),
+                submitted_next.as_deref(),
+            ))
         }
     }
+}
+
+/// Invite code carried by a registration link, bounded before it reaches the
+/// form. A code from a link is not trusted more than a typed one: registration
+/// hashes it and looks the hash up like any other submission.
+fn invite_from_query(value: Option<&str>) -> String {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && value.len() <= 64)
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// Redirect back to the registration form, keeping the invite code and the
+/// post-registration destination so a failed attempt does not lose them.
+fn register_redirect(err: &str, invite: Option<&str>, next: Option<&str>) -> Response {
+    let mut params = vec![("err", err.to_string())];
+    let invite = invite_from_query(invite);
+    if !invite.is_empty() {
+        params.push(("invite", invite));
+    }
+    if let Some(next) = safe_next(next) {
+        params.push(("next", next));
+    }
+    Redirect::to(&format!("/app/register?{}", query_string(&params))).into_response()
 }
 
 /// `POST /app/logout`
@@ -392,5 +437,29 @@ fn render<T: Template>(template: T) -> Response {
     match template.render() {
         Ok(html) => (StatusCode::OK, Html(html)).into_response(),
         Err(err) => AppError::internal(format!("template error: {err}")).into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registration_redirects_keep_the_invite_and_next() {
+        let response = register_redirect("invite", Some(" K7M2QPX4RT "), Some("/app/admin"));
+        assert_eq!(
+            response
+                .headers()
+                .get(header::LOCATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("/app/register?err=invite&invite=K7M2QPX4RT&next=%2Fapp%2Fadmin")
+        );
+    }
+
+    #[test]
+    fn invite_from_query_trims_and_bounds_the_value() {
+        assert_eq!(invite_from_query(Some(" CODE ")), "CODE");
+        assert_eq!(invite_from_query(Some(&"X".repeat(65))), "");
+        assert_eq!(invite_from_query(Some("   ")), "");
     }
 }

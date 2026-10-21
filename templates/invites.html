@@ -22,6 +22,14 @@
             <input class="input" id="new-invite" type="text" value="{{ code }}" readonly>
             <button class="btn btn-sage" type="button" data-copy="#new-invite">{{ lang.t("common.copy") }}</button>
         </div>
+        {% match new_link %}
+        {% when Some with (link) %}
+        <div class="copy-row mt">
+            <input class="input" id="new-invite-link" type="text" value="{{ link }}" readonly>
+            <button class="btn btn-sage" type="button" data-copy="#new-invite-link">{{ lang.t("common.copy_link") }}</button>
+        </div>
+        {% when None %}
+        {% endmatch %}
     </div>
 </div>
 {% when None %}
@@ -65,12 +73,16 @@
     <div class="table-wrap">
         <table class="table">
             <thead>
-                <tr><th>{{ lang.t("common.prefix") }}</th><th>{{ lang.t("common.note") }}</th><th class="num">{{ lang.t("admin.invites.uses") }}</th><th>{{ lang.t("common.expires") }}</th><th>{{ lang.t("common.status") }}</th><th>{{ lang.t("common.created") }}</th><th></th></tr>
+                <tr><th>{{ lang.t("common.code") }}</th><th>{{ lang.t("common.note") }}</th><th class="num">{{ lang.t("admin.invites.uses") }}</th><th>{{ lang.t("common.expires") }}</th><th>{{ lang.t("common.status") }}</th><th>{{ lang.t("common.created") }}</th><th></th></tr>
             </thead>
             <tbody>
                 {% for invite in items %}
                 <tr>
-                    <td class="mono">{{ invite.prefix }}…</td>
+                    <td class="mono">
+                        {% match invite.code %}
+                        {% when Some with (code) %}{{ code }}
+                        {% when None %}<span title="{{ lang.t("invites.legacy_hint") }}">{{ invite.prefix }}…</span>{% endmatch %}
+                    </td>
                     <td class="truncate">{{ invite.note }}</td>
                     <td class="num">{{ invite.uses }}</td>
                     <td class="small">{{ invite.expires }}</td>
@@ -79,6 +91,13 @@
                     </td>
                     <td class="small">{{ invite.created }}</td>
                     <td>
+                        {% match invite.link %}
+                        {% when Some with (link) %}
+                        <input type="hidden" id="invite-link-{{ invite.id }}" value="{{ link }}">
+                        <button class="btn btn-ghost btn-sm" type="button"
+                                data-copy="#invite-link-{{ invite.id }}">{{ lang.t("common.copy_link") }}</button>
+                        {% when None %}
+                        {% endmatch %}
                         {% if invite.usable %}
                         <form method="post" action="/app/invites/{{ invite.id }}/delete">
                             <button class="btn btn-ghost btn-sm" type="submit"
@@ -91,6 +110,9 @@
             </tbody>
         </table>
     </div>
+    {% if has_legacy %}
+    <p class="hint">{{ lang.t("invites.legacy_hint") }}</p>
+    {% endif %}
     {% if total_pages > 1 %}
     <div class="pagination">
         <span class="muted small">{{ page_note }}</span>

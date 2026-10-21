@@ -7,6 +7,9 @@ pub struct Invite {
     pub id: i64,
     pub code_hash: String,
     pub code_prefix: String,
+    /// Encrypted copy of the code, or `None` for codes issued before sealed
+    /// storage (or when a secret rotation made the copy unreadable).
+    pub code_sealed: Option<String>,
     pub note: Option<String>,
     pub group_id: Option<i64>,
     pub created_by: Option<i64>,
@@ -23,8 +26,8 @@ impl Invite {
     }
 }
 
-const SELECT: &str = "SELECT id, code_hash, code_prefix, note, group_id, created_by, max_uses, \
-                      used_count, expires_at, status, created_at FROM invite_codes";
+const SELECT: &str = "SELECT id, code_hash, code_prefix, code_sealed, note, group_id, created_by, \
+                      max_uses, used_count, expires_at, status, created_at FROM invite_codes";
 
 /// Find a usable invite by the hash of the submitted code.
 pub async fn find_active_by_hash(
@@ -47,6 +50,9 @@ pub async fn find_active_by_hash(
 pub struct NewInvite<'a> {
     pub code_hash: &'a str,
     pub code_prefix: &'a str,
+    /// Encrypted copy of the code for the "show again" view. Callers that seed
+    /// legacy rows directly may pass `None`.
+    pub code_sealed: Option<&'a str>,
     pub note: Option<&'a str>,
     pub group_id: Option<i64>,
     pub created_by: Option<i64>,
@@ -62,12 +68,13 @@ pub async fn create(
     invite: &NewInvite<'_>,
 ) -> Result<i64, sqlx::Error> {
     let result = sqlx::query(
-        "INSERT INTO invite_codes (code_hash, code_prefix, note, group_id, created_by, max_uses,
-                                   used_count, expires_at, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'active', ?)",
+        "INSERT INTO invite_codes (code_hash, code_prefix, code_sealed, note, group_id, created_by,
+                                   max_uses, used_count, expires_at, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 'active', ?)",
     )
     .bind(invite.code_hash)
     .bind(invite.code_prefix)
+    .bind(invite.code_sealed)
     .bind(invite.note)
     .bind(invite.group_id)
     .bind(invite.created_by)

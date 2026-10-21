@@ -453,6 +453,7 @@ async fn invite_only_registration_requires_a_valid_code() {
         &urlet::db::invites::NewInvite {
             code_hash: &urlet::services::secret::sha256_hex(code),
             code_prefix: code,
+            code_sealed: None,
             note: Some("test"),
             group_id: None,
             created_by: None,

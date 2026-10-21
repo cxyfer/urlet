@@ -140,8 +140,13 @@ async fn registration_page_honours_the_registration_mode() {
         .update(&app.state.db, "registration_mode", "invite", None)
         .await
         .expect("switch to invite");
-    let invite = app.get("/app/register").await;
+    let invite = app.get("/app/register?invite=K7M2QPX4RT").await;
     assert!(invite.body.contains("Invite code"));
+    assert!(
+        invite.body.contains("value=\"K7M2QPX4RT\""),
+        "the link must prefill the code: {}",
+        invite.body
+    );
 
     app.state
         .settings
@@ -151,6 +156,58 @@ async fn registration_page_honours_the_registration_mode() {
     let closed = app.get("/app/register").await;
     assert!(closed.body.contains("Registration is currently closed"));
     assert!(!closed.body.contains("name=\"password\""));
+}
+
+#[tokio::test]
+async fn an_invite_link_prefills_and_completes_registration() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("owner@example.com", "supersecret").await;
+    app.state
+        .settings
+        .update(&app.state.db, "registration_mode", "invite", None)
+        .await
+        .expect("invite mode");
+
+    let created = app
+        .post_json_as(
+            "/api/v1/admin/invites",
+            json!({ "note": "linked", "max_uses": 1 }),
+            &cookie,
+        )
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let body = created.json();
+    let code = body["code"].as_str().expect("code").to_string();
+    let link = body["link"].as_str().expect("link").to_string();
+    let path = link
+        .strip_prefix("http://localhost:8080")
+        .expect("test base URL");
+
+    let page = app.get(path).await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(
+        page.body.contains(&format!("value=\"{code}\"")),
+        "the link must prefill the code: {}",
+        page.body
+    );
+
+    let registered = app
+        .send(post_form(
+            "/app/register",
+            &format!("email=invited@example.com&password=supersecret&invite_code={code}"),
+            None,
+            Some("http://localhost:8080"),
+        ))
+        .await;
+    assert_eq!(
+        registered.status,
+        StatusCode::SEE_OTHER,
+        "{}",
+        registered.body
+    );
+
+    let listing = app.get_as("/api/v1/admin/invites", &cookie).await.json();
+    assert_eq!(listing["items"][0]["used_count"], 1);
 }
 
 #[tokio::test]

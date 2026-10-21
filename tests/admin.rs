@@ -340,14 +340,22 @@ async fn invites_drive_invite_only_registration() {
     let body = created.json();
     let code = body["code"].as_str().expect("code").to_string();
     assert_eq!(code.len(), 10);
+    let link = body["link"].as_str().expect("link").to_string();
+    assert_eq!(
+        link,
+        format!("http://localhost:8080/app/register?invite={code}")
+    );
     let invite_id = body["invite"]["id"].as_i64().expect("id");
     assert_eq!(body["invite"]["remaining"], 2);
     assert_eq!(body["invite"]["usable"], true);
+    assert_eq!(body["invite"]["code"], code);
+    assert_eq!(body["invite"]["link"], link);
 
-    // The plain code is never returned again.
+    // The code and link stay available in later listings.
     let listing = app.get_as("/api/v1/admin/invites", &cookie).await.json();
     assert_eq!(listing["items"].as_array().expect("items").len(), 1);
-    assert!(listing["items"][0].get("code").is_none());
+    assert_eq!(listing["items"][0]["code"], code.as_str());
+    assert_eq!(listing["items"][0]["link"], link.as_str());
 
     // Registering with the code consumes one use.
     let registered = app
@@ -393,7 +401,7 @@ async fn invites_drive_invite_only_registration() {
 }
 
 #[tokio::test]
-async fn invite_form_creates_a_code_and_shows_it_once() {
+async fn invite_form_creates_a_code_and_keeps_it_visible() {
     let app = TestApp::spawn().await;
     let (cookie, _) = admin(&app).await;
 
@@ -405,11 +413,54 @@ async fn invite_form_creates_a_code_and_shows_it_once() {
         ))
         .await;
     assert_eq!(response.status, StatusCode::OK, "{}", response.body);
-    assert!(response.body.contains("Copy this invite code now"));
+    assert!(response.body.contains("Invite code created."));
+
+    // The stored copy is encrypted, but the page can show the plaintext and
+    // its registration link again.
+    let sealed: String =
+        sqlx::query_scalar("SELECT code_sealed FROM invite_codes WHERE note = 'team'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("sealed code");
+    let code = urlet::services::invite_code::open(app.state.config.secret.as_slice(), &sealed)
+        .expect("decrypt");
+    assert!(!sealed.contains(&code), "plaintext must not be stored");
+    let link = urlet::services::invites::registration_link(&app.state.config.base_url, &code);
+    assert!(response.body.contains(&code), "{}", response.body);
+    assert!(response.body.contains(&link), "{}", response.body);
 
     let page = app.get_as("/app/admin/invites", &cookie).await;
     assert!(page.body.contains("team"));
-    assert!(!page.body.contains("Copy this invite code now"));
+    assert!(page.body.contains(&code), "{}", page.body);
+    assert!(page.body.contains(&link), "{}", page.body);
+    assert!(page.body.contains("Copy link"), "{}", page.body);
+    assert!(
+        !page.body.contains("only once"),
+        "the page must not claim the code is one-time"
+    );
+}
+
+#[tokio::test]
+async fn legacy_invites_fall_back_to_the_prefix() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = admin(&app).await;
+
+    sqlx::query(
+        "INSERT INTO invite_codes
+             (code_hash, code_prefix, note, max_uses, used_count, status, created_at)
+         VALUES ('legacy-hash', 'OLD0', 'legacy', 1, 0, 'active', '2026-01-01T00:00:00.000Z')",
+    )
+    .execute(&app.state.db)
+    .await
+    .expect("legacy invite");
+
+    let page = app.get_as("/app/admin/invites", &cookie).await;
+    assert!(page.body.contains("OLD0…"), "{}", page.body);
+    assert!(
+        page.body.contains("Codes issued before this version"),
+        "{}",
+        page.body
+    );
 }
 
 #[tokio::test]

@@ -9,6 +9,10 @@
 //!     also set an expiry;
 //!   * members need `user_groups.allow_invites`, may only issue for their own
 //!     group, and are capped at [`MAX_MEMBER_USES`] redemptions per code.
+//!
+//! Every code is stored twice: a hash for lookup and a sealed copy for the
+//! "show it again" view (`services::invite_code`). The plaintext is handed to
+//! the caller of [`Issuer::create`] and never written to the database as is.
 
 use sqlx::SqlitePool;
 
@@ -17,6 +21,7 @@ use crate::db::users::User;
 use crate::db::{invite_issuance, invites};
 use crate::error::{AppError, Result};
 use crate::services::audit::{action, target, Audit};
+use crate::services::invite_code;
 use crate::services::invite_quota::InviteQuota;
 use crate::services::settings::Settings;
 use crate::services::{secret, time};
@@ -30,11 +35,36 @@ pub const MAX_ADMIN_USES: i64 = 10_000;
 /// A member-issued code is meant for a small team, not bulk distribution.
 pub const MAX_MEMBER_USES: i64 = 10;
 
-/// A freshly created invite: the plain code is returned exactly once.
+/// A freshly created invite. The plain code is returned so the caller can show
+/// it immediately; the sealed copy in `invite` keeps it available afterwards.
 #[derive(Debug, Clone)]
 pub struct IssuedInvite {
     pub invite: invites::Invite,
     pub plain_code: String,
+}
+
+/// Plaintext code of an invite, when its sealed copy can be opened.
+///
+/// `None` means the row predates sealed storage or the server secret changed;
+/// such a code still redeems when someone knows it, but it cannot be displayed
+/// again. Callers fall back to `code_prefix`.
+pub fn reveal(secret: &[u8], invite: &invites::Invite) -> Option<String> {
+    invite
+        .code_sealed
+        .as_deref()
+        .and_then(|sealed| invite_code::open(secret, sealed))
+}
+
+/// Public registration URL that carries `code` into the form.
+///
+/// Invite codes use only `A-Z` and `2-9`, so the value needs no percent
+/// encoding. The canonical base URL is used so a link stays valid when the
+/// issuer happens to be browsing another managed domain.
+pub fn registration_link(base_url: &str, code: &str) -> String {
+    format!(
+        "{}/app/register?invite={code}",
+        base_url.trim_end_matches('/')
+    )
 }
 
 /// Who is issuing the code and under which policy.
@@ -43,6 +73,8 @@ pub struct Issuer<'a> {
     pub settings: &'a Settings,
     pub actor: &'a User,
     pub ip_hash: Option<&'a str>,
+    /// Server secret used to seal the recoverable copy of the code.
+    pub secret: &'a [u8],
 }
 
 /// One issuance request. `max_uses_cap` distinguishes the admin and member caps.
@@ -122,6 +154,7 @@ impl Issuer<'_> {
         let plain_code = secret::random_code(INVITE_CODE_LEN);
         let code_hash = secret::sha256_hex(&plain_code);
         let prefix: String = plain_code.chars().take(4).collect();
+        let code_sealed = invite_code::seal(self.secret, &plain_code);
 
         // Reserve the slot and create the code in one transaction. The
         // conditional INSERT is the authoritative quota check, and committing
@@ -138,6 +171,7 @@ impl Issuer<'_> {
             &crate::db::invites::NewInvite {
                 code_hash: &code_hash,
                 code_prefix: &prefix,
+                code_sealed: Some(&code_sealed),
                 note: note.as_deref(),
                 group_id,
                 created_by: Some(self.actor.id),
@@ -241,5 +275,23 @@ pub async fn member_group(pool: &SqlitePool, user: &User) -> Result<Option<UserG
         None => user_groups::default_group(pool)
             .await
             .map_err(AppError::from),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registration_links_prefill_the_code() {
+        assert_eq!(
+            registration_link("https://s.example.com", "K7M2QPX4RT"),
+            "https://s.example.com/app/register?invite=K7M2QPX4RT"
+        );
+        assert_eq!(
+            registration_link("https://s.example.com/", "K7M2QPX4RT"),
+            "https://s.example.com/app/register?invite=K7M2QPX4RT",
+            "a trailing slash must not double up"
+        );
     }
 }
