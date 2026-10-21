@@ -944,10 +944,550 @@ async fn concurrent_partial_updates_do_not_lose_the_catalogue() {
         app.state.settings.theme_switching(),
         urlet::services::settings::ThemeSwitching::AdminOnly
     );
-    assert!(app
-        .state
-        .themes
-        .is_enabled(urlet::services::theme::ThemeKey::Paper));
+    assert!(app.state.themes.is_enabled("paper"));
+}
+
+const MULTIPART_BOUNDARY: &str = "----urlet-theme-test-boundary";
+
+/// Build a browser-style multipart upload with the same-origin header the CSRF
+/// layer requires.
+fn theme_multipart(
+    uri: &str,
+    cookie: &str,
+    fields: &[(&str, &str)],
+    file: Option<(&str, &str, &[u8])>,
+) -> Request<Body> {
+    let mut body: Vec<u8> = Vec::new();
+    for (name, value) in fields {
+        body.extend_from_slice(
+            format!(
+                "--{MULTIPART_BOUNDARY}\r\n\
+                 Content-Disposition: form-data; name=\"{name}\"\r\n\r\n\
+                 {value}\r\n"
+            )
+            .as_bytes(),
+        );
+    }
+    if let Some((field, filename, bytes)) = file {
+        body.extend_from_slice(
+            format!(
+                "--{MULTIPART_BOUNDARY}\r\n\
+                 Content-Disposition: form-data; name=\"{field}\"; filename=\"{filename}\"\r\n\
+                 Content-Type: text/css\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(bytes);
+        body.extend_from_slice(b"\r\n");
+    }
+    body.extend_from_slice(format!("--{MULTIPART_BOUNDARY}--\r\n").as_bytes());
+
+    Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={MULTIPART_BOUNDARY}"),
+        )
+        .header(header::COOKIE, cookie)
+        .header(header::ORIGIN, "http://localhost:8080")
+        .body(Body::from(body))
+        .expect("multipart request")
+}
+
+fn upload_request(cookie: &str, name: &str, description: &str, css: Option<&str>) -> Request<Body> {
+    upload_request_with_appearance(cookie, name, description, None, css)
+}
+
+fn upload_request_with_appearance(
+    cookie: &str,
+    name: &str,
+    description: &str,
+    appearance: Option<&str>,
+    css: Option<&str>,
+) -> Request<Body> {
+    let mut fields = vec![("name", name), ("description", description)];
+    if let Some(appearance) = appearance {
+        fields.push(("appearance", appearance));
+    }
+    theme_multipart(
+        "/app/admin/themes/custom",
+        cookie,
+        &fields,
+        css.map(|css| ("css", "theme.css", css.as_bytes())),
+    )
+}
+
+async fn custom_theme_rows(app: &TestApp) -> Vec<urlet::db::custom_themes::CustomThemeRow> {
+    urlet::db::custom_themes::all(&app.state.db)
+        .await
+        .expect("custom theme rows")
+}
+
+#[tokio::test]
+async fn an_administrator_can_upload_manage_and_delete_a_custom_theme() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+
+    let css = ":root { --canvas: #101820; --ink: #f2f2f2; }\n\
+               body { background: var(--canvas); color: var(--ink); }";
+    let response = app
+        .send(upload_request(
+            &cookie,
+            "Night Bloom",
+            "A dark test theme",
+            Some(css),
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some("/app/admin/themes?ok=theme_created")
+    );
+
+    let page = app.get_as("/app/admin/themes", &cookie).await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(page.body.contains("Night Bloom"), "{}", page.body);
+    assert!(page.body.contains("/app/admin/themes/custom/"));
+    assert!(page.body.contains("data-theme-drop"));
+    assert!(page.body.contains("data-theme-drop-input"));
+
+    let rows = custom_theme_rows(&app).await;
+    assert_eq!(rows.len(), 1);
+    let row = &rows[0];
+    assert!(row.key.starts_with("custom-"));
+    let key = row.key.clone();
+    let id = row.id;
+
+    // The CSS is on the persistent volume, and a fresh registry (the state a
+    // restart rebuilds) finds the upload through the database.
+    let path = urlet::services::custom_theme::css_path(
+        &app.state.config.themes_dir,
+        &row.key,
+        &row.css_version,
+    );
+    let stored = std::fs::read_to_string(&path).expect("stylesheet on disk");
+    assert!(stored.contains("--canvas"));
+    let reloaded = urlet::services::theme::ThemeRegistry::load(&app.state.db)
+        .await
+        .expect("reload registry");
+    assert!(reloaded.is_enabled(&key));
+    assert!(
+        reloaded
+            .known(&key, urlet::i18n::Lang::En)
+            .expect("known custom theme")
+            .is_custom
+    );
+
+    // The catalogue API exposes the upload with a hashed asset URL.
+    let api = app.get_as("/api/v1/admin/themes", &cookie).await;
+    assert_eq!(api.status, StatusCode::OK);
+    let body = api.json();
+    let custom = body["themes"]
+        .as_array()
+        .expect("themes")
+        .iter()
+        .find(|theme| theme["key"] == key)
+        .expect("custom theme in API");
+    assert_eq!(custom["custom"], true);
+    assert_eq!(custom["enabled"], true);
+    assert_eq!(custom["default"], false);
+    assert_eq!(custom["name"], "Night Bloom");
+    let css_url = custom["css_url"].as_str().expect("css url").to_string();
+    assert!(css_url.starts_with("/assets/custom-themes/custom-"));
+    assert!(css_url.contains("?v="));
+
+    let asset = app.get(&css_url).await;
+    assert_eq!(asset.status, StatusCode::OK, "{}", asset.body);
+    assert!(asset.body.contains("--canvas"));
+    // The upload composes with the base Verdant stylesheet, so a small colour
+    // override still gets the complete layout.
+    assert!(asset.body.contains("--forest"), "base stylesheet missing");
+    assert_eq!(
+        asset.header("content-type").as_deref(),
+        Some("text/css; charset=utf-8")
+    );
+
+    let edit = app
+        .get_as(&format!("/app/admin/themes/custom/{id}"), &cookie)
+        .await;
+    assert_eq!(edit.status, StatusCode::OK, "{}", edit.body);
+    assert!(edit.body.contains("Night Bloom"));
+    assert!(edit.body.contains(&key));
+    assert!(edit.body.contains("data-theme-drop"));
+    assert!(edit.body.contains("data-theme-drop-input"));
+
+    // Make the upload the only enabled theme and the default.
+    let response = app
+        .send(put_json_as(
+            "/api/v1/admin/themes",
+            json!({ "enabled": ["verdant", key], "default": key }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::OK, "{}", response.body);
+
+    let landing = app.get("/").await;
+    assert_eq!(landing.status, StatusCode::OK);
+    assert!(landing.body.contains(&css_url), "{}", landing.body);
+    assert!(landing.body.contains(&format!("data-theme-key=\"{key}\"")));
+    let admin_landing = app.get_as("/", &cookie).await;
+    assert!(admin_landing.body.contains("Night Bloom"));
+    assert!(admin_landing
+        .body
+        .contains(&format!("href=\"/app/theme/{key}\"")));
+
+    // A member can select the uploaded theme through the ordinary picker.
+    let member_cookie = member(&app, "member@example.com").await;
+    let switched = app
+        .send(get_as(
+            &format!("/app/theme/{key}?next=/app"),
+            &member_cookie,
+        ))
+        .await;
+    assert_eq!(switched.status, StatusCode::FOUND);
+    let theme_cookie = switched.cookie_named("urlet_theme").expect("theme cookie");
+    assert!(theme_cookie.contains(&key));
+    let member_page = app
+        .get_as("/app", &format!("{member_cookie}; {theme_cookie}"))
+        .await;
+    assert_eq!(member_page.status, StatusCode::OK);
+    assert!(member_page
+        .body
+        .contains(&format!("data-theme-key=\"{key}\"")));
+
+    // The success flash is theme-specific, not the link wording.
+    let flash = app
+        .get_as("/app/admin/themes?ok=theme_created", &cookie)
+        .await;
+    assert!(flash.body.contains("Custom theme uploaded."));
+
+    // Replace the stylesheet and mark the result dark-only. The content hash
+    // changes the public URL, so the browser cache is not pinned to old CSS.
+    let new_css = "body { background: #222222; }";
+    let response = app
+        .send(theme_multipart(
+            &format!("/app/admin/themes/custom/{id}"),
+            &cookie,
+            &[
+                ("name", "Night Bloom v2"),
+                ("description", "Replaced stylesheet"),
+                ("is_dark_only", "on"),
+            ],
+            Some(("css", "night.css", new_css.as_bytes())),
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some(format!("/app/admin/themes/custom/{id}?ok=theme_updated").as_str())
+    );
+
+    let api = app.get_as("/api/v1/admin/themes", &cookie).await;
+    let body = api.json();
+    let custom = body["themes"]
+        .as_array()
+        .expect("themes")
+        .iter()
+        .find(|theme| theme["key"] == key)
+        .expect("updated custom theme");
+    let new_url = custom["css_url"].as_str().expect("css url").to_string();
+    assert_ne!(new_url, css_url);
+    assert_eq!(custom["dark_only"], true);
+    assert_eq!(custom["name"], "Night Bloom v2");
+    let asset = app.get(&new_url).await;
+    assert_eq!(asset.status, StatusCode::OK);
+    assert!(asset.body.contains("#222222"));
+    assert!(asset.body.contains("--forest"), "base stylesheet missing");
+    let landing = app.get("/").await;
+    assert!(landing.body.contains(&new_url));
+    assert!(!landing.body.contains("data-theme-toggle"));
+
+    // A browser submits an empty file part when the picker was not touched.
+    // The edit must keep the current stylesheet instead of rejecting it.
+    let response = app
+        .send(theme_multipart(
+            &format!("/app/admin/themes/custom/{id}"),
+            &cookie,
+            &[
+                ("name", "Night Bloom v3"),
+                ("description", "Metadata-only edit"),
+                ("appearance", "light"),
+            ],
+            Some(("css", "", b"")),
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some(format!("/app/admin/themes/custom/{id}?ok=theme_updated").as_str())
+    );
+
+    // A default theme cannot be deleted: the administrator has to move the
+    // default first.
+    let response = app
+        .send(post_form_as(
+            &format!("/app/admin/themes/custom/{id}/delete"),
+            "",
+            &cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some("/app/admin/themes?err=theme_default")
+    );
+    assert_eq!(custom_theme_rows(&app).await.len(), 1);
+
+    let response = app
+        .send(put_json_as(
+            "/api/v1/admin/themes",
+            json!({ "enabled": ["verdant", key], "default": "verdant" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::OK, "{}", response.body);
+
+    let response = app
+        .send(post_form_as(
+            &format!("/app/admin/themes/custom/{id}/delete"),
+            "",
+            &cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some("/app/admin/themes?ok=theme_deleted")
+    );
+    assert!(custom_theme_rows(&app).await.is_empty());
+    // The row is gone, so the asset route can no longer resolve the key.
+    let asset = app.get(&new_url).await;
+    assert_eq!(asset.status, StatusCode::NOT_FOUND);
+    let leftovers: Vec<_> = std::fs::read_dir(&app.state.config.themes_dir)
+        .expect("theme directory")
+        .collect();
+    assert!(leftovers.is_empty(), "stylesheet was not removed");
+    let landing = app.get("/").await;
+    assert!(landing.body.contains("/assets/app.css"));
+
+    let audit = app.get_as("/api/v1/admin/audit", &cookie).await;
+    assert_eq!(audit.status, StatusCode::OK);
+    for action in [
+        "admin.theme_created",
+        "admin.theme_updated",
+        "admin.theme_deleted",
+    ] {
+        assert!(
+            audit.body.contains(action),
+            "missing {action}: {}",
+            audit.body
+        );
+    }
+}
+
+#[tokio::test]
+async fn custom_theme_uploads_are_validated_and_never_reach_the_volume() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+
+    for (name, css, code) in [
+        (
+            "External",
+            "body { background: url(https://example.com/x.png); }",
+            "theme_css",
+        ),
+        (
+            "Imported",
+            "@import url(/assets/app.css);\nbody { color: red; }",
+            "theme_css",
+        ),
+        ("Not CSS", "this is not a stylesheet", "theme_css"),
+        ("", "body { color: red; }", "theme_name"),
+    ] {
+        let response = app.send(upload_request(&cookie, name, "", Some(css))).await;
+        assert_eq!(response.status, StatusCode::SEE_OTHER);
+        let location = response.header("location").unwrap_or_default();
+        assert!(
+            location.contains(&format!("err={code}")),
+            "{name:?} produced {location}"
+        );
+    }
+
+    // No file at all is rejected before the service is called.
+    let response = app.send(upload_request(&cookie, "Empty", "", None)).await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER);
+    assert!(response
+        .header("location")
+        .unwrap_or_default()
+        .contains("err=theme_css"));
+
+    // Oversized CSS reaches the service (the multipart limit is larger) and is
+    // rejected by the stylesheet validator.
+    let huge = format!("body {{ color: red; }}/*{}*/", "x".repeat(260 * 1024));
+    let response = app
+        .send(upload_request(&cookie, "Huge", "", Some(&huge)))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER);
+    assert!(response
+        .header("location")
+        .unwrap_or_default()
+        .contains("err=theme_css"));
+
+    assert!(custom_theme_rows(&app).await.is_empty());
+    let api = app.get_as("/api/v1/admin/themes", &cookie).await;
+    assert!(api.json()["themes"]
+        .as_array()
+        .expect("themes")
+        .iter()
+        .all(|theme| theme["custom"] == false));
+
+    // A missing upload answers the same not-found redirect as an unknown id.
+    let response = app
+        .send(post_form_as(
+            "/app/admin/themes/custom/9999/delete",
+            "",
+            &cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some("/app/admin/themes?err=not_found")
+    );
+}
+
+#[tokio::test]
+async fn only_administrators_can_upload_or_edit_custom_themes() {
+    let app = TestApp::spawn().await;
+    admin(&app).await;
+    let member_cookie = member(&app, "member@example.com").await;
+
+    let response = app
+        .send(upload_request(
+            &member_cookie,
+            "Member theme",
+            "",
+            Some("body { color: red; }"),
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::FORBIDDEN);
+    let response = app
+        .get_as("/app/admin/themes/custom/1", &member_cookie)
+        .await;
+    assert_eq!(response.status, StatusCode::FORBIDDEN);
+    let response = app
+        .send(post_form_as(
+            "/app/admin/themes/custom/1/delete",
+            "",
+            &member_cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::FORBIDDEN);
+    assert!(custom_theme_rows(&app).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_light_only_custom_theme_forces_the_light_palette() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+
+    let response = app
+        .send(upload_request_with_appearance(
+            &cookie,
+            "Paper White",
+            "A light-only reading theme",
+            Some("light"),
+            Some("body { background: #ffffff; color: #111111; }"),
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+
+    let rows = custom_theme_rows(&app).await;
+    assert_eq!(rows.len(), 1);
+    let key = rows[0].key.clone();
+    let id = rows[0].id;
+
+    let api = app.get_as("/api/v1/admin/themes", &cookie).await;
+    let body = api.json();
+    let custom = body["themes"]
+        .as_array()
+        .expect("themes")
+        .iter()
+        .find(|theme| theme["key"] == key)
+        .expect("custom theme");
+    assert_eq!(custom["appearance"], "light");
+    assert_eq!(custom["light_only"], true);
+    assert_eq!(custom["dark_only"], false);
+
+    let response = app
+        .send(put_json_as(
+            "/api/v1/admin/themes",
+            json!({ "enabled": ["verdant", key], "default": key }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::OK, "{}", response.body);
+
+    // The lock is rendered by the server, so it works before JavaScript runs
+    // and for visitors with JavaScript disabled.
+    let landing = app.get("/").await;
+    assert_eq!(landing.status, StatusCode::OK);
+    assert!(
+        landing.body.contains("data-theme=\"light\""),
+        "{}",
+        landing.body
+    );
+    assert!(landing.body.contains("data-theme-lock=\"light\""));
+    assert!(!landing.body.contains("data-theme-toggle"));
+
+    // A visitor preference cannot override a forced theme: the middleware
+    // still renders the light lock, and theme.js will keep it.
+    let forced = app.get_as("/", "urlet_theme=paper; urlet_lang=en").await;
+    assert!(forced.body.contains("data-theme=\"light\""));
+
+    // Editing the upload to dark flips the server lock immediately.
+    let response = app
+        .send(theme_multipart(
+            &format!("/app/admin/themes/custom/{id}"),
+            &cookie,
+            &[
+                ("name", "Paper Night"),
+                ("description", "Now dark-only"),
+                ("appearance", "dark"),
+            ],
+            None,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    let landing = app.get("/").await;
+    assert!(
+        landing.body.contains("data-theme=\"dark\""),
+        "{}",
+        landing.body
+    );
+    assert!(landing.body.contains("data-theme-lock=\"dark\""));
+    assert!(!landing.body.contains("data-theme-toggle"));
+
+    // Auto restores the ordinary control.
+    let response = app
+        .send(theme_multipart(
+            &format!("/app/admin/themes/custom/{id}"),
+            &cookie,
+            &[
+                ("name", "Paper Auto"),
+                ("description", "Follows the system"),
+                ("appearance", "auto"),
+            ],
+            None,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    let landing = app.get("/").await;
+    assert!(!landing.body.contains("data-theme=\"light\""));
+    assert!(!landing.body.contains("data-theme=\"dark\""));
+    assert!(!landing.body.contains("data-theme-lock"));
+    assert!(landing.body.contains("data-theme-toggle"));
 }
 
 #[tokio::test]

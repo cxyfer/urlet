@@ -101,6 +101,7 @@ URLET_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-Forw
 | `URLET_BIND` | `0.0.0.0:8080` | Listen address |
 | `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite connection string |
 | `URLET_DATA_DIR` | Directory holding the database | Where the auto-generated secret is written |
+| `URLET_THEMES_DIR` | `<URLET_DATA_DIR>/themes` | Where uploaded theme stylesheets are stored. docker compose mounts the `urlet-themes` volume at `/data/themes` |
 | `URLET_SECRET` | Auto-generated | HMAC secret (at least 16 characters, 32+ recommended; the generated one is 44 characters of base64); **changing it invalidates every session and unlock cookie and makes existing invite codes unreadable, though they still redeem** |
 | `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` | — | Create or promote the administrator at startup |
 | `URLET_REGISTRATION` | Read from the settings table | Override the registration mode: `open` / `invite` / `closed` |
@@ -283,13 +284,15 @@ Only enable `URLET_TRUST_PROXY` when the proxy is guaranteed to overwrite `X-Rea
 
 ## 6. Data and backups
 
-All state lives in `/data` (the `urlet-data` volume):
+All state lives in `/data`: the `urlet-data` volume holds the database and secret, and the
+`urlet-themes` volume (mounted at `/data/themes`) holds uploaded theme stylesheets:
 
 ```
-/data/urlet.db         # main database
-/data/urlet.db-wal     # write-ahead log
+/data/urlet.db          # main database
+/data/urlet.db-wal      # write-ahead log
 /data/urlet.db-shm
-/data/secret.key        # auto-generated secret when URLET_SECRET is unset (0600)
+/data/secret.key         # auto-generated secret when URLET_SECRET is unset (0600)
+/data/themes/*.css       # uploaded themes (urlet-themes volume)
 ```
 
 ### Backup
@@ -322,12 +325,25 @@ after a restore and existing invite codes can no longer be displayed (they still
 data-directory backup contains both the database and that key, and invite codes are low-entropy, so
 treat the whole backup as sensitive.
 
+Uploaded themes are split across two volumes: the database holds the catalogue row and metadata,
+while the CSS files live in `urlet-themes`. Back up both, otherwise a restore lists themes whose
+stylesheets return 404. For example:
+
+```bash
+docker run --rm -v urlet-themes:/themes -v "$PWD":/backup alpine \
+  tar -czf "/backup/urlet-themes-$(date +%F).tar.gz" -C /themes .
+```
+
+Restore them with the same helper and fix ownership (`chown -R 10001:10001`).
+
 ### Restore
 
 ```bash
 docker compose down
 docker run --rm -v urlet-data:/data -v "$PWD":/backup alpine \
   sh -c 'rm -f /data/urlet.db*; cp /backup/urlet-YYYY-MM-DD.db /data/urlet.db; chown 10001:10001 /data/urlet.db'
+docker run --rm -v urlet-themes:/themes -v "$PWD":/backup alpine \
+  sh -c 'rm -rf /themes/*; tar -xzf /backup/urlet-themes-YYYY-MM-DD.tar.gz -C /themes; chown -R 10001:10001 /themes'
 docker compose up -d
 ```
 

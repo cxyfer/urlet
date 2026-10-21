@@ -17,8 +17,8 @@ path = "src/main.rs"
 
 [dependencies]
 # HTTP
-axum = { version = "0.8", default-features = false, features = ["http1", "json", "form", "query", "tokio", "matched-path", "original-uri"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "sync"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "form", "query", "tokio", "matched-path", "original-uri", "multipart"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "sync", "fs"] }
 tower = { version = "0.5", features = ["util"] }
 # Bot protection: the provider `siteverify` call is blocking and must stay on
 # rustls + webpki-roots so the musl build needs no OpenSSL. The `tls` feature is

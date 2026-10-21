@@ -18,11 +18,117 @@
 </div>
 {% endif %}
 
+<section class="panel">
+    <div class="panel-head">
+        <h2>{{ lang.t("admin.themes.custom.heading") }}</h2>
+        <span class="panel-sub" aria-hidden="true">THM / 01</span>
+    </div>
+    <p class="hint">{{ lang.t("admin.themes.custom.hint") }}</p>
+    <p class="small"><strong>{{ custom_count }}</strong> / {{ max_custom }} · {{ lang.t("admin.themes.custom.used") }}</p>
+
+    <form method="post" action="/app/admin/themes/custom" enctype="multipart/form-data" class="theme-upload">
+        <div class="theme-upload-grid">
+            <div class="theme-upload-fields">
+                <div class="field">
+                    <label class="label" for="custom_name">{{ lang.t("admin.themes.custom.name") }}</label>
+                    <input class="input" type="text" id="custom_name" name="name" maxlength="60" required>
+                </div>
+                <div class="field">
+                    <label class="label" for="custom_description">{{ lang.t("admin.themes.custom.description") }}</label>
+                    <input class="input" type="text" id="custom_description" name="description" maxlength="200">
+                    <span class="hint">{{ lang.t("admin.themes.custom.description_hint") }}</span>
+                </div>
+                <fieldset class="theme-appearance">
+                    <legend class="label">{{ lang.t("admin.themes.custom.appearance") }}</legend>
+                    <div class="theme-appearance-options">
+                        <label class="theme-appearance-option">
+                            <input type="radio" name="appearance" value="auto" checked>
+                            <span>{{ lang.t("admin.themes.custom.appearance_auto") }}</span>
+                        </label>
+                        <label class="theme-appearance-option">
+                            <input type="radio" name="appearance" value="light">
+                            <span>{{ lang.t("admin.themes.custom.appearance_light") }}</span>
+                        </label>
+                        <label class="theme-appearance-option">
+                            <input type="radio" name="appearance" value="dark">
+                            <span>{{ lang.t("admin.themes.custom.appearance_dark") }}</span>
+                        </label>
+                    </div>
+                    <span class="hint">{{ lang.t("admin.themes.custom.appearance_hint") }}</span>
+                </fieldset>
+            </div>
+            <div class="theme-upload-file">
+                <span class="label" id="custom_css_label">{{ lang.t("admin.themes.custom.css") }}</span>
+                <div class="theme-drop" data-theme-drop
+                     data-drop-invalid="{{ lang.t("admin.themes.custom.drop_invalid") }}"
+                     data-drop-required="{{ lang.t("admin.themes.custom.drop_required") }}">
+                    <input class="theme-drop-input" type="file" id="custom_css" name="css"
+                           accept=".css,text/css" required
+                           aria-labelledby="custom_css_label" aria-describedby="custom_css_hint"
+                           data-theme-drop-input>
+                    <label class="theme-drop-zone" for="custom_css" data-theme-drop-zone>
+                        <span class="theme-drop-icon" aria-hidden="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 15V3"></path><path d="m7 8 5-5 5 5"></path>
+                                <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"></path>
+                            </svg>
+                        </span>
+                        <span class="theme-drop-title">{{ lang.t("admin.themes.custom.drop_title") }}</span>
+                        <span class="theme-drop-hint">{{ lang.t("admin.themes.custom.drop_hint") }}</span>
+                    </label>
+                    <div class="theme-drop-file" data-theme-drop-file hidden>
+                        <span class="theme-drop-file-icon" aria-hidden="true">CSS</span>
+                        <span class="theme-drop-file-main">
+                            <strong data-theme-drop-name></strong>
+                            <span class="theme-drop-file-meta" data-theme-drop-size></span>
+                        </span>
+                        <button class="btn btn-sm btn-ghost" type="button" data-theme-drop-clear>{{ lang.t("admin.themes.custom.drop_clear") }}</button>
+                    </div>
+                    <p class="theme-drop-error" data-theme-drop-error role="alert" hidden></p>
+                </div>
+                <span class="hint" id="custom_css_hint">{{ lang.t("admin.themes.custom.css_hint") }} <a href="/assets/app.css" target="_blank" rel="noopener">{{ lang.t("admin.themes.custom.base_css") }}</a></span>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-primary" type="submit">{{ lang.t("admin.themes.custom.submit") }}</button>
+        </div>
+    </form>
+
+    {% if custom_count == 0 %}
+    <p class="hint mt">{{ lang.t("admin.themes.custom.empty") }}</p>
+    {% else %}
+    <div class="custom-theme-list mt">
+        {% for theme in themes %}
+        {% if theme.is_custom %}
+        <article class="custom-theme-row">
+            <div class="custom-theme-main">
+                <strong>{{ theme.name }}</strong>
+                <span class="badge badge-muted">{{ lang.t("admin.themes.custom.badge") }}</span>
+                <div class="theme-admin-key">{{ theme.key }}</div>
+            </div>
+            <div class="custom-theme-meta">
+                {{ theme.size }} · {{ theme.created }}
+            </div>
+            <div class="custom-theme-actions">
+                <a class="btn btn-sm btn-ghost" href="{{ theme.edit_url }}">{{ lang.t("admin.themes.custom.edit") }}</a>
+                <form method="post" action="{{ theme.delete_url }}" class="inline-form">
+                    <button class="btn btn-sm btn-danger" type="submit"
+                            data-confirm="{{ lang.t("admin.themes.custom.delete_confirm") }}">{{ lang.t("admin.themes.custom.delete") }}</button>
+                </form>
+            </div>
+        </article>
+        {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+</section>
+
 <form method="post" action="/app/admin/themes" class="stack">
     <section class="panel">
         <div class="panel-head">
             <h2>{{ lang.t("admin.themes.permission") }}</h2>
-            <span class="panel-sub" aria-hidden="true">THM / 01</span>
+            <span class="panel-sub" aria-hidden="true">THM / 02</span>
         </div>
         <div class="field field-narrow">
             <label class="label" for="theme_switching">{{ lang.t("admin.themes.switching") }}</label>
@@ -37,7 +143,7 @@
     <section class="panel">
         <div class="panel-head">
             <h2>{{ lang.t("admin.themes.catalog") }}</h2>
-            <span class="panel-sub" aria-hidden="true">{{ themes.len() }} / 06</span>
+            <span class="panel-sub" aria-hidden="true">{{ themes.len() }}</span>
         </div>
         <p class="hint">{{ lang.t("admin.themes.catalog_hint") }}</p>
 
@@ -49,11 +155,13 @@
                         <h3 class="theme-admin-name">{{ theme.name }}</h3>
                         <span class="theme-admin-key">{{ theme.key }}</span>
                     </div>
-                    <span class="theme-admin-swatch" data-theme-swatch="{{ theme.key }}" aria-hidden="true"></span>
+                    <span class="theme-admin-swatch" data-theme-swatch="{% if theme.is_custom %}custom{% else %}{{ theme.key }}{% endif %}" aria-hidden="true"></span>
                 </div>
                 <p class="hint">{{ theme.description }}</p>
                 <div class="theme-admin-meta">
+                    {% if theme.is_custom %}<span class="badge badge-muted">{{ lang.t("admin.themes.custom.badge") }}</span>{% endif %}
                     {% if theme.is_default %}<span class="badge badge-accent">{{ lang.t("admin.themes.default_badge") }}</span>{% endif %}
+                    {% if theme.is_light_only %}<span class="badge badge-muted">{{ lang.t("admin.themes.light_only") }}</span>{% endif %}
                     {% if theme.is_dark_only %}<span class="badge badge-muted">{{ lang.t("admin.themes.dark_only") }}</span>{% endif %}
                     {% if !theme.is_enabled %}<span class="badge badge-muted">{{ lang.t("admin.themes.disabled_badge") }}</span>{% endif %}
                 </div>

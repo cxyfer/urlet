@@ -10,6 +10,7 @@
 
     var KEY = "urlet-theme";
     var root = document.documentElement;
+    var lock = root.getAttribute("data-theme-lock");
     var media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
 
     function readPreference() {
@@ -46,6 +47,12 @@
     function updateButtons() {
         var mode = currentMode();
         document.querySelectorAll("[data-theme-toggle]").forEach(function (button) {
+            // A light-only or dark-only theme locks the palette; there is
+            // nothing for the visitor to toggle.
+            if (lock === "light" || lock === "dark") {
+                button.hidden = true;
+                return;
+            }
             button.hidden = false;
             button.setAttribute("data-mode", mode);
             button.setAttribute("aria-pressed", mode === "dark" ? "true" : "false");
@@ -53,6 +60,7 @@
     }
 
     function toggle() {
+        if (lock === "light" || lock === "dark") { return; }
         var next = currentMode() === "dark" ? "light" : "dark";
         root.setAttribute("data-theme", next);
         storePreference(next);
@@ -60,7 +68,11 @@
     }
 
     var saved = readPreference();
-    if (saved) {
+    if (lock === "light" || lock === "dark") {
+        // The server already wrote data-theme; keep the saved preference for
+        // the next theme that follows the system.
+        root.setAttribute("data-theme", lock);
+    } else if (saved) {
         root.setAttribute("data-theme", saved);
     }
 

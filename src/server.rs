@@ -26,6 +26,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/assets/theme.js", get(routes::assets::theme_js))
         .route("/assets/theme-ui.css", get(routes::assets::theme_ui_css))
         .route("/assets/themes/{key}", get(routes::assets::theme_css))
+        .route(
+            "/assets/custom-themes/{key}",
+            get(routes::assets::custom_theme_css),
+        )
         .route("/assets/favicon.svg", get(routes::assets::favicon))
         .route("/favicon.ico", get(routes::assets::favicon_ico))
         .route("/", get(routes::pages::home::home))
@@ -104,17 +108,36 @@ pub async fn bootstrap(state: &AppState) -> Result<()> {
         .await
         .map_err(|err| AppError::internal(format!("cannot seed settings: {err}")))?;
 
-    let theme_keys: Vec<&str> = crate::services::theme::ALL
+    let mut theme_keys: Vec<String> = crate::services::theme::ALL
         .iter()
-        .map(|key| key.key())
+        .map(|key| key.key().to_string())
         .collect();
+    // An upload registers both rows in one transaction, but reconcile here as
+    // well so an upgrade or a restored database always has the catalogue row.
+    theme_keys.extend(
+        db::custom_themes::keys(&state.db)
+            .await
+            .map_err(|err| AppError::internal(format!("cannot load custom themes: {err}")))?,
+    );
+    let theme_key_refs: Vec<&str> = theme_keys.iter().map(String::as_str).collect();
     db::themes::ensure_defaults(
         &state.db,
-        &theme_keys,
+        &theme_key_refs,
         crate::services::theme::ThemeKey::Verdant.key(),
     )
     .await
     .map_err(|err| AppError::internal(format!("cannot seed themes: {err}")))?;
+
+    // The stylesheet directory lives on the persistent volume. Creating it at
+    // startup makes the failure obvious instead of leaving a 500 on the first
+    // upload.
+    std::fs::create_dir_all(&state.config.themes_dir).map_err(|err| {
+        AppError::internal(format!(
+            "cannot create theme directory {}: {err}",
+            state.config.themes_dir.display()
+        ))
+    })?;
+
     state
         .themes
         .reload(&state.db)

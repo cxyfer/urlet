@@ -1,0 +1,103 @@
+{% macro content() %}
+<div class="page-head">
+    <div class="page-head-main">
+        <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ lang.t("nav.admin") }}</span>
+        <h1 class="page-title">{{ lang.t("admin.themes.custom.edit_heading") }}</h1>
+    </div>
+    <div class="page-head-side">
+        <span class="hint">{{ lang.t("admin.themes.custom.edit_hint") }}</span>
+    </div>
+</div>
+
+<form method="post" action="/app/admin/themes/custom/{{ custom_theme.id }}" enctype="multipart/form-data" class="theme-upload">
+    <section class="panel">
+        <div class="panel-head">
+            <h2>{{ custom_theme.name }}</h2>
+            <span class="panel-sub" aria-hidden="true">{{ custom_theme.key }}</span>
+        </div>
+
+        <div class="theme-upload-grid">
+            <div class="theme-upload-fields">
+                <div class="field">
+                    <label class="label" for="custom_name">{{ lang.t("admin.themes.custom.name") }}</label>
+                    <input class="input" type="text" id="custom_name" name="name" maxlength="60" value="{{ custom_theme.name }}" required>
+                </div>
+                <div class="field">
+                    <label class="label" for="custom_description">{{ lang.t("admin.themes.custom.description") }}</label>
+                    <input class="input" type="text" id="custom_description" name="description" maxlength="200" value="{{ custom_theme.description }}">
+                    <span class="hint">{{ lang.t("admin.themes.custom.description_hint") }}</span>
+                </div>
+                <fieldset class="theme-appearance">
+                    <legend class="label">{{ lang.t("admin.themes.custom.appearance") }}</legend>
+                    <div class="theme-appearance-options">
+                        <label class="theme-appearance-option">
+                            <input type="radio" name="appearance" value="auto"{% if custom_theme.appearance == "auto" %} checked{% endif %}>
+                            <span>{{ lang.t("admin.themes.custom.appearance_auto") }}</span>
+                        </label>
+                        <label class="theme-appearance-option">
+                            <input type="radio" name="appearance" value="light"{% if custom_theme.appearance == "light" %} checked{% endif %}>
+                            <span>{{ lang.t("admin.themes.custom.appearance_light") }}</span>
+                        </label>
+                        <label class="theme-appearance-option">
+                            <input type="radio" name="appearance" value="dark"{% if custom_theme.appearance == "dark" %} checked{% endif %}>
+                            <span>{{ lang.t("admin.themes.custom.appearance_dark") }}</span>
+                        </label>
+                    </div>
+                    <span class="hint">{{ lang.t("admin.themes.custom.appearance_hint") }}</span>
+                </fieldset>
+            </div>
+            <div class="theme-upload-file">
+                <span class="label" id="custom_css_label">{{ lang.t("admin.themes.custom.replace_css") }}</span>
+                <div class="theme-drop" data-theme-drop
+                     data-drop-invalid="{{ lang.t("admin.themes.custom.drop_invalid") }}"
+                     data-drop-required="{{ lang.t("admin.themes.custom.drop_required") }}">
+                    <input class="theme-drop-input" type="file" id="custom_css" name="css"
+                           accept=".css,text/css"
+                           aria-labelledby="custom_css_label" aria-describedby="custom_css_hint"
+                           data-theme-drop-input>
+                    <label class="theme-drop-zone" for="custom_css" data-theme-drop-zone>
+                        <span class="theme-drop-icon" aria-hidden="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 15V3"></path><path d="m7 8 5-5 5 5"></path>
+                                <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"></path>
+                            </svg>
+                        </span>
+                        <span class="theme-drop-title">{{ lang.t("admin.themes.custom.replace_drop_title") }}</span>
+                        <span class="theme-drop-hint">{{ lang.t("admin.themes.custom.drop_hint") }}</span>
+                    </label>
+                    <div class="theme-drop-file" data-theme-drop-file hidden>
+                        <span class="theme-drop-file-icon" aria-hidden="true">CSS</span>
+                        <span class="theme-drop-file-main">
+                            <strong data-theme-drop-name></strong>
+                            <span class="theme-drop-file-meta" data-theme-drop-size></span>
+                        </span>
+                        <button class="btn btn-sm btn-ghost" type="button" data-theme-drop-clear>{{ lang.t("admin.themes.custom.drop_clear") }}</button>
+                    </div>
+                    <p class="theme-drop-error" data-theme-drop-error role="alert" hidden></p>
+                </div>
+                <span class="hint" id="custom_css_hint">{{ lang.t("admin.themes.custom.replace_css_hint") }}</span>
+            </div>
+        </div>
+
+        <dl class="meta mt">
+            <dt>{{ lang.t("admin.themes.custom.key") }}</dt><dd>{{ custom_theme.key }}</dd>
+            <dt>{{ lang.t("admin.themes.custom.size") }}</dt><dd>{{ custom_theme.size }}</dd>
+            <dt>{{ lang.t("admin.themes.custom.created") }}</dt><dd>{{ custom_theme.created }}</dd>
+            <dt>{{ lang.t("admin.themes.custom.filename") }}</dt><dd>{{ custom_theme.filename }}</dd>
+            <dt>{{ lang.t("admin.themes.custom.stylesheet") }}</dt><dd><a href="{{ custom_theme.css_url }}" rel="nofollow">{{ custom_theme.css_url }}</a></dd>
+        </dl>
+
+        <div class="form-actions">
+            <a class="btn btn-ghost" href="/app/admin/themes">{{ lang.t("admin.themes.custom.back") }}</a>
+            <button class="btn btn-primary" type="submit">{{ lang.t("admin.themes.custom.save") }}</button>
+        </div>
+    </section>
+</form>
+
+<form method="post" action="/app/admin/themes/custom/{{ custom_theme.id }}/delete" class="mt">
+    <p class="hint">{{ lang.t("admin.themes.custom.delete_hint") }}</p>
+    <button class="btn btn-danger" type="submit"
+            data-confirm="{{ lang.t("admin.themes.custom.delete_confirm") }}">{{ lang.t("admin.themes.custom.delete") }}</button>
+</form>
+{% endmacro %}

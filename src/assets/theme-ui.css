@@ -134,6 +134,229 @@
 .theme-admin-swatch[data-theme-swatch="signal"] { background: linear-gradient(135deg, #f4f0e6 45%, #e6392e 45%); }
 .theme-admin-swatch[data-theme-swatch="gilded"] { background: linear-gradient(135deg, #0e3b33, #d9b968); }
 .theme-admin-swatch[data-theme-swatch="swiss"] { background: linear-gradient(135deg, #f4f0e6 45%, #111 45%); }
+.theme-admin-swatch[data-theme-swatch="custom"] { background: linear-gradient(135deg, #3d4a63, #a8c9d9, #7d5c9e); }
+.inline-form { display: inline; }
+
+/* Two-column upload/edit form: metadata on the left, the drop target on the
+   right. It collapses to one column before the labels get cramped. */
+.theme-upload { display: grid; gap: .25rem; }
+.theme-upload-grid {
+    display: grid;
+    grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr);
+    gap: 1.1rem 1.5rem;
+    align-items: start;
+}
+.theme-upload-fields {
+    display: grid;
+    gap: .65rem;
+    align-content: start;
+}
+.theme-upload-fields .field { margin-bottom: 0; }
+.theme-upload-file {
+    display: grid;
+    gap: .35rem;
+    align-content: start;
+}
+.theme-upload .form-actions { margin-top: .25rem; }
+@media (max-width: 760px) {
+    .theme-upload-grid { grid-template-columns: 1fr; }
+}
+
+/* Segmented appearance control for uploaded themes. */
+.theme-appearance {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+}
+.theme-appearance legend { padding: 0; margin-bottom: .35rem; }
+.theme-appearance-options {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: .25rem;
+    padding: .25rem;
+    border: 1px solid var(--line, rgba(127, 127, 127, .4));
+    border-radius: 999px;
+    background: var(--surface-2, rgba(127, 127, 127, .12));
+}
+.theme-appearance-option { position: relative; display: inline-flex; }
+.theme-appearance-option input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+.theme-appearance-option span {
+    display: inline-flex;
+    align-items: center;
+    padding: .38rem .72rem;
+    border-radius: 999px;
+    font-size: .76rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.theme-appearance-option span:hover {
+    background: color-mix(in srgb, currentColor 7%, transparent);
+}
+.theme-appearance-option input:checked + span {
+    /* Tint from the inherited text colour instead of inverting with --ink:
+       several ported themes do not define --canvas/--surface, and an inverted
+       pill would become white-on-white there. */
+    background: color-mix(in srgb, currentColor 16%, transparent);
+    box-shadow: inset 0 0 0 1px currentColor;
+    color: inherit;
+    font-weight: 600;
+}
+.theme-appearance-option input:focus-visible + span {
+    outline: 2px solid var(--accent, currentColor);
+    outline-offset: 2px;
+}
+.theme-appearance > .hint { display: block; margin-top: .35rem; }
+
+/* ---------------------------------------------------------------------------
+ * Theme upload drop zone.
+ *
+ * The native file input is visually hidden but still focusable, so the form
+ * keeps working without JavaScript: the <label> opens the picker and browser
+ * validation still rejects an empty upload. JavaScript only adds the drag
+ * affordance, the selected-file chip and inline error text. */
+.theme-drop {
+    position: relative;
+    display: grid;
+    gap: .4rem;
+}
+.theme-drop-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+.theme-drop-zone {
+    display: grid;
+    justify-items: center;
+    gap: .2rem;
+    padding: 1.3rem 1rem 1.15rem;
+    border: 1.5px dashed var(--line, rgba(127, 127, 127, .45));
+    border-radius: var(--radius-md, .9rem);
+    background:
+        radial-gradient(120% 90% at 50% 0%,
+            color-mix(in srgb, var(--accent, currentColor) 8%, transparent),
+            transparent 72%),
+        var(--surface, transparent);
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+.theme-drop-zone[hidden] { display: none; }
+.theme-drop-zone:hover,
+.theme-drop:focus-within .theme-drop-zone {
+    border-color: var(--accent, currentColor);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, currentColor) 10%, transparent);
+}
+.theme-drop-input:focus-visible + .theme-drop-zone {
+    outline: 2px solid var(--accent, currentColor);
+    outline-offset: 2px;
+}
+.theme-drop.is-dragging .theme-drop-zone {
+    border-color: var(--accent, currentColor);
+    border-style: solid;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, currentColor) 14%, transparent);
+    transform: translateY(-1px);
+}
+.theme-drop.is-invalid .theme-drop-zone { border-color: var(--danger, #b3261e); }
+.theme-drop.is-dragging .theme-drop-file {
+    border-color: var(--accent, currentColor);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, currentColor) 14%, transparent);
+}
+.theme-drop-icon {
+    display: grid;
+    place-items: center;
+    width: 2.35rem;
+    height: 2.35rem;
+    margin-bottom: .15rem;
+    border: 1px solid var(--line, rgba(127, 127, 127, .4));
+    border-radius: 50%;
+    background: var(--surface-2, rgba(127, 127, 127, .12));
+    color: var(--accent, currentColor);
+    transition: transform .15s ease;
+}
+.theme-drop.is-dragging .theme-drop-icon { transform: translateY(-2px); }
+.theme-drop-title {
+    font-size: .9rem;
+    font-weight: 650;
+    letter-spacing: -.005em;
+}
+.theme-drop-hint { font-size: .73rem; opacity: .64; }
+.theme-drop-file {
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    padding: .65rem .75rem;
+    border: 1px solid var(--line, rgba(127, 127, 127, .4));
+    border-radius: var(--radius-md, .9rem);
+    background: var(--surface, transparent);
+}
+.theme-drop-file[hidden] { display: none; }
+.theme-drop-file-icon {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: var(--radius-sm, .55rem);
+    background: color-mix(in srgb, var(--accent, currentColor) 15%, transparent);
+    color: var(--accent, currentColor);
+    font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: .6rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+}
+.theme-drop-file-main { display: grid; flex: 1 1 auto; gap: .1rem; min-width: 0; }
+.theme-drop-file-main strong {
+    font-size: .84rem;
+    font-weight: 650;
+    overflow-wrap: anywhere;
+}
+.theme-drop-file-meta { font-size: .72rem; opacity: .62; }
+.theme-drop-error {
+    margin: 0;
+    font-size: .75rem;
+    color: var(--danger, #b3261e);
+}
+.theme-drop-error[hidden] { display: none; }
+@media (max-width: 520px) {
+    .theme-drop-zone { padding: 1.05rem .8rem .95rem; }
+    .theme-drop-file { flex-wrap: wrap; }
+    .theme-drop-file .btn { margin-left: auto; }
+}
+.custom-theme-list {
+    display: grid;
+    gap: .55rem;
+}
+.custom-theme-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .45rem 1rem;
+    padding: .7rem .85rem;
+    border: 1px solid var(--line, rgba(127, 127, 127, .35));
+    border-radius: var(--radius-sm, .6rem);
+    background: var(--surface, transparent);
+}
+.custom-theme-main { flex: 1 1 14rem; min-width: 0; }
+.custom-theme-meta { font-size: .76rem; opacity: .68; }
+.custom-theme-actions { display: flex; align-items: center; gap: .35rem; margin-left: auto; }
+@media (max-width: 520px) {
+    .custom-theme-actions { margin-left: 0; width: 100%; }
+}
 .theme-admin-meta { display: flex; flex-wrap: wrap; gap: .3rem; }
 .theme-admin-controls {
     display: flex;

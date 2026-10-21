@@ -14,7 +14,7 @@ pub mod invites;
 pub mod themed;
 pub mod urls;
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
@@ -26,8 +26,9 @@ use crate::error::AppError;
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::services::captcha::{CaptchaFlow, CaptchaGuard, CaptchaWidget};
+use crate::services::custom_theme;
 use crate::services::invite_quota::InvitePeriod;
-use crate::services::theme::{self, ThemeKey, ThemeView};
+use crate::services::theme::{self, ThemeView};
 use crate::state::AppState;
 
 /// A banner shown at the top of a page.
@@ -106,6 +107,9 @@ pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
             "domain_deleted" => "flash.ok.domain_deleted",
             "group" => "flash.ok.group",
             "group_deleted" => "flash.ok.group_deleted",
+            "theme_created" => "flash.ok.theme_created",
+            "theme_updated" => "flash.ok.theme_updated",
+            "theme_deleted" => "flash.ok.theme_deleted",
             _ => return None,
         };
         return Some(Flash {
@@ -137,6 +141,11 @@ pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
             "tags" => "flash.err.tags",
             "captcha" => "flash.err.captcha",
             "theme" => "flash.err.theme",
+            "theme_upload" => "flash.err.theme_upload",
+            "theme_name" => "flash.err.theme_name",
+            "theme_css" => "flash.err.theme_css",
+            "theme_quota" => "flash.err.theme_quota",
+            "theme_default" => "flash.err.theme_default",
             "domain" => "flash.err.domain",
             "domain_invalid" => "flash.err.domain_invalid",
             "domain_conflict" => "flash.err.domain_conflict",
@@ -473,6 +482,21 @@ pub fn router() -> Router<AppState> {
             get(admin::themes_page).post(admin::update_themes),
         )
         .route(
+            "/admin/themes/custom",
+            post(admin::create_custom_theme)
+                .layer(DefaultBodyLimit::max(custom_theme::MAX_UPLOAD_BYTES)),
+        )
+        .route(
+            "/admin/themes/custom/{id}",
+            get(admin::custom_theme_page)
+                .post(admin::update_custom_theme)
+                .layer(DefaultBodyLimit::max(custom_theme::MAX_UPLOAD_BYTES)),
+        )
+        .route(
+            "/admin/themes/custom/{id}/delete",
+            post(admin::delete_custom_theme),
+        )
+        .route(
             "/admin/settings",
             get(admin::settings_page).post(admin::update_settings),
         )
@@ -523,7 +547,8 @@ pub async fn theme_switch(
     if !theme::can_switch(&state.settings, &current.user) {
         return AppError::forbidden("theme switching is disabled for this account").into_response();
     }
-    let Some(theme_key) = ThemeKey::parse(&key) else {
+    let lang = crate::i18n::current();
+    let Some(theme_key) = state.themes.known(&key, lang) else {
         return AppError::not_found().into_response();
     };
 
@@ -534,17 +559,17 @@ pub async fn theme_switch(
         }
         cookies.push(crate::services::cookies::build(
             crate::services::theme::PREVIEW_COOKIE_NAME,
-            theme_key.key(),
+            &theme_key.key,
             crate::services::theme::PREVIEW_COOKIE_MAX_AGE,
             state.config.secure_cookies,
         ));
     } else {
-        if !state.themes.is_enabled(theme_key) {
+        if !state.themes.is_enabled(&theme_key.key) {
             return AppError::not_found().into_response();
         }
         cookies.push(crate::services::cookies::build(
             crate::services::theme::COOKIE_NAME,
-            theme_key.key(),
+            &theme_key.key,
             crate::services::theme::COOKIE_MAX_AGE,
             state.config.secure_cookies,
         ));

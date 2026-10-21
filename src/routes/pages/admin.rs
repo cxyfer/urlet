@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 
 use askama::Template;
+use axum::extract::multipart::{Multipart, MultipartRejection};
 use axum::extract::rejection::FormRejection;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -12,6 +13,7 @@ use axum::Form;
 use serde::Deserialize;
 
 use crate::db::audit::AuditFilter;
+use crate::db::custom_themes as custom_db;
 use crate::db::domains::DomainWithCount;
 use crate::db::invites::Invite;
 use crate::db::urls::{self, AdminUrlFilter, UrlSort};
@@ -30,6 +32,7 @@ use crate::routes::pages::{
 };
 use crate::services::admin::{self, AdminContext};
 use crate::services::captcha::CaptchaProvider;
+use crate::services::custom_theme;
 use crate::services::domains::{DomainContext, DomainOption, DomainRegistry};
 use crate::services::groups::{self as group_service, GroupDraft, GroupOverview};
 use crate::services::invite_quota::{usage_for, usage_map, InvitePeriod, InviteUsage};
@@ -619,6 +622,8 @@ pub struct ThemesPage {
     pub themes: Vec<AdminThemeRow>,
     /// `all` or `admin`; the raw token drives the select.
     pub switching: String,
+    pub custom_count: usize,
+    pub max_custom: i64,
     pub lang: Lang,
 }
 
@@ -629,6 +634,55 @@ themed_page!(themes_templates, ThemesPageView, ThemesPage,
     Signal => "themes/signal/admin/themes.html",
     Gilded => "themes/gilded/admin/themes.html",
     Swiss => "themes/swiss/admin/themes.html",
+);
+
+/// One uploaded theme on its edit page.
+#[derive(Debug, Clone)]
+pub struct CustomThemeEdit {
+    pub id: i64,
+    pub key: String,
+    pub name: String,
+    pub description: String,
+    pub appearance: String,
+    pub size: String,
+    pub created: String,
+    pub filename: String,
+    pub css_url: String,
+}
+
+impl CustomThemeEdit {
+    fn new(row: &crate::db::custom_themes::CustomThemeRow, lang: Lang) -> Self {
+        Self {
+            id: row.id,
+            key: row.key.clone(),
+            name: row.name.clone(),
+            description: row.description.clone(),
+            appearance: row.appearance.as_str().to_string(),
+            size: format!("{} B", row.css_size.max(0)),
+            created: time::humanize_lang(lang, &row.created_at),
+            filename: row.original_filename.clone(),
+            css_url: theme_service::custom_css_url(&row.key, &row.css_version),
+        }
+    }
+}
+
+/// Edit page for an uploaded theme.
+#[derive(Debug)]
+pub struct CustomThemePage {
+    pub site_name: String,
+    pub section: &'static str,
+    pub chrome: Chrome,
+    pub custom_theme: CustomThemeEdit,
+    pub lang: Lang,
+}
+
+themed_page!(custom_theme_templates, CustomThemePageView, CustomThemePage,
+    Verdant => "admin/theme_edit.html",
+    Aurora => "themes/aurora/admin/theme_edit.html",
+    Paper => "themes/paper/admin/theme_edit.html",
+    Signal => "themes/signal/admin/theme_edit.html",
+    Gilded => "themes/gilded/admin/theme_edit.html",
+    Swiss => "themes/swiss/admin/theme_edit.html",
 );
 
 /// Audit page.
@@ -1592,6 +1646,319 @@ pub async fn update_themes(
     Ok(redirect_ok("/app/admin/themes", "saved").into_response())
 }
 
+/// Fields of the custom theme upload/edit form.
+#[derive(Debug, Default)]
+struct ThemeUpload {
+    name: String,
+    description: String,
+    appearance: theme_service::ThemeAppearance,
+    /// Whether the form sent the new `appearance` field. Kept so an old cached
+    /// form that only posts `is_dark_only` still maps to dark instead of auto.
+    appearance_explicit: bool,
+    css: Option<String>,
+    filename: Option<String>,
+}
+
+/// Read a multipart theme form. `require_css` is true on upload, false on an
+/// edit that only changes metadata.
+async fn read_theme_upload(
+    mut multipart: Multipart,
+    require_css: bool,
+) -> Result<ThemeUpload, AppError> {
+    let mut form = ThemeUpload::default();
+    loop {
+        let field = multipart
+            .next_field()
+            .await
+            .map_err(|err| AppError::bad_request(format!("invalid theme upload: {err}")))?;
+        let Some(field) = field else {
+            break;
+        };
+        let name = field.name().unwrap_or_default().to_string();
+        match name.as_str() {
+            "name" => {
+                form.name = field
+                    .text()
+                    .await
+                    .map_err(|err| AppError::bad_request(format!("invalid name field: {err}")))?;
+            }
+            "description" => {
+                form.description = field.text().await.map_err(|err| {
+                    AppError::bad_request(format!("invalid description field: {err}"))
+                })?;
+            }
+            "appearance" => {
+                let value = field.text().await.map_err(|err| {
+                    AppError::bad_request(format!("invalid appearance field: {err}"))
+                })?;
+                form.appearance = theme_service::ThemeAppearance::parse(&value);
+                form.appearance_explicit = true;
+            }
+            // Backwards compatibility for a form cached before the three-way
+            // appearance control existed.
+            "is_dark_only" => {
+                let value = field.text().await.map_err(|err| {
+                    AppError::bad_request(format!("invalid dark-only field: {err}"))
+                })?;
+                let enabled = matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "1" | "on" | "true" | "yes"
+                );
+                if enabled && !form.appearance_explicit {
+                    form.appearance = theme_service::ThemeAppearance::Dark;
+                }
+            }
+            "css" => {
+                let filename = field
+                    .file_name()
+                    .map(str::to_string)
+                    .filter(|name| !name.trim().is_empty());
+                let bytes = field
+                    .bytes()
+                    .await
+                    .map_err(|err| AppError::bad_request(format!("invalid CSS file: {err}")))?;
+                // Browsers submit an empty file part when the picker was left
+                // untouched. Treat that as "keep the current stylesheet" on the
+                // edit form instead of validating a zero-byte CSS file.
+                if bytes.is_empty() && filename.is_none() {
+                    continue;
+                }
+                form.css = Some(custom_theme::validate_css(&bytes)?);
+                form.filename = filename;
+            }
+            _ => {
+                // Drain unknown fields so the parser can reach the next part.
+                let _ = field.bytes().await;
+            }
+        }
+    }
+    if require_css && form.css.is_none() {
+        return Err(AppError::validation("css", "choose a CSS file"));
+    }
+    Ok(form)
+}
+
+/// Map a theme service error to a flash code the page understands.
+fn theme_error_code(err: &AppError) -> &'static str {
+    match err {
+        AppError::Validation {
+            field: "name" | "description",
+            ..
+        } => "theme_name",
+        AppError::Validation { field: "css", .. } => "theme_css",
+        AppError::Validation {
+            field: "themes", ..
+        } => "theme_quota",
+        AppError::Conflict(_) => "theme_default",
+        AppError::NotFound => "not_found",
+        _ => "invalid",
+    }
+}
+
+/// `POST /app/admin/themes/custom` — upload a stylesheet.
+pub async fn create_custom_theme(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    MaybeUser(current): MaybeUser,
+    multipart: std::result::Result<Multipart, MultipartRejection>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/themes")).into_response());
+    };
+    let Ok(multipart) = multipart else {
+        return Ok(redirect_err("/app/admin/themes", "theme_upload").into_response());
+    };
+    let form = match read_theme_upload(multipart, true).await {
+        Ok(form) => form,
+        Err(err) => {
+            tracing::debug!(error = %err, "custom theme upload rejected");
+            return Ok(redirect_err("/app/admin/themes", theme_error_code(&err)).into_response());
+        }
+    };
+    let css = form.css.expect("required CSS was validated");
+    let filename = form.filename.as_deref().unwrap_or("theme.css");
+
+    let created = custom_theme::create(
+        &state.db,
+        &state.themes,
+        &state.settings,
+        &state.config.themes_dir,
+        &form.name,
+        &form.description,
+        form.appearance,
+        &css,
+        filename,
+        Some(current.user.id),
+    )
+    .await;
+    match created {
+        Ok(row) => {
+            crate::services::audit::Audit::new(crate::services::audit::action::ADMIN_THEME_CREATED)
+                .actor(current.user.id, &current.user.role)
+                .target(crate::services::audit::target::THEMES, &row.key)
+                .metadata(serde_json::json!({
+                    "key": row.key,
+                    "name": row.name,
+                    "size": row.css_size,
+                    "appearance": row.appearance.as_str(),
+                }))
+                .ip_hash(client.ip_hash.clone())
+                .record(&state.db)
+                .await;
+            Ok(redirect_ok("/app/admin/themes", "theme_created").into_response())
+        }
+        Err(err) => {
+            tracing::debug!(error = %err, "custom theme upload failed");
+            Ok(redirect_err("/app/admin/themes", theme_error_code(&err)).into_response())
+        }
+    }
+}
+
+/// `GET /app/admin/themes/custom/{id}` — edit one upload.
+pub async fn custom_theme_page(
+    State(state): State<AppState>,
+    MaybeUser(current): MaybeUser,
+    Path(id): Path<i64>,
+    Query(query): Query<AdminQuery>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/themes")).into_response());
+    };
+    let Some(row) = custom_db::find(&state.db, id)
+        .await
+        .map_err(|err| AppError::internal(format!("cannot read custom theme: {err}")))?
+    else {
+        return Err(AppError::NotFound);
+    };
+    let lang = i18n::current();
+    render(
+        CustomThemePage {
+            site_name: state.settings.site_name(),
+            section: "themes",
+            chrome: Chrome::new(
+                &state,
+                &current.user,
+                "admin",
+                flash_from_query(query.ok.as_deref(), query.err.as_deref()),
+            ),
+            custom_theme: CustomThemeEdit::new(&row, lang),
+            lang,
+        },
+        StatusCode::OK,
+    )
+}
+
+/// `POST /app/admin/themes/custom/{id}` — update metadata and/or replace CSS.
+pub async fn update_custom_theme(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    MaybeUser(current): MaybeUser,
+    Path(id): Path<i64>,
+    multipart: std::result::Result<Multipart, MultipartRejection>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/themes")).into_response());
+    };
+    let edit_path = format!("/app/admin/themes/custom/{id}");
+    let Ok(multipart) = multipart else {
+        return Ok(redirect_err(&edit_path, "theme_upload").into_response());
+    };
+    let form = match read_theme_upload(multipart, false).await {
+        Ok(form) => form,
+        Err(err) => {
+            tracing::debug!(error = %err, "custom theme update rejected");
+            return Ok(redirect_err(&edit_path, theme_error_code(&err)).into_response());
+        }
+    };
+
+    match custom_theme::update(
+        &state.db,
+        &state.themes,
+        &state.settings,
+        &state.config.themes_dir,
+        id,
+        &form.name,
+        &form.description,
+        form.appearance,
+        form.css.as_deref(),
+        form.filename.as_deref(),
+    )
+    .await
+    {
+        Ok(row) => {
+            crate::services::audit::Audit::new(crate::services::audit::action::ADMIN_THEME_UPDATED)
+                .actor(current.user.id, &current.user.role)
+                .target(crate::services::audit::target::THEMES, &row.key)
+                .metadata(serde_json::json!({
+                    "key": row.key,
+                    "name": row.name,
+                    "size": row.css_size,
+                    "appearance": row.appearance.as_str(),
+                }))
+                .ip_hash(client.ip_hash.clone())
+                .record(&state.db)
+                .await;
+            Ok(redirect_ok(&edit_path, "theme_updated").into_response())
+        }
+        Err(AppError::NotFound) => {
+            Ok(redirect_err("/app/admin/themes", "not_found").into_response())
+        }
+        Err(err) => {
+            tracing::debug!(error = %err, "custom theme update failed");
+            Ok(redirect_err(&edit_path, theme_error_code(&err)).into_response())
+        }
+    }
+}
+
+/// `POST /app/admin/themes/custom/{id}/delete` — remove an upload and its CSS.
+pub async fn delete_custom_theme(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    MaybeUser(current): MaybeUser,
+    Path(id): Path<i64>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/themes")).into_response());
+    };
+    let row = custom_db::find(&state.db, id)
+        .await
+        .map_err(|err| AppError::internal(format!("cannot read custom theme: {err}")))?;
+    let Some(row) = row else {
+        return Ok(redirect_err("/app/admin/themes", "not_found").into_response());
+    };
+
+    match custom_theme::delete(
+        &state.db,
+        &state.themes,
+        &state.settings,
+        &state.config.themes_dir,
+        id,
+    )
+    .await
+    {
+        Ok(()) => {
+            crate::services::audit::Audit::new(crate::services::audit::action::ADMIN_THEME_DELETED)
+                .actor(current.user.id, &current.user.role)
+                .target(crate::services::audit::target::THEMES, &row.key)
+                .metadata(serde_json::json!({
+                    "key": row.key,
+                    "name": row.name,
+                }))
+                .ip_hash(client.ip_hash.clone())
+                .record(&state.db)
+                .await;
+            Ok(redirect_ok("/app/admin/themes", "theme_deleted").into_response())
+        }
+        Err(AppError::NotFound) => {
+            Ok(redirect_err("/app/admin/themes", "not_found").into_response())
+        }
+        Err(err) => {
+            tracing::debug!(error = %err, "custom theme delete failed");
+            Ok(redirect_err("/app/admin/themes", theme_error_code(&err)).into_response())
+        }
+    }
+}
+
 async fn render_themes(
     state: &AppState,
     user: &User,
@@ -1605,6 +1972,8 @@ async fn render_themes(
             chrome: Chrome::new(state, user, "admin", flash),
             themes: theme_service::admin_rows(&state.themes, lang),
             switching: state.settings.theme_switching().as_str().to_string(),
+            custom_count: state.themes.custom_rows().len(),
+            max_custom: custom_theme::MAX_THEMES,
             lang,
         },
         StatusCode::OK,

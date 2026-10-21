@@ -1031,13 +1031,18 @@ pub async fn delete_group(
 /// Theme entry returned by the admin API.
 #[derive(Debug, Clone, Serialize)]
 pub struct AdminThemeDto {
-    pub key: &'static str,
+    pub key: String,
     pub name: String,
     pub description: String,
     pub enabled: bool,
     pub default: bool,
+    /// `auto`, `light` or `dark`.
+    pub appearance: String,
     pub dark_only: bool,
-    pub css_url: &'static str,
+    pub light_only: bool,
+    pub css_url: String,
+    /// True for an administrator-uploaded stylesheet.
+    pub custom: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1135,8 +1140,11 @@ fn themes_response(state: &AppState) -> AdminThemesDto {
                 description: row.description,
                 enabled: row.is_enabled,
                 default: row.is_default,
+                appearance: row.appearance.as_str().to_string(),
                 dark_only: row.is_dark_only,
+                light_only: row.is_light_only,
                 css_url: row.css_url,
+                custom: row.is_custom,
             })
             .collect(),
         switching: state.settings.theme_switching().as_str(),

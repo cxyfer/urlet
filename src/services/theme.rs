@@ -1,25 +1,32 @@
-//! Compiled-in themes and the administrator-controlled selection.
+//! Compiled-in themes, administrator uploads and the catalogue selection.
 //!
-//! A *theme* is a complete visual identity: a CSS bundle plus a directory of
-//! Askama overrides under `templates/themes/<key>/`. The base templates in
-//! `templates/` are themselves the Verdant theme, and they double as the
-//! fallback for any page a theme does not override.
+//! A *compiled-in theme* is a complete visual identity: a CSS bundle plus a
+//! directory of Askama overrides under `templates/themes/<key>/`. The base
+//! templates in `templates/` are themselves the Verdant theme, and they double
+//! as the fallback for any page a theme does not override.
 //!
-//! The database only stores the administrator's choices (enabled, default and
-//! order); the list of themes is fixed at compile time. [`ThemeRegistry`] is a
-//! small in-memory cache of those choices, reloaded after every write so a
-//! request never pays for a query just to choose a stylesheet.
+//! An *uploaded theme* is a stylesheet the administrator adds at runtime. It
+//! reuses the Verdant template set and only replaces the stylesheet, because
+//! Askama templates are compiled into the binary. The CSS file lives in
+//! `URLET_THEMES_DIR`; its metadata and the catalogue state live in SQLite, so
+//! a restart keeps both the upload and its enabled/default position.
+//!
+//! [`ThemeRegistry`] is a small in-memory cache of the database rows and the
+//! upload metadata, reloaded after every write so a request never pays for a
+//! query just to choose a stylesheet.
 
 use std::future::Future;
 use std::sync::RwLock;
 
 use sqlx::SqlitePool;
 
+use crate::db::custom_themes::{self as custom_db, CustomThemeRow};
 use crate::db::themes::{self as theme_db, ThemeRow};
 use crate::db::users::User;
 use crate::error::{AppError, Result};
 use crate::i18n::Lang;
 use crate::services::settings::{Settings, ThemeSwitching};
+use crate::services::time;
 
 /// Cookie remembering an explicit theme choice.
 pub const COOKIE_NAME: &str = "urlet_theme";
@@ -33,6 +40,64 @@ pub const PREVIEW_COOKIE_MAX_AGE: i64 = 3_600;
 
 /// Lifetime of the theme cookie: one year.
 pub const COOKIE_MAX_AGE: i64 = 31_536_000;
+
+/// Prefix of every uploaded theme key. The rest is random, never a user-supplied
+/// path, so a key is safe in a cookie, a URL and a file name.
+pub const CUSTOM_KEY_PREFIX: &str = "custom-";
+
+/// How a theme wants the light/dark palette handled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ThemeAppearance {
+    /// Follow the operating system and the visitor's saved preference.
+    #[default]
+    Auto,
+    /// Force the light palette and hide the light/dark switch.
+    Light,
+    /// Force the dark palette and hide the light/dark switch.
+    Dark,
+}
+
+impl ThemeAppearance {
+    /// Parse a database or form value. Unknown values fall back to `Auto`.
+    pub fn parse(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "light" => Self::Light,
+            "dark" => Self::Dark,
+            _ => Self::Auto,
+        }
+    }
+
+    /// Stable database, form and API value.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Light => "light",
+            Self::Dark => "dark",
+        }
+    }
+
+    /// Value written to `data-theme-lock` for the forced modes.
+    pub const fn lock(self) -> &'static str {
+        match self {
+            Self::Auto => "",
+            Self::Light => "light",
+            Self::Dark => "dark",
+        }
+    }
+
+    pub const fn is_light(self) -> bool {
+        matches!(self, Self::Light)
+    }
+
+    pub const fn is_dark(self) -> bool {
+        matches!(self, Self::Dark)
+    }
+
+    /// False for both forced modes: the light/dark control would be a lie.
+    pub const fn allows_toggle(self) -> bool {
+        matches!(self, Self::Auto)
+    }
+}
 
 /// A theme compiled into this binary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -76,9 +141,9 @@ impl ThemeKey {
         }
     }
 
-    /// Parse a database/cookie key. Unknown values are rejected rather than
+    /// Parse a compiled-in key. Unknown values are rejected rather than
     /// silently mapped to the default, so a stale cookie cannot pin a deleted
-    /// theme.
+    /// theme. Uploaded keys are resolved by [`ThemeRegistry`], not here.
     pub fn parse(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "verdant" => Some(Self::Verdant),
@@ -133,12 +198,36 @@ impl ThemeKey {
     pub const fn is_dark_only(self) -> bool {
         matches!(self, Self::Aurora)
     }
+
+    /// Palette policy of a compiled-in theme.
+    pub const fn appearance(self) -> ThemeAppearance {
+        if self.is_dark_only() {
+            ThemeAppearance::Dark
+        } else {
+            ThemeAppearance::Auto
+        }
+    }
+}
+
+/// A theme the registry can resolve: compiled in or uploaded.
+#[derive(Debug, Clone)]
+pub struct ThemeDef {
+    pub key: String,
+    /// Template set used by [`crate::themed_page!`]. Uploaded themes reuse
+    /// Verdant because their templates are not part of the binary.
+    pub builtin: ThemeKey,
+    pub name: String,
+    pub description: String,
+    pub css_url: String,
+    pub appearance: ThemeAppearance,
+    pub is_custom: bool,
+    pub custom_id: Option<i64>,
 }
 
 /// One enabled theme as seen by a page.
 #[derive(Debug, Clone)]
 pub struct ThemeOptionView {
-    pub key: &'static str,
+    pub key: String,
     pub name: String,
     pub current: bool,
 }
@@ -146,12 +235,15 @@ pub struct ThemeOptionView {
 /// Everything a template needs to render the current theme and the picker.
 #[derive(Debug, Clone)]
 pub struct ThemeView {
-    pub key: ThemeKey,
-    pub key_str: &'static str,
+    pub key: String,
     pub name: String,
     pub description: String,
-    pub css_url: &'static str,
+    pub css_url: String,
+    pub appearance: ThemeAppearance,
     pub is_dark_only: bool,
+    pub is_light_only: bool,
+    /// Template set selected by `themed_page!`. Not exposed to templates.
+    pub builtin: ThemeKey,
     pub options: Vec<ThemeOptionView>,
     /// Whether the current account may change the theme.
     pub can_switch: bool,
@@ -162,35 +254,42 @@ pub struct ThemeView {
 }
 
 impl ThemeView {
-    fn from_parts(lang: Lang, selected: ThemeKey, enabled: &[ThemeKey], can_switch: bool) -> Self {
+    fn from_parts(
+        selected: &ThemeDef,
+        enabled: &[ThemeDef],
+        can_switch: bool,
+        using_default: bool,
+    ) -> Self {
         let mut options: Vec<ThemeOptionView> = enabled
             .iter()
-            .map(|key| ThemeOptionView {
-                key: key.key(),
-                name: lang.t(key.name_key()).to_string(),
-                current: *key == selected,
+            .map(|theme| ThemeOptionView {
+                key: theme.key.clone(),
+                name: theme.name.clone(),
+                current: theme.key == selected.key,
             })
             .collect();
         // A stale cookie can point at a theme that has just been disabled, and
         // an administrator can preview a theme that is not enabled. Keep the
         // current selection in the picker either way.
-        if !options.iter().any(|option| option.key == selected.key()) {
+        if !options.iter().any(|option| option.key == selected.key) {
             options.push(ThemeOptionView {
-                key: selected.key(),
-                name: lang.t(selected.name_key()).to_string(),
+                key: selected.key.clone(),
+                name: selected.name.clone(),
                 current: true,
             });
         }
         Self {
-            key: selected,
-            key_str: selected.key(),
-            name: lang.t(selected.name_key()).to_string(),
-            description: lang.t(selected.description_key()).to_string(),
-            css_url: selected.css_url(),
-            is_dark_only: selected.is_dark_only(),
+            key: selected.key.clone(),
+            name: selected.name.clone(),
+            description: selected.description.clone(),
+            css_url: selected.css_url.clone(),
+            appearance: selected.appearance,
+            is_dark_only: selected.appearance.is_dark(),
+            is_light_only: selected.appearance.is_light(),
+            builtin: selected.builtin,
             options,
             can_switch,
-            using_default: false,
+            using_default,
             preview: false,
         }
     }
@@ -215,11 +314,49 @@ impl ThemeView {
     }
 }
 
+/// Build the definition of a compiled-in theme in `lang`.
+pub fn builtin_def(key: ThemeKey, lang: Lang) -> ThemeDef {
+    ThemeDef {
+        key: key.key().to_string(),
+        builtin: key,
+        name: lang.t(key.name_key()).to_string(),
+        description: lang.t(key.description_key()).to_string(),
+        css_url: key.css_url().to_string(),
+        appearance: key.appearance(),
+        is_custom: false,
+        custom_id: None,
+    }
+}
+
+/// Build the definition of an uploaded theme row.
+pub fn custom_def(row: &CustomThemeRow) -> ThemeDef {
+    ThemeDef {
+        key: row.key.clone(),
+        // Uploaded themes re-use the base template directory.
+        builtin: ThemeKey::Verdant,
+        name: row.name.clone(),
+        description: row.description.clone(),
+        css_url: custom_css_url(&row.key, &row.css_version),
+        appearance: row.appearance,
+        is_custom: true,
+        custom_id: Some(row.id),
+    }
+}
+
+/// Public URL of an uploaded stylesheet.
+///
+/// The content hash makes a replaced upload a new URL, so the one-hour asset
+/// cache cannot keep serving the previous stylesheet.
+pub fn custom_css_url(key: &str, version: &str) -> String {
+    format!("/assets/custom-themes/{key}?v={version}")
+}
+
 /// The theme a request should render. Outside a request (unit tests, startup)
 /// this is the Verdant fallback, so rendering never fails because middleware was
 /// skipped.
 pub fn fallback_view() -> ThemeView {
-    ThemeView::from_parts(Lang::En, ThemeKey::Verdant, &ALL, false)
+    let enabled: Vec<ThemeDef> = ALL.iter().map(|key| builtin_def(*key, Lang::En)).collect();
+    ThemeView::from_parts(&enabled[0], &enabled, false, true)
 }
 
 tokio::task_local! {
@@ -233,9 +370,49 @@ pub fn current() -> ThemeView {
         .unwrap_or_else(|_| fallback_view())
 }
 
-/// The selected theme key, used by [`crate::themed_page!`] to pick a template.
+/// The compiled-in template set selected for the request, used by
+/// [`crate::themed_page!`] to pick a template. An uploaded theme maps to
+/// Verdant.
 pub fn selected_key() -> ThemeKey {
-    current().key
+    CURRENT.try_with(|view| view.builtin).unwrap_or_default()
+}
+
+/// Stylesheet URL of the request theme without cloning the whole view.
+pub fn current_css_url() -> String {
+    CURRENT
+        .try_with(|view| view.css_url.clone())
+        .unwrap_or_else(|_| ThemeKey::Verdant.css_url().to_string())
+}
+
+/// Catalogue key of the request theme without cloning the whole view.
+pub fn current_key() -> String {
+    CURRENT
+        .try_with(|view| view.key.clone())
+        .unwrap_or_else(|_| ThemeKey::Verdant.key().to_string())
+}
+
+/// Whether the request theme is dark-only, without cloning the whole view.
+pub fn current_is_dark_only() -> bool {
+    CURRENT.try_with(|view| view.is_dark_only).unwrap_or(false)
+}
+
+/// Whether the request theme is light-only, without cloning the whole view.
+pub fn current_is_light_only() -> bool {
+    CURRENT.try_with(|view| view.is_light_only).unwrap_or(false)
+}
+
+/// Whether the light/dark control should be offered for the request theme.
+pub fn current_allows_toggle() -> bool {
+    CURRENT
+        .try_with(|view| view.appearance.allows_toggle())
+        .unwrap_or(true)
+}
+
+/// Server-rendered lock for the forced light/dark modes.
+pub fn current_theme_lock() -> &'static str {
+    CURRENT
+        .try_with(|view| view.appearance.lock())
+        .unwrap_or("")
 }
 
 /// Run `fut` with `view` installed as the task-local theme.
@@ -262,10 +439,11 @@ pub fn for_anonymous() -> ThemeView {
     current().with_can_switch(false)
 }
 
-/// In-memory cache of the administrator's theme choices.
+/// In-memory cache of the catalogue rows and the uploaded theme metadata.
 #[derive(Debug)]
 pub struct ThemeRegistry {
     rows: RwLock<Vec<ThemeRow>>,
+    custom: RwLock<Vec<CustomThemeRow>>,
 }
 
 impl Default for ThemeRegistry {
@@ -279,6 +457,7 @@ impl ThemeRegistry {
     pub fn new() -> Self {
         Self {
             rows: RwLock::new(Vec::new()),
+            custom: RwLock::new(Vec::new()),
         }
     }
 
@@ -294,8 +473,14 @@ impl ThemeRegistry {
         let rows = theme_db::all(pool)
             .await
             .map_err(|err| AppError::internal(format!("cannot load themes: {err}")))?;
+        let custom = custom_db::all(pool)
+            .await
+            .map_err(|err| AppError::internal(format!("cannot load custom themes: {err}")))?;
         if let Ok(mut guard) = self.rows.write() {
             *guard = rows;
+        }
+        if let Ok(mut guard) = self.custom.write() {
+            *guard = custom;
         }
         Ok(())
     }
@@ -315,7 +500,8 @@ impl ThemeRegistry {
         }
     }
 
-    /// Snapshot of every row, including disabled themes. Used by the admin page.
+    /// Snapshot of every catalogue row, including disabled themes. Used by the
+    /// admin page.
     pub fn rows(&self) -> Vec<ThemeRow> {
         self.rows
             .read()
@@ -323,112 +509,215 @@ impl ThemeRegistry {
             .unwrap_or_default()
     }
 
-    /// Enabled keys in display order.
-    pub fn enabled_keys(&self) -> Vec<ThemeKey> {
-        let mut rows: Vec<ThemeRow> = self
-            .rows
+    /// Snapshot of every uploaded theme.
+    pub fn custom_rows(&self) -> Vec<CustomThemeRow> {
+        self.custom
             .read()
-            .map(|rows| rows.iter().filter(|row| row.is_enabled).cloned().collect())
-            .unwrap_or_default();
-        rows.sort_by(|a, b| a.sort_order.cmp(&b.sort_order).then(a.key.cmp(&b.key)));
-        let keys: Vec<ThemeKey> = rows
-            .iter()
-            .filter_map(|row| ThemeKey::parse(&row.key))
-            .collect();
-        if keys.is_empty() {
-            vec![ThemeKey::Verdant]
-        } else {
-            keys
+            .map(|custom| custom.clone())
+            .unwrap_or_default()
+    }
+
+    /// Enabled themes in display order, with names and stylesheet URLs.
+    pub fn enabled_defs(&self, lang: Lang) -> Vec<ThemeDef> {
+        let rows = self.rows();
+        let custom = self.custom_rows();
+        let mut out: Vec<ThemeDef> = Vec::new();
+        for row in rows.iter().filter(|row| row.is_enabled) {
+            if let Some(key) = ThemeKey::parse(&row.key) {
+                if !out.iter().any(|theme| theme.key == key.key()) {
+                    out.push(builtin_def(key, lang));
+                }
+            } else if let Some(upload) = custom.iter().find(|upload| upload.key == row.key) {
+                out.push(custom_def(upload));
+            }
         }
+        if out.is_empty() {
+            out.push(builtin_def(ThemeKey::Verdant, lang));
+        }
+        out
+    }
+
+    /// Enabled keys in display order.
+    pub fn enabled_keys(&self) -> Vec<String> {
+        self.enabled_defs(Lang::En)
+            .into_iter()
+            .map(|theme| theme.key)
+            .collect()
+    }
+
+    /// The definition of a known theme, whether enabled or not.
+    pub fn known(&self, raw: &str, lang: Lang) -> Option<ThemeDef> {
+        if let Some(key) = ThemeKey::parse(raw) {
+            return Some(builtin_def(key, lang));
+        }
+        let key = raw.trim();
+        self.custom_rows()
+            .iter()
+            .find(|row| row.key == key)
+            .map(custom_def)
     }
 
     /// The configured default when it is enabled, otherwise the first enabled
     /// theme and finally Verdant.
-    pub fn default_key(&self) -> ThemeKey {
+    pub fn default_def(&self, lang: Lang) -> ThemeDef {
         let rows = self.rows();
-        rows.iter()
-            .find(|row| row.is_default && row.is_enabled)
-            .and_then(|row| ThemeKey::parse(&row.key))
-            .or_else(|| self.enabled_keys().first().copied())
-            .unwrap_or(ThemeKey::Verdant)
+        let custom = self.custom_rows();
+        if let Some(row) = rows.iter().find(|row| row.is_default && row.is_enabled) {
+            if let Some(key) = ThemeKey::parse(&row.key) {
+                return builtin_def(key, lang);
+            }
+            if let Some(upload) = custom.iter().find(|upload| upload.key == row.key) {
+                return custom_def(upload);
+            }
+        }
+        self.enabled_defs(lang)
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| builtin_def(ThemeKey::Verdant, lang))
     }
 
-    /// Resolve a requested key (usually from the cookie). A disabled or unknown
-    /// theme falls back to the configured default.
-    pub fn resolve(&self, requested: Option<&str>) -> ThemeKey {
-        let Some(requested) = requested.and_then(ThemeKey::parse) else {
-            return self.default_key();
-        };
-        if self.is_enabled(requested) {
-            requested
-        } else {
-            self.default_key()
+    /// The key of the default theme.
+    pub fn default_key(&self) -> String {
+        self.default_def(Lang::En).key
+    }
+
+    /// Resolve a requested key (usually from the cookie) and report whether it
+    /// was the implicit default. A disabled or unknown theme falls back to the
+    /// configured default.
+    pub fn resolve(&self, requested: Option<&str>, lang: Lang) -> (ThemeDef, bool) {
+        if let Some(requested) = requested.map(str::trim).filter(|value| !value.is_empty()) {
+            if let Some(theme) = self.known(requested, lang) {
+                if self.is_enabled(&theme.key) {
+                    return (theme, false);
+                }
+            }
         }
+        (self.default_def(lang), true)
     }
 
     /// True when the theme is present and enabled.
-    pub fn is_enabled(&self, key: ThemeKey) -> bool {
+    pub fn is_enabled(&self, raw: &str) -> bool {
+        let key = ThemeKey::parse(raw)
+            .map(|key| key.key().to_string())
+            .unwrap_or_else(|| raw.trim().to_string());
         self.rows()
             .iter()
-            .any(|row| row.key == key.key() && row.is_enabled)
+            .any(|row| row.key == key && row.is_enabled)
     }
 
     /// Build the request view for a cookie value.
     pub fn view(&self, lang: Lang, requested: Option<&str>) -> ThemeView {
-        let requested_key = requested.and_then(ThemeKey::parse);
-        let selected = self.resolve(requested);
-        let using_default = match requested_key {
-            Some(key) => !self.is_enabled(key) || key != selected,
-            None => true,
-        };
-        ThemeView::from_parts(lang, selected, &self.enabled_keys(), false)
-            .with_using_default(using_default)
+        let (selected, using_default) = self.resolve(requested, lang);
+        ThemeView::from_parts(&selected, &self.enabled_defs(lang), false, using_default)
     }
 
     /// Build a preview view for an administrator. The key may be disabled.
-    pub fn preview_view(&self, lang: Lang, key: ThemeKey) -> ThemeView {
-        ThemeView::from_parts(lang, key, &self.enabled_keys(), true).with_preview(true)
+    pub fn preview_view(&self, lang: Lang, raw: &str) -> Option<ThemeView> {
+        let selected = self.known(raw, lang)?;
+        Some(
+            ThemeView::from_parts(&selected, &self.enabled_defs(lang), true, false)
+                .with_preview(true),
+        )
     }
 }
 
 /// One row of the administrator's theme table.
 #[derive(Debug, Clone)]
 pub struct AdminThemeRow {
-    pub key: &'static str,
+    pub key: String,
     pub name: String,
     pub description: String,
     pub is_enabled: bool,
     pub is_default: bool,
+    pub appearance: ThemeAppearance,
     pub is_dark_only: bool,
-    pub css_url: &'static str,
+    pub is_light_only: bool,
+    pub css_url: String,
+    pub is_custom: bool,
+    pub custom_id: Option<i64>,
+    /// Human readable size of an uploaded stylesheet; empty for compiled-in
+    /// themes.
+    pub size: String,
+    /// Human readable upload time; empty for compiled-in themes.
+    pub created: String,
+    /// Edit/delete endpoints of an upload; empty for compiled-in themes.
+    pub edit_url: String,
+    pub delete_url: String,
 }
 
-/// Build the admin list, including themes the registry does not know about yet
-/// (a stale database row for a theme removed from the binary).
+/// Build the admin list: every compiled-in theme plus every upload. Rows that
+/// the registry does not know about (a stale database row for a theme removed
+/// from the binary) are omitted; the selection update disables them.
 pub fn admin_rows(registry: &ThemeRegistry, lang: Lang) -> Vec<AdminThemeRow> {
     let rows = registry.rows();
+    let custom = registry.custom_rows();
     let mut out: Vec<AdminThemeRow> = ALL
         .iter()
         .map(|key| {
             let row = rows.iter().find(|row| row.key == key.key());
             AdminThemeRow {
-                key: key.key(),
+                key: key.key().to_string(),
                 name: lang.t(key.name_key()).to_string(),
                 description: lang.t(key.description_key()).to_string(),
                 is_enabled: row.map(|row| row.is_enabled).unwrap_or(true),
                 is_default: row.map(|row| row.is_default).unwrap_or(false),
+                appearance: key.appearance(),
                 is_dark_only: key.is_dark_only(),
-                css_url: key.css_url(),
+                is_light_only: false,
+                css_url: key.css_url().to_string(),
+                is_custom: false,
+                custom_id: None,
+                size: String::new(),
+                created: String::new(),
+                edit_url: String::new(),
+                delete_url: String::new(),
             }
         })
         .collect();
+    for upload in &custom {
+        let row = rows.iter().find(|row| row.key == upload.key);
+        out.push(AdminThemeRow {
+            key: upload.key.clone(),
+            name: upload.name.clone(),
+            description: upload.description.clone(),
+            is_enabled: row.map(|row| row.is_enabled).unwrap_or(false),
+            is_default: row.map(|row| row.is_default).unwrap_or(false),
+            appearance: upload.appearance,
+            is_dark_only: upload.appearance.is_dark(),
+            is_light_only: upload.appearance.is_light(),
+            css_url: custom_css_url(&upload.key, &upload.css_version),
+            is_custom: true,
+            custom_id: Some(upload.id),
+            size: human_size(upload.css_size),
+            created: time::humanize_lang(lang, &upload.created_at),
+            edit_url: format!("/app/admin/themes/custom/{}", upload.id),
+            delete_url: format!("/app/admin/themes/custom/{}/delete", upload.id),
+        });
+    }
     out.sort_by_key(|row| {
         rows.iter()
             .find(|entry| entry.key == row.key)
             .map(|entry| entry.sort_order)
+            .or_else(|| {
+                custom
+                    .iter()
+                    .find(|entry| entry.key == row.key)
+                    .map(|entry| 1_000 + entry.id)
+            })
             .unwrap_or(i64::MAX)
     });
     out
+}
+
+fn human_size(bytes: i64) -> String {
+    let bytes = bytes.max(0) as f64;
+    if bytes >= 1024.0 * 1024.0 {
+        format!("{:.1} MB", bytes / (1024.0 * 1024.0))
+    } else if bytes >= 1024.0 {
+        format!("{:.1} KB", bytes / 1024.0)
+    } else {
+        format!("{bytes:.0} B")
+    }
 }
 
 /// The values actually written by [`update_selection`].
@@ -458,7 +747,8 @@ pub async fn update_selection(
     actor: Option<i64>,
 ) -> Result<AppliedSelection> {
     // Serialise with settings writes: this guard covers the read of the
-    // omitted fields, the transaction and the cache update.
+    // omitted fields, the transaction and the cache update. Uploads take the
+    // same lock, so a theme cannot disappear between validation and commit.
     let _settings_guard = settings.lock_updates().await;
 
     let enabled = match enabled {
@@ -467,24 +757,28 @@ pub async fn update_selection(
             .rows()
             .into_iter()
             .filter(|row| row.is_enabled)
-            .filter_map(|row| ThemeKey::parse(&row.key).map(|key| key.key().to_string()))
+            // A stale row for a theme that is no longer compiled in must not
+            // survive a partial update; only known themes are carried over.
+            .filter(|row| registry.known(&row.key, Lang::En).is_some())
+            .map(|row| row.key)
             .collect(),
     };
     let requested_default = default_key
         .map(str::to_string)
-        .unwrap_or_else(|| registry.default_key().key().to_string());
+        .unwrap_or_else(|| registry.default_key());
     let switching = switching.unwrap_or_else(|| settings.theme_switching());
 
-    let default_key = ThemeKey::parse(&requested_default)
+    let default_theme = registry
+        .known(&requested_default, Lang::En)
         .ok_or_else(|| AppError::validation("default_theme", "unknown theme"))?;
 
-    let mut keys: Vec<ThemeKey> = Vec::new();
+    let mut keys: Vec<String> = Vec::new();
     for raw in &enabled {
-        let Some(key) = ThemeKey::parse(raw) else {
+        let Some(theme) = registry.known(raw, Lang::En) else {
             return Err(AppError::validation("enabled_themes", "unknown theme"));
         };
-        if !keys.contains(&key) {
-            keys.push(key);
+        if !keys.contains(&theme.key) {
+            keys.push(theme.key);
         }
     }
     if keys.is_empty() {
@@ -493,25 +787,24 @@ pub async fn update_selection(
             "at least one theme must stay enabled",
         ));
     }
-    if !keys.contains(&default_key) {
+    if !keys.contains(&default_theme.key) {
         return Err(AppError::validation(
             "default_theme",
             "the default theme must be enabled",
         ));
     }
 
-    let keys: Vec<String> = keys.iter().map(|key| key.key().to_string()).collect();
-    theme_db::set_state_and_setting(pool, &keys, default_key.key(), switching.as_str(), actor)
+    theme_db::set_state_and_setting(pool, &keys, &default_theme.key, switching.as_str(), actor)
         .await
         .map_err(|err| AppError::internal(format!("cannot update themes: {err}")))?;
 
     // Only after the commit: mirror the committed values into the caches. No
     // second database read (or settings validation) can fail at this point.
-    registry.apply_state(&keys, default_key.key());
+    registry.apply_state(&keys, &default_theme.key);
     settings.set_cached("theme_switching", switching.as_str());
     Ok(AppliedSelection {
         enabled: keys,
-        default_key: default_key.key().to_string(),
+        default_key: default_theme.key,
         switching,
     })
 }
@@ -531,13 +824,14 @@ mod tests {
 
     #[test]
     fn a_view_keeps_the_selected_theme_and_marks_it_current() {
-        let view = ThemeView::from_parts(
-            Lang::En,
-            ThemeKey::Paper,
-            &[ThemeKey::Verdant, ThemeKey::Paper],
-            true,
-        );
-        assert_eq!(view.key, ThemeKey::Paper);
+        let selected = builtin_def(ThemeKey::Paper, Lang::En);
+        let enabled = vec![
+            builtin_def(ThemeKey::Verdant, Lang::En),
+            builtin_def(ThemeKey::Paper, Lang::En),
+        ];
+        let view = ThemeView::from_parts(&selected, &enabled, true, false);
+        assert_eq!(view.key, "paper");
+        assert_eq!(view.builtin, ThemeKey::Paper);
         assert_eq!(view.css_url, "/assets/themes/paper");
         assert!(view.can_switch);
         assert_eq!(view.options.len(), 2);
@@ -548,12 +842,35 @@ mod tests {
     }
 
     #[test]
+    fn an_uploaded_theme_uses_the_base_templates_and_a_hashed_url() {
+        let row = CustomThemeRow {
+            id: 7,
+            key: "custom-abc".into(),
+            name: "Mine".into(),
+            description: "A test upload".into(),
+            appearance: ThemeAppearance::Dark,
+            css_version: "deadbeef".into(),
+            css_size: 42,
+            original_filename: "mine.css".into(),
+            created_by: None,
+            created_at: "2026-01-01T00:00:00.000Z".into(),
+            updated_at: "2026-01-01T00:00:00.000Z".into(),
+        };
+        let def = custom_def(&row);
+        assert_eq!(def.builtin, ThemeKey::Verdant);
+        assert_eq!(def.css_url, "/assets/custom-themes/custom-abc?v=deadbeef");
+        assert_eq!(def.appearance, ThemeAppearance::Dark);
+        assert!(def.is_custom);
+        assert_eq!(def.custom_id, Some(7));
+    }
+
+    #[test]
     fn a_disabled_theme_is_not_offered() {
-        // The registry only sees what the database exposes; `enabled_keys`
+        // The registry only sees what the database exposes; `enabled_defs`
         // falls back to Verdant when every row is disabled.
         let registry = ThemeRegistry::new();
-        assert_eq!(registry.enabled_keys(), vec![ThemeKey::Verdant]);
-        assert_eq!(registry.default_key(), ThemeKey::Verdant);
-        assert_eq!(registry.resolve(Some("aurora")), ThemeKey::Verdant);
+        assert_eq!(registry.enabled_keys(), vec!["verdant"]);
+        assert_eq!(registry.default_key(), "verdant");
+        assert_eq!(registry.resolve(Some("aurora"), Lang::En).0.key, "verdant");
     }
 }

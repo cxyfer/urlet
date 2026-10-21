@@ -38,6 +38,9 @@ pub mod action {
     pub const ADMIN_GROUP_UPDATED: &str = "admin.group_updated";
     pub const ADMIN_GROUP_DELETED: &str = "admin.group_deleted";
     pub const ADMIN_THEMES_UPDATED: &str = "admin.themes_updated";
+    pub const ADMIN_THEME_CREATED: &str = "admin.theme_created";
+    pub const ADMIN_THEME_UPDATED: &str = "admin.theme_updated";
+    pub const ADMIN_THEME_DELETED: &str = "admin.theme_deleted";
 }
 
 /// Target types used in audit entries.

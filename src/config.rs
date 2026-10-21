@@ -59,6 +59,9 @@ pub struct Config {
     pub secure_cookies: bool,
     pub database_url: String,
     pub data_dir: PathBuf,
+    /// Where uploaded theme stylesheets are stored. Defaults to
+    /// `<data_dir>/themes`; Docker mounts its own volume here.
+    pub themes_dir: PathBuf,
     pub secret: Arc<Vec<u8>>,
     pub session_ttl_hours: i64,
     pub unlock_ttl_minutes: i64,
@@ -104,6 +107,7 @@ impl std::fmt::Debug for Config {
             .field("secure_cookies", &self.secure_cookies)
             .field("database_url", &self.database_url)
             .field("data_dir", &self.data_dir)
+            .field("themes_dir", &self.themes_dir)
             .field("secret", &secret::REDACTED)
             .field("session_ttl_hours", &self.session_ttl_hours)
             .field("unlock_ttl_minutes", &self.unlock_ttl_minutes)
@@ -166,6 +170,15 @@ impl Config {
             source,
         })?;
 
+        let themes_dir = match env_str("URLET_THEMES_DIR").filter(|dir| !dir.trim().is_empty()) {
+            Some(dir) => PathBuf::from(dir),
+            None => data_dir.join("themes"),
+        };
+        std::fs::create_dir_all(&themes_dir).map_err(|source| ConfigError::Io {
+            path: themes_dir.clone(),
+            source,
+        })?;
+
         let explicit_secret = env_str("URLET_SECRET").filter(|s| !s.is_empty());
         let secret = Arc::new(secret::load_or_create(
             &data_dir,
@@ -193,6 +206,7 @@ impl Config {
             secure_cookies,
             database_url,
             data_dir,
+            themes_dir,
             secret,
             session_ttl_hours: env_i64("URLET_SESSION_TTL_HOURS", 168),
             unlock_ttl_minutes: env_i64("URLET_UNLOCK_TTL_MINUTES", 30),
@@ -240,6 +254,7 @@ impl Config {
             secure_cookies: false,
             database_url: format!("sqlite://{}/test.db?mode=rwc", data_dir.display()),
             data_dir: data_dir.to_path_buf(),
+            themes_dir: data_dir.join("themes"),
             secret,
             session_ttl_hours: 168,
             unlock_ttl_minutes: 30,

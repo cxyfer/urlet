@@ -547,8 +547,13 @@ Every `/api/v1/admin/**` endpoint returns `403 forbidden` for non-administrators
 | POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "max_invites"?, "invite_period"?, "allow_invites"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "redirect_mode_policy"?, "default_domain_id"?, "restrict_domains"?, "domain_ids"?, "is_default"? }` → `201`; `default_domain_id` must reference an active domain; `domain_ids` must reference existing domains (disabled entries stay stored but are not selectable) |
 | PUT | `/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` / `max_invites` set to `null` inherit the site quota; `description: null` clears it; `redirect_mode_policy` is `direct`, `splash` or `choice` and is omitted to keep the current value; `default_domain_id: null` means the site default; `domain_ids: null` or `[]` clears the allowlist; `is_default: true` moves the single default marker |
 | DELETE | `/admin/groups/{id}?reassign_to={id}` | `204`, moves the members then deletes; `409` for the default group or a missing/invalid target |
-| GET | `/admin/themes` | Theme catalogue (key, name, description, `enabled`, `default`, `dark_only`, `css_url`) plus `switching` (`all` or `admin`) |
-| PUT | `/admin/themes` | `{ "enabled"?: ["verdant", ...], "default"?: "verdant", "switching"?: "all"\|"admin" }`; omitted fields keep their value; at least one enabled theme and an enabled default are required (`422` otherwise) |
+| GET | `/admin/themes` | Theme catalogue (key, name, description, `enabled`, `default`, `appearance`, `dark_only`, `light_only`, `css_url`, `custom`) plus `switching` (`all` or `admin`); includes administrator uploads |
+| PUT | `/admin/themes` | `{ "enabled"?: ["verdant", ...], "default"?: "verdant", "switching"?: "all"\|"admin" }`; omitted fields keep their value; at least one enabled theme and an enabled default are required (`422` otherwise). `enabled` and `default` may name `custom-…` uploads |
+
+Theme uploads are administrator-only browser multipart forms at `/app/admin/themes/custom` (create),
+`/app/admin/themes/custom/{id}` (edit/replace CSS) and `/app/admin/themes/custom/{id}/delete`. The
+JSON API deliberately has no file-upload endpoint. Uploads are CSS-only, at most 256 KiB, UTF-8,
+and may not load external resources; see [`THEMES.md`](THEMES.md).
 
 `GroupDto` also returns `default_domain_id`, `default_domain` (the stored value, even if the domain
 is disabled), `restrict_domains`, `allowed_domain_ids` and `allowed_domains`, plus the invite
@@ -615,7 +620,7 @@ write-only: it is never returned in plaintext, and submitting it empty keeps the
 | `invite.created` / `invite.revoked` / `invite.redeemed` | Invite codes |
 | `admin.user_updated` / `admin.user_deleted` / `admin.password_reset` | Administrative actions |
 | `admin.group_created` / `admin.group_updated` / `admin.group_deleted` | Group changes |
-| `admin.url_updated` / `admin.settings_updated` / `admin.themes_updated` | Administrative actions |
+| `admin.url_updated` / `admin.settings_updated` / `admin.themes_updated` / `admin.theme_created` / `admin.theme_updated` / `admin.theme_deleted` | Administrative actions |
 
 ## Rate limits
 
