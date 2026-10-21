@@ -1,0 +1,9 @@
+{% extends "app_base.html" %}
+
+{% block title %}{% if is_edit %}{{ lang.t("admin.groups.edit_heading") }}{% else %}{{ lang.t("admin.groups.new") }}{% endif %} — {{ site_name }}{% endblock %}
+
+{% import "content/admin/group_form.html" as content %}
+{% block content %}
+{% include "admin/tabs.html" %}
+{% call content::content() %}
+{% endblock %}

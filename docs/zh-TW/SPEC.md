@@ -274,7 +274,9 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | `/app/account` | 帳號 | 個人資料、修改密碼、Session 清單、API Token 管理 |
 | `/app/admin` | 管理後台 | 使用者、使用者群組、全站網址、網域、邀請碼、設定、稽核日誌 |
 | `/app/admin/domains` | 網域管理 | 新增、啟用、停用、設為預設、刪除網域 |
-| `/app/admin/groups` | 使用者群組 | 建立/編輯/刪除群組、配額、功能開關、轉址方式政策、預設網域、允許網域與預設標記 |
+| `/app/admin/groups` | 使用者群組 | 列出群組及其配額、邀請碼用量、政策與成員數；連往新增與編輯表單 |
+| `/app/admin/groups/new` | 新增群組 | 建立表單：配額、功能開關、網域政策、轉址方式政策與預設網域；群組建立後才能轉移預設標記 |
+| `/app/admin/groups/{id}/edit` | 編輯群組 | 與 `/app/admin/groups/new` 相同的表單，預填目前設定；刪除與成員轉移在此頁 |
 | `/app/lang/{code}` | 語言切換 | 設定 `urlet_lang` cookie 並 302 至 `next`（未帶時轉往 `/app`） |
 | `/app/theme/{key}` | 主題切換 | 需要登入與切換權限；設定 `urlet_theme` cookie 並轉往同站 `next`（或 `Referer`，或 `/app`）。`?preview=1` 設定管理員專用預覽 cookie，可包含已停用主題 |
 | `/app/theme/default` | 網站預設 | 清除明確選擇與預覽 cookie，重新跟隨管理員預設 |

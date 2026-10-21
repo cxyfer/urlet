@@ -737,3 +737,102 @@
 @media (prefers-reduced-motion: reduce) {
     .splash-meter > span { animation: none; }
 }
+
+/* Groups table: the shared markup has more columns than a phone can show.
+ * Hide the secondary columns on narrow screens so the name, quota and edit
+ * action stay visible; every theme receives the same behaviour here. */
+@media (max-width: 760px) {
+    table.table.groups-table { min-width: 0; }
+    .groups-table .col-token-quota,
+    .groups-table .col-invites,
+    .groups-table .col-redirect,
+    .groups-table .col-features,
+    .groups-table .col-created { display: none; }
+    .groups-table th,
+    .groups-table td { padding: .6rem .55rem; }
+    .groups-table .col-name { min-width: 9rem; }
+    .groups-table .col-actions { text-align: right; white-space: nowrap; }
+    .groups-table .col-actions .btn { padding: .28rem .5rem; }
+}
+@media (max-width: 480px) {
+    .groups-table .col-members { display: none; }
+}
+
+/* Group create/edit dialog. The list keeps normal links so the form pages are
+ * still the no-JavaScript path; this only styles the enhanced floating window.
+ * Panels are flattened inside the dialog so the form reads as one surface. */
+.group-dialog {
+    width: min(56rem, calc(100vw - 2rem));
+    max-width: 56rem;
+    max-height: min(90vh, 54rem);
+    margin: auto;
+    padding: 0;
+    border: 1px solid var(--hairline, var(--line, rgb(127 127 127 / .28)));
+    border-radius: var(--r-lg, 1rem);
+    background: var(--surface, var(--paper-2, var(--bg-1, #fff)));
+    color: var(--ink, #17221c);
+    box-shadow: 0 2rem 5rem rgb(0 0 0 / .32);
+    overflow: hidden;
+}
+.group-dialog[open] { display: flex; flex-direction: column; }
+.group-dialog::backdrop {
+    background: rgb(8 19 14 / .55);
+    backdrop-filter: blur(3px);
+}
+.group-dialog-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex: none;
+    padding: .95rem 1.3rem;
+    border-bottom: 1px solid var(--hairline, var(--line, rgb(127 127 127 / .28)));
+    background: var(--surface, var(--paper-2, var(--bg-1, #fff)));
+}
+.group-dialog-head h2 { margin: 0; font-size: 1.15rem; }
+.group-dialog-close {
+    flex: none;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    display: inline-grid;
+    place-items: center;
+    font-size: 1rem;
+    line-height: 1;
+}
+.group-dialog-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 1.2rem 1.3rem 1.4rem;
+}
+.group-dialog-body[aria-busy="true"] { cursor: progress; }
+.group-dialog-loading { padding: 2rem 0; text-align: center; }
+.group-dialog-body .panel {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+.group-dialog-body .panel + .panel {
+    margin-top: 1.4rem;
+    padding-top: 1.4rem;
+    border-top: 1px solid var(--hairline, var(--line, rgb(127 127 127 / .28)));
+}
+.group-dialog-body .form-actions { margin-top: 1.2rem; }
+@media (max-width: 700px) {
+    .group-dialog {
+        width: 100vw;
+        max-width: none;
+        height: 100dvh;
+        max-height: none;
+        margin: 0;
+        border: 0;
+        border-radius: 0;
+    }
+    .group-dialog-head { padding: .85rem 1rem; }
+    .group-dialog-body { padding: 1rem; }
+}

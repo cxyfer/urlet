@@ -1,0 +1,315 @@
+{% macro content() %}
+<div class="page-head">
+    <div class="page-head-main">
+        <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ lang.t("nav.admin") }}</span>
+        <h1 class="page-title">{% if is_edit %}{{ lang.t("admin.groups.edit_heading") }}{% else %}{{ lang.t("admin.groups.new") }}{% endif %}</h1>
+    </div>
+    <div class="page-head-side">
+        {% if is_edit %}
+        <span class="small muted">{{ group.name }}</span>
+        {% else %}
+        <span class="hint">{{ lang.t("admin.groups.new_hint") }}</span>
+        {% endif %}
+        <a class="btn btn-sm btn-ghost" href="/app/admin/groups">{{ lang.t("admin.groups.back") }}</a>
+    </div>
+</div>
+
+<div data-group-form-panel>
+<form method="post" action="{{ form_action }}" data-group-form>
+    <section class="panel mt">
+        <div class="panel-head">
+            <h2>{{ lang.t("admin.groups.details") }}</h2>
+            <span class="panel-sub" aria-hidden="true">GRP / 01</span>
+        </div>
+
+        <div class="form-grid">
+            <div class="field">
+                <label class="label" for="name">{{ lang.t("admin.groups.name") }}</label>
+                <input class="input" type="text" id="name" name="name" maxlength="40" required
+                       value="{{ group.name }}" {% if !is_edit %}autofocus{% endif %}
+                       placeholder="{{ lang.t("admin.groups.name_placeholder") }}">
+            </div>
+            <div class="field">
+                <label class="label" for="description">{{ lang.t("admin.groups.description") }}</label>
+                <input class="input" type="text" id="description" name="description" maxlength="200"
+                       value="{{ group.description }}">
+            </div>
+            <div class="field">
+                <label class="label" for="max_urls">{{ lang.t("admin.groups.max_urls") }}
+                    {% if is_edit %}<span class="small muted">· {{ group.max_urls_display }}</span>{% endif %}
+                </label>
+                <input class="input" type="number" id="max_urls" name="max_urls" min="0" max="1000000" step="1"
+                       value="{{ group.max_urls_input }}"
+                       placeholder="{{ lang.t("admin.groups.quota_placeholder") }}">
+                <span class="hint">{{ lang.t("admin.groups.quota_hint") }}</span>
+            </div>
+            <div class="field">
+                <label class="label" for="max_api_tokens">{{ lang.t("admin.groups.max_api_tokens") }}
+                    {% if is_edit %}<span class="small muted">· {{ group.max_api_tokens_display }}</span>{% endif %}
+                </label>
+                <input class="input" type="number" id="max_api_tokens" name="max_api_tokens" min="0" max="1000000" step="1"
+                       value="{{ group.max_api_tokens_input }}"
+                       placeholder="{{ lang.t("admin.groups.quota_placeholder") }}">
+                <span class="hint">{{ lang.t("admin.groups.quota_hint") }}</span>
+            </div>
+            <div class="field">
+                <label class="label" for="max_invites">{{ lang.t("admin.groups.max_invites") }}
+                    {% if is_edit %}<span class="small muted">· {{ group.max_invites_display }}</span>{% endif %}
+                </label>
+                <input class="input" type="number" id="max_invites" name="max_invites" min="0" max="1000000" step="1"
+                       value="{{ group.max_invites_input }}"
+                       placeholder="{{ lang.t("admin.groups.quota_placeholder") }}">
+                <span class="hint">{{ lang.t("admin.groups.max_invites_hint") }}</span>
+            </div>
+            <div class="field">
+                <label class="label" for="invite_period">{{ lang.t("admin.groups.invite_period") }}
+                    {% if is_edit %}<span class="small muted">· {{ group.invite_usage_display }}</span>{% endif %}
+                </label>
+                <select class="select" id="invite_period" name="invite_period">
+                    <option value="day" {% if group.invite_period == "day" %}selected{% endif %}>{{ lang.t("admin.groups.period.day") }}</option>
+                    <option value="week" {% if group.invite_period == "week" %}selected{% endif %}>{{ lang.t("admin.groups.period.week") }}</option>
+                    <option value="month" {% if group.invite_period == "month" %}selected{% endif %}>{{ lang.t("admin.groups.period.month") }}</option>
+                </select>
+                <span class="hint">{{ lang.t("admin.groups.invite_period_hint") }}</span>
+            </div>
+        </div>
+
+        <div class="cap-block" data-cap-block>
+            <div class="cap-head">
+                <div class="cap-intro">
+                    <span class="label">{{ lang.t("admin.groups.cap.title") }}</span>
+                    <p class="hint">{{ lang.t("admin.groups.cap.hint") }}</p>
+                </div>
+                <div class="cap-tools">
+                    <span class="cap-count" data-cap-count
+                          data-cap-template="{{ lang.t("admin.groups.cap.count") }}" hidden></span>
+                    <button class="btn btn-sm" type="button" data-cap-bulk="on" hidden>{{ lang.t("admin.groups.cap.enable_all") }}</button>
+                    <button class="btn btn-sm" type="button" data-cap-bulk="off" hidden>{{ lang.t("admin.groups.cap.disable_all") }}</button>
+                </div>
+            </div>
+            <div class="cap-grid">
+                <fieldset class="cap-group">
+                    <legend class="cap-group-title">{{ lang.t("admin.groups.cap.group.content") }}</legend>
+                    <label class="checkbox cap-item">
+                        <input type="checkbox" name="allow_custom_slug" value="on" {% if group.allow_custom_slug %}checked{% endif %}>
+                        <span class="cap-text">
+                            <span class="cap-name">{{ lang.t("admin.groups.feature.custom_slug") }}</span>
+                            <span class="cap-desc">{{ lang.t("admin.groups.feature.custom_slug_hint") }}</span>
+                        </span>
+                    </label>
+                    <label class="checkbox cap-item">
+                        <input type="checkbox" name="allow_tags" value="on" {% if group.allow_tags %}checked{% endif %}>
+                        <span class="cap-text">
+                            <span class="cap-name">{{ lang.t("admin.groups.feature.tags") }}</span>
+                            <span class="cap-desc">{{ lang.t("admin.groups.feature.tags_hint") }}</span>
+                        </span>
+                    </label>
+                </fieldset>
+                <fieldset class="cap-group">
+                    <legend class="cap-group-title">{{ lang.t("admin.groups.cap.group.sharing") }}</legend>
+                    <label class="checkbox cap-item">
+                        <input type="checkbox" name="allow_password" value="on" {% if group.allow_password %}checked{% endif %}>
+                        <span class="cap-text">
+                            <span class="cap-name">{{ lang.t("admin.groups.feature.password") }}</span>
+                            <span class="cap-desc">{{ lang.t("admin.groups.feature.password_hint") }}</span>
+                        </span>
+                    </label>
+                    <label class="checkbox cap-item">
+                        <input type="checkbox" name="allow_expiry" value="on" {% if group.allow_expiry %}checked{% endif %}>
+                        <span class="cap-text">
+                            <span class="cap-name">{{ lang.t("admin.groups.feature.expiry") }}</span>
+                            <span class="cap-desc">{{ lang.t("admin.groups.feature.expiry_hint") }}</span>
+                        </span>
+                    </label>
+                    <label class="checkbox cap-item">
+                        <input type="checkbox" name="allow_max_clicks" value="on" {% if group.allow_max_clicks %}checked{% endif %}>
+                        <span class="cap-text">
+                            <span class="cap-name">{{ lang.t("admin.groups.feature.max_clicks") }}</span>
+                            <span class="cap-desc">{{ lang.t("admin.groups.feature.max_clicks_hint") }}</span>
+                        </span>
+                    </label>
+                </fieldset>
+                <fieldset class="cap-group">
+                    <legend class="cap-group-title">{{ lang.t("admin.groups.cap.group.account") }}</legend>
+                    <label class="checkbox cap-item">
+                        <input type="checkbox" name="allow_invites" value="on" {% if group.allow_invites %}checked{% endif %}>
+                        <span class="cap-text">
+                            <span class="cap-name">{{ lang.t("admin.groups.feature.invites") }}</span>
+                            <span class="cap-desc">{{ lang.t("admin.groups.feature.invites_hint") }}</span>
+                        </span>
+                    </label>
+                    <label class="checkbox cap-item">
+                        <input type="checkbox" name="allow_api_tokens" value="on" {% if group.allow_api_tokens %}checked{% endif %}>
+                        <span class="cap-text">
+                            <span class="cap-name">{{ lang.t("admin.groups.feature.api_tokens") }}</span>
+                            <span class="cap-desc">{{ lang.t("admin.groups.feature.api_tokens_hint") }}</span>
+                        </span>
+                    </label>
+                </fieldset>
+            </div>
+        </div>
+
+        <div class="policy-block" data-policy-block>
+            <div class="policy-head">
+                <div class="cap-intro">
+                    <span class="label">{{ lang.t("admin.groups.policy.title") }}</span>
+                    <p class="hint">{{ lang.t("admin.groups.policy.hint") }}</p>
+                </div>
+                <div class="field policy-default">
+                    <label class="label" for="default_domain_id">{{ lang.t("admin.groups.default_domain") }}</label>
+                    <select class="select" id="default_domain_id" name="default_domain_id">
+                        <option value="">{{ lang.t("admin.groups.site_default_domain") }}</option>
+                        {% if group.has_disabled_default_domain() %}
+                        <option value="{{ group.disabled_default_domain_id() }}" selected>{{ group.disabled_default_domain_name() }} ({{ lang.t("admin.groups.disabled_domain") }})</option>
+                        {% endif %}
+                        {% for domain in domains %}
+                        <option value="{{ domain.id }}" {% if group.uses_default_domain(domain.id) %}selected{% endif %}>{{ domain.hostname }}</option>
+                        {% endfor %}
+                    </select>
+                    <span class="hint">{{ lang.t("admin.groups.default_domain_hint") }}</span>
+                </div>
+            </div>
+
+            <div class="policy-grid">
+                <fieldset class="policy-group">
+                    <legend class="label">{{ lang.t("admin.groups.policy.scope") }}</legend>
+                    <label class="policy-option">
+                        <input type="radio" name="domain_policy" value="all" {% if group.domain_policy() == "all" %}checked{% endif %}>
+                        <span class="policy-text">
+                            <span class="policy-name">{{ lang.t("admin.groups.policy.all") }}</span>
+                            <span class="policy-desc">{{ lang.t("admin.groups.policy.all_hint") }}</span>
+                        </span>
+                    </label>
+                    <label class="policy-option">
+                        <input type="radio" name="domain_policy" value="default" {% if group.domain_policy() == "default" %}checked{% endif %}>
+                        <span class="policy-text">
+                            <span class="policy-name">{{ lang.t("admin.groups.policy.default") }}</span>
+                            <span class="policy-desc">{{ lang.t("admin.groups.policy.default_hint") }}</span>
+                        </span>
+                    </label>
+                    <label class="policy-option">
+                        <input type="radio" name="domain_policy" value="list" {% if group.domain_policy() == "list" %}checked{% endif %}>
+                        <span class="policy-text">
+                            <span class="policy-name">{{ lang.t("admin.groups.policy.list") }}</span>
+                            <span class="policy-desc">{{ lang.t("admin.groups.policy.list_hint") }}</span>
+                        </span>
+                    </label>
+                </fieldset>
+
+                <div class="policy-pane" data-policy-pane>
+                    <div class="policy-pane-head">
+                        <span class="label">{{ lang.t("admin.groups.policy.allowlist") }}</span>
+                        <span class="hint">{{ lang.t("admin.groups.policy.pinned_hint") }}</span>
+                    </div>
+                    <div class="chips">
+                        {% for domain in domains %}
+                        <label class="domain-chip">
+                            <input type="checkbox" name="domain_{{ domain.id }}" value="on" {% if group.allows_domain(domain.id) %}checked{% endif %}>
+                            <span class="domain-host">{{ domain.hostname }}</span>
+                        </label>
+                        {% endfor %}
+                        {% for domain in group.disabled_domains %}
+                        <label class="domain-chip is-disabled">
+                            <input type="checkbox" name="domain_{{ domain.id }}" value="on" checked>
+                            <span class="domain-host">{{ domain.hostname }}</span>
+                            <span class="badge">{{ lang.t("admin.groups.disabled_domain") }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <span class="hint">{{ lang.t("admin.groups.policy.allowlist_hint") }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="policy-block">
+            <div class="policy-head">
+                <div class="cap-intro">
+                    <span class="label">{{ lang.t("admin.groups.redirect_mode.title") }}</span>
+                    <p class="hint">{{ lang.t("admin.groups.redirect_mode.hint") }}</p>
+                </div>
+            </div>
+            <div class="policy-grid">
+                <fieldset class="policy-group">
+                    <legend class="label">{{ lang.t("admin.groups.redirect_mode.scope") }}</legend>
+                    <label class="policy-option">
+                        <input type="radio" name="redirect_mode_policy" value="choice" {% if group.redirect_mode_policy == "choice" %}checked{% endif %}>
+                        <span class="policy-text">
+                            <span class="policy-name">{{ lang.t("admin.groups.redirect_mode.choice") }}</span>
+                            <span class="policy-desc">{{ lang.t("admin.groups.redirect_mode.choice_hint") }}</span>
+                        </span>
+                    </label>
+                    <label class="policy-option">
+                        <input type="radio" name="redirect_mode_policy" value="direct" {% if group.redirect_mode_policy == "direct" %}checked{% endif %}>
+                        <span class="policy-text">
+                            <span class="policy-name">{{ lang.t("admin.groups.redirect_mode.direct") }}</span>
+                            <span class="policy-desc">{{ lang.t("admin.groups.redirect_mode.direct_hint") }}</span>
+                        </span>
+                    </label>
+                    <label class="policy-option">
+                        <input type="radio" name="redirect_mode_policy" value="splash" {% if group.redirect_mode_policy == "splash" %}checked{% endif %}>
+                        <span class="policy-text">
+                            <span class="policy-name">{{ lang.t("admin.groups.redirect_mode.splash") }}</span>
+                            <span class="policy-desc">{{ lang.t("admin.groups.redirect_mode.splash_hint") }}</span>
+                        </span>
+                    </label>
+                </fieldset>
+            </div>
+        </div>
+
+        <div class="policy-block">
+            <label class="checkbox">
+                <input type="checkbox" name="is_default" value="on"
+                       {% if group.is_default %}checked disabled{% endif %}
+                       {% if !is_edit %}disabled{% endif %}>
+                {{ lang.t("admin.groups.make_default") }}
+            </label>
+            <span class="hint">
+                {% if is_edit %}{{ lang.t("admin.groups.default_hint") }}{% else %}{{ lang.t("admin.groups.default_new_hint") }}{% endif %}
+            </span>
+        </div>
+
+        <div class="form-actions">
+            <a class="btn btn-ghost" href="/app/admin/groups"
+               data-group-dialog-close>{{ lang.t("common.cancel") }}</a>
+            <button class="btn btn-primary" type="submit">{% if is_edit %}{{ lang.t("common.save") }}{% else %}{{ lang.t("admin.groups.create") }}{% endif %}</button>
+        </div>
+    </section>
+</form>
+
+{% if is_edit %}
+{% if group.is_default %}
+<section class="panel mt">
+    <div class="panel-head">
+        <h2>{{ lang.t("admin.groups.default") }}</h2>
+        <span class="panel-sub" aria-hidden="true">GRP / 02</span>
+    </div>
+    <p class="hint">{{ lang.t("admin.groups.default_locked") }}</p>
+</section>
+{% else %}
+<section class="panel mt">
+    <div class="panel-head">
+        <h2>{{ lang.t("admin.groups.delete") }}</h2>
+        <span class="panel-sub" aria-hidden="true">GRP / 02</span>
+    </div>
+    <form method="post" action="/app/admin/groups/{{ group.id }}/delete">
+        <div class="field">
+            <label class="label" for="reassign_to">{{ lang.t("admin.groups.reassign_to") }}</label>
+            <select class="select" id="reassign_to" name="reassign_to" required>
+                {% for other in groups %}
+                {% if other.id != group.id %}
+                <option value="{{ other.id }}" {% if other.is_default %}selected{% endif %}>{{ other.name }}</option>
+                {% endif %}
+                {% endfor %}
+            </select>
+            <span class="hint">{{ lang.t("admin.groups.danger_hint") }}</span>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-danger" type="submit"
+                    data-confirm="{{ lang.t("admin.groups.delete_confirm") }}">{{ lang.t("admin.groups.delete") }}</button>
+        </div>
+    </form>
+</section>
+{% endif %}
+{% endif %}
+</div>
+{% endmacro %}

@@ -444,10 +444,15 @@ check "the used invite cannot be reused" "403" "$(curl -s -o /dev/null -w '%{htt
 # ------------------------------------------------------------------- pages
 echo
 echo "pages"
+DEFAULT_GROUP_ID=$(curl -s -b "$COOKIES" "$BASE/api/v1/admin/groups" \
+    | tr '{' '\n' | grep '"is_default":true' \
+    | sed -n 's/.*"id":\([0-9]*\).*/\1/p' | head -1)
+check "the default group id is discoverable" "true" \
+    "$([ -n "$DEFAULT_GROUP_ID" ] && echo true || echo false)"
 for path in /app/login /app/register; do
     check "GET $path renders" "200" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE$path")"
 done
-for path in /app /app/account /app/admin /app/admin/users /app/admin/groups /app/admin/urls /app/admin/invites /app/admin/domains /app/admin/themes /app/admin/settings /app/admin/audit; do
+for path in /app /app/account /app/admin /app/admin/users /app/admin/groups /app/admin/groups/new /app/admin/groups/$DEFAULT_GROUP_ID/edit /app/admin/urls /app/admin/invites /app/admin/domains /app/admin/themes /app/admin/settings /app/admin/audit; do
     check "GET $path renders for an admin" "200" \
         "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" "$BASE$path")"
 done
