@@ -2,9 +2,9 @@
 
 # urlet — 輕量化多用戶短網址系統規格書 (Spec)
 
-> 版本：1.2
+> 版本：1.4
 > 狀態：Approved for implementation
-> 最後更新：2026-10-17
+> 最後更新：2026-10-21
 
 ---
 
@@ -18,6 +18,7 @@
 v1.1 起介面提供三種語言（英文／繁體中文／簡體中文）、可選的防機器人驗證，並新增公開導覽首頁。
 v1.2 起新增**使用者群組**：可為不同群組設定各自的連結與 API Token 配額及功能開關，
 讓同一套單一二進位部署能支援分級方案（例如免費組與付費組）。
+v1.4 起新增**可切換主題**：視覺識別由編譯進 binary 的模板集與樣式表組成，管理員可決定提供哪些設計與誰能切換，使用者則以 cookie 記住選擇。
 
 ### 1.1 核心設計原則 (來自需求方)
 
@@ -29,8 +30,8 @@ v1.2 起新增**使用者群組**：可為不同群組設定各自的連結與 A
 | P4 | Docker Compose 部署 | 單一 `docker-compose.yml`（app + named volume），可選 Caddy TLS overlay |
 | P5 | 盡可能輕量化 | 單一二進位、SQLite（無 MySQL/Redis）、SSR 模板（無 Node 建置）、映像檔 < 40 MB |
 | P6 | Rust 實作 | Rust 2021 + Axum 0.8 + Tokio + sqlx(SQLite) |
-| P7 | 完善的資料表設計 | 16 張表、31 個索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
-| P8 | 適度添加功能 | 標籤、點擊分析、API Token、邀請碼、管理後台、稽核日誌、每日彙總、三語介面、可選防機器人驗證、配額／功能開關使用者群組 |
+| P7 | 完善的資料表設計 | 17 張表、32 個索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
+| P8 | 適度添加功能 | 標籤、點擊分析、API Token、邀請碼、管理後台、稽核日誌、每日彙總、三語介面、可選防機器人驗證、配額／功能開關使用者群組、可切換主題 |
 
 ### 1.2 與先前半成品 (OURLS / OURLS2) 的關係
 
@@ -89,6 +90,7 @@ Browser / curl          │                                                 │
                         │  ├─ /api/v1/**        JSON API                  │
                         │  ├─ /app/**           SSR 使用者與管理介面      │
                         │  ├─ /app/lang/{code}  語言切換（302）           │
+                        │  ├─ /app/theme/{key}  主題切換（302）           │
                         │  ├─ /assets/**        內嵌 CSS/JS               │
                         │  └─ /health           健康檢查                  │
                         │                                                 │
@@ -240,6 +242,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | FR-ADMIN-6 | 系統資訊 | 版本、資料庫大小、使用者/網址/點擊總數、運行時間 |
 | FR-ADMIN-7 | 授權 | 所有 `/api/v1/admin/**` 與 `/app/admin/**` 需 `role = admin`，否則 403 |
 | FR-ADMIN-8 | 群組管理 | 於 `/app/admin/groups` 與 `/api/v1/admin/groups` 建立、編輯、設為預設、設定網域策略與刪除使用者群組（FR-GROUP-1、FR-GROUP-9） |
+| FR-ADMIN-9 | 主題管理 | 於 `/app/admin/themes` 與 `/api/v1/admin/themes` 啟用/停用內建主題、選擇唯一預設並設定誰能切換（FR-THEME-2） |
 
 ### 4.9 JSON API (FR-API)
 
@@ -268,6 +271,8 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | `/app/admin/domains` | 網域管理 | 新增、啟用、停用、設為預設、刪除網域 |
 | `/app/admin/groups` | 使用者群組 | 建立/編輯/刪除群組、配額、功能開關、預設網域、允許網域與預設標記 |
 | `/app/lang/{code}` | 語言切換 | 設定 `urlet_lang` cookie 並 302 至 `next`（未帶時轉往 `/app`） |
+| `/app/theme/{key}` | 主題切換 | 需要登入與切換權限；設定 `urlet_theme` cookie 並轉往同站 `next`（或 `Referer`，或 `/app`） |
+| `/app/admin/themes` | 主題管理 | 啟用/停用主題、選擇預設與設定 `theme_switching` 政策 |
 | `/{slug}` | 轉址 / 密碼頁 / 410 / 404 | 公開 |
 | 額外網域 | 僅轉址 | `/` 顯示簡單首頁、`/{slug}` 轉址、`/app` 308 回 canonical、`/api` 回 404 |
 
@@ -315,6 +320,20 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | FR-GROUP-8 | 可見性 | 帳號頁顯示群組名稱、連結用量 `已用 / 配額` 與 Token 用量 `已用 / 配額`；`GET /api/v1/auth/me` 回傳 `group` 與 `limits`（生效配額、開關、預設網域與允許網域），讓 API 客戶端能預先判斷請求是否會被拒絕 |
 | FR-GROUP-9 | 網域策略 | `user_groups.default_domain_id` 是群組預設網域（`NULL` = 全站預設）；未指定網域的新連結會使用它，若該網域不存在、停用或刪除則回退全站預設。`restrict_domains = 1` 時只允許 `group_domains` 內的網域與生效預設；開啟限制但沒有資料列時只能使用預設。`allow_domain_selection = false` 時也只能使用群組預設。既有連結維持目前網域一律允許；未分組使用者使用全站預設與所有 active 網域。 |
 
+### 4.14 可切換主題 (FR-THEME)
+
+| ID | 需求 | 說明 |
+|----|------|------|
+| FR-THEME-1 | 主題目錄 | binary 內建六個主題：`verdant`（v1.2 預設）、`aurora`、`paper`、`signal`、`gilded`、`swiss`。每個主題擁有 `templates/themes/<key>/` 模板目錄與內嵌 CSS；主題是程式碼而非上傳內容，啟用/停用不會寫入或刪除模板 |
+| FR-THEME-2 | 管理 | `/app/admin/themes` 與 `GET/PUT /api/v1/admin/themes` 列出所有主題、啟用/停用、選擇唯一預設與設定 `theme_switching`。至少要有一個啟用主題，且預設必須啟用；違反時回 `422 validation_error`。預設標記由 partial unique index 保護 |
+| FR-THEME-3 | 選擇 | `GET /app/theme/{key}` 需要登入，僅接受已啟用的 key，設定 `urlet_theme` cookie（`Path=/`、`SameSite=Lax`、`HttpOnly`、一年，設定時加 `Secure`），並轉往同站 `next`、否則 `Referer` 路徑、否則 `/app`。未知或已停用的 key 回 404；未登入者導向登入頁 |
+| FR-THEME-4 | 權限 | `theme_switching` 為 `all`（預設）或 `admin`。管理員永遠看得到切換器以便預覽；其他帳號僅在 `all` 時可見。無權限的直接切換請求回 403。停用主題不會刪除資料或偏好 |
+| FR-THEME-5 | 預設與回退 | 恰有一個已啟用主題標記為預設。沒有 cookie、未知 key 或 key 已被停用時一律使用預設；切換器依 migration 的順序列出已啟用主題 |
+| FR-THEME-6 | 模板 | `templates/` 下的基底模板即 Verdant 主題與回退。主題目錄可覆寫任一頁面；未覆寫的頁面與共享的 v1.2 頁面內容仍可使用。主題模板由 `themed_page!` 在編譯期選擇，絕不使用請求提供的路徑 |
+| FR-THEME-7 | 資產 | `/assets/themes/{key}` 只提供固定的內建 key，`/assets/theme-ui.css` 提供切換器與管理目錄的共用樣式。不引入外部字型、圖片、腳本或 CDN，維持 `default-src 'self'` CSP 與零建置部署 |
+| FR-THEME-8 | 外觀 | Verdant 保留持久化的明暗控制；五個舊設計跟隨 `prefers-color-scheme`，因此保留作業系統選擇；Aurora 僅有深色，隱藏明暗控制 |
+| FR-THEME-9 | 持久化 | 選擇存在 cookie，而非每位使用者的資料庫欄位。已停用的主題在下一個請求即被拒絕，管理員可隨時為沒有偏好的訪客更改預設。主題切換不觸碰任何連結、使用者或點擊資料 |
+
 ---
 
 ## 5. 非功能需求
@@ -340,6 +359,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | NFR-SEC-14 | 密碼雜湊在 `spawn_blocking` 中執行，並以信號量限制同時最多 4 個 Argon2 計算（每個約 19 MiB） |
 | NFR-SEC-15 | 驗證碼驗證失敗一律關閉：以表單編碼 HTTPS POST 搭配 5 秒逾時呼叫設定的供應商，並透過 `ureq` 2 + rustls + webpki-roots 發出（不需 OpenSSL）；逾時、非 2xx 或無法解析的回應一律拒絕請求。secret key 永不回顯於管理後台 |
 | NFR-SEC-16 | 語言 cookie `urlet_lang` 刻意不設 HttpOnly（由前端程式讀取），內容僅為白名單語言標籤；切換端點的 `next` 只接受同站相對路徑，以防開放轉址 |
+| NFR-SEC-17 | 主題 cookie `urlet_theme` 為 HttpOnly、`SameSite=Lax`、一年，設定時加 `Secure`。其值只會與固定的內建主題 key 比對；切換端點需要登入與 `theme_switching` 權限，且 `next`／`Referer` 會先化為同站路徑再轉址 |
 
 ### 5.2 效能 (NFR-PERF)
 
@@ -396,6 +416,7 @@ users ─┬─< sessions
        └─< audit_logs (actor)
 domains ─< urls
 settings (key-value)
+themes (獨立)
 login_attempts (稽核用)
 ```
 
@@ -431,6 +452,7 @@ login_attempts (稽核用)
 | `clicks` | id, url_id, clicked_at, ip_hash, visitor_hash, user_agent, referrer, referrer_host, country_code, device_type, browser, os, is_bot, is_unique, password_protected | 點擊明細 |
 | `url_daily_stats` | url_id, day, clicks, unique_clicks, bot_clicks (PK: url_id+day) | 每日彙總 |
 | `audit_logs` | id, actor_user_id, actor_role, action, target_type, target_id, metadata, ip_hash, created_at | 稽核 |
+| `themes` | id, key(UNIQUE), is_enabled, is_default, sort_order, created_at, updated_at | 管理員對內建主題的選擇；以 partial unique index 確保唯一預設 |
 | `settings` | key(PK), value, updated_at, updated_by | 全站設定 |
 | `invite_codes` | id, code_hash(UNIQUE), code_prefix, note, group_id, created_by, max_uses, used_count, expires_at, status, created_at | 邀請碼 |
 | `invite_redemptions` | id, invite_id, user_id, redeemed_at, UNIQUE(invite_id,user_id) | 邀請碼使用紀錄 |
@@ -454,10 +476,12 @@ login_attempts (稽核用)
 | `users(group_id)` | 群組成員列表與改派 |
 | `invite_codes(group_id)` | 依群組查詢邀請碼 |
 | `group_domains(domain_id)` | 網域刪除與允許清單查詢 |
+| `themes(is_default) WHERE is_default = 1` UNIQUE | 最多一個預設主題 |
 
 v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表，v1.1 維持 **14 張表、27 個索引**。
 v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` / `invite_codes.group_id` 欄位、
 `user_groups.default_domain_id` / `restrict_domains` 欄位及四個索引，共 **16 張表、31 個索引**（§6.1、§6.3、§6.4）。
+v1.4 新增 `themes` 表及其唯一預設索引，共 **17 張表、32 個索引**。
 
 ### 6.5 預設資料 (seed)
 
@@ -467,6 +491,7 @@ v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` /
   `captcha_secret_key=`（空）、`captcha_on_register=false`、`captcha_on_login=false`、
   `captcha_on_create=false`、`captcha_allowed_hostnames=`（空）。非空的環境變數會覆蓋表中值（FR-BOT-2）。
 - `settings`（v1.2 新 key）：`max_api_tokens_per_user=20`（全站 Token 配額；`0` = 無上限）。
+- `settings`（v1.4 新 key）：`theme_switching=all`（誰能切換主題；`admin` 僅限管理員）。
   由於預設為 20 而非 0，升級後若帳號已持有超過 20 個可用 Token，必須先撤銷部分 Token 才能再新增；
   升級不會主動撤銷任何既有 Token。
 - `user_groups`（v1.2）：建立一筆名為 `Standard`、`max_urls = NULL`、`max_api_tokens = NULL`、
@@ -539,6 +564,8 @@ v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` /
 | POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, default_domain_id?, restrict_domains?, domain_ids?, is_default?}` → 201；domain_ids 必須存在，default_domain_id 必須 active；名稱重複或第二個預設群組回 409 |
 | PUT | `/api/v1/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`default_domain_id: null` 表示全站預設；`domain_ids: null` 或 `[]` 會清空允許清單；`is_default: true` 會在同一交易內轉移預設標記 |
 | DELETE | `/api/v1/admin/groups/{id}?reassign_to={id}` | 先把成員搬到 `reassign_to`，再刪除 → 204；預設群組或目標不存在/不合法回 409 |
+| GET | `/api/v1/admin/themes` | 主題目錄：key、名稱、說明、`enabled`、`default`、`dark_only`、`css_url`，以及目前的 `switching` 政策 |
+| PUT | `/api/v1/admin/themes` | `{enabled?: [keys], default?: key, switching?: "all"\|"admin"}`；省略的欄位維持原值；至少一個啟用主題且預設必須啟用 |
 | GET | `/api/v1/admin/urls` | 全站網址列表 |
 | PATCH | `/api/v1/admin/urls/{id}` | 強制停用/啟用/刪除 |
 | GET | `/api/v1/admin/invites` | 邀請碼列表（含 `group_id` / `group_name`） |
@@ -700,6 +727,9 @@ v1.1 新增項目（本批次）：
 - [ ] `POST /api/v1/urls` 僅在 API Token 呼叫時豁免驗證碼（Session Cookie 呼叫受 `on_create` 約束）；後台 secret key 欄位為唯寫
 - [ ] `GET /` 對未登入與已登入使用者皆回 200 的導覽首頁，不再 302 至 `/app`
 - [ ] `cargo test`（完整測試套件）、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過，`scripts/smoke.sh` 端對端檢查全過，且容器映像可在 musl 下建置並執行（§3.3）
+
+v1.4 新增項目（本批次）：
+- [x] `themes`（17 張表、32 個索引）：六個內建設計、管理員啟用/預設切換、全站切換權限、`urlet_theme` cookie，以及讓所有 v1.2 頁面維持可用的各主題模板目錄
 
 v1.2 新增項目（本批次）：
 

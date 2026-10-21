@@ -21,7 +21,8 @@
 | 🔑 API Token | `Authorization: Bearer ur_...`，可設到期與撤銷 |
 | 🌐 多網域 | 可在管理後台新增額外網域；各網域有獨立 slug，僅提供轉址 |
 | 👥 使用者群組 | 各群組可設定連結、API Token 與邀請碼配額（每日／每週／每月）、功能開關、預設網域與允許網域；成員可在群組允許時自行產生邀請碼 |
-| 🛠 管理後台 | 使用者管理、使用者群組、全站短網址、網域、邀請碼、站台設定、稽核日誌 |
+| 🎨 佈景主題 | 六個內建設計（Verdant、Aurora、Paper、Signal、Gilded、Swiss）；管理員可決定提供哪些、預設主題，以及成員是否能切換 |
+| 🛠 管理後台 | 使用者管理、使用者群組、全站短網址、網域、邀請碼、主題、站台設定、稽核日誌 |
 | 🌐 多語系介面 | 介面提供 English / 繁體中文 / 简体中文 切換；初次訪問依瀏覽器 `Accept-Language` 自動選擇，無法辨識時預設英文 |
 | 🤖 防機器人驗證 | 可透過環境變數或管理後台啟用 Cloudflare Turnstile 或 Google reCAPTCHA v2，套用於註冊、登入與建立短網址表單 |
 | 🐳 部署 | 單一容器 + named volume；GHCR 提供多架構映像；附 Caddy 自動 HTTPS overlay |
@@ -159,7 +160,7 @@ urlet/
 │   ├── services/               # 業務邏輯：auth、urls、slug、click、admin...
 │   ├── config.rs  error.rs  state.rs  server.rs
 │   └── main.rs                 # CLI 入口
-└── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}
+└── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,THEMES.md}
 ```
 
 ## 開發
@@ -191,6 +192,7 @@ bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 - [`docs/PLAN.md`](docs/PLAN.md) — 分階段實作計畫與驗收標準
 - [`docs/API.md`](docs/API.md) — JSON API 參考
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — 部署、設定、備份、升級、疑難排解
+- [`docs/zh-TW/THEMES.md`](docs/zh-TW/THEMES.md) — 主題目錄、管理操作與新增主題的方式
 - [`RELEASING.md`](RELEASING.md) — 發布規則：版本、標籤與映像規則、檢查清單、回滾（[中文版](docs/zh-TW/RELEASING.md)）
 
 這些文件的中文版放在 `docs/zh-TW/`。

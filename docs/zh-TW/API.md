@@ -471,6 +471,8 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "max_invites"?, "invite_period"?, "allow_invites"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "default_domain_id"?, "restrict_domains"?, "domain_ids"?, "is_default"? }` → `201`；`default_domain_id` 必須指向 active 網域；`domain_ids` 必須指向存在的網域（停用的項目會保留但無法選取） |
 | PUT | `/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` / `max_invites` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`default_domain_id: null` 表示全站預設；`domain_ids: null` 或 `[]` 會清空允許清單；`is_default: true` 會轉移唯一的預設標記 |
 | DELETE | `/admin/groups/{id}?reassign_to={id}` | `204`，先移動成員再刪除；預設群組或目標不存在/不合法回 `409` |
+| GET | `/admin/themes` | 主題目錄（key、名稱、說明、`enabled`、`default`、`dark_only`、`css_url`）與 `switching`（`all` 或 `admin`） |
+| PUT | `/admin/themes` | `{ "enabled"?: ["verdant", ...], "default"?: "verdant", "switching"?: "all"\|"admin" }`；省略欄位維持原值；至少一個啟用主題且預設必須啟用（否則 `422`） |
 
 `GroupDto` 另回傳 `default_domain_id`、`default_domain`（儲存值，即使網域已停用）、
 `restrict_domains`、`allowed_domain_ids`、`allowed_domains`，以及邀請碼配額
@@ -484,8 +486,8 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | GET | `/admin/invites` | 邀請碼列表（僅顯示前綴，另含 `group_id` / `group_name`） |
 | POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201`，**明文邀請碼只回一次**；群組的週期配額用盡時回 `403` |
 | DELETE | `/admin/invites/{id}` | `204`，撤銷 |
-| GET | `/admin/settings` | 目前設定 |
-| PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", ... }` |
+| GET | `/admin/settings` | 目前設定，包含 `theme_switching`（`all` 或 `admin`） |
+| PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", "theme_switching": "admin", ... }` |
 | GET | `/admin/audit?action=&target_type=&actor=&page=` | 稽核日誌（`metadata` 已解析為 JSON） |
 | GET | `/admin/stats` | 使用者／短網址／點擊總量、資料庫大小、版本、運行時間 |
 
@@ -531,7 +533,7 @@ is_default, members, created_at, updated_at }`。`allow_invites` 預設為 `fals
 | `invite.created` / `invite.revoked` / `invite.redeemed` | 邀請碼 |
 | `admin.user_updated` / `admin.user_deleted` / `admin.password_reset` | 管理操作 |
 | `admin.group_created` / `admin.group_updated` / `admin.group_deleted` | 群組異動 |
-| `admin.url_updated` / `admin.settings_updated` | 管理操作 |
+| `admin.url_updated` / `admin.settings_updated` / `admin.themes_updated` | 管理操作 |
 
 ## 速率限制
 
