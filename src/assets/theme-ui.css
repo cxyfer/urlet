@@ -304,6 +304,110 @@
     :where(.settings-rail) { position: static; }
 }
 
+/* Group capability board and domain policy. The ported designs predate these
+ * controls; without a shared layout the capability groups and the allowlist
+ * would read as one undifferentiated column. Colours stay in the theme's own
+ * vocabulary through `--accent` and `--line`, and `:where()` keeps every
+ * theme-specific rule in charge. */
+:where(.cap-head, .policy-head) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: .7rem 1.2rem;
+    margin-bottom: .6rem;
+}
+:where(.cap-intro) { display: grid; gap: .15rem; min-width: 0; }
+:where(.cap-tools) { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
+:where(.cap-count) {
+    font: .72rem/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    opacity: .65;
+    white-space: nowrap;
+}
+:where(.cap-grid) {
+    display: grid;
+    gap: 0 1.2rem;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    margin-top: .5rem;
+}
+:where(.cap-group) { margin: 0; padding: 0; border: 0; min-width: 0; }
+:where(.cap-group-title) {
+    width: 100%;
+    padding: 0 0 .35rem;
+    border-bottom: 1px solid var(--line, rgba(127, 127, 127, .3));
+    font-size: .78rem;
+    font-weight: 600;
+    opacity: .7;
+}
+:where(.cap-item) {
+    display: flex;
+    align-items: flex-start;
+    gap: .45rem;
+    margin: 0;
+    padding: .4rem .2rem;
+}
+:where(.cap-text) { display: grid; gap: .1rem; min-width: 0; }
+:where(.cap-name) { font-size: .84rem; line-height: 1.35; }
+:where(.cap-desc) { font-size: .72rem; line-height: 1.4; opacity: .62; }
+:where(.policy-block) {
+    margin-top: 1.2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--line, rgba(127, 127, 127, .3));
+}
+:where(.policy-default) { min-width: 13rem; max-width: 24rem; }
+:where(.policy-grid) {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    align-items: start;
+    margin-top: .6rem;
+}
+:where(.policy-group) { margin: 0; padding: 0; border: 0; min-width: 0; }
+:where(.policy-option) {
+    display: flex;
+    align-items: flex-start;
+    gap: .5rem;
+    padding: .4rem .3rem;
+    cursor: pointer;
+}
+:where(.policy-option input[type="radio"]) { margin: .2rem 0 0; accent-color: var(--accent, currentColor); }
+:where(.policy-text) { display: grid; gap: .1rem; min-width: 0; }
+:where(.policy-name) { font-size: .84rem; line-height: 1.35; }
+:where(.policy-desc) { font-size: .72rem; line-height: 1.4; opacity: .62; }
+:where(.policy-pane) {
+    padding: .7rem .8rem;
+    border: 1px solid var(--line, rgba(127, 127, 127, .3));
+    border-radius: var(--radius-sm, .55rem);
+    min-width: 0;
+}
+:where(.policy-pane.is-inactive) { opacity: .45; }
+:where(.policy-pane-head) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .4rem .8rem;
+}
+:where(.chips) { display: flex; flex-wrap: wrap; gap: .4rem; margin: .55rem 0 .3rem; }
+:where(.domain-chip) {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    margin: 0;
+    padding: .25rem .55rem;
+    border: 1px solid var(--line, rgba(127, 127, 127, .45));
+    border-radius: 999px;
+    font-size: .76rem;
+    line-height: 1.4;
+    cursor: pointer;
+}
+:where(.domain-chip input[type="checkbox"]) { margin: 0; accent-color: var(--accent, currentColor); }
+:where(.domain-chip:has(input:checked)) {
+    border-color: var(--accent, currentColor);
+    box-shadow: inset 0 0 0 1px var(--accent, currentColor);
+}
+:where(.domain-chip.is-disabled) { opacity: .6; }
+
 /* Extra-domain short landing. It is a tiny page with no signed-in shell, so the
  * older themes' stylesheets do not define these generic classes. */
 :where(.wrap) {

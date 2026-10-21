@@ -510,6 +510,17 @@ impl GroupRow {
     pub fn disabled_default_domain_name(&self) -> &str {
         self.default_domain_disabled_name.as_deref().unwrap_or("")
     }
+
+    /// Which `domain_policy` radio the form should preselect. Selection off
+    /// wins over the allowlist, because a member who cannot choose never
+    /// reaches the list.
+    pub fn domain_policy(&self) -> &'static str {
+        match (self.allow_domain_selection, self.restrict_domains) {
+            (false, _) => "default",
+            (true, true) => "list",
+            (true, false) => "all",
+        }
+    }
 }
 
 /// `2 of 5 per month` (plus a used-up suffix) for the invite form. Empty when
@@ -743,6 +754,10 @@ pub struct GroupForm {
     pub default_domain_id: Option<String>,
     #[serde(default)]
     pub restrict_domains: Option<String>,
+    /// `all`, `default` or `list`; the radio that replaces the old
+    /// `allow_domain_selection` + `restrict_domains` checkbox pair in the form.
+    #[serde(default)]
+    pub domain_policy: Option<String>,
     /// Dynamic `domain_<id>` checkboxes; serde cannot model them statically.
     #[serde(flatten)]
     pub extra: std::collections::HashMap<String, String>,
@@ -751,7 +766,31 @@ pub struct GroupForm {
 }
 
 impl GroupForm {
+    /// Resolve the domain controls into the two booleans the database keeps.
+    ///
+    /// The form posts one `domain_policy` radio: `all` lets members pick any
+    /// active domain, `default` pins them to the group default, and `list`
+    /// narrows the choice to the checked `domain_<id>` boxes. The older
+    /// `allow_domain_selection` / `restrict_domains` pair is still accepted so
+    /// API-shaped posts and existing scripts keep their meaning.
+    fn domain_policy(&self) -> Result<(bool, bool), AppError> {
+        match self.domain_policy.as_deref().map(str::trim) {
+            Some("all") => Ok((true, false)),
+            Some("default") => Ok((false, false)),
+            Some("list") => Ok((true, true)),
+            None | Some("") => Ok((
+                self.allow_domain_selection.is_some(),
+                self.restrict_domains.is_some(),
+            )),
+            Some(other) => Err(AppError::validation(
+                "domain_policy",
+                format!("domain policy must be all, default or list, not {other:?}"),
+            )),
+        }
+    }
+
     fn into_draft(self) -> Result<GroupDraft, AppError> {
+        let (allow_domain_selection, restrict_domains) = self.domain_policy()?;
         GroupDraft {
             name: self.name,
             description: self.description,
@@ -775,12 +814,12 @@ impl GroupForm {
             allow_max_clicks: self.allow_max_clicks.is_some(),
             allow_tags: self.allow_tags.is_some(),
             allow_api_tokens: self.allow_api_tokens.is_some(),
-            allow_domain_selection: self.allow_domain_selection.is_some(),
+            allow_domain_selection,
             default_domain_id: parse_optional_number(
                 "default_domain_id",
                 self.default_domain_id.as_deref(),
             )?,
-            restrict_domains: self.restrict_domains.is_some(),
+            restrict_domains,
             allowed_domain_ids: Some(
                 self.extra
                     .iter()

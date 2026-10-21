@@ -2146,6 +2146,230 @@ dl.meta dt:last-of-type, dl.meta dd:last-of-type { border-bottom: 0; }
     .check-cluster { background: var(--surface-2); }
 }
 .check-cluster .checkbox { margin: .18rem 0; }
+
+/* --------------------------------------------------- group capabilities -- */
+/* A permission board: one column per concern, each row naming what turns off
+   and what the member loses. The columns fold on narrow screens without a
+   media query because every track has the same minimum width. */
+.cap-block { margin: .3rem 0 0; }
+.cap-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: .8rem 1.4rem;
+    flex-wrap: wrap;
+    margin-bottom: .9rem;
+}
+.cap-intro { display: grid; gap: .2rem; min-width: 0; }
+.cap-intro .hint { max-width: 46ch; margin: 0; }
+.cap-tools { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+.cap-count {
+    font-family: var(--mono);
+    font-size: .72rem;
+    color: var(--muted);
+    white-space: nowrap;
+}
+.cap-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 0 1.5rem;
+}
+.cap-group {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+.cap-group-title {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    width: 100%;
+    padding: 0 0 .45rem;
+    border-bottom: 1px solid var(--hairline);
+    font-family: var(--mono);
+    font-size: .67rem;
+    font-weight: 600;
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--muted);
+}
+.cap-group-title::before {
+    content: "";
+    flex: none;
+    width: 3px;
+    height: .8rem;
+    border-radius: 2px;
+    background: var(--sap);
+}
+.cap-item.checkbox {
+    align-items: flex-start;
+    gap: .6rem;
+    margin: 0;
+    padding: .5rem .4rem;
+    border-radius: var(--r-sm);
+    font-size: inherit;
+}
+.cap-item.checkbox:hover { background: color-mix(in srgb, var(--sap) 8%, transparent); }
+.cap-item.checkbox input[type="checkbox"] { margin-top: .1rem; }
+.cap-text { display: grid; gap: .05rem; min-width: 0; }
+.cap-name { font-size: .88rem; line-height: 1.35; color: var(--ink); }
+.cap-desc { font-size: .735rem; line-height: 1.4; color: var(--muted); }
+
+/* ------------------------------------------------------ domain policy --- */
+/* One radio states which domains members may use; the allowlist is a second
+   step that only matters for the third choice. */
+.policy-block {
+    margin-top: 1.4rem;
+    padding-top: 1.3rem;
+    border-top: 1px solid var(--hairline);
+}
+.policy-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: .8rem 1.6rem;
+    flex-wrap: wrap;
+}
+.policy-head .policy-default { flex: 0 1 22rem; min-width: 14rem; margin-bottom: 0; }
+.policy-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+    align-items: start;
+    gap: 1.2rem;
+    margin-top: .9rem;
+}
+.policy-group {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+.policy-group > legend { padding: 0; margin-bottom: .35rem; }
+.policy-option {
+    display: flex;
+    align-items: flex-start;
+    gap: .6rem;
+    margin: 0 0 .12rem;
+    padding: .5rem .55rem;
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+}
+.policy-option:hover { background: color-mix(in srgb, var(--sap) 7%, transparent); }
+.policy-option:has(input:checked) {
+    border-color: var(--hairline-strong);
+    background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+}
+.policy-option input[type="radio"] {
+    appearance: none;
+    -webkit-appearance: none;
+    flex: none;
+    width: 1.02rem;
+    height: 1.02rem;
+    margin: .1rem 0 0;
+    border: 1px solid var(--hairline-strong);
+    border-radius: 50%;
+    background: var(--surface);
+    display: grid;
+    place-content: center;
+    cursor: pointer;
+}
+.policy-option input[type="radio"]::after {
+    content: "";
+    width: .46rem;
+    height: .46rem;
+    border-radius: 50%;
+    background: var(--on-sap);
+    transform: scale(0);
+    transition: transform .12s ease;
+}
+.policy-option input[type="radio"]:checked { background: var(--sap); border-color: var(--sap); }
+.policy-option input[type="radio"]:checked::after { transform: scale(1); }
+.policy-option input[type="radio"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.policy-text { display: grid; gap: .05rem; min-width: 0; }
+.policy-name { font-size: .88rem; line-height: 1.35; color: var(--ink); }
+.policy-desc { font-size: .735rem; line-height: 1.4; color: var(--muted); }
+.policy-pane {
+    min-width: 0;
+    padding: .8rem .95rem;
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-md);
+    background: color-mix(in srgb, var(--surface-2) 30%, transparent);
+    transition: opacity .15s ease;
+}
+@supports not (background: color-mix(in srgb, red 50%, transparent)) {
+    .policy-pane { background: var(--surface-2); }
+}
+.policy-pane.is-inactive { opacity: .45; }
+.policy-pane-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .5rem .9rem;
+    flex-wrap: wrap;
+}
+.chips { display: flex; flex-wrap: wrap; gap: .45rem; margin: .6rem 0 .45rem; }
+.domain-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .42rem;
+    margin: 0;
+    padding: .32rem .62rem;
+    border: 1px solid var(--hairline-strong);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: .755rem;
+    line-height: 1.3;
+    cursor: pointer;
+}
+.domain-chip:hover { border-color: var(--moss); }
+.domain-chip input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    flex: none;
+    width: .8rem;
+    height: .8rem;
+    margin: 0;
+    border: 1px solid var(--hairline-strong);
+    border-radius: 4px;
+    background: transparent;
+    display: grid;
+    place-content: center;
+    cursor: pointer;
+}
+.domain-chip input[type="checkbox"]::after {
+    content: "";
+    width: .42rem;
+    height: .23rem;
+    border: 1.6px solid transparent;
+    border-top: 0;
+    border-right: 0;
+    border-color: var(--on-sap);
+    transform: rotate(-45deg) translateY(-1px) scale(0);
+    transition: transform .12s ease;
+}
+.domain-chip:has(input:checked) {
+    border-color: var(--sap);
+    background: var(--sap);
+    color: var(--on-sap);
+}
+.domain-chip:has(input:checked) input[type="checkbox"] { border-color: var(--on-sap); }
+.domain-chip:has(input:checked) input[type="checkbox"]::after { transform: rotate(-45deg) translateY(-1px) scale(1); }
+.domain-chip:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.domain-chip .badge {
+    padding: .06rem .4rem;
+    border-color: currentColor;
+    background: transparent;
+    color: inherit;
+    font-family: var(--sans);
+    font-size: .66rem;
+}
+.domain-chip .badge::before { content: none; }
+.domain-chip.is-disabled { opacity: .6; }
+
 .settings-sub {
     display: flex;
     align-items: baseline;
