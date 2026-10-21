@@ -1,9 +1,16 @@
 /* Shared chrome for the in-product theme picker.
  *
- * Deliberately theme-neutral: it relies on inherited colour and the CSS custom
- * properties each theme defines, with plain fallbacks for the older designs.
- * Keeping this out of every theme stylesheet means a new theme cannot forget
- * the picker. */
+ * Deliberately theme-neutral: it relies on the CSS custom properties each theme
+ * defines, with plain fallbacks for the older designs. Keeping this out of every
+ * theme stylesheet means a new theme cannot forget the picker.
+ *
+ * The trigger inherits the surrounding bar's colour and tints itself with that
+ * same colour, so it stays legible on light and inverted bars alike. The open
+ * menu is a surface of its own: it must paint *both* its background and its
+ * text from the page palette. Inheriting the bar colour here breaks themes
+ * whose bar is inverted against the page (Swiss) or whose page has no
+ * `--surface` alias (Aurora, Paper), producing text on the same colour as the
+ * menu. */
 .theme-switcher {
     position: relative;
     display: inline-flex;
@@ -17,7 +24,10 @@
     padding: .34rem .6rem;
     border: 1px solid currentColor;
     border-radius: var(--radius-pill, 999px);
-    background: var(--surface-2, transparent);
+    /* Tint from the inherited bar colour, never from a page surface token:
+       the bar may be inverted against the page (Swiss telemetry strip). */
+    background: transparent;
+    background: color-mix(in srgb, currentColor 8%, transparent);
     color: inherit;
     cursor: pointer;
     font: inherit;
@@ -25,7 +35,10 @@
     list-style: none;
 }
 .theme-trigger::-webkit-details-marker { display: none; }
-.theme-trigger:hover { border-color: var(--accent, currentColor); }
+.theme-trigger:hover {
+    border-color: var(--accent, currentColor);
+    background: color-mix(in srgb, currentColor 14%, transparent);
+}
 .theme-caret { display: inline-flex; opacity: .7; }
 .theme-switcher[open] .theme-caret { transform: rotate(180deg); }
 .theme-swatch {
@@ -47,7 +60,11 @@
     padding: .35rem;
     border: 1px solid var(--line, currentColor);
     border-radius: var(--radius-sm, .55rem);
-    background: var(--surface, #fff);
+    /* Pair the menu's own background with its own text. The fallbacks are
+       system colours, which follow `color-scheme`; that covers the designs
+       that predate `--surface` (Aurora, Paper) in both light and dark. */
+    background: var(--surface, Canvas);
+    color: var(--ink, CanvasText);
     box-shadow: 0 .6rem 1.6rem rgba(0, 0, 0, .18);
 }
 .theme-option {
@@ -59,7 +76,10 @@
     text-decoration: none;
     white-space: nowrap;
 }
-.theme-option:hover { background: var(--surface-2, rgba(127, 127, 127, .14)); }
+.theme-option:hover {
+    background: rgba(127, 127, 127, .14);
+    background: color-mix(in srgb, currentColor 12%, transparent);
+}
 .theme-option.active { font-weight: 600; text-decoration: underline; text-underline-offset: .18em; }
 @media (max-width: 480px) {
     .theme-current { max-width: 6.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
