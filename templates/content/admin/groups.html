@@ -54,38 +54,141 @@
             </div>
         </div>
 
-        <div class="check-cluster">
-            <label class="checkbox"><input type="checkbox" name="allow_invites" value="on"> {{ lang.t("admin.groups.feature.invites") }}</label>
-            <label class="checkbox"><input type="checkbox" name="allow_custom_slug" value="on" checked> {{ lang.t("admin.groups.feature.custom_slug") }}</label>
-            <label class="checkbox"><input type="checkbox" name="allow_password" value="on" checked> {{ lang.t("admin.groups.feature.password") }}</label>
-            <label class="checkbox"><input type="checkbox" name="allow_expiry" value="on" checked> {{ lang.t("admin.groups.feature.expiry") }}</label>
-            <label class="checkbox"><input type="checkbox" name="allow_max_clicks" value="on" checked> {{ lang.t("admin.groups.feature.max_clicks") }}</label>
-            <label class="checkbox"><input type="checkbox" name="allow_tags" value="on" checked> {{ lang.t("admin.groups.feature.tags") }}</label>
-            <label class="checkbox"><input type="checkbox" name="allow_api_tokens" value="on" checked> {{ lang.t("admin.groups.feature.api_tokens") }}</label>
-            <label class="checkbox"><input type="checkbox" name="allow_domain_selection" value="on" checked> {{ lang.t("admin.groups.feature.domain_selection") }}</label>
-        </div>
-        <p class="hint">{{ lang.t("admin.groups.feature_hint") }}</p>
-
-        <div class="form-grid">
-            <div class="field">
-                <label class="label" for="default_domain_id">{{ lang.t("admin.groups.default_domain") }}</label>
-                <select class="select" id="default_domain_id" name="default_domain_id">
-                    <option value="">{{ lang.t("admin.groups.site_default_domain") }}</option>
-                    {% for domain in domains %}
-                    <option value="{{ domain.id }}">{{ domain.hostname }}</option>
-                    {% endfor %}
-                </select>
-                <span class="hint">{{ lang.t("admin.groups.default_domain_hint") }}</span>
+        <div class="cap-block" data-cap-block>
+            <div class="cap-head">
+                <div class="cap-intro">
+                    <span class="label">{{ lang.t("admin.groups.cap.title") }}</span>
+                    <p class="hint">{{ lang.t("admin.groups.cap.hint") }}</p>
+                </div>
+                <div class="cap-tools">
+                    <span class="cap-count" data-cap-count
+                          data-cap-template="{{ lang.t("admin.groups.cap.count") }}" hidden></span>
+                    <button class="btn btn-sm" type="button" data-cap-bulk="on" hidden>{{ lang.t("admin.groups.cap.enable_all") }}</button>
+                    <button class="btn btn-sm" type="button" data-cap-bulk="off" hidden>{{ lang.t("admin.groups.cap.disable_all") }}</button>
+                </div>
+            </div>
+            <div class="cap-grid">
+                <fieldset class="cap-group">
+                    <legend class="cap-group-title">{{ lang.t("admin.groups.cap.group.content") }}</legend>
+                    <label class="checkbox cap-item">
+                        <input type="checkbox" name="allow_custom_slug" value="on" checked>
+                        <span class="cap-text">
+                            <span class="cap-name">{{ lang.t("admin.groups.feature.custom_slug") }}</span>
+                            <span class="cap-desc">{{ lang.t("admin.groups.feature.custom_slug_hint") }}</span>
+                        </span>
+                    </label>
+                    <label class="checkbox cap-item">
+                        <input type="checkbox" name="allow_tags" value="on" checked>
+                        <span class="cap-text">
+                            <span class="cap-name">{{ lang.t("admin.groups.feature.tags") }}</span>
+                            <span class="cap-desc">{{ lang.t("admin.groups.feature.tags_hint") }}</span>
+                        </span>
+                    </label>
+                </fieldset>
+                <fieldset class="cap-group">
+                    <legend class="cap-group-title">{{ lang.t("admin.groups.cap.group.sharing") }}</legend>
+                    <label class="checkbox cap-item">
+                        <input type="checkbox" name="allow_password" value="on" checked>
+                        <span class="cap-text">
+                            <span class="cap-name">{{ lang.t("admin.groups.feature.password") }}</span>
+                            <span class="cap-desc">{{ lang.t("admin.groups.feature.password_hint") }}</span>
+                        </span>
+                    </label>
+                    <label class="checkbox cap-item">
+                        <input type="checkbox" name="allow_expiry" value="on" checked>
+                        <span class="cap-text">
+                            <span class="cap-name">{{ lang.t("admin.groups.feature.expiry") }}</span>
+                            <span class="cap-desc">{{ lang.t("admin.groups.feature.expiry_hint") }}</span>
+                        </span>
+                    </label>
+                    <label class="checkbox cap-item">
+                        <input type="checkbox" name="allow_max_clicks" value="on" checked>
+                        <span class="cap-text">
+                            <span class="cap-name">{{ lang.t("admin.groups.feature.max_clicks") }}</span>
+                            <span class="cap-desc">{{ lang.t("admin.groups.feature.max_clicks_hint") }}</span>
+                        </span>
+                    </label>
+                </fieldset>
+                <fieldset class="cap-group">
+                    <legend class="cap-group-title">{{ lang.t("admin.groups.cap.group.account") }}</legend>
+                    <label class="checkbox cap-item">
+                        <input type="checkbox" name="allow_invites" value="on">
+                        <span class="cap-text">
+                            <span class="cap-name">{{ lang.t("admin.groups.feature.invites") }}</span>
+                            <span class="cap-desc">{{ lang.t("admin.groups.feature.invites_hint") }}</span>
+                        </span>
+                    </label>
+                    <label class="checkbox cap-item">
+                        <input type="checkbox" name="allow_api_tokens" value="on" checked>
+                        <span class="cap-text">
+                            <span class="cap-name">{{ lang.t("admin.groups.feature.api_tokens") }}</span>
+                            <span class="cap-desc">{{ lang.t("admin.groups.feature.api_tokens_hint") }}</span>
+                        </span>
+                    </label>
+                </fieldset>
             </div>
         </div>
-        <label class="checkbox"><input type="checkbox" name="restrict_domains" value="on"> {{ lang.t("admin.groups.restrict_domains") }}</label>
-        <span class="hint">{{ lang.t("admin.groups.restrict_domains_hint") }}</span>
-        <div class="stack">
-            <span class="label">{{ lang.t("admin.groups.allowed_domains") }}</span>
-            {% for domain in domains %}
-            <label class="checkbox"><input type="checkbox" name="domain_{{ domain.id }}" value="on"> {{ domain.hostname }}</label>
-            {% endfor %}
-            <span class="hint">{{ lang.t("admin.groups.allowed_domains_hint") }}</span>
+
+        <div class="policy-block" data-policy-block>
+            <div class="policy-head">
+                <div class="cap-intro">
+                    <span class="label">{{ lang.t("admin.groups.policy.title") }}</span>
+                    <p class="hint">{{ lang.t("admin.groups.policy.hint") }}</p>
+                </div>
+                <div class="field policy-default">
+                    <label class="label" for="default_domain_id">{{ lang.t("admin.groups.default_domain") }}</label>
+                    <select class="select" id="default_domain_id" name="default_domain_id">
+                        <option value="">{{ lang.t("admin.groups.site_default_domain") }}</option>
+                        {% for domain in domains %}
+                        <option value="{{ domain.id }}">{{ domain.hostname }}</option>
+                        {% endfor %}
+                    </select>
+                    <span class="hint">{{ lang.t("admin.groups.default_domain_hint") }}</span>
+                </div>
+            </div>
+
+            <div class="policy-grid">
+                <fieldset class="policy-group">
+                    <legend class="label">{{ lang.t("admin.groups.policy.scope") }}</legend>
+                    <label class="policy-option">
+                        <input type="radio" name="domain_policy" value="all" checked>
+                        <span class="policy-text">
+                            <span class="policy-name">{{ lang.t("admin.groups.policy.all") }}</span>
+                            <span class="policy-desc">{{ lang.t("admin.groups.policy.all_hint") }}</span>
+                        </span>
+                    </label>
+                    <label class="policy-option">
+                        <input type="radio" name="domain_policy" value="default">
+                        <span class="policy-text">
+                            <span class="policy-name">{{ lang.t("admin.groups.policy.default") }}</span>
+                            <span class="policy-desc">{{ lang.t("admin.groups.policy.default_hint") }}</span>
+                        </span>
+                    </label>
+                    <label class="policy-option">
+                        <input type="radio" name="domain_policy" value="list">
+                        <span class="policy-text">
+                            <span class="policy-name">{{ lang.t("admin.groups.policy.list") }}</span>
+                            <span class="policy-desc">{{ lang.t("admin.groups.policy.list_hint") }}</span>
+                        </span>
+                    </label>
+                </fieldset>
+
+                <div class="policy-pane" data-policy-pane>
+                    <div class="policy-pane-head">
+                        <span class="label">{{ lang.t("admin.groups.policy.allowlist") }}</span>
+                        <span class="hint">{{ lang.t("admin.groups.policy.pinned_hint") }}</span>
+                    </div>
+                    <div class="chips">
+                        {% for domain in domains %}
+                        <label class="domain-chip">
+                            <input type="checkbox" name="domain_{{ domain.id }}" value="on">
+                            <span class="domain-host">{{ domain.hostname }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <span class="hint">{{ lang.t("admin.groups.policy.allowlist_hint") }}</span>
+                </div>
+            </div>
         </div>
 
         <div class="form-actions">
@@ -172,41 +275,150 @@
                                         <span class="hint">{{ group.invite_usage_display }}</span>
                                     </div>
 
-                                    <div class="stack">
-                                        <label class="checkbox"><input type="checkbox" name="allow_invites" value="on" {% if group.allow_invites %}checked{% endif %}> {{ lang.t("admin.groups.feature.invites") }}</label>
-                                        <label class="checkbox"><input type="checkbox" name="allow_custom_slug" value="on" {% if group.allow_custom_slug %}checked{% endif %}> {{ lang.t("admin.groups.feature.custom_slug") }}</label>
-                                        <label class="checkbox"><input type="checkbox" name="allow_password" value="on" {% if group.allow_password %}checked{% endif %}> {{ lang.t("admin.groups.feature.password") }}</label>
-                                        <label class="checkbox"><input type="checkbox" name="allow_expiry" value="on" {% if group.allow_expiry %}checked{% endif %}> {{ lang.t("admin.groups.feature.expiry") }}</label>
-                                        <label class="checkbox"><input type="checkbox" name="allow_max_clicks" value="on" {% if group.allow_max_clicks %}checked{% endif %}> {{ lang.t("admin.groups.feature.max_clicks") }}</label>
-                                        <label class="checkbox"><input type="checkbox" name="allow_tags" value="on" {% if group.allow_tags %}checked{% endif %}> {{ lang.t("admin.groups.feature.tags") }}</label>
-                                        <label class="checkbox"><input type="checkbox" name="allow_api_tokens" value="on" {% if group.allow_api_tokens %}checked{% endif %}> {{ lang.t("admin.groups.feature.api_tokens") }}</label>
-                                        <label class="checkbox"><input type="checkbox" name="allow_domain_selection" value="on" {% if group.allow_domain_selection %}checked{% endif %}> {{ lang.t("admin.groups.feature.domain_selection") }}</label>
+                                    <div class="cap-block" data-cap-block>
+                                        <div class="cap-head">
+                                            <div class="cap-intro">
+                                                <span class="label">{{ lang.t("admin.groups.cap.title") }}</span>
+                                            </div>
+                                            <div class="cap-tools">
+                                                <span class="cap-count" data-cap-count
+                                                      data-cap-template="{{ lang.t("admin.groups.cap.count") }}" hidden></span>
+                                                <button class="btn btn-sm" type="button" data-cap-bulk="on" hidden>{{ lang.t("admin.groups.cap.enable_all") }}</button>
+                                                <button class="btn btn-sm" type="button" data-cap-bulk="off" hidden>{{ lang.t("admin.groups.cap.disable_all") }}</button>
+                                            </div>
+                                        </div>
+                                        <div class="cap-grid">
+                                            <fieldset class="cap-group">
+                                                <legend class="cap-group-title">{{ lang.t("admin.groups.cap.group.content") }}</legend>
+                                                <label class="checkbox cap-item">
+                                                    <input type="checkbox" name="allow_custom_slug" value="on" {% if group.allow_custom_slug %}checked{% endif %}>
+                                                    <span class="cap-text">
+                                                        <span class="cap-name">{{ lang.t("admin.groups.feature.custom_slug") }}</span>
+                                                        <span class="cap-desc">{{ lang.t("admin.groups.feature.custom_slug_hint") }}</span>
+                                                    </span>
+                                                </label>
+                                                <label class="checkbox cap-item">
+                                                    <input type="checkbox" name="allow_tags" value="on" {% if group.allow_tags %}checked{% endif %}>
+                                                    <span class="cap-text">
+                                                        <span class="cap-name">{{ lang.t("admin.groups.feature.tags") }}</span>
+                                                        <span class="cap-desc">{{ lang.t("admin.groups.feature.tags_hint") }}</span>
+                                                    </span>
+                                                </label>
+                                            </fieldset>
+                                            <fieldset class="cap-group">
+                                                <legend class="cap-group-title">{{ lang.t("admin.groups.cap.group.sharing") }}</legend>
+                                                <label class="checkbox cap-item">
+                                                    <input type="checkbox" name="allow_password" value="on" {% if group.allow_password %}checked{% endif %}>
+                                                    <span class="cap-text">
+                                                        <span class="cap-name">{{ lang.t("admin.groups.feature.password") }}</span>
+                                                        <span class="cap-desc">{{ lang.t("admin.groups.feature.password_hint") }}</span>
+                                                    </span>
+                                                </label>
+                                                <label class="checkbox cap-item">
+                                                    <input type="checkbox" name="allow_expiry" value="on" {% if group.allow_expiry %}checked{% endif %}>
+                                                    <span class="cap-text">
+                                                        <span class="cap-name">{{ lang.t("admin.groups.feature.expiry") }}</span>
+                                                        <span class="cap-desc">{{ lang.t("admin.groups.feature.expiry_hint") }}</span>
+                                                    </span>
+                                                </label>
+                                                <label class="checkbox cap-item">
+                                                    <input type="checkbox" name="allow_max_clicks" value="on" {% if group.allow_max_clicks %}checked{% endif %}>
+                                                    <span class="cap-text">
+                                                        <span class="cap-name">{{ lang.t("admin.groups.feature.max_clicks") }}</span>
+                                                        <span class="cap-desc">{{ lang.t("admin.groups.feature.max_clicks_hint") }}</span>
+                                                    </span>
+                                                </label>
+                                            </fieldset>
+                                            <fieldset class="cap-group">
+                                                <legend class="cap-group-title">{{ lang.t("admin.groups.cap.group.account") }}</legend>
+                                                <label class="checkbox cap-item">
+                                                    <input type="checkbox" name="allow_invites" value="on" {% if group.allow_invites %}checked{% endif %}>
+                                                    <span class="cap-text">
+                                                        <span class="cap-name">{{ lang.t("admin.groups.feature.invites") }}</span>
+                                                        <span class="cap-desc">{{ lang.t("admin.groups.feature.invites_hint") }}</span>
+                                                    </span>
+                                                </label>
+                                                <label class="checkbox cap-item">
+                                                    <input type="checkbox" name="allow_api_tokens" value="on" {% if group.allow_api_tokens %}checked{% endif %}>
+                                                    <span class="cap-text">
+                                                        <span class="cap-name">{{ lang.t("admin.groups.feature.api_tokens") }}</span>
+                                                        <span class="cap-desc">{{ lang.t("admin.groups.feature.api_tokens_hint") }}</span>
+                                                    </span>
+                                                </label>
+                                            </fieldset>
+                                        </div>
                                     </div>
 
-                                    <div class="field">
-                                        <label class="label">{{ lang.t("admin.groups.default_domain") }}</label>
-                                        <select class="select" name="default_domain_id">
-                                            <option value="">{{ lang.t("admin.groups.site_default_domain") }}</option>
-                                            {% if group.has_disabled_default_domain() %}
-                                            <option value="{{ group.disabled_default_domain_id() }}" selected>{{ group.disabled_default_domain_name() }} ({{ lang.t("admin.groups.disabled_domain") }})</option>
-                                            {% endif %}
-                                            {% for domain in domains %}
-                                            <option value="{{ domain.id }}" {% if group.uses_default_domain(domain.id) %}selected{% endif %}>{{ domain.hostname }}</option>
-                                            {% endfor %}
-                                        </select>
-                                        <span class="hint">{{ lang.t("admin.groups.default_domain_hint") }}</span>
-                                    </div>
-                                    <label class="checkbox"><input type="checkbox" name="restrict_domains" value="on" {% if group.restrict_domains %}checked{% endif %}> {{ lang.t("admin.groups.restrict_domains") }}</label>
-                                    <span class="hint">{{ lang.t("admin.groups.restrict_domains_hint") }}</span>
-                                    <div class="stack">
-                                        <span class="label">{{ lang.t("admin.groups.allowed_domains") }}</span>
-                                        {% for domain in domains %}
-                                        <label class="checkbox"><input type="checkbox" name="domain_{{ domain.id }}" value="on" {% if group.allows_domain(domain.id) %}checked{% endif %}> {{ domain.hostname }}</label>
-                                        {% endfor %}
-                                        {% for domain in group.disabled_domains %}
-                                        <label class="checkbox"><input type="checkbox" name="domain_{{ domain.id }}" value="on" checked> {{ domain.hostname }} ({{ lang.t("admin.groups.disabled_domain") }})</label>
-                                        {% endfor %}
-                                        <span class="hint">{{ lang.t("admin.groups.allowed_domains_hint") }}</span>
+                                    <div class="policy-block" data-policy-block>
+                                        <div class="policy-head">
+                                            <div class="cap-intro">
+                                                <span class="label">{{ lang.t("admin.groups.policy.title") }}</span>
+                                                <p class="hint">{{ lang.t("admin.groups.policy.hint") }}</p>
+                                            </div>
+                                            <div class="field policy-default">
+                                                <label class="label">{{ lang.t("admin.groups.default_domain") }}</label>
+                                                <select class="select" name="default_domain_id">
+                                                    <option value="">{{ lang.t("admin.groups.site_default_domain") }}</option>
+                                                    {% if group.has_disabled_default_domain() %}
+                                                    <option value="{{ group.disabled_default_domain_id() }}" selected>{{ group.disabled_default_domain_name() }} ({{ lang.t("admin.groups.disabled_domain") }})</option>
+                                                    {% endif %}
+                                                    {% for domain in domains %}
+                                                    <option value="{{ domain.id }}" {% if group.uses_default_domain(domain.id) %}selected{% endif %}>{{ domain.hostname }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                                <span class="hint">{{ lang.t("admin.groups.default_domain_hint") }}</span>
+                                            </div>
+                                        </div>
+
+                                        <div class="policy-grid">
+                                            <fieldset class="policy-group">
+                                                <legend class="label">{{ lang.t("admin.groups.policy.scope") }}</legend>
+                                                <label class="policy-option">
+                                                    <input type="radio" name="domain_policy" value="all" {% if group.domain_policy() == "all" %}checked{% endif %}>
+                                                    <span class="policy-text">
+                                                        <span class="policy-name">{{ lang.t("admin.groups.policy.all") }}</span>
+                                                        <span class="policy-desc">{{ lang.t("admin.groups.policy.all_hint") }}</span>
+                                                    </span>
+                                                </label>
+                                                <label class="policy-option">
+                                                    <input type="radio" name="domain_policy" value="default" {% if group.domain_policy() == "default" %}checked{% endif %}>
+                                                    <span class="policy-text">
+                                                        <span class="policy-name">{{ lang.t("admin.groups.policy.default") }}</span>
+                                                        <span class="policy-desc">{{ lang.t("admin.groups.policy.default_hint") }}</span>
+                                                    </span>
+                                                </label>
+                                                <label class="policy-option">
+                                                    <input type="radio" name="domain_policy" value="list" {% if group.domain_policy() == "list" %}checked{% endif %}>
+                                                    <span class="policy-text">
+                                                        <span class="policy-name">{{ lang.t("admin.groups.policy.list") }}</span>
+                                                        <span class="policy-desc">{{ lang.t("admin.groups.policy.list_hint") }}</span>
+                                                    </span>
+                                                </label>
+                                            </fieldset>
+
+                                            <div class="policy-pane" data-policy-pane>
+                                                <div class="policy-pane-head">
+                                                    <span class="label">{{ lang.t("admin.groups.policy.allowlist") }}</span>
+                                                    <span class="hint">{{ lang.t("admin.groups.policy.pinned_hint") }}</span>
+                                                </div>
+                                                <div class="chips">
+                                                    {% for domain in domains %}
+                                                    <label class="domain-chip">
+                                                        <input type="checkbox" name="domain_{{ domain.id }}" value="on" {% if group.allows_domain(domain.id) %}checked{% endif %}>
+                                                        <span class="domain-host">{{ domain.hostname }}</span>
+                                                    </label>
+                                                    {% endfor %}
+                                                    {% for domain in group.disabled_domains %}
+                                                    <label class="domain-chip is-disabled">
+                                                        <input type="checkbox" name="domain_{{ domain.id }}" value="on" checked>
+                                                        <span class="domain-host">{{ domain.hostname }}</span>
+                                                        <span class="badge">{{ lang.t("admin.groups.disabled_domain") }}</span>
+                                                    </label>
+                                                    {% endfor %}
+                                                </div>
+                                                <span class="hint">{{ lang.t("admin.groups.policy.allowlist_hint") }}</span>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <label class="checkbox">
