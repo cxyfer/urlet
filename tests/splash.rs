@@ -751,13 +751,19 @@ async fn the_web_form_creates_a_splash_link_and_the_group_form_sets_the_policy()
         .clone();
     assert_eq!(stored["redirect_mode_policy"], "splash");
 
-    // The redesigned admin form renders the policy as a radio group and marks
-    // the stored choice; the create form defaults to "choice".
-    let group_page = app.get_as("/app/admin/groups", &admin_cookie).await;
-    assert_eq!(group_page.status, StatusCode::OK, "{}", group_page.body);
-    assert!(group_page.body.contains("name=\"redirect_mode_policy\""));
-    assert!(group_page.body.contains("value=\"splash\" checked"));
-    assert!(group_page.body.contains("value=\"choice\" checked"));
+    // The shared admin form renders the policy as a radio group and marks the
+    // stored choice, while the create form defaults to "choice".
+    let group_id = stored["id"].as_i64().expect("id");
+    let edit_page = app
+        .get_as(&format!("/app/admin/groups/{group_id}/edit"), &admin_cookie)
+        .await;
+    assert_eq!(edit_page.status, StatusCode::OK, "{}", edit_page.body);
+    assert!(edit_page.body.contains("name=\"redirect_mode_policy\""));
+    assert!(edit_page.body.contains("value=\"splash\" checked"));
+
+    let new_page = app.get_as("/app/admin/groups/new", &admin_cookie).await;
+    assert_eq!(new_page.status, StatusCode::OK, "{}", new_page.body);
+    assert!(new_page.body.contains("value=\"choice\" checked"));
 
     // The group policy endpoint is validated.
     let invalid = app

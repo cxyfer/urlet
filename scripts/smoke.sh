@@ -447,7 +447,7 @@ echo "pages"
 for path in /app/login /app/register; do
     check "GET $path renders" "200" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE$path")"
 done
-for path in /app /app/account /app/admin /app/admin/users /app/admin/groups /app/admin/urls /app/admin/invites /app/admin/domains /app/admin/themes /app/admin/settings /app/admin/audit; do
+for path in /app /app/account /app/admin /app/admin/users /app/admin/groups /app/admin/groups/new /app/admin/groups/1/edit /app/admin/urls /app/admin/invites /app/admin/domains /app/admin/themes /app/admin/settings /app/admin/audit; do
     check "GET $path renders for an admin" "200" \
         "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" "$BASE$path")"
 done

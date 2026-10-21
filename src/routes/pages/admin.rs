@@ -119,6 +119,7 @@ themed_page!(users_templates, UsersPageView, UsersPage,
 pub struct GroupOption {
     pub id: i64,
     pub name: String,
+    pub is_default: bool,
 }
 
 /// A group option on the invite form, annotated with its current quota.
@@ -336,6 +337,35 @@ themed_page!(groups_templates, GroupsPageView, GroupsPage,
     Swiss => "themes/swiss/admin/groups.html",
 );
 
+/// Create and edit page for a user group.
+///
+/// Both flows render this one context and template; `is_edit` is false when the
+/// form is creating a new group. That keeps the fields, capabilities, domain
+/// policy and redirect policy identical in both cases.
+#[derive(Debug)]
+pub struct GroupFormPage {
+    pub site_name: String,
+    pub section: &'static str,
+    pub chrome: Chrome,
+    pub group: GroupRow,
+    /// Every active domain, for the default-domain select and the allowlist.
+    pub domains: Vec<crate::services::domains::DomainOption>,
+    /// Other groups, for the delete reassignment select.
+    pub groups: Vec<GroupOption>,
+    pub is_edit: bool,
+    pub form_action: String,
+    pub lang: Lang,
+}
+
+themed_page!(group_form_templates, GroupFormPageView, GroupFormPage,
+    Verdant => "admin/group_form.html",
+    Aurora => "themes/aurora/admin/group_form.html",
+    Paper => "themes/paper/admin/group_form.html",
+    Signal => "themes/signal/admin/group_form.html",
+    Gilded => "themes/gilded/admin/group_form.html",
+    Swiss => "themes/swiss/admin/group_form.html",
+);
+
 /// One row of the group table, carrying both display and form values.
 #[derive(Debug, Clone)]
 pub struct GroupRow {
@@ -499,6 +529,52 @@ impl GroupRow {
 }
 
 impl GroupRow {
+    /// Values the create form starts from. Every capability that the old create
+    /// form enabled by default stays enabled.
+    fn blank(settings: &Settings, lang: Lang) -> Self {
+        let invite_period = InvitePeriod::default();
+        let redirect_mode_policy = RedirectModePolicy::default();
+        Self {
+            id: 0,
+            name: String::new(),
+            description: String::new(),
+            max_urls_input: String::new(),
+            max_urls_display: quota_display(None, settings.max_urls_per_user(), lang),
+            max_api_tokens_input: String::new(),
+            max_api_tokens_display: quota_display(None, settings.max_api_tokens_per_user(), lang),
+            max_invites_input: String::new(),
+            max_invites_display: quota_display(None, settings.max_invites_per_period(), lang),
+            invite_period: invite_period.as_str().to_string(),
+            invite_period_label: super::period_label(lang, invite_period),
+            invite_usage_display: String::new(),
+            invite_quota_exhausted: false,
+            members: 0,
+            is_default: false,
+            allow_invites: false,
+            allow_custom_slug: true,
+            allow_password: true,
+            allow_expiry: true,
+            allow_max_clicks: true,
+            allow_tags: true,
+            allow_api_tokens: true,
+            allow_domain_selection: true,
+            redirect_mode_policy: redirect_mode_policy.as_str().to_string(),
+            redirect_mode_policy_label: lang.t(redirect_mode_policy.label_key()).to_string(),
+            default_domain_id: None,
+            restrict_domains: false,
+            allowed_domain_ids: Vec::new(),
+            disabled_domains: Vec::new(),
+            default_domain_disabled_id: None,
+            default_domain_disabled_name: None,
+            features_label: i18n::format(
+                lang,
+                "admin.groups.features_count",
+                &[("count", "6".to_string())],
+            ),
+            created: String::new(),
+        }
+    }
+
     /// Whether this group uses `domain_id` as its default.
     pub fn uses_default_domain(&self, domain_id: &i64) -> bool {
         self.default_domain_id == Some(*domain_id)
@@ -1073,6 +1149,7 @@ pub async fn users_page(
         .map(|group| GroupOption {
             id: group.id,
             name: group.name.clone(),
+            is_default: group.is_default,
         })
         .collect();
     let total_pages = ((total + PER_PAGE - 1) / PER_PAGE).max(1);
@@ -2377,6 +2454,43 @@ pub async fn groups_page(
     .await
 }
 
+/// `GET /app/admin/groups/new`
+pub async fn new_group_page(
+    State(state): State<AppState>,
+    MaybeUser(current): MaybeUser,
+    Query(query): Query<AdminQuery>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/groups")).into_response());
+    };
+    render_group_form(
+        &state,
+        &current.user,
+        flash_from_query(query.ok.as_deref(), query.err.as_deref()),
+        None,
+    )
+    .await
+}
+
+/// `GET /app/admin/groups/{id}/edit`
+pub async fn edit_group_page(
+    State(state): State<AppState>,
+    MaybeUser(current): MaybeUser,
+    Path(id): Path<i64>,
+    Query(query): Query<AdminQuery>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/groups")).into_response());
+    };
+    render_group_form(
+        &state,
+        &current.user,
+        flash_from_query(query.ok.as_deref(), query.err.as_deref()),
+        Some(id),
+    )
+    .await
+}
+
 /// `POST /app/admin/groups`
 pub async fn create_group(
     State(state): State<AppState>,
@@ -2542,6 +2656,69 @@ async fn render_groups(
             chrome: Chrome::new(state, user, "admin", flash),
             groups: rows,
             domains,
+            lang,
+        },
+        StatusCode::OK,
+    )
+}
+
+/// Render the create form (`id == None`) or the edit form for one group.
+///
+/// Both paths share [`GroupRow`] and the `group_form` template, so a field or
+/// policy added to one flow immediately appears in the other.
+async fn render_group_form(
+    state: &AppState,
+    user: &User,
+    flash: Option<crate::routes::pages::Flash>,
+    id: Option<i64>,
+) -> Result<Response, AppError> {
+    let lang = i18n::current();
+    let domains = state.domains.active_options();
+    let active_domain_ids: Vec<i64> = domains.iter().map(|domain| domain.id).collect();
+    let overview = group_service::overview(&state.db).await?;
+    let groups: Vec<GroupOption> = overview
+        .iter()
+        .map(|row| GroupOption {
+            id: row.group.id,
+            name: row.group.name.clone(),
+            is_default: row.group.is_default,
+        })
+        .collect();
+
+    let group = match id {
+        Some(id) => {
+            let row = overview
+                .iter()
+                .find(|row| row.group.id == id)
+                .ok_or(AppError::NotFound)?;
+            let stored = vec![row.group.clone()];
+            let usage = usage_map(&state.db, &state.settings, &stored, time::now()).await?;
+            GroupRow::new(
+                &state.settings,
+                lang,
+                row,
+                &active_domain_ids,
+                &state.domains,
+                usage[&id],
+            )
+        }
+        None => GroupRow::blank(&state.settings, lang),
+    };
+    let form_action = match id {
+        Some(id) => format!("/app/admin/groups/{id}"),
+        None => "/app/admin/groups".to_string(),
+    };
+
+    render(
+        GroupFormPage {
+            section: "groups",
+            site_name: state.settings.site_name(),
+            chrome: Chrome::new(state, user, "admin", flash),
+            group,
+            domains,
+            groups,
+            is_edit: id.is_some(),
+            form_action,
             lang,
         },
         StatusCode::OK,

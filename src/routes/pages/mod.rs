@@ -477,6 +477,8 @@ pub fn router() -> Router<AppState> {
             "/admin/groups",
             get(admin::groups_page).post(admin::create_group),
         )
+        .route("/admin/groups/new", get(admin::new_group_page))
+        .route("/admin/groups/{id}/edit", get(admin::edit_group_page))
         .route("/admin/groups/{id}", post(admin::update_group))
         .route("/admin/groups/{id}/delete", post(admin::delete_group))
         .route(

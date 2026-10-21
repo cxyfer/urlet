@@ -88,8 +88,11 @@ async fn set_site_quota(app: &TestApp, admin_cookie: &str, key: &str, value: &st
 #[tokio::test]
 async fn groups_require_an_administrator() {
     let app = TestApp::spawn().await;
-    admin(&app).await;
+    let (admin_cookie, _) = admin(&app).await;
     let (member_cookie, _) = member(&app, "member@example.com").await;
+    let group_id = default_group(&app, &admin_cookie).await["id"]
+        .as_i64()
+        .expect("id");
 
     assert_eq!(
         app.get_as("/api/v1/admin/groups", &member_cookie)
@@ -109,6 +112,21 @@ async fn groups_require_an_administrator() {
     );
     assert_eq!(
         app.get_as("/app/admin/groups", &member_cookie).await.status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.get_as("/app/admin/groups/new", &member_cookie)
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.get_as(
+            &format!("/app/admin/groups/{group_id}/edit"),
+            &member_cookie
+        )
+        .await
+        .status,
         StatusCode::FORBIDDEN
     );
 }
@@ -722,7 +740,9 @@ async fn a_disabled_group_default_falls_back_to_the_site_default() {
         .expect("disable domain");
     app.reload_domains().await;
 
-    let page = app.get_as("/app/admin/groups", &admin_cookie).await;
+    let page = app
+        .get_as(&format!("/app/admin/groups/{group_id}/edit"), &admin_cookie)
+        .await;
     assert!(page.body.contains(&format!("value=\"{b}\" selected")));
 
     // A name-only PUT must keep the inactive stored default rather than 422.
@@ -930,7 +950,9 @@ async fn group_domain_policy_works_through_the_html_form() {
     assert_eq!(ids, vec![a, b]);
     let group_id = row["id"].as_i64().expect("id");
 
-    let page = app.get_as("/app/admin/groups", &admin_cookie).await;
+    let page = app
+        .get_as(&format!("/app/admin/groups/{group_id}/edit"), &admin_cookie)
+        .await;
     assert!(page.body.contains(&format!("value=\"{a}\" selected")));
     assert!(page
         .body
@@ -1000,9 +1022,11 @@ async fn group_domain_policy_radio_drives_the_form() {
     assert_eq!(row["allowed_domain_ids"], json!([]));
     let group_id = row["id"].as_i64().expect("id");
 
-    // The drawer preselects the radio matching the stored booleans. The create
-    // form never checks "default", so this can only come from that group.
-    let page = app.get_as("/app/admin/groups", &admin_cookie).await;
+    // The edit page preselects the radio matching the stored booleans. The new
+    // group form never checks "default", so this can only come from that group.
+    let page = app
+        .get_as(&format!("/app/admin/groups/{group_id}/edit"), &admin_cookie)
+        .await;
     assert!(page
         .body
         .contains("name=\"domain_policy\" value=\"default\" checked"));
@@ -1200,7 +1224,9 @@ async fn editing_a_group_keeps_a_disabled_allowlist_domain() {
 
     // The disabled stored domain is not selectable, but the edit form keeps it
     // in a hidden field so saving another change does not drop it.
-    let page = app.get_as("/app/admin/groups", &admin_cookie).await;
+    let page = app
+        .get_as(&format!("/app/admin/groups/{group_id}/edit"), &admin_cookie)
+        .await;
     assert!(page.body.contains(&format!("name=\"domain_{b}\"")));
 
     let body = format!(
@@ -1599,6 +1625,50 @@ async fn the_default_marker_can_move_and_only_then_can_the_old_one_go() {
 }
 
 #[tokio::test]
+async fn group_create_and_edit_share_one_form() {
+    let app = TestApp::spawn().await;
+    let (admin_cookie, _) = admin(&app).await;
+    let group = create_group(&app, &admin_cookie, json!({ "name": "Shared Form" }))
+        .await
+        .json();
+    let group_id = group["id"].as_i64().expect("id");
+
+    let new_page = app.get_as("/app/admin/groups/new", &admin_cookie).await;
+    let edit_page = app
+        .get_as(&format!("/app/admin/groups/{group_id}/edit"), &admin_cookie)
+        .await;
+    assert_eq!(new_page.status, StatusCode::OK, "{}", new_page.body);
+    assert_eq!(edit_page.status, StatusCode::OK, "{}", edit_page.body);
+
+    // Both routes render the same controls, not two drifting forms.
+    for needle in [
+        "id=\"max_api_tokens\"",
+        "name=\"invite_period\"",
+        "name=\"allow_custom_slug\"",
+        "name=\"domain_policy\"",
+        "name=\"redirect_mode_policy\"",
+        "name=\"is_default\"",
+    ] {
+        assert!(new_page.body.contains(needle), "new form lacks {needle}");
+        assert!(edit_page.body.contains(needle), "edit form lacks {needle}");
+    }
+
+    // The list page is a list: it links to the form instead of embedding it.
+    let list_page = app.get_as("/app/admin/groups", &admin_cookie).await;
+    assert_eq!(list_page.status, StatusCode::OK, "{}", list_page.body);
+    assert!(list_page.body.contains("Shared Form"));
+    assert!(!list_page.body.contains("id=\"max_api_tokens\""));
+    assert!(list_page
+        .body
+        .contains(&format!("/app/admin/groups/{group_id}/edit")));
+
+    let missing = app
+        .get_as("/app/admin/groups/999999/edit", &admin_cookie)
+        .await;
+    assert_eq!(missing.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn admin_group_pages_and_restricted_user_views_render() {
     let app = TestApp::spawn().await;
     let (admin_cookie, _) = admin(&app).await;
@@ -1607,9 +1677,14 @@ async fn admin_group_pages_and_restricted_user_views_render() {
     assert_eq!(page.status, StatusCode::OK, "{}", page.body);
     assert!(page.body.contains("User groups"));
     assert!(page.body.contains("Standard"));
-    assert!(page.body.contains("id=\"max_api_tokens\""));
-    assert!(page.body.contains("name=\"default_domain_id\""));
-    assert!(page.body.contains("name=\"domain_policy\""));
+    assert!(page.body.contains("href=\"/app/admin/groups/"));
+    assert!(page.body.contains("/edit\""));
+
+    let form_page = app.get_as("/app/admin/groups/new", &admin_cookie).await;
+    assert_eq!(form_page.status, StatusCode::OK, "{}", form_page.body);
+    assert!(form_page.body.contains("id=\"max_api_tokens\""));
+    assert!(form_page.body.contains("name=\"default_domain_id\""));
+    assert!(form_page.body.contains("name=\"domain_policy\""));
 
     // Create a group through the browser form: custom slugs and tags are off.
     let created = app
