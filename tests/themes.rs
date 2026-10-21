@@ -969,10 +969,24 @@ fn theme_multipart(
 }
 
 fn upload_request(cookie: &str, name: &str, description: &str, css: Option<&str>) -> Request<Body> {
+    upload_request_with_appearance(cookie, name, description, None, css)
+}
+
+fn upload_request_with_appearance(
+    cookie: &str,
+    name: &str,
+    description: &str,
+    appearance: Option<&str>,
+    css: Option<&str>,
+) -> Request<Body> {
+    let mut fields = vec![("name", name), ("description", description)];
+    if let Some(appearance) = appearance {
+        fields.push(("appearance", appearance));
+    }
     theme_multipart(
         "/app/admin/themes/custom",
         cookie,
-        &[("name", name), ("description", description)],
+        &fields,
         css.map(|css| ("css", "theme.css", css.as_bytes())),
     )
 }
@@ -1162,6 +1176,26 @@ async fn an_administrator_can_upload_manage_and_delete_a_custom_theme() {
     assert!(landing.body.contains(&new_url));
     assert!(!landing.body.contains("data-theme-toggle"));
 
+    // A browser submits an empty file part when the picker was not touched.
+    // The edit must keep the current stylesheet instead of rejecting it.
+    let response = app
+        .send(theme_multipart(
+            &format!("/app/admin/themes/custom/{id}"),
+            &cookie,
+            &[
+                ("name", "Night Bloom v3"),
+                ("description", "Metadata-only edit"),
+                ("appearance", "light"),
+            ],
+            Some(("css", "", b"")),
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some(format!("/app/admin/themes/custom/{id}?ok=theme_updated").as_str())
+    );
+
     // A default theme cannot be deleted: the administrator has to move the
     // default first.
     let response = app
@@ -1324,4 +1358,107 @@ async fn only_administrators_can_upload_or_edit_custom_themes() {
         .await;
     assert_eq!(response.status, StatusCode::FORBIDDEN);
     assert!(custom_theme_rows(&app).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_light_only_custom_theme_forces_the_light_palette() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+
+    let response = app
+        .send(upload_request_with_appearance(
+            &cookie,
+            "Paper White",
+            "A light-only reading theme",
+            Some("light"),
+            Some("body { background: #ffffff; color: #111111; }"),
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+
+    let rows = custom_theme_rows(&app).await;
+    assert_eq!(rows.len(), 1);
+    let key = rows[0].key.clone();
+    let id = rows[0].id;
+
+    let api = app.get_as("/api/v1/admin/themes", &cookie).await;
+    let body = api.json();
+    let custom = body["themes"]
+        .as_array()
+        .expect("themes")
+        .iter()
+        .find(|theme| theme["key"] == key)
+        .expect("custom theme");
+    assert_eq!(custom["appearance"], "light");
+    assert_eq!(custom["light_only"], true);
+    assert_eq!(custom["dark_only"], false);
+
+    let response = app
+        .send(put_json_as(
+            "/api/v1/admin/themes",
+            json!({ "enabled": ["verdant", key], "default": key }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::OK, "{}", response.body);
+
+    // The lock is rendered by the server, so it works before JavaScript runs
+    // and for visitors with JavaScript disabled.
+    let landing = app.get("/").await;
+    assert_eq!(landing.status, StatusCode::OK);
+    assert!(
+        landing.body.contains("data-theme=\"light\""),
+        "{}",
+        landing.body
+    );
+    assert!(landing.body.contains("data-theme-lock=\"light\""));
+    assert!(!landing.body.contains("data-theme-toggle"));
+
+    // A visitor preference cannot override a forced theme: the middleware
+    // still renders the light lock, and theme.js will keep it.
+    let forced = app.get_as("/", "urlet_theme=paper; urlet_lang=en").await;
+    assert!(forced.body.contains("data-theme=\"light\""));
+
+    // Editing the upload to dark flips the server lock immediately.
+    let response = app
+        .send(theme_multipart(
+            &format!("/app/admin/themes/custom/{id}"),
+            &cookie,
+            &[
+                ("name", "Paper Night"),
+                ("description", "Now dark-only"),
+                ("appearance", "dark"),
+            ],
+            None,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    let landing = app.get("/").await;
+    assert!(
+        landing.body.contains("data-theme=\"dark\""),
+        "{}",
+        landing.body
+    );
+    assert!(landing.body.contains("data-theme-lock=\"dark\""));
+    assert!(!landing.body.contains("data-theme-toggle"));
+
+    // Auto restores the ordinary control.
+    let response = app
+        .send(theme_multipart(
+            &format!("/app/admin/themes/custom/{id}"),
+            &cookie,
+            &[
+                ("name", "Paper Auto"),
+                ("description", "Follows the system"),
+                ("appearance", "auto"),
+            ],
+            None,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    let landing = app.get("/").await;
+    assert!(!landing.body.contains("data-theme=\"light\""));
+    assert!(!landing.body.contains("data-theme=\"dark\""));
+    assert!(!landing.body.contains("data-theme-lock"));
+    assert!(landing.body.contains("data-theme-toggle"));
 }

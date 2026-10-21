@@ -1018,7 +1018,10 @@ pub struct AdminThemeDto {
     pub description: String,
     pub enabled: bool,
     pub default: bool,
+    /// `auto`, `light` or `dark`.
+    pub appearance: String,
     pub dark_only: bool,
+    pub light_only: bool,
     pub css_url: String,
     /// True for an administrator-uploaded stylesheet.
     pub custom: bool,
@@ -1119,7 +1122,9 @@ fn themes_response(state: &AppState) -> AdminThemesDto {
                 description: row.description,
                 enabled: row.is_enabled,
                 default: row.is_default,
+                appearance: row.appearance.as_str().to_string(),
                 dark_only: row.is_dark_only,
+                light_only: row.is_light_only,
                 css_url: row.css_url,
                 custom: row.is_custom,
             })

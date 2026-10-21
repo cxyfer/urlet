@@ -162,6 +162,59 @@
     .theme-upload-grid { grid-template-columns: 1fr; }
 }
 
+/* Segmented appearance control for uploaded themes. */
+.theme-appearance {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+}
+.theme-appearance legend { padding: 0; margin-bottom: .35rem; }
+.theme-appearance-options {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: .25rem;
+    padding: .25rem;
+    border: 1px solid var(--line, rgba(127, 127, 127, .4));
+    border-radius: 999px;
+    background: var(--surface-2, rgba(127, 127, 127, .12));
+}
+.theme-appearance-option { position: relative; display: inline-flex; }
+.theme-appearance-option input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+.theme-appearance-option span {
+    display: inline-flex;
+    align-items: center;
+    padding: .38rem .72rem;
+    border-radius: 999px;
+    font-size: .76rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.theme-appearance-option span:hover {
+    background: color-mix(in srgb, currentColor 7%, transparent);
+}
+.theme-appearance-option input:checked + span {
+    /* Tint from the inherited text colour instead of inverting with --ink:
+       several ported themes do not define --canvas/--surface, and an inverted
+       pill would become white-on-white there. */
+    background: color-mix(in srgb, currentColor 16%, transparent);
+    box-shadow: inset 0 0 0 1px currentColor;
+    color: inherit;
+    font-weight: 600;
+}
+.theme-appearance-option input:focus-visible + span {
+    outline: 2px solid var(--accent, currentColor);
+    outline-offset: 2px;
+}
+.theme-appearance > .hint { display: block; margin-top: .35rem; }
+
 /* ---------------------------------------------------------------------------
  * Theme upload drop zone.
  *

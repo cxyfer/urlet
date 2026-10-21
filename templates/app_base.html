@@ -20,7 +20,7 @@
             </span>
             <span class="nav-sep" aria-hidden="true"></span>
             <span class="nav-tools">
-                {% if !self.theme_is_dark_only() %}{% include "partials/theme_toggle.html" %}{% endif %}
+                {% if self.theme_allows_toggle() %}{% include "partials/theme_toggle.html" %}{% endif %}
                 {% call theme_switcher::switcher(chrome.theme, lang) %}
                 {% include "partials/lang_switcher.html" %}
             </span>

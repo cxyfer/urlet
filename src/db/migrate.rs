@@ -93,6 +93,11 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/0011_custom_themes.sql"),
         kind: MigrationKind::Transactional,
     },
+    Migration {
+        version: "0012_custom_theme_appearance",
+        sql: include_str!("../../migrations/0012_custom_theme_appearance.sql"),
+        kind: MigrationKind::Transactional,
+    },
 ];
 
 /// Apply all pending migrations.
@@ -1182,6 +1187,54 @@ mod tests {
         .await
         .expect("invite column");
         assert_eq!(sealed, 1, "the 0009 invite column is applied first");
+
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn appearance_migration_converts_the_old_dark_only_flag() {
+        let dir =
+            std::env::temp_dir().join(format!("urlet-migrate-appearance-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = format!("{}/appearance.db", dir.display());
+        let options = test_options(&path);
+        let pool = test_pool(&options).await;
+
+        run_until(&pool, &options, "0011_custom_themes")
+            .await
+            .expect("schema through version 11");
+        let now = now_iso();
+        for (key, dark) in [("legacy-dark", 1), ("legacy-auto", 0)] {
+            sqlx::query(
+                "INSERT INTO custom_themes
+                     (key, name, description, is_dark_only, css_version, css_size,
+                      original_filename, created_by, created_at, updated_at)
+                 VALUES (?, ?, '', ?, 'deadbeef', 10, 'old.css', NULL, ?, ?)",
+            )
+            .bind(key)
+            .bind(key)
+            .bind(dark)
+            .bind(&now)
+            .bind(&now)
+            .execute(&pool)
+            .await
+            .expect("insert legacy row");
+        }
+
+        run(&pool, &options).await.expect("upgrade to version 12");
+        let dark: String =
+            sqlx::query_scalar("SELECT appearance FROM custom_themes WHERE key = 'legacy-dark'")
+                .fetch_one(&pool)
+                .await
+                .expect("converted dark row");
+        let auto: String =
+            sqlx::query_scalar("SELECT appearance FROM custom_themes WHERE key = 'legacy-auto'")
+                .fetch_one(&pool)
+                .await
+                .expect("converted auto row");
+        assert_eq!(dark, "dark");
+        assert_eq!(auto, "auto");
 
         pool.close().await;
         let _ = std::fs::remove_dir_all(&dir);

@@ -683,7 +683,6 @@
   "admin.themes.custom.description_hint": "選填，顯示於管理員主題目錄。",
   "admin.themes.custom.css": "樣式表",
   "admin.themes.custom.css_hint": "最大 256 KiB 的 .css 檔，會載入在預設 Verdant 樣式表之後；不可載入外部字型、圖片或 @import。",
-  "admin.themes.custom.dark_only": "僅深色（隱藏明暗切換）",
   "admin.themes.custom.submit": "上傳主題",
   "admin.themes.custom.empty": "尚無自訂主題。",
   "admin.themes.custom.badge": "自訂",
@@ -716,5 +715,11 @@
   "admin.themes.custom.drop_clear": "重新選擇",
   "admin.themes.custom.drop_invalid": "請選擇 .css 檔。",
   "admin.themes.custom.drop_required": "請選擇要上傳的 CSS 檔。",
-  "admin.themes.custom.replace_drop_title": "拖曳替換的樣式表"
+  "admin.themes.custom.replace_drop_title": "拖曳替換的樣式表",
+  "admin.themes.custom.appearance": "外觀模式",
+  "admin.themes.custom.appearance_auto": "跟隨系統",
+  "admin.themes.custom.appearance_light": "僅淺色（純白）",
+  "admin.themes.custom.appearance_dark": "僅深色（純黑）",
+  "admin.themes.custom.appearance_hint": "「僅淺色」與「僅深色」會強制使用對應調色盤，並隱藏明暗切換。",
+  "admin.themes.light_only": "僅淺色"
 }

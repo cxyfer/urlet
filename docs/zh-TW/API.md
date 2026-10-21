@@ -480,7 +480,7 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "max_invites"?, "invite_period"?, "allow_invites"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "default_domain_id"?, "restrict_domains"?, "domain_ids"?, "is_default"? }` → `201`；`default_domain_id` 必須指向 active 網域；`domain_ids` 必須指向存在的網域（停用的項目會保留但無法選取） |
 | PUT | `/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` / `max_invites` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`default_domain_id: null` 表示全站預設；`domain_ids: null` 或 `[]` 會清空允許清單；`is_default: true` 會轉移唯一的預設標記 |
 | DELETE | `/admin/groups/{id}?reassign_to={id}` | `204`，先移動成員再刪除；預設群組或目標不存在/不合法回 `409` |
-| GET | `/admin/themes` | 主題目錄（key、名稱、說明、`enabled`、`default`、`dark_only`、`css_url`、`custom`）與 `switching`（`all` 或 `admin`）；包含管理員上傳主題 |
+| GET | `/admin/themes` | 主題目錄（key、名稱、說明、`enabled`、`default`、`appearance`、`dark_only`、`light_only`、`css_url`、`custom`）與 `switching`（`all` 或 `admin`）；包含管理員上傳主題 |
 | PUT | `/admin/themes` | `{ "enabled"?: ["verdant", ...], "default"?: "verdant", "switching"?: "all"\|"admin" }`；省略欄位維持原值；至少一個啟用主題且預設必須啟用（否則 `422`）。`enabled` 與 `default` 可指定 `custom-…` 上傳主題 |
 
 主題上傳是僅限管理員的瀏覽器 multipart 表單：`/app/admin/themes/custom`（建立）、

@@ -27,10 +27,24 @@
                     <input class="input" type="text" id="custom_description" name="description" maxlength="200" value="{{ custom_theme.description }}">
                     <span class="hint">{{ lang.t("admin.themes.custom.description_hint") }}</span>
                 </div>
-                <label class="checkbox">
-                    <input type="checkbox" name="is_dark_only" value="on"{% if custom_theme.is_dark_only %} checked{% endif %}>
-                    {{ lang.t("admin.themes.custom.dark_only") }}
-                </label>
+                <fieldset class="theme-appearance">
+                    <legend class="label">{{ lang.t("admin.themes.custom.appearance") }}</legend>
+                    <div class="theme-appearance-options">
+                        <label class="theme-appearance-option">
+                            <input type="radio" name="appearance" value="auto"{% if custom_theme.appearance == "auto" %} checked{% endif %}>
+                            <span>{{ lang.t("admin.themes.custom.appearance_auto") }}</span>
+                        </label>
+                        <label class="theme-appearance-option">
+                            <input type="radio" name="appearance" value="light"{% if custom_theme.appearance == "light" %} checked{% endif %}>
+                            <span>{{ lang.t("admin.themes.custom.appearance_light") }}</span>
+                        </label>
+                        <label class="theme-appearance-option">
+                            <input type="radio" name="appearance" value="dark"{% if custom_theme.appearance == "dark" %} checked{% endif %}>
+                            <span>{{ lang.t("admin.themes.custom.appearance_dark") }}</span>
+                        </label>
+                    </div>
+                    <span class="hint">{{ lang.t("admin.themes.custom.appearance_hint") }}</span>
+                </fieldset>
             </div>
             <div class="theme-upload-file">
                 <span class="label" id="custom_css_label">{{ lang.t("admin.themes.custom.replace_css") }}</span>

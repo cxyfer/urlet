@@ -38,10 +38,24 @@
                     <input class="input" type="text" id="custom_description" name="description" maxlength="200">
                     <span class="hint">{{ lang.t("admin.themes.custom.description_hint") }}</span>
                 </div>
-                <label class="checkbox">
-                    <input type="checkbox" name="is_dark_only" value="on">
-                    {{ lang.t("admin.themes.custom.dark_only") }}
-                </label>
+                <fieldset class="theme-appearance">
+                    <legend class="label">{{ lang.t("admin.themes.custom.appearance") }}</legend>
+                    <div class="theme-appearance-options">
+                        <label class="theme-appearance-option">
+                            <input type="radio" name="appearance" value="auto" checked>
+                            <span>{{ lang.t("admin.themes.custom.appearance_auto") }}</span>
+                        </label>
+                        <label class="theme-appearance-option">
+                            <input type="radio" name="appearance" value="light">
+                            <span>{{ lang.t("admin.themes.custom.appearance_light") }}</span>
+                        </label>
+                        <label class="theme-appearance-option">
+                            <input type="radio" name="appearance" value="dark">
+                            <span>{{ lang.t("admin.themes.custom.appearance_dark") }}</span>
+                        </label>
+                    </div>
+                    <span class="hint">{{ lang.t("admin.themes.custom.appearance_hint") }}</span>
+                </fieldset>
             </div>
             <div class="theme-upload-file">
                 <span class="label" id="custom_css_label">{{ lang.t("admin.themes.custom.css") }}</span>
@@ -147,6 +161,7 @@
                 <div class="theme-admin-meta">
                     {% if theme.is_custom %}<span class="badge badge-muted">{{ lang.t("admin.themes.custom.badge") }}</span>{% endif %}
                     {% if theme.is_default %}<span class="badge badge-accent">{{ lang.t("admin.themes.default_badge") }}</span>{% endif %}
+                    {% if theme.is_light_only %}<span class="badge badge-muted">{{ lang.t("admin.themes.light_only") }}</span>{% endif %}
                     {% if theme.is_dark_only %}<span class="badge badge-muted">{{ lang.t("admin.themes.dark_only") }}</span>{% endif %}
                     {% if !theme.is_enabled %}<span class="badge badge-muted">{{ lang.t("admin.themes.disabled_badge") }}</span>{% endif %}
                 </div>

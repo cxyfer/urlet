@@ -19,7 +19,7 @@ use crate::db::themes as theme_db;
 use crate::error::{AppError, Result};
 use crate::services::secret;
 use crate::services::settings::Settings;
-use crate::services::theme::{ThemeRegistry, CUSTOM_KEY_PREFIX};
+use crate::services::theme::{ThemeAppearance, ThemeRegistry, CUSTOM_KEY_PREFIX};
 
 /// Largest accepted stylesheet.
 pub const MAX_CSS_BYTES: usize = 256 * 1024;
@@ -233,7 +233,7 @@ pub async fn create(
     themes_dir: &Path,
     name: &str,
     description: &str,
-    is_dark_only: bool,
+    appearance: ThemeAppearance,
     css: &str,
     filename: &str,
     actor: Option<i64>,
@@ -272,7 +272,7 @@ pub async fn create(
         key: key.clone(),
         name: name.clone(),
         description: description.clone(),
-        is_dark_only,
+        appearance,
         css_version: version,
         css_size: css.len() as i64,
         original_filename: display_filename(Some(filename)),
@@ -305,7 +305,7 @@ pub async fn update(
     id: i64,
     name: &str,
     description: &str,
-    is_dark_only: bool,
+    appearance: ThemeAppearance,
     css: Option<&str>,
     filename: Option<&str>,
 ) -> Result<CustomThemeRow> {
@@ -338,8 +338,7 @@ pub async fn update(
         }
     }
 
-    if let Err(err) = custom_db::update_metadata(pool, id, &name, &description, is_dark_only).await
-    {
+    if let Err(err) = custom_db::update_metadata(pool, id, &name, &description, appearance).await {
         // The database still points at the old version; remove the file that
         // was just written rather than the one still referenced by the row.
         if let Some(path) = new_path.as_ref() {

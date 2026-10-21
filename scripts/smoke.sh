@@ -430,6 +430,7 @@ printf 'body { color: #123456; }\n' > "$DATA/custom-theme.css"
 check "an administrator can upload a custom theme" "303" \
     "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" -H "Origin: $BASE" \
         -F "name=Smoke Custom" -F "description=uploaded by the smoke test" \
+        -F "appearance=light" \
         -F "css=@$DATA/custom-theme.css;type=text/css" \
         "$BASE/app/admin/themes/custom")"
 CATALOGUE=$(curl -s -b "$COOKIES" "$BASE/api/v1/admin/themes")
@@ -445,6 +446,9 @@ check "the custom theme can become the default" "200" \
         -H 'content-type: application/json' -X PUT \
         -d "{\"default\":\"$CUSTOM_KEY\"}" "$BASE/api/v1/admin/themes")"
 contains "the custom theme is rendered" "data-theme-key=\"$CUSTOM_KEY\"" "$(curl -s "$BASE/")"
+contains "the light-only theme forces the light palette" 'data-theme="light"' "$(curl -s "$BASE/")"
+contains "the light-only theme locks the palette" 'data-theme-lock="light"' "$(curl -s "$BASE/")"
+missing "the light-only theme hides the light/dark switch" 'data-theme-toggle' "$(curl -s "$BASE/")"
 
 # ------------------------------------------------------------- persistence
 echo

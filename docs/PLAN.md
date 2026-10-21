@@ -45,7 +45,7 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 | P10 | User groups (v1.2) | `user_groups` with per-group link/token quotas and seven feature toggles (including domain selection), assignment through users and invite codes, admin page and API | 16 tables / 31 indexes, upgrade changes no behaviour, quotas/toggles enforced (admins included), deletion reassigns members, tests and smoke green | `✨ feat(groups): ...` |
 | P11 | Group domain policy (v1.2) | Per-group `default_domain_id`, `restrict_domains` and `group_domains` allowlist; group default/allowlist enforced on create/move, exposed through `/api/v1/auth/me` and `/api/v1/domains`, editable in the admin group form | 16 tables / 31 indexes, existing groups keep every active domain, empty restricted list allows only the default, disabled default falls back to the site default, tests and smoke green | `✨ feat(domains): ...` |
 | P12 | Switchable themes (v1.4) | Six compiled-in template/CSS themes, `themes` table and registry, admin enable/default/policy page and API, `urlet_theme` cookie, theme picker and shared fallback content | 18 tables / 34 indexes, every theme renders every page, permission and fallback covered, fmt/clippy/test/smoke green | `✨ feat(themes): ...` |
-| P13 | Uploadable themes (v1.4) | `custom_themes` metadata, CSS upload/edit/delete from the admin theme page, content-hashed `/assets/custom-themes/{key}`, validation and limits, `URLET_THEMES_DIR` + `urlet-themes` volume | 19 tables / 35 indexes, uploads survive a reload/restart, default/delete rules and member authorization covered, fmt/clippy/test/smoke green | `✨ feat(themes): ...` |
+| P13 | Uploadable themes (v1.4) | `custom_themes` metadata, CSS upload/edit/delete from the admin theme page, content-hashed `/assets/custom-themes/{key}`, `auto`/`light`/`dark` appearance, validation and limits, `URLET_THEMES_DIR` + `urlet-themes` volume | 19 tables / 35 indexes, uploads survive a reload/restart, light/dark forcing, default/delete rules and member authorization covered, fmt/clippy/test/smoke green | `✨ feat(themes): ...` |
 
 ---
 
@@ -247,11 +247,13 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 
 Uploads extend the theme catalogue without changing the compile-time template model.
 
-1. `migrations/0011_custom_themes.sql`: metadata table for uploaded stylesheets, keyed by a generated
-   `custom-…` key; a matching `themes` row carries enabled/default/order.
+1. `migrations/0011_custom_themes.sql` + `0012_custom_theme_appearance.sql`: metadata table for
+   uploaded stylesheets, keyed by a generated `custom-…` key; a matching `themes` row carries
+   enabled/default/order, and the appearance migration converts the old dark-only flag.
 2. `src/db/custom_themes.rs`: create/update/delete metadata and the catalogue row in one transaction.
-3. `src/services/custom_theme.rs`: CSS validation (UTF-8, size, no external resources), atomic file
-   writes, content hashes and the settings-lock serialization shared with `update_selection`.
+3. `src/services/custom_theme.rs`: CSS validation (UTF-8, size, no external resources), the
+   `auto`/`light`/`dark` appearance, atomic file writes, content hashes and the settings-lock
+   serialization shared with `update_selection`.
 4. `src/services/theme.rs`: one dynamic `ThemeDef` for compiled-in and uploaded themes; the picker,
    default resolution, preview and admin rows no longer assume a closed `ThemeKey` set.
 5. Routes and templates: multipart upload from `/app/admin/themes`, an edit page, delete, audit
@@ -263,9 +265,10 @@ Uploads extend the theme catalogue without changing the compile-time template mo
 8. Tests and docs: upload/manage/delete, validation, authorization, persisted reload, audit entries,
    both language mirrors and the Docker/compose/backup notes.
 
-**Acceptance**: an administrator can upload a CSS theme, select it, make it the default, replace its
-stylesheet, and delete it after moving the default; members receive 403 for every upload route; a
-reload rebuilds the catalogue from SQLite; the CSS file exists in `URLET_THEMES_DIR`; and
+**Acceptance**: an administrator can upload a CSS theme, select its `auto`/`light`/`dark` appearance,
+make it the default, replace its stylesheet, and delete it after moving the default; members receive
+403 for every upload route; a reload rebuilds the catalogue from SQLite; forced light/dark modes
+override a saved browser preference; the CSS file exists in `URLET_THEMES_DIR`; and
 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and
 `scripts/smoke.sh` are clean.
 

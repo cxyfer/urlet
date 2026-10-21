@@ -683,7 +683,6 @@
   "admin.themes.custom.description_hint": "选填，显示于管理员主题目录。",
   "admin.themes.custom.css": "样式表",
   "admin.themes.custom.css_hint": "最大 256 KiB 的 .css 文件，会加载在默认 Verdant 样式表之后；不可加载外部字体、图片或 @import。",
-  "admin.themes.custom.dark_only": "仅深色（隐藏明暗切换）",
   "admin.themes.custom.submit": "上传主题",
   "admin.themes.custom.empty": "尚无自定义主题。",
   "admin.themes.custom.badge": "自定义",
@@ -716,5 +715,11 @@
   "admin.themes.custom.drop_clear": "重新选择",
   "admin.themes.custom.drop_invalid": "请选择 .css 文件。",
   "admin.themes.custom.drop_required": "请选择要上传的 CSS 文件。",
-  "admin.themes.custom.replace_drop_title": "拖拽替换的样式表"
+  "admin.themes.custom.replace_drop_title": "拖拽替换的样式表",
+  "admin.themes.custom.appearance": "外观模式",
+  "admin.themes.custom.appearance_auto": "跟随系统",
+  "admin.themes.custom.appearance_light": "仅浅色（纯白）",
+  "admin.themes.custom.appearance_dark": "仅深色（纯黑）",
+  "admin.themes.custom.appearance_hint": "“仅浅色”与“仅深色”会强制使用对应调色盘，并隐藏明暗切换。",
+  "admin.themes.light_only": "仅浅色"
 }

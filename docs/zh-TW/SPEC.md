@@ -336,9 +336,9 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | FR-THEME-5 | 預設與回退 | 恰有一個已啟用主題標記為預設。沒有 cookie、未知 key 或 key 已被停用時一律使用預設；切換器依 migration 的順序列出已啟用主題，並提供會清除 cookie 的**網站預設**項目；管理員可在不改變預設的情況下預覽已停用主題 |
 | FR-THEME-6 | 模板 | `templates/` 下的基底模板即 Verdant 主題與回退。主題目錄可覆寫任一頁面；未覆寫的頁面與共享的 v1.2 頁面內容仍可使用。主題模板由 `themed_page!` 在編譯期選擇，絕不使用請求提供的路徑 |
 | FR-THEME-7 | 資產 | `/assets/themes/{key}` 只提供固定的內建 key；`/assets/custom-themes/{key}` 依資料庫資料列提供上傳樣式表（前面接上 Verdant 基礎 CSS，讓上傳能與預設設計疊加），URL 帶有 `/assets/custom-themes/{key}?v=<內容雜湊>`；`/assets/theme-ui.css` 提供切換器與管理目錄的共用樣式。不引入外部字型、圖片、腳本或 CDN，維持 `default-src 'self'` CSP 與零建置部署 |
-| FR-THEME-8 | 外觀 | Verdant 保留持久化的明暗控制；五個舊設計跟隨 `prefers-color-scheme`，因此保留作業系統選擇；Aurora 僅有深色，隱藏明暗控制。上傳主題有管理員選擇的僅深色旗標；否則保留明暗控制 |
+| FR-THEME-8 | 外觀 | Verdant 保留持久化的明暗控制；五個舊設計跟隨 `prefers-color-scheme`，因此保留作業系統選擇；Aurora 僅有深色，隱藏明暗控制。上傳主題有管理員選擇的外觀：`auto` 保留明暗控制，`light`／`dark` 透過 `data-theme`／`data-theme-lock` 強制調色盤、隱藏控制，且瀏覽器儲存的偏好無法覆寫 |
 | FR-THEME-9 | 持久化 | 選擇存在 cookie，而非每位使用者的資料庫欄位。已停用的主題在下一個請求即被拒絕，管理員可隨時為沒有偏好的訪客更改預設。上傳主題的中介資料在 `custom_themes`、樣式表在持久化 volume 的 `URLET_THEMES_DIR`、目錄狀態在 `themes`，重啟後仍可選用。主題切換不觸碰任何連結、使用者或點擊資料 |
-| FR-THEME-10 | 上傳 | 上傳、編輯與刪除僅限管理員。上傳內容為單一 UTF-8 `.css` 檔、最大 256 KiB；名稱 1–60 字元、說明最多 200 字元；每個執行個體最多 32 個上傳。CSS 以 `text/css` 與 `nosniff` 提供，接在 Verdant 基礎樣式表之後，且不可使用外部 `url(...)`、`@import`、`expression(...)` 或舊式 `behavior`。替換樣式表會改變內容雜湊 URL；刪除會移除檔案；預設主題不可刪除 |
+| FR-THEME-10 | 上傳 | 上傳、編輯與刪除僅限管理員。上傳內容為單一 UTF-8 `.css` 檔、最大 256 KiB；名稱 1–60 字元、說明最多 200 字元、外觀為 `auto`／`light`／`dark`；每個執行個體最多 32 個上傳。CSS 以 `text/css` 與 `nosniff` 提供，接在 Verdant 基礎樣式表之後，且不可使用外部 `url(...)`、`@import`、`expression(...)` 或舊式 `behavior`。替換樣式表會改變內容雜湊 URL；刪除會移除檔案；預設主題不可刪除 |
 
 ---
 
@@ -460,7 +460,7 @@ login_attempts (稽核用)
 | `url_daily_stats` | url_id, day, clicks, unique_clicks, bot_clicks (PK: url_id+day) | 每日彙總 |
 | `audit_logs` | id, actor_user_id, actor_role, action, target_type, target_id, metadata, ip_hash, created_at | 稽核 |
 | `themes` | id, key(UNIQUE), is_enabled, is_default, sort_order, created_at, updated_at | 管理員對所有主題的選擇；上傳主題註冊時會建立對應資料列；以 partial unique index 確保唯一預設 |
-| `custom_themes` | id, key(UNIQUE), name, description, is_dark_only, css_version, css_size, original_filename, created_by, created_at, updated_at | 管理員上傳樣式表的中介資料；檔案位於 `URLET_THEMES_DIR` |
+| `custom_themes` | id, key(UNIQUE), name, description, appearance, is_dark_only（舊版）, css_version, css_size, original_filename, created_by, created_at, updated_at | 管理員上傳樣式表的中介資料，含 `auto`／`light`／`dark` 外觀；檔案位於 `URLET_THEMES_DIR` |
 | `invite_issuance` | id, group_id, actor_id, invite_id, created_at | 各群組邀請碼發行帳本；即使邀請碼被撤銷仍計入配額 |
 | `settings` | key(PK), value, updated_at, updated_by | 全站設定 |
 | `invite_codes` | id, code_hash(UNIQUE), code_prefix, code_sealed, note, group_id, created_by, max_uses, used_count, expires_at, status, created_at | 邀請碼；`code_sealed` 為可再次顯示邀請碼的加密封存 |
@@ -576,7 +576,7 @@ v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` /
 | POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, default_domain_id?, restrict_domains?, domain_ids?, is_default?}` → 201；domain_ids 必須存在，default_domain_id 必須 active；名稱重複或第二個預設群組回 409 |
 | PUT | `/api/v1/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`default_domain_id: null` 表示全站預設；`domain_ids: null` 或 `[]` 會清空允許清單；`is_default: true` 會在同一交易內轉移預設標記 |
 | DELETE | `/api/v1/admin/groups/{id}?reassign_to={id}` | 先把成員搬到 `reassign_to`，再刪除 → 204；預設群組或目標不存在/不合法回 409 |
-| GET | `/api/v1/admin/themes` | 主題目錄：key、名稱、說明、`enabled`、`default`、`dark_only`、`css_url`、`custom`，以及目前的 `switching` 政策 |
+| GET | `/api/v1/admin/themes` | 主題目錄：key、名稱、說明、`enabled`、`default`、`appearance`、`dark_only`、`light_only`、`css_url`、`custom`，以及目前的 `switching` 政策 |
 | PUT | `/api/v1/admin/themes` | `{enabled?: [keys], default?: key, switching?: "all"\|"admin"}`；省略的欄位維持原值；至少一個啟用主題且預設必須啟用。`keys` 可包含 `custom-…` 上傳主題 |
 | GET | `/api/v1/admin/urls` | 全站網址列表 |
 | PATCH | `/api/v1/admin/urls/{id}` | 強制停用/啟用/刪除 |
@@ -654,7 +654,7 @@ urlet/
 ├── docker-compose.tls.yml        # 可選：Caddy 自動 HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_custom_themes.sql
+├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_custom_themes.sql 0012_custom_theme_appearance.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama 模板（base、app_base、landing.html + 各頁面 + admin/）

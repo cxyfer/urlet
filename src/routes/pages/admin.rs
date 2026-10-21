@@ -624,7 +624,7 @@ pub struct CustomThemeEdit {
     pub key: String,
     pub name: String,
     pub description: String,
-    pub is_dark_only: bool,
+    pub appearance: String,
     pub size: String,
     pub created: String,
     pub filename: String,
@@ -638,7 +638,7 @@ impl CustomThemeEdit {
             key: row.key.clone(),
             name: row.name.clone(),
             description: row.description.clone(),
-            is_dark_only: row.is_dark_only,
+            appearance: row.appearance.as_str().to_string(),
             size: format!("{} B", row.css_size.max(0)),
             created: time::humanize_lang(lang, &row.created_at),
             filename: row.original_filename.clone(),
@@ -1585,7 +1585,10 @@ pub async fn update_themes(
 struct ThemeUpload {
     name: String,
     description: String,
-    is_dark_only: bool,
+    appearance: theme_service::ThemeAppearance,
+    /// Whether the form sent the new `appearance` field. Kept so an old cached
+    /// form that only posts `is_dark_only` still maps to dark instead of auto.
+    appearance_explicit: bool,
     css: Option<String>,
     filename: Option<String>,
 }
@@ -1618,21 +1621,42 @@ async fn read_theme_upload(
                     AppError::bad_request(format!("invalid description field: {err}"))
                 })?;
             }
+            "appearance" => {
+                let value = field.text().await.map_err(|err| {
+                    AppError::bad_request(format!("invalid appearance field: {err}"))
+                })?;
+                form.appearance = theme_service::ThemeAppearance::parse(&value);
+                form.appearance_explicit = true;
+            }
+            // Backwards compatibility for a form cached before the three-way
+            // appearance control existed.
             "is_dark_only" => {
                 let value = field.text().await.map_err(|err| {
                     AppError::bad_request(format!("invalid dark-only field: {err}"))
                 })?;
-                form.is_dark_only = matches!(
+                let enabled = matches!(
                     value.trim().to_ascii_lowercase().as_str(),
                     "1" | "on" | "true" | "yes"
                 );
+                if enabled && !form.appearance_explicit {
+                    form.appearance = theme_service::ThemeAppearance::Dark;
+                }
             }
             "css" => {
-                let filename = field.file_name().map(str::to_string);
+                let filename = field
+                    .file_name()
+                    .map(str::to_string)
+                    .filter(|name| !name.trim().is_empty());
                 let bytes = field
                     .bytes()
                     .await
                     .map_err(|err| AppError::bad_request(format!("invalid CSS file: {err}")))?;
+                // Browsers submit an empty file part when the picker was left
+                // untouched. Treat that as "keep the current stylesheet" on the
+                // edit form instead of validating a zero-byte CSS file.
+                if bytes.is_empty() && filename.is_none() {
+                    continue;
+                }
                 form.css = Some(custom_theme::validate_css(&bytes)?);
                 form.filename = filename;
             }
@@ -1695,7 +1719,7 @@ pub async fn create_custom_theme(
         &state.config.themes_dir,
         &form.name,
         &form.description,
-        form.is_dark_only,
+        form.appearance,
         &css,
         filename,
         Some(current.user.id),
@@ -1710,7 +1734,7 @@ pub async fn create_custom_theme(
                     "key": row.key,
                     "name": row.name,
                     "size": row.css_size,
-                    "dark_only": row.is_dark_only,
+                    "appearance": row.appearance.as_str(),
                 }))
                 .ip_hash(client.ip_hash.clone())
                 .record(&state.db)
@@ -1789,7 +1813,7 @@ pub async fn update_custom_theme(
         id,
         &form.name,
         &form.description,
-        form.is_dark_only,
+        form.appearance,
         form.css.as_deref(),
         form.filename.as_deref(),
     )
@@ -1803,7 +1827,7 @@ pub async fn update_custom_theme(
                     "key": row.key,
                     "name": row.name,
                     "size": row.css_size,
-                    "dark_only": row.is_dark_only,
+                    "appearance": row.appearance.as_str(),
                 }))
                 .ip_hash(client.ip_hash.clone())
                 .record(&state.db)

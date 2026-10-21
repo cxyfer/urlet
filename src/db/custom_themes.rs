@@ -7,6 +7,7 @@
 
 use sqlx::SqlitePool;
 
+use crate::services::theme::ThemeAppearance;
 use crate::services::time::now_iso;
 
 type ThemeTuple = (
@@ -14,7 +15,7 @@ type ThemeTuple = (
     String,
     String,
     String,
-    i64,
+    String,
     String,
     i64,
     String,
@@ -30,7 +31,7 @@ pub struct CustomThemeRow {
     pub key: String,
     pub name: String,
     pub description: String,
-    pub is_dark_only: bool,
+    pub appearance: ThemeAppearance,
     /// Content hash of the current stylesheet, used in its URL.
     pub css_version: String,
     pub css_size: i64,
@@ -46,7 +47,7 @@ pub struct NewCustomTheme {
     pub key: String,
     pub name: String,
     pub description: String,
-    pub is_dark_only: bool,
+    pub appearance: ThemeAppearance,
     pub css_version: String,
     pub css_size: i64,
     pub original_filename: String,
@@ -56,7 +57,7 @@ pub struct NewCustomTheme {
 /// Every uploaded theme, oldest first.
 pub async fn all(pool: &SqlitePool) -> Result<Vec<CustomThemeRow>, sqlx::Error> {
     let rows: Vec<ThemeTuple> = sqlx::query_as(
-        "SELECT id, key, name, description, is_dark_only, css_version, css_size,
+        "SELECT id, key, name, description, appearance, css_version, css_size,
                 original_filename, created_by, created_at, updated_at
            FROM custom_themes
           ORDER BY id",
@@ -69,7 +70,7 @@ pub async fn all(pool: &SqlitePool) -> Result<Vec<CustomThemeRow>, sqlx::Error> 
 /// One upload by primary key.
 pub async fn find(pool: &SqlitePool, id: i64) -> Result<Option<CustomThemeRow>, sqlx::Error> {
     let row: Option<ThemeTuple> = sqlx::query_as(
-        "SELECT id, key, name, description, is_dark_only, css_version, css_size,
+        "SELECT id, key, name, description, appearance, css_version, css_size,
                 original_filename, created_by, created_at, updated_at
            FROM custom_themes
           WHERE id = ?",
@@ -86,7 +87,7 @@ pub async fn find_by_key(
     key: &str,
 ) -> Result<Option<CustomThemeRow>, sqlx::Error> {
     let row: Option<ThemeTuple> = sqlx::query_as(
-        "SELECT id, key, name, description, is_dark_only, css_version, css_size,
+        "SELECT id, key, name, description, appearance, css_version, css_size,
                 original_filename, created_by, created_at, updated_at
            FROM custom_themes
           WHERE key = ?",
@@ -130,14 +131,14 @@ pub async fn create(pool: &SqlitePool, new: &NewCustomTheme) -> Result<i64, sqlx
 
     let result = sqlx::query(
         "INSERT INTO custom_themes
-             (key, name, description, is_dark_only, css_version, css_size,
+             (key, name, description, appearance, css_version, css_size,
               original_filename, created_by, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&new.key)
     .bind(&new.name)
     .bind(&new.description)
-    .bind(i64::from(new.is_dark_only))
+    .bind(new.appearance.as_str())
     .bind(&new.css_version)
     .bind(new.css_size)
     .bind(&new.original_filename)
@@ -157,16 +158,16 @@ pub async fn update_metadata(
     id: i64,
     name: &str,
     description: &str,
-    is_dark_only: bool,
+    appearance: ThemeAppearance,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE custom_themes
-            SET name = ?, description = ?, is_dark_only = ?, updated_at = ?
+            SET name = ?, description = ?, appearance = ?, updated_at = ?
           WHERE id = ?",
     )
     .bind(name)
     .bind(description)
-    .bind(i64::from(is_dark_only))
+    .bind(appearance.as_str())
     .bind(now_iso())
     .bind(id)
     .execute(pool)
@@ -218,7 +219,7 @@ fn row_from(row: ThemeTuple) -> CustomThemeRow {
         key: row.1,
         name: row.2,
         description: row.3,
-        is_dark_only: row.4 != 0,
+        appearance: ThemeAppearance::parse(&row.4),
         css_version: row.5,
         css_size: row.6,
         original_filename: row.7,

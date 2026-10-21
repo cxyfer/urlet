@@ -74,6 +74,26 @@ macro_rules! themed_page {
                     pub fn theme_is_dark_only(&self) -> bool {
                         $crate::services::theme::current_is_dark_only()
                     }
+
+                    /// Whether the theme is light-only (no light/dark control).
+                    pub fn theme_is_light_only(&self) -> bool {
+                        $crate::services::theme::current_is_light_only()
+                    }
+
+                    /// Whether the light/dark control belongs on this page.
+                    pub fn theme_allows_toggle(&self) -> bool {
+                        $crate::services::theme::current_allows_toggle()
+                    }
+
+                    /// Server-side `data-theme-lock`: empty, `light` or `dark`.
+                    pub fn theme_lock(&self) -> &'static str {
+                        $crate::services::theme::current_theme_lock()
+                    }
+
+                    /// Whether the theme forces a palette.
+                    pub fn theme_has_lock(&self) -> bool {
+                        !$crate::services::theme::current_theme_lock().is_empty()
+                    }
                 }
             )+
 

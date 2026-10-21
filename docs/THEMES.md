@@ -27,9 +27,9 @@ rather than frozen at their original feature set.
 
 1. Open **Admin → Themes** (`/app/admin/themes`).
 2. Upload a custom stylesheet: give it a name, an optional description, then
-   drag a `.css` file onto the drop zone (or click it to choose a file) and
-   optionally mark it **Dark only**. The upload appears in the catalogue
-   immediately, enabled.
+   drag a `.css` file onto the drop zone (or click it to choose a file). Choose
+   an appearance — **Follow system**, **Light only (white)** or **Dark only
+   (black)**. The upload appears in the catalogue immediately, enabled.
 3. Tick the designs that should be offered. At least one theme must stay enabled.
 4. Pick the **Default** theme. It must be enabled; visitors without a cookie see it.
 5. Choose **Who can change their theme**:
@@ -83,6 +83,14 @@ The upload is deliberately restricted:
 - no external `url(...)`, `@import`, `expression(...)` or legacy `behavior`;
 - served as `text/css` with `X-Content-Type-Options: nosniff`, so it cannot turn
   into an HTML document.
+
+An upload also chooses how the palette behaves:
+
+- **Follow system** keeps the ordinary light/dark control and follows the
+  operating system until the visitor picks a mode.
+- **Light only** and **Dark only** force `data-theme="light"`/`"dark"` on the
+  server, hide the light/dark control, and cannot be overridden by a saved
+  browser preference. This is the "pure white" / "pure black" choice.
 
 Uploaded CSS is served **after** the Verdant stylesheet, so a small colour or
 layout override composes with the default design and wins the cascade. The base

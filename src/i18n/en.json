@@ -683,7 +683,6 @@
   "admin.themes.custom.description_hint": "Optional; shown in the admin catalogue.",
   "admin.themes.custom.css": "Stylesheet",
   "admin.themes.custom.css_hint": "A .css file up to 256 KiB. It is loaded after the default Verdant stylesheet; external fonts, images and @import are not allowed.",
-  "admin.themes.custom.dark_only": "Dark only (hide the light/dark switch)",
   "admin.themes.custom.submit": "Upload theme",
   "admin.themes.custom.empty": "No custom themes uploaded yet.",
   "admin.themes.custom.badge": "Custom",
@@ -716,5 +715,11 @@
   "admin.themes.custom.drop_clear": "Choose another",
   "admin.themes.custom.drop_invalid": "Choose a .css file.",
   "admin.themes.custom.drop_required": "Choose a CSS file to upload.",
-  "admin.themes.custom.replace_drop_title": "Drag a replacement stylesheet"
+  "admin.themes.custom.replace_drop_title": "Drag a replacement stylesheet",
+  "admin.themes.custom.appearance": "Appearance",
+  "admin.themes.custom.appearance_auto": "Follow system",
+  "admin.themes.custom.appearance_light": "Light only (white)",
+  "admin.themes.custom.appearance_dark": "Dark only (black)",
+  "admin.themes.custom.appearance_hint": "Light only and Dark only force that palette and hide the light/dark switch.",
+  "admin.themes.light_only": "Light only"
 }

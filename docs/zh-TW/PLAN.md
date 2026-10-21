@@ -45,7 +45,7 @@
 | P10 | 使用者群組 (v1.2) | `user_groups` 提供各群組連結／Token 配額與七個功能開關（含網域選擇）；可透過使用者或邀請碼指派；含管理頁面與 API | 16 張表／31 個索引、升級不改變行為、配額與開關生效（管理員亦然）、刪組需改派、測試與 smoke 全綠 | `✨ feat(groups): ...` |
 | P11 | 群組網域策略 (v1.2) | 各群組 `default_domain_id`、`restrict_domains` 與 `group_domains` 允許清單；建立/移動連結時強制，透過 `/api/v1/auth/me` 與 `/api/v1/domains` 曝光，管理群組表單可編輯 | 16 張表／31 個索引、既有群組維持所有 active 網域、限制清單為空時只能用預設、預設網域停用時回退全站預設、測試與 smoke 全綠 | `✨ feat(domains): ...` |
 | P12 | 可切換主題 (v1.4) | 六個內建模板／CSS 主題、`themes` 表與 registry、管理啟用／預設／政策頁面與 API、`urlet_theme` cookie、主題切換器與共享回退內容 | 18 張表／34 個索引、每個主題都能渲染每個頁面、權限與回退皆有測試、fmt/clippy/test/smoke 全綠 | `✨ feat(themes): ...` |
-| P13 | 可上傳主題 (v1.4) | `custom_themes` 中介資料、管理主題頁的 CSS 上傳/編輯/刪除、內容雜湊 `/assets/custom-themes/{key}`、驗證與限制、`URLET_THEMES_DIR` + `urlet-themes` volume | 19 張表／35 個索引、重載/重啟後上傳仍在、預設/刪除規則與成員授權皆有測試、fmt/clippy/test/smoke 全綠 | `✨ feat(themes): ...` |
+| P13 | 可上傳主題 (v1.4) | `custom_themes` 中介資料、管理主題頁的 CSS 上傳/編輯/刪除、內容雜湊 `/assets/custom-themes/{key}`、`auto`/`light`/`dark` 外觀、驗證與限制、`URLET_THEMES_DIR` + `urlet-themes` volume | 19 張表／35 個索引、重載/重啟後上傳仍在、明暗強制、預設/刪除規則與成員授權皆有測試、fmt/clippy/test/smoke 全綠 | `✨ feat(themes): ...` |
 
 ---
 
@@ -247,11 +247,12 @@
 
 上傳在不改變編譯期模板模型的前提下擴充主題目錄。
 
-1. `migrations/0011_custom_themes.sql`：上傳樣式表的中介資料表，以產生的 `custom-…` key 識別；
-   對應的 `themes` 資料列負責啟用、預設與排序。
+1. `migrations/0011_custom_themes.sql` + `0012_custom_theme_appearance.sql`：上傳樣式表的中介
+   資料表，以產生的 `custom-…` key 識別；對應的 `themes` 資料列負責啟用、預設與排序，外觀
+   migration 會轉換舊的僅深色旗標。
 2. `src/db/custom_themes.rs`：以單一交易建立/更新/刪除中介資料與目錄資料列。
-3. `src/services/custom_theme.rs`：CSS 驗證（UTF-8、大小、禁止外部資源）、原子寫檔、內容雜湊，
-   以及與 `update_selection` 共用的 settings 鎖序列化。
+3. `src/services/custom_theme.rs`：CSS 驗證（UTF-8、大小、禁止外部資源）、`auto`／`light`／
+   `dark` 外觀、原子寫檔、內容雜湊，以及與 `update_selection` 共用的 settings 鎖序列化。
 4. `src/services/theme.rs`：以統一的動態 `ThemeDef` 表示內建與上傳主題；切換器、預設解析、
    預覽與管理清單不再假設封閉的 `ThemeKey` 集合。
 5. 路由與模板：`/app/admin/themes` 的 multipart 上傳、編輯頁、刪除、稽核 action，以及目錄 API
@@ -263,8 +264,9 @@
 8. 測試與文件：上傳/管理/刪除、驗證、授權、重載後仍在、稽核紀錄、雙語鏡像與
    Docker/compose/備份說明。
 
-**驗收**：管理員可上傳 CSS 主題、選用、設為預設、替換樣式表，並在移轉預設後刪除；成員對所有
-上傳路由皆回 403；重載後 registry 能從 SQLite 重建目錄；CSS 檔存在於 `URLET_THEMES_DIR`；且
+**驗收**：管理員可上傳 CSS 主題、選擇 `auto`／`light`／`dark` 外觀、設為預設、替換樣式表，
+並在移轉預設後刪除；成員對所有上傳路由皆回 403；重載後 registry 能從 SQLite 重建目錄；強制
+明暗模式可覆寫瀏覽器儲存的偏好；CSS 檔存在於 `URLET_THEMES_DIR`；且
 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test` 與
 `scripts/smoke.sh` 全綠。
 

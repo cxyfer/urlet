@@ -45,6 +45,60 @@ pub const COOKIE_MAX_AGE: i64 = 31_536_000;
 /// path, so a key is safe in a cookie, a URL and a file name.
 pub const CUSTOM_KEY_PREFIX: &str = "custom-";
 
+/// How a theme wants the light/dark palette handled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ThemeAppearance {
+    /// Follow the operating system and the visitor's saved preference.
+    #[default]
+    Auto,
+    /// Force the light palette and hide the light/dark switch.
+    Light,
+    /// Force the dark palette and hide the light/dark switch.
+    Dark,
+}
+
+impl ThemeAppearance {
+    /// Parse a database or form value. Unknown values fall back to `Auto`.
+    pub fn parse(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "light" => Self::Light,
+            "dark" => Self::Dark,
+            _ => Self::Auto,
+        }
+    }
+
+    /// Stable database, form and API value.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Light => "light",
+            Self::Dark => "dark",
+        }
+    }
+
+    /// Value written to `data-theme-lock` for the forced modes.
+    pub const fn lock(self) -> &'static str {
+        match self {
+            Self::Auto => "",
+            Self::Light => "light",
+            Self::Dark => "dark",
+        }
+    }
+
+    pub const fn is_light(self) -> bool {
+        matches!(self, Self::Light)
+    }
+
+    pub const fn is_dark(self) -> bool {
+        matches!(self, Self::Dark)
+    }
+
+    /// False for both forced modes: the light/dark control would be a lie.
+    pub const fn allows_toggle(self) -> bool {
+        matches!(self, Self::Auto)
+    }
+}
+
 /// A theme compiled into this binary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ThemeKey {
@@ -144,6 +198,15 @@ impl ThemeKey {
     pub const fn is_dark_only(self) -> bool {
         matches!(self, Self::Aurora)
     }
+
+    /// Palette policy of a compiled-in theme.
+    pub const fn appearance(self) -> ThemeAppearance {
+        if self.is_dark_only() {
+            ThemeAppearance::Dark
+        } else {
+            ThemeAppearance::Auto
+        }
+    }
 }
 
 /// A theme the registry can resolve: compiled in or uploaded.
@@ -156,7 +219,7 @@ pub struct ThemeDef {
     pub name: String,
     pub description: String,
     pub css_url: String,
-    pub is_dark_only: bool,
+    pub appearance: ThemeAppearance,
     pub is_custom: bool,
     pub custom_id: Option<i64>,
 }
@@ -176,7 +239,9 @@ pub struct ThemeView {
     pub name: String,
     pub description: String,
     pub css_url: String,
+    pub appearance: ThemeAppearance,
     pub is_dark_only: bool,
+    pub is_light_only: bool,
     /// Template set selected by `themed_page!`. Not exposed to templates.
     pub builtin: ThemeKey,
     pub options: Vec<ThemeOptionView>,
@@ -218,7 +283,9 @@ impl ThemeView {
             name: selected.name.clone(),
             description: selected.description.clone(),
             css_url: selected.css_url.clone(),
-            is_dark_only: selected.is_dark_only,
+            appearance: selected.appearance,
+            is_dark_only: selected.appearance.is_dark(),
+            is_light_only: selected.appearance.is_light(),
             builtin: selected.builtin,
             options,
             can_switch,
@@ -255,7 +322,7 @@ pub fn builtin_def(key: ThemeKey, lang: Lang) -> ThemeDef {
         name: lang.t(key.name_key()).to_string(),
         description: lang.t(key.description_key()).to_string(),
         css_url: key.css_url().to_string(),
-        is_dark_only: key.is_dark_only(),
+        appearance: key.appearance(),
         is_custom: false,
         custom_id: None,
     }
@@ -270,7 +337,7 @@ pub fn custom_def(row: &CustomThemeRow) -> ThemeDef {
         name: row.name.clone(),
         description: row.description.clone(),
         css_url: custom_css_url(&row.key, &row.css_version),
-        is_dark_only: row.is_dark_only,
+        appearance: row.appearance,
         is_custom: true,
         custom_id: Some(row.id),
     }
@@ -327,6 +394,25 @@ pub fn current_key() -> String {
 /// Whether the request theme is dark-only, without cloning the whole view.
 pub fn current_is_dark_only() -> bool {
     CURRENT.try_with(|view| view.is_dark_only).unwrap_or(false)
+}
+
+/// Whether the request theme is light-only, without cloning the whole view.
+pub fn current_is_light_only() -> bool {
+    CURRENT.try_with(|view| view.is_light_only).unwrap_or(false)
+}
+
+/// Whether the light/dark control should be offered for the request theme.
+pub fn current_allows_toggle() -> bool {
+    CURRENT
+        .try_with(|view| view.appearance.allows_toggle())
+        .unwrap_or(true)
+}
+
+/// Server-rendered lock for the forced light/dark modes.
+pub fn current_theme_lock() -> &'static str {
+    CURRENT
+        .try_with(|view| view.appearance.lock())
+        .unwrap_or("")
 }
 
 /// Run `fut` with `view` installed as the task-local theme.
@@ -543,7 +629,9 @@ pub struct AdminThemeRow {
     pub description: String,
     pub is_enabled: bool,
     pub is_default: bool,
+    pub appearance: ThemeAppearance,
     pub is_dark_only: bool,
+    pub is_light_only: bool,
     pub css_url: String,
     pub is_custom: bool,
     pub custom_id: Option<i64>,
@@ -573,7 +661,9 @@ pub fn admin_rows(registry: &ThemeRegistry, lang: Lang) -> Vec<AdminThemeRow> {
                 description: lang.t(key.description_key()).to_string(),
                 is_enabled: row.map(|row| row.is_enabled).unwrap_or(true),
                 is_default: row.map(|row| row.is_default).unwrap_or(false),
+                appearance: key.appearance(),
                 is_dark_only: key.is_dark_only(),
+                is_light_only: false,
                 css_url: key.css_url().to_string(),
                 is_custom: false,
                 custom_id: None,
@@ -592,7 +682,9 @@ pub fn admin_rows(registry: &ThemeRegistry, lang: Lang) -> Vec<AdminThemeRow> {
             description: upload.description.clone(),
             is_enabled: row.map(|row| row.is_enabled).unwrap_or(false),
             is_default: row.map(|row| row.is_default).unwrap_or(false),
-            is_dark_only: upload.is_dark_only,
+            appearance: upload.appearance,
+            is_dark_only: upload.appearance.is_dark(),
+            is_light_only: upload.appearance.is_light(),
             css_url: custom_css_url(&upload.key, &upload.css_version),
             is_custom: true,
             custom_id: Some(upload.id),
@@ -756,7 +848,7 @@ mod tests {
             key: "custom-abc".into(),
             name: "Mine".into(),
             description: "A test upload".into(),
-            is_dark_only: true,
+            appearance: ThemeAppearance::Dark,
             css_version: "deadbeef".into(),
             css_size: 42,
             original_filename: "mine.css".into(),
@@ -767,7 +859,7 @@ mod tests {
         let def = custom_def(&row);
         assert_eq!(def.builtin, ThemeKey::Verdant);
         assert_eq!(def.css_url, "/assets/custom-themes/custom-abc?v=deadbeef");
-        assert!(def.is_dark_only);
+        assert_eq!(def.appearance, ThemeAppearance::Dark);
         assert!(def.is_custom);
         assert_eq!(def.custom_id, Some(7));
     }
