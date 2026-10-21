@@ -27,6 +27,9 @@ pub struct PublicUrlDto {
     pub slug: String,
     pub title: Option<String>,
     pub has_password: bool,
+    /// `direct` or `splash`: whether following the link renders an interstitial
+    /// first. The splash copy itself is not exposed.
+    pub redirect_mode: String,
     pub is_expired: bool,
     pub state: String,
 }
@@ -69,6 +72,7 @@ pub async fn show(
         slug: url.slug,
         title: url.title,
         has_password,
+        redirect_mode: url.redirect_mode,
         is_expired: matches!(url_state, UrlState::Expired | UrlState::LimitReached),
         state: url_state.as_str().to_string(),
     }))

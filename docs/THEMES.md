@@ -80,6 +80,7 @@ templates/
     │   ├── base.html
     │   ├── app_base.html
     │   ├── landing.html
+    │   ├── link_splash.html   # public interstitial page
     │   ├── dashboard.html     # thin wrapper around content/dashboard.html
     │   └── ...
     ├── paper/
@@ -108,7 +109,7 @@ Askama's compile-time field checking therefore still applies to every theme.
    `src/assets.rs` and the `/assets/themes/{key}` route.
 3. Add the catalogue strings to the three `src/i18n/*.json` files.
 4. Create `templates/themes/<key>/` with at least `base.html`, `app_base.html`,
-   `landing.html`, the auth/link/error pages, the admin tabs and the app pages.
+   `landing.html`, the auth/link/splash/error pages, the admin tabs and the app pages.
    Reuse the content macros for the dense app pages.
 5. Add `templates/themes/<key>/...` paths to every `themed_page!` call. Keep the
    `Verdant` entry in each invocation: it is also the fallback used when a page

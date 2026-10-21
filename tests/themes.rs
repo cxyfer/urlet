@@ -949,3 +949,47 @@ async fn concurrent_partial_updates_do_not_lose_the_catalogue() {
         .themes
         .is_enabled(urlet::services::theme::ThemeKey::Paper));
 }
+
+#[tokio::test]
+async fn every_theme_renders_the_splash_page() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+    let created = app
+        .send(common::post_json_as(
+            "/api/v1/urls",
+            json!({
+                "target_url": "https://example.com/themed",
+                "slug": "themed-splash",
+                "redirect_mode": "splash",
+                "splash_title": "Theme splash"
+            }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+
+    for key in ["verdant", "aurora", "paper", "signal", "gilded", "swiss"] {
+        let switched = app
+            .send(get_as(&format!("/app/theme/{key}?next=/app"), &cookie))
+            .await;
+        assert_eq!(
+            switched.status,
+            StatusCode::FOUND,
+            "{key}: {}",
+            switched.body
+        );
+        let theme_cookie = switched.cookie_named("urlet_theme").expect("theme cookie");
+        let both = format!("{cookie}; {theme_cookie}");
+        let page = app.get_as("/themed-splash", &both).await;
+        assert_eq!(page.status, StatusCode::OK, "{key}: {}", page.body);
+        assert!(page.body.contains("Theme splash"), "{key} lost the copy");
+        assert!(
+            page.body.contains(&format!("data-theme-key=\"{key}\"")),
+            "{key} did not render its own shell"
+        );
+        assert!(
+            page.body.contains("Continue now"),
+            "{key} did not render the splash body"
+        );
+    }
+}

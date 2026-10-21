@@ -2115,6 +2115,7 @@ async fn updating_a_missing_group_does_not_clear_the_default() {
         allow_tags: true,
         allow_api_tokens: true,
         allow_domain_selection: true,
+        redirect_mode_policy: "choice",
         default_domain_id: None,
         restrict_domains: false,
     };

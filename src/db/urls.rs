@@ -19,6 +19,14 @@ pub struct Url {
     pub click_count: i64,
     pub unique_click_count: i64,
     pub redirect_type: i64,
+    /// `direct` or `splash`; see [`crate::services::redirect_mode`].
+    pub redirect_mode: String,
+    /// Countdown of the splash page, in seconds.
+    pub splash_delay_seconds: i64,
+    /// Optional custom splash heading; `NULL` uses the localised default.
+    pub splash_title: Option<String>,
+    /// Optional custom splash message; `NULL` uses the localised default.
+    pub splash_message: Option<String>,
     pub status: String,
     pub is_custom_slug: i64,
     pub last_clicked_at: Option<String>,
@@ -109,12 +117,17 @@ pub struct NewUrl {
     pub expires_at: Option<String>,
     pub max_clicks: Option<i64>,
     pub redirect_type: i64,
+    pub redirect_mode: String,
+    pub splash_delay_seconds: i64,
+    pub splash_title: Option<String>,
+    pub splash_message: Option<String>,
     pub is_custom_slug: bool,
 }
 
 const SELECT: &str =
     "SELECT id, user_id, domain_id, slug, target_url, title, notes, password_hash, \
                       expires_at, max_clicks, click_count, unique_click_count, redirect_type, \
+                      redirect_mode, splash_delay_seconds, splash_title, splash_message, \
                       status, is_custom_slug, last_clicked_at, created_at, updated_at, deleted_at \
                       FROM urls";
 
@@ -123,9 +136,10 @@ pub async fn create(pool: &SqlitePool, new_url: &NewUrl) -> Result<i64, sqlx::Er
     let now = time::now_iso();
     let result = sqlx::query(
         "INSERT INTO urls (user_id, domain_id, slug, target_url, title, notes, password_hash,
-                           expires_at, max_clicks, redirect_type, status, is_custom_slug,
-                           created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)",
+                           expires_at, max_clicks, redirect_type, redirect_mode,
+                           splash_delay_seconds, splash_title, splash_message, status,
+                           is_custom_slug, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)",
     )
     .bind(new_url.user_id)
     .bind(new_url.domain_id)
@@ -137,6 +151,10 @@ pub async fn create(pool: &SqlitePool, new_url: &NewUrl) -> Result<i64, sqlx::Er
     .bind(new_url.expires_at.as_deref())
     .bind(new_url.max_clicks)
     .bind(new_url.redirect_type)
+    .bind(&new_url.redirect_mode)
+    .bind(new_url.splash_delay_seconds)
+    .bind(new_url.splash_title.as_deref())
+    .bind(new_url.splash_message.as_deref())
     .bind(i64::from(new_url.is_custom_slug))
     .bind(&now)
     .bind(&now)
@@ -158,9 +176,10 @@ pub async fn create_within_quota(
     let now = time::now_iso();
     let result = sqlx::query(
         "INSERT INTO urls (user_id, domain_id, slug, target_url, title, notes, password_hash,
-                           expires_at, max_clicks, redirect_type, status, is_custom_slug,
-                           created_at, updated_at)
-         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?
+                           expires_at, max_clicks, redirect_type, redirect_mode,
+                           splash_delay_seconds, splash_title, splash_message, status,
+                           is_custom_slug, created_at, updated_at)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?
           WHERE (SELECT COUNT(*) FROM urls
                   WHERE user_id = ? AND deleted_at IS NULL) < ?",
     )
@@ -174,6 +193,10 @@ pub async fn create_within_quota(
     .bind(new_url.expires_at.as_deref())
     .bind(new_url.max_clicks)
     .bind(new_url.redirect_type)
+    .bind(&new_url.redirect_mode)
+    .bind(new_url.splash_delay_seconds)
+    .bind(new_url.splash_title.as_deref())
+    .bind(new_url.splash_message.as_deref())
     .bind(i64::from(new_url.is_custom_slug))
     .bind(&now)
     .bind(&now)
@@ -274,6 +297,10 @@ pub struct UrlUpdate {
     pub expires_at: Option<Option<String>>,
     pub max_clicks: Option<Option<i64>>,
     pub redirect_type: Option<i64>,
+    pub redirect_mode: Option<String>,
+    pub splash_delay_seconds: Option<i64>,
+    pub splash_title: Option<Option<String>>,
+    pub splash_message: Option<Option<String>>,
     pub status: Option<String>,
     pub is_custom_slug: Option<bool>,
 }
@@ -289,6 +316,10 @@ impl UrlUpdate {
             && self.expires_at.is_none()
             && self.max_clicks.is_none()
             && self.redirect_type.is_none()
+            && self.redirect_mode.is_none()
+            && self.splash_delay_seconds.is_none()
+            && self.splash_title.is_none()
+            && self.splash_message.is_none()
             && self.status.is_none()
             && self.is_custom_slug.is_none()
     }
@@ -339,6 +370,22 @@ pub async fn update(
     if let Some(value) = changes.redirect_type {
         sql.push_str(", redirect_type = ?");
         binds.push(Bind::Int(value));
+    }
+    if let Some(value) = &changes.redirect_mode {
+        sql.push_str(", redirect_mode = ?");
+        binds.push(Bind::Text(value.clone()));
+    }
+    if let Some(value) = changes.splash_delay_seconds {
+        sql.push_str(", splash_delay_seconds = ?");
+        binds.push(Bind::Int(value));
+    }
+    if let Some(value) = &changes.splash_title {
+        sql.push_str(", splash_title = ?");
+        binds.push(Bind::OptText(value.clone()));
+    }
+    if let Some(value) = &changes.splash_message {
+        sql.push_str(", splash_message = ?");
+        binds.push(Bind::OptText(value.clone()));
     }
     if let Some(value) = &changes.status {
         sql.push_str(", status = ?");

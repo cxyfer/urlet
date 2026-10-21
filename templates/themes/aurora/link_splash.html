@@ -1,0 +1,41 @@
+{% extends "themes/aurora/base.html" %}
+
+{% block title %}{{ heading }} — {{ site_name }}{% endblock %}
+
+{% block head %}
+<meta name="robots" content="noindex">
+<meta http-equiv="refresh" content="{{ delay_seconds }};url={{ target_url }}">
+{% endblock %}
+
+{% block body_class %}page-link{% endblock %}
+
+{% block body %}
+<main class="link-page">
+    <div class="card link-card">
+        <span class="link-glyph" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="url(#goGrad)" stroke-width="1.6"
+                 stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                <path d="M4.5 12h13"/>
+                <path d="m12 6.5 5.5 5.5-5.5 5.5"/>
+                <defs>
+                    <linearGradient id="goGrad" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0" stop-color="#5eead4"/>
+                        <stop offset=".52" stop-color="#60a5fa"/>
+                        <stop offset="1" stop-color="#a78bfa"/>
+                    </linearGradient>
+                </defs>
+            </svg>
+        </span>
+        <h1>{{ heading }}</h1>
+        <p class="muted splash-message">{{ message }}</p>
+        <div class="splash-meter" style="--splash-delay: {{ delay_seconds }}s" aria-hidden="true"><span></span></div>
+        <p class="small muted splash-countdown">{{ countdown }}</p>
+        <div class="splash-destination">
+            <span class="label">{{ lang.t("link.splash.destination") }}</span>
+            <span class="splash-host">{{ destination_host }}</span>
+        </div>
+        <a class="btn btn-primary btn-block" href="{{ target_url }}" rel="noopener">{{ lang.t("link.splash.continue") }}</a>
+        <p class="hint">{{ lang.t("link.splash.manual") }}</p>
+    </div>
+</main>
+{% endblock %}

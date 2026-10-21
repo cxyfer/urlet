@@ -745,7 +745,8 @@ b {
 }
 
 .input,
-.select {
+.select,
+.textarea {
     width: 100%;
     padding: .5rem .6rem;
     border: 1px solid var(--rule);
@@ -757,23 +758,32 @@ b {
     line-height: 1.4;
 }
 
-.input::placeholder {
+.input::placeholder,
+.textarea::placeholder {
     color: var(--muted);
     opacity: .85;
 }
 
+.textarea {
+    min-height: 5rem;
+    resize: vertical;
+}
+
 .input:hover,
-.select:hover {
+.select:hover,
+.textarea:hover {
     border-color: var(--muted);
 }
 
 .input:focus,
-.select:focus {
+.select:focus,
+.textarea:focus {
     border-color: var(--ink);
 }
 
 .sheet .input,
-.sheet .select {
+.sheet .select,
+.sheet .textarea {
     background: var(--paper);
 }
 

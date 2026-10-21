@@ -191,6 +191,41 @@
             </div>
         </div>
 
+        <div class="policy-block">
+            <div class="policy-head">
+                <div class="cap-intro">
+                    <span class="label">{{ lang.t("admin.groups.redirect_mode.title") }}</span>
+                    <p class="hint">{{ lang.t("admin.groups.redirect_mode.hint") }}</p>
+                </div>
+            </div>
+            <div class="policy-grid">
+                <fieldset class="policy-group">
+                    <legend class="label">{{ lang.t("admin.groups.redirect_mode.scope") }}</legend>
+                    <label class="policy-option">
+                        <input type="radio" name="redirect_mode_policy" value="choice" checked>
+                        <span class="policy-text">
+                            <span class="policy-name">{{ lang.t("admin.groups.redirect_mode.choice") }}</span>
+                            <span class="policy-desc">{{ lang.t("admin.groups.redirect_mode.choice_hint") }}</span>
+                        </span>
+                    </label>
+                    <label class="policy-option">
+                        <input type="radio" name="redirect_mode_policy" value="direct">
+                        <span class="policy-text">
+                            <span class="policy-name">{{ lang.t("admin.groups.redirect_mode.direct") }}</span>
+                            <span class="policy-desc">{{ lang.t("admin.groups.redirect_mode.direct_hint") }}</span>
+                        </span>
+                    </label>
+                    <label class="policy-option">
+                        <input type="radio" name="redirect_mode_policy" value="splash">
+                        <span class="policy-text">
+                            <span class="policy-name">{{ lang.t("admin.groups.redirect_mode.splash") }}</span>
+                            <span class="policy-desc">{{ lang.t("admin.groups.redirect_mode.splash_hint") }}</span>
+                        </span>
+                    </label>
+                </fieldset>
+            </div>
+        </div>
+
         <div class="form-actions">
             <button class="btn btn-primary" type="submit">{{ lang.t("admin.groups.create") }}</button>
         </div>
@@ -207,6 +242,7 @@
                     <th class="num">{{ lang.t("admin.groups.max_api_tokens") }}</th>
                     <th>{{ lang.t("admin.groups.invites") }}</th>
                     <th class="num">{{ lang.t("admin.groups.members") }}</th>
+                    <th>{{ lang.t("admin.groups.redirect_mode.title") }}</th>
                     <th>{{ lang.t("admin.groups.features") }}</th>
                     <th>{{ lang.t("common.created") }}</th>
                     <th></th>
@@ -230,6 +266,7 @@
                         {% if group.invite_quota_exhausted %}<span class="badge badge-muted">{{ lang.t("admin.groups.invites_used_up") }}</span>{% endif %}
                     </td>
                     <td class="num">{{ group.members }}</td>
+                    <td><span class="small">{{ group.redirect_mode_policy_label }}</span></td>
                     <td>
                         <span class="small">{{ group.features_label }}</span>
                     </td>
@@ -418,6 +455,41 @@
                                                 </div>
                                                 <span class="hint">{{ lang.t("admin.groups.policy.allowlist_hint") }}</span>
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="policy-block">
+                                        <div class="policy-head">
+                                            <div class="cap-intro">
+                                                <span class="label">{{ lang.t("admin.groups.redirect_mode.title") }}</span>
+                                                <p class="hint">{{ lang.t("admin.groups.redirect_mode.hint") }}</p>
+                                            </div>
+                                        </div>
+                                        <div class="policy-grid">
+                                            <fieldset class="policy-group">
+                                                <legend class="label">{{ lang.t("admin.groups.redirect_mode.scope") }}</legend>
+                                                <label class="policy-option">
+                                                    <input type="radio" name="redirect_mode_policy" value="choice" {% if group.redirect_mode_policy == "choice" %}checked{% endif %}>
+                                                    <span class="policy-text">
+                                                        <span class="policy-name">{{ lang.t("admin.groups.redirect_mode.choice") }}</span>
+                                                        <span class="policy-desc">{{ lang.t("admin.groups.redirect_mode.choice_hint") }}</span>
+                                                    </span>
+                                                </label>
+                                                <label class="policy-option">
+                                                    <input type="radio" name="redirect_mode_policy" value="direct" {% if group.redirect_mode_policy == "direct" %}checked{% endif %}>
+                                                    <span class="policy-text">
+                                                        <span class="policy-name">{{ lang.t("admin.groups.redirect_mode.direct") }}</span>
+                                                        <span class="policy-desc">{{ lang.t("admin.groups.redirect_mode.direct_hint") }}</span>
+                                                    </span>
+                                                </label>
+                                                <label class="policy-option">
+                                                    <input type="radio" name="redirect_mode_policy" value="splash" {% if group.redirect_mode_policy == "splash" %}checked{% endif %}>
+                                                    <span class="policy-text">
+                                                        <span class="policy-name">{{ lang.t("admin.groups.redirect_mode.splash") }}</span>
+                                                        <span class="policy-desc">{{ lang.t("admin.groups.redirect_mode.splash_hint") }}</span>
+                                                    </span>
+                                                </label>
+                                            </fieldset>
                                         </div>
                                     </div>
 

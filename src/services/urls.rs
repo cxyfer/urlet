@@ -10,8 +10,11 @@ use crate::error::{AppError, Result};
 use crate::services::audit::{action, target, Audit};
 use crate::services::domain_policy;
 use crate::services::limits::{self, blocked};
+use crate::services::redirect_mode::{RedirectMode, RedirectModePolicy};
 use crate::services::settings::Settings;
-use crate::services::{domains as domain_service, password, slug, target as target_url, time};
+use crate::services::{
+    domains as domain_service, password, redirect_mode, slug, target as target_url, time,
+};
 
 /// Maximum tags attached to one link.
 pub const MAX_TAGS: usize = 10;
@@ -46,6 +49,12 @@ pub struct CreateInput {
     pub expires_at: Option<String>,
     pub max_clicks: Option<i64>,
     pub redirect_type: Option<i64>,
+    /// `direct` or `splash`; omitted means the group policy's default.
+    pub redirect_mode: Option<String>,
+    /// Splash countdown, 1-60 seconds; omitted means the five-second default.
+    pub splash_delay_seconds: Option<i64>,
+    pub splash_title: Option<String>,
+    pub splash_message: Option<String>,
 }
 
 /// Input for a partial update. `None` leaves a field untouched; the inner
@@ -63,6 +72,11 @@ pub struct UpdateInput {
     pub expires_at: Option<Option<String>>,
     pub max_clicks: Option<Option<i64>>,
     pub redirect_type: Option<i64>,
+    pub redirect_mode: Option<String>,
+    pub splash_delay_seconds: Option<i64>,
+    /// The inner `None` clears the custom heading and falls back to the default.
+    pub splash_title: Option<Option<String>>,
+    pub splash_message: Option<Option<String>>,
     pub status: Option<String>,
 }
 
@@ -272,6 +286,36 @@ impl UrlContext<'_> {
             return Err(AppError::forbidden(blocked::MAX_CLICKS));
         }
 
+        // A group may lock the redirect mode. An omitted mode takes the
+        // policy's default, so a locked form does not have to submit one.
+        let redirect_mode = match input
+            .redirect_mode
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            Some(raw) => RedirectMode::parse(raw).ok_or_else(|| {
+                AppError::validation(
+                    "redirect_mode",
+                    "redirect mode must be 'direct' or 'splash'",
+                )
+            })?,
+            None => limits.redirect_mode_policy.default_mode(),
+        };
+        ensure_mode_allowed(limits.redirect_mode_policy, redirect_mode)?;
+        let splash_delay_seconds = match input.splash_delay_seconds {
+            Some(value) => redirect_mode::validate_delay(value)?,
+            None => redirect_mode::DEFAULT_DELAY,
+        };
+        let splash_title = match input.splash_title.as_deref() {
+            Some(raw) => redirect_mode::validate_title(raw)?,
+            None => None,
+        };
+        let splash_message = match input.splash_message.as_deref() {
+            Some(raw) => redirect_mode::validate_message(raw)?,
+            None => None,
+        };
+
         let policy = domain_policy::effective(self.pool, self.actor).await?;
         let domain = match input
             .domain
@@ -346,6 +390,10 @@ impl UrlContext<'_> {
             expires_at,
             max_clicks,
             redirect_type,
+            redirect_mode: redirect_mode.as_str().to_string(),
+            splash_delay_seconds,
+            splash_title,
+            splash_message,
             is_custom_slug: is_custom,
         };
         let inserted = if quota > 0 {
@@ -518,6 +566,36 @@ impl UrlContext<'_> {
         }
         if let Some(value) = input.redirect_type {
             changes.redirect_type = Some(validate_redirect_type(value)?);
+        }
+        if let Some(raw) = input.redirect_mode.as_deref() {
+            let mode = RedirectMode::parse(raw).ok_or_else(|| {
+                AppError::validation(
+                    "redirect_mode",
+                    "redirect mode must be 'direct' or 'splash'",
+                )
+            })?;
+            // Keeping the current mode is always allowed; only switching to a
+            // mode the group blocks is refused, matching the feature toggles.
+            if mode.as_str() != url.redirect_mode {
+                ensure_mode_allowed(limits.redirect_mode_policy, mode)?;
+            }
+            changes.redirect_mode = Some(mode.as_str().to_string());
+        }
+        if let Some(value) = input.splash_delay_seconds {
+            changes.splash_delay_seconds = Some(redirect_mode::validate_delay(value)?);
+        }
+        if let Some(raw) = &input.splash_title {
+            // `Some(None)` clears the column; a bare `None` would mean "keep".
+            changes.splash_title = Some(match raw.as_deref() {
+                Some(value) => redirect_mode::validate_title(value)?,
+                None => None,
+            });
+        }
+        if let Some(raw) = &input.splash_message {
+            changes.splash_message = Some(match raw.as_deref() {
+                Some(value) => redirect_mode::validate_message(value)?,
+                None => None,
+            });
         }
         if let Some(status) = input.status.as_deref() {
             let status = status.trim().to_ascii_lowercase();
@@ -702,6 +780,15 @@ fn describe_changes(changes: &UrlUpdate, tags_changed: bool) -> Vec<&'static str
     if changes.redirect_type.is_some() {
         fields.push("redirect_type");
     }
+    if changes.redirect_mode.is_some() {
+        fields.push("redirect_mode");
+    }
+    if changes.splash_delay_seconds.is_some()
+        || changes.splash_title.is_some()
+        || changes.splash_message.is_some()
+    {
+        fields.push("splash");
+    }
     if changes.status.is_some() {
         fields.push("status");
     }
@@ -709,6 +796,17 @@ fn describe_changes(changes: &UrlUpdate, tags_changed: bool) -> Vec<&'static str
         fields.push("tags");
     }
     fields
+}
+
+/// Refuse a redirect mode the actor's group blocks.
+fn ensure_mode_allowed(policy: RedirectModePolicy, mode: RedirectMode) -> Result<()> {
+    if policy.allows(mode) {
+        return Ok(());
+    }
+    Err(AppError::forbidden(match mode {
+        RedirectMode::Direct => blocked::REDIRECT_DIRECT,
+        RedirectMode::Splash => blocked::REDIRECT_SPLASH,
+    }))
 }
 
 /// Convenience accessor for the state of a link.

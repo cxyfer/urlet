@@ -9,6 +9,7 @@ use sqlx::{FromRow, SqlitePool};
 
 use crate::db::users::User;
 use crate::error::{AppError, Result};
+use crate::services::redirect_mode::RedirectModePolicy;
 use crate::services::settings::Settings;
 
 /// The quotas and toggles actually applied to one user.
@@ -23,6 +24,8 @@ pub struct Limits {
     pub allow_tags: bool,
     pub allow_api_tokens: bool,
     pub allow_domain_selection: bool,
+    /// Which redirect modes the group allows for new links.
+    pub redirect_mode_policy: RedirectModePolicy,
 }
 
 impl Limits {
@@ -39,6 +42,7 @@ impl Limits {
             allow_tags: true,
             allow_api_tokens: true,
             allow_domain_selection: true,
+            redirect_mode_policy: RedirectModePolicy::Choice,
         }
     }
 
@@ -54,6 +58,10 @@ impl Limits {
             allow_tags: self.allow_tags && group.allow_tags,
             allow_api_tokens: self.allow_api_tokens && group.allow_api_tokens,
             allow_domain_selection: self.allow_domain_selection && group.allow_domain_selection,
+            // A policy replaces the permissive default; it is not a toggle that
+            // can only narrow, because `splash` is more permissive in one
+            // direction and less in the other.
+            redirect_mode_policy: RedirectModePolicy::from_db(&group.redirect_mode_policy),
         }
     }
 
@@ -80,6 +88,7 @@ struct GroupOverrides {
     allow_tags: bool,
     allow_api_tokens: bool,
     allow_domain_selection: bool,
+    redirect_mode_policy: String,
 }
 
 /// Resolve the limits for a user. One indexed lookup at most; there is no cache,
@@ -103,7 +112,8 @@ pub async fn effective_for_group(
     };
     let group = sqlx::query_as::<_, GroupOverrides>(
         "SELECT max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry,
-                allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection
+                allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection,
+                redirect_mode_policy
            FROM user_groups WHERE id = ?",
     )
     .bind(group_id)
@@ -123,6 +133,8 @@ pub mod blocked {
     pub const TAGS: &str = "your group does not allow tags";
     pub const API_TOKENS: &str = "your group does not allow API tokens";
     pub const DOMAIN_SELECTION: &str = "your group does not allow choosing another domain";
+    pub const REDIRECT_DIRECT: &str = "your group only allows splash pages";
+    pub const REDIRECT_SPLASH: &str = "your group only allows direct redirects";
     pub const INVITES: &str = "your group does not allow invite codes";
     pub const NO_GROUP: &str = "your account has no group that can issue invite codes";
 }
@@ -142,6 +154,7 @@ mod tests {
             allow_tags: true,
             allow_api_tokens: true,
             allow_domain_selection: true,
+            redirect_mode_policy: RedirectModePolicy::Choice,
         }
     }
 
@@ -156,6 +169,7 @@ mod tests {
             allow_tags: true,
             allow_api_tokens: true,
             allow_domain_selection: true,
+            redirect_mode_policy: "choice".to_string(),
         }
     }
 
@@ -187,6 +201,20 @@ mod tests {
     }
 
     #[test]
+    fn a_group_policy_replaces_the_permissive_default() {
+        let mut group = overrides(None, None);
+        group.redirect_mode_policy = "splash".to_string();
+        let limits = base().merge(&group);
+        assert_eq!(limits.redirect_mode_policy, RedirectModePolicy::Splash);
+        assert!(limits
+            .redirect_mode_policy
+            .allows(crate::services::redirect_mode::RedirectMode::Splash));
+        assert!(!limits
+            .redirect_mode_policy
+            .allows(crate::services::redirect_mode::RedirectMode::Direct));
+    }
+
+    #[test]
     fn site_defaults_allow_every_feature() {
         // A bare Limits with all flags set is the shape `site_defaults` builds;
         // the config-backed values are covered by the settings tests.
@@ -198,6 +226,7 @@ mod tests {
         assert!(limits.allow_tags);
         assert!(limits.allow_api_tokens);
         assert!(limits.allow_domain_selection);
+        assert_eq!(limits.redirect_mode_policy, RedirectModePolicy::Choice);
         assert!(!limits.urls_unlimited());
         assert!(!limits.tokens_unlimited());
     }
