@@ -1,0 +1,30 @@
+{# Theme picker shared by the landing page and the signed-in shell.
+   The macro takes the request's ThemeView explicitly: the app shell reaches it
+   through `chrome.theme`, while public pages carry a `theme` field of their own.
+   The control is hidden unless the server says the account may switch and more
+   than one theme is enabled. #}
+{% macro switcher(theme, lang) %}
+{% if theme.can_switch && theme.options.len() > 1 %}
+<details class="theme-switcher" data-theme-switcher>
+    <summary class="theme-trigger" aria-label="{{ lang.t("theme.switcher_label") }}">
+        <span class="theme-swatch" aria-hidden="true"></span>
+        <span class="theme-current">{{ theme.name }}</span>
+        <span class="theme-caret" aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+                 stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m4 6 4 4 4-4"></path>
+            </svg>
+        </span>
+    </summary>
+    <div class="theme-menu" role="group" aria-label="{{ lang.t("theme.switcher_label") }}">
+        {% for option in theme.options %}
+        {% if option.current %}
+        <span class="theme-option active" aria-current="true">{{ option.name }}</span>
+        {% else %}
+        <a class="theme-option" href="/app/theme/{{ option.key }}" rel="nofollow">{{ option.name }}</a>
+        {% endif %}
+        {% endfor %}
+    </div>
+</details>
+{% endif %}
+{% endmacro %}

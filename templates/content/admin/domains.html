@@ -1,0 +1,103 @@
+{% macro content() %}
+<div class="page-head">
+    <div class="page-head-main">
+        <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ lang.t("nav.admin") }}</span>
+        <h1 class="page-title">{{ lang.t("admin.domains.heading") }}</h1>
+    </div>
+    <div class="page-head-side">
+        <span class="page-note" aria-hidden="true">DNS · 01 / 02</span>
+    </div>
+</div>
+
+<div class="alert alert-info">
+    <div>{{ lang.t("admin.domains.hint") }}</div>
+</div>
+
+<div class="panel mt">
+    <div class="panel-head">
+        <h2>{{ lang.t("admin.domains.add") }}</h2>
+        <span class="panel-sub" aria-hidden="true">DOM / 01</span>
+    </div>
+    <form method="post" action="/app/admin/domains" class="filters-invite">
+        <div class="field">
+            <label class="label" for="hostname">{{ lang.t("admin.domains.hostname") }}</label>
+            <input class="input" type="text" id="hostname" name="hostname"
+                   placeholder="{{ lang.t("admin.domains.hostname_placeholder") }}" required>
+            <span class="hint">{{ lang.t("admin.domains.hostname_hint") }}</span>
+        </div>
+        <button class="btn btn-primary" type="submit">{{ lang.t("admin.domains.add") }}</button>
+    </form>
+</div>
+
+<div class="panel panel-flush">
+    {% if domains.len() > 0 %}
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>{{ lang.t("admin.domains.hostname") }}</th>
+                    <th>{{ lang.t("common.status") }}</th>
+                    <th>{{ lang.t("admin.domains.source") }}</th>
+                    <th>{{ lang.t("admin.domains.default") }}</th>
+                    <th class="num">{{ lang.t("admin.domains.links") }}</th>
+                    <th>{{ lang.t("common.created") }}</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for domain in domains %}
+                <tr>
+                    <td>
+                        <div class="cell-stack">
+                            <span class="mono">{{ domain.hostname }}</span>
+                            {% match domain.source_note %}
+                            {% when Some with (note) %}<span class="small muted">{{ lang.t(note) }}</span>
+                            {% when None %}
+                            {% endmatch %}
+                        </div>
+                    </td>
+                    <td><span class="badge {{ domain.status_class }}">{{ domain.status_label }}</span></td>
+                    <td class="small">{{ domain.source_label }}</td>
+                    <td>
+                        {% if domain.is_default %}
+                        <span class="badge badge-accent">{{ lang.t("admin.domains.default_badge") }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="num">{{ domain.link_count }}</td>
+                    <td class="small">{{ domain.created }}</td>
+                    <td>
+                        <div class="row row-tight">
+                            {% if domain.can_activate %}
+                            <form method="post" action="/app/admin/domains/{{ domain.id }}/activate">
+                                <button class="btn btn-sm btn-primary" type="submit">{{ lang.t("admin.domains.activate") }}</button>
+                            </form>
+                            {% endif %}
+                            {% if domain.can_default %}
+                            <form method="post" action="/app/admin/domains/{{ domain.id }}/default">
+                                <button class="btn btn-sm btn-sage" type="submit">{{ lang.t("admin.domains.set_default") }}</button>
+                            </form>
+                            {% endif %}
+                            {% if domain.can_disable %}
+                            <form method="post" action="/app/admin/domains/{{ domain.id }}/disable">
+                                <button class="btn btn-sm btn-ghost" type="submit"
+                                        data-confirm="{{ lang.t("admin.domains.confirm_disable") }}">{{ lang.t("admin.domains.disable") }}</button>
+                            </form>
+                            {% endif %}
+                            {% if domain.can_delete %}
+                            <form method="post" action="/app/admin/domains/{{ domain.id }}/delete">
+                                <button class="btn btn-sm btn-danger" type="submit"
+                                        data-confirm="{{ lang.t("admin.domains.confirm_delete") }}">{{ lang.t("common.delete") }}</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty">{{ lang.t("admin.domains.empty") }}</p>
+    {% endif %}
+</div>
+{% endmacro %}

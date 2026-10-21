@@ -1,0 +1,27 @@
+{% extends "themes/swiss/base.html" %}
+
+{% block title %}{{ status_code }} — {{ title }}{% endblock %}
+
+{% block body %}
+<main class="link-page">
+    <div class="link-grid">
+        <div class="link-num">
+            <div class="link-code" aria-hidden="true">{{ status_code }}</div>
+            <div class="link-mark">
+                <span>{{ site_name }}</span>
+                <span aria-hidden="true">/// — 01</span>
+            </div>
+        </div>
+        <div class="link-body">
+            <p class="error-meta" aria-hidden="true">/// — {{ status_code }}</p>
+            <h1>{{ title }}</h1>
+            <p class="muted">{{ message }}</p>
+            <a class="btn btn-primary btn-block" href="/app">{{ lang.t("link.go_to") }} {{ site_name }}</a>
+            <div class="link-foot">
+                <span>{{ site_name }}</span>
+                <span aria-hidden="true">→ / 01</span>
+            </div>
+        </div>
+    </div>
+</main>
+{% endblock %}

@@ -1,0 +1,18 @@
+<div class="console-bar">
+    <span class="console-kicker">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span>{{ site_name }}</span>
+        <span class="mono" aria-hidden="true">/admin</span>
+    </span>
+    <nav class="tabs" aria-label="{{ lang.t("nav.admin") }}">
+        <a href="/app/admin"{% if section == "overview" %} class="is-active"{% endif %}>{{ lang.t("admin.tabs.overview") }}</a>
+        <a href="/app/admin/users"{% if section == "users" %} class="is-active"{% endif %}>{{ lang.t("admin.tabs.users") }}</a>
+        <a href="/app/admin/groups"{% if section == "groups" %} class="is-active"{% endif %}>{{ lang.t("admin.tabs.groups") }}</a>
+        <a href="/app/admin/urls"{% if section == "urls" %} class="is-active"{% endif %}>{{ lang.t("admin.tabs.links") }}</a>
+        <a href="/app/admin/invites"{% if section == "invites" %} class="is-active"{% endif %}>{{ lang.t("admin.tabs.invites") }}</a>
+        <a href="/app/admin/domains"{% if section == "domains" %} class="is-active"{% endif %}>{{ lang.t("admin.tabs.domains") }}</a>
+        <a href="/app/admin/themes"{% if section == "themes" %} class="is-active"{% endif %}>{{ lang.t("admin.tabs.themes") }}</a>
+        <a href="/app/admin/settings"{% if section == "settings" %} class="is-active"{% endif %}>{{ lang.t("admin.tabs.settings") }}</a>
+        <a href="/app/admin/audit"{% if section == "audit" %} class="is-active"{% endif %}>{{ lang.t("admin.tabs.audit") }}</a>
+    </nav>
+</div>

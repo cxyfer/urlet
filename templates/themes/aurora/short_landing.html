@@ -1,0 +1,39 @@
+{% extends "themes/aurora/base.html" %}
+
+{#
+  Landing page for an extra (redirect-only) domain. It deliberately carries no
+  login, registration or short-link form: extra domains only serve redirects and
+  this small brand page. Search engines are told not to index it, so it cannot
+  compete with the canonical host.
+#}
+{% block title %}{{ site_name }}{% endblock %}
+
+{% block head %}
+<meta name="robots" content="noindex">
+{% endblock %}
+
+{% block topbar %}{% endblock %}
+
+{% block body %}
+<main class="wrap">
+    <section class="hero short-hero">
+        <div class="hero-copy">
+            <span class="hero-chip">
+                <span class="status-dot" aria-hidden="true"></span>
+                <span aria-hidden="true">SHORT LINK</span>
+            </span>
+            <h1>{{ site_name }}<span class="hero-dot" aria-hidden="true"></span></h1>
+            <p class="landing-tagline">{{ lang.t("domain.landing.message") }}</p>
+            <div class="landing-cta">
+                <a class="btn btn-primary" href="{{ canonical_url }}">{{ lang.t("domain.landing.go_home") }}</a>
+            </div>
+        </div>
+    </section>
+</main>
+{% endblock %}
+
+{% block footer_tools %}
+<div class="footer-tools">
+    {% if !self.theme_is_dark_only() %}{% include "partials/theme_toggle.html" %}{% endif %}
+</div>
+{% endblock %}

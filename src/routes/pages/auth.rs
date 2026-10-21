@@ -18,10 +18,11 @@ use crate::services::auth::{self, AuthContext};
 use crate::services::captcha::{CaptchaFlow, CaptchaWidget};
 use crate::services::ratelimit::limits;
 use crate::services::settings::RegistrationMode;
+use crate::services::theme::{self, ThemeView};
 use crate::state::AppState;
+use crate::themed_page;
 
-#[derive(Debug, Template)]
-#[template(path = "login.html")]
+#[derive(Debug)]
 pub struct LoginPage {
     pub site_name: String,
     pub error: Option<String>,
@@ -31,10 +32,19 @@ pub struct LoginPage {
     /// Provider widget to render, or `None` when sign in is not protected.
     pub captcha: Option<CaptchaWidget>,
     pub lang: Lang,
+    pub theme: ThemeView,
 }
 
-#[derive(Debug, Template)]
-#[template(path = "register.html")]
+themed_page!(login_templates, LoginView, LoginPage,
+    Verdant => "login.html",
+    Aurora => "themes/aurora/login.html",
+    Paper => "themes/paper/login.html",
+    Signal => "themes/signal/login.html",
+    Gilded => "themes/gilded/login.html",
+    Swiss => "themes/swiss/login.html",
+);
+
+#[derive(Debug)]
 pub struct RegisterPage {
     pub site_name: String,
     pub error: Option<String>,
@@ -48,7 +58,17 @@ pub struct RegisterPage {
     /// Provider widget to render, or `None` when registration is not protected.
     pub captcha: Option<CaptchaWidget>,
     pub lang: Lang,
+    pub theme: ThemeView,
 }
+
+themed_page!(register_templates, RegisterView, RegisterPage,
+    Verdant => "register.html",
+    Aurora => "themes/aurora/register.html",
+    Paper => "themes/paper/register.html",
+    Signal => "themes/signal/register.html",
+    Gilded => "themes/gilded/register.html",
+    Swiss => "themes/swiss/register.html",
+);
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct LoginQuery {
@@ -117,15 +137,19 @@ pub async fn login_page(
         _ => None,
     };
 
-    Ok(render(LoginPage {
-        site_name: state.settings.site_name(),
-        error,
-        notice,
-        next: safe_next(query.next.as_deref()).unwrap_or_default(),
-        email: String::new(),
-        captcha: captcha_widget(&state, CaptchaFlow::Login),
-        lang,
-    }))
+    Ok(render(
+        LoginPage {
+            site_name: state.settings.site_name(),
+            error,
+            notice,
+            next: safe_next(query.next.as_deref()).unwrap_or_default(),
+            email: String::new(),
+            captcha: captcha_widget(&state, CaptchaFlow::Login),
+            lang,
+            theme: theme::for_anonymous(),
+        }
+        .themed(),
+    ))
 }
 
 /// `POST /app/login`
@@ -135,15 +159,19 @@ pub async fn login_submit(
     form: std::result::Result<Form<LoginForm>, FormRejection>,
 ) -> Result<Response> {
     let Ok(Form(payload)) = form else {
-        return Ok(render(LoginPage {
-            site_name: state.settings.site_name(),
-            error: Some(i18n::current().t("auth.login.missing_fields").to_string()),
-            notice: None,
-            next: String::new(),
-            email: String::new(),
-            captcha: captcha_widget(&state, CaptchaFlow::Login),
-            lang: i18n::current(),
-        }));
+        return Ok(render(
+            LoginPage {
+                site_name: state.settings.site_name(),
+                error: Some(i18n::current().t("auth.login.missing_fields").to_string()),
+                notice: None,
+                next: String::new(),
+                email: String::new(),
+                captcha: captcha_widget(&state, CaptchaFlow::Login),
+                lang: i18n::current(),
+                theme: theme::for_anonymous(),
+            }
+            .themed(),
+        ));
     };
 
     if state
@@ -207,15 +235,19 @@ pub async fn login_submit(
         Err(AppError::RateLimited { .. }) => {
             Ok(Redirect::to("/app/login?err=rate_limited").into_response())
         }
-        Err(_) => Ok(render(LoginPage {
-            site_name: state.settings.site_name(),
-            error: Some(i18n::current().t("auth.login.invalid").to_string()),
-            notice: None,
-            next: safe_next(payload.next.as_deref()).unwrap_or_default(),
-            email: payload.email,
-            captcha: captcha_widget(&state, CaptchaFlow::Login),
-            lang: i18n::current(),
-        })),
+        Err(_) => Ok(render(
+            LoginPage {
+                site_name: state.settings.site_name(),
+                error: Some(i18n::current().t("auth.login.invalid").to_string()),
+                notice: None,
+                next: safe_next(payload.next.as_deref()).unwrap_or_default(),
+                email: payload.email,
+                captcha: captcha_widget(&state, CaptchaFlow::Login),
+                lang: i18n::current(),
+                theme: theme::for_anonymous(),
+            }
+            .themed(),
+        )),
     }
 }
 
@@ -240,19 +272,23 @@ pub async fn register_page(
         _ => None,
     };
 
-    Ok(render(RegisterPage {
-        site_name: state.settings.site_name(),
-        error,
-        mode: mode.as_str(),
-        invite_required: mode == RegistrationMode::Invite,
-        registration_open: mode != RegistrationMode::Closed,
-        next: safe_next(query.next.as_deref()).unwrap_or_default(),
-        email: String::new(),
-        display_name: String::new(),
-        invite_code: String::new(),
-        captcha: captcha_widget(&state, CaptchaFlow::Register),
-        lang,
-    }))
+    Ok(render(
+        RegisterPage {
+            site_name: state.settings.site_name(),
+            error,
+            mode: mode.as_str(),
+            invite_required: mode == RegistrationMode::Invite,
+            registration_open: mode != RegistrationMode::Closed,
+            next: safe_next(query.next.as_deref()).unwrap_or_default(),
+            email: String::new(),
+            display_name: String::new(),
+            invite_code: String::new(),
+            captcha: captcha_widget(&state, CaptchaFlow::Register),
+            lang,
+            theme: theme::for_anonymous(),
+        }
+        .themed(),
+    ))
 }
 
 /// `POST /app/register`
@@ -335,21 +371,25 @@ pub async fn register_submit(
                 AppError::RateLimited { .. } => "rate_limited",
                 AppError::Validation { message, .. } => {
                     let lang = i18n::current();
-                    return Ok(render(RegisterPage {
-                        site_name: state.settings.site_name(),
-                        // Validation text comes from the service layer in
-                        // English; map the known messages onto the catalogue.
-                        error: Some(i18n::message(lang, &message)),
-                        mode: mode.as_str(),
-                        invite_required: mode == RegistrationMode::Invite,
-                        registration_open: mode != RegistrationMode::Closed,
-                        next: safe_next(payload.next.as_deref()).unwrap_or_default(),
-                        email: payload.email,
-                        display_name: payload.display_name.unwrap_or_default(),
-                        invite_code: payload.invite_code.unwrap_or_default(),
-                        captcha: captcha_widget(&state, CaptchaFlow::Register),
-                        lang,
-                    }));
+                    return Ok(render(
+                        RegisterPage {
+                            site_name: state.settings.site_name(),
+                            // Validation text comes from the service layer in
+                            // English; map the known messages onto the catalogue.
+                            error: Some(i18n::message(lang, &message)),
+                            mode: mode.as_str(),
+                            invite_required: mode == RegistrationMode::Invite,
+                            registration_open: mode != RegistrationMode::Closed,
+                            next: safe_next(payload.next.as_deref()).unwrap_or_default(),
+                            email: payload.email,
+                            display_name: payload.display_name.unwrap_or_default(),
+                            invite_code: payload.invite_code.unwrap_or_default(),
+                            captcha: captcha_widget(&state, CaptchaFlow::Register),
+                            lang,
+                            theme: theme::for_anonymous(),
+                        }
+                        .themed(),
+                    ));
                 }
                 _ => "invalid",
             };

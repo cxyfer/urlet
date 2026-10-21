@@ -13,6 +13,7 @@ pub mod migrate;
 pub mod sessions;
 pub mod settings;
 pub mod tags;
+pub mod themes;
 pub mod tokens;
 pub mod urls;
 pub mod user_groups;

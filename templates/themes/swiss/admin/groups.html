@@ -1,0 +1,9 @@
+{% extends "themes/swiss/app_base.html" %}
+
+{% block title %}{{ lang.t("admin.groups.title") }} — {{ site_name }}{% endblock %}
+
+{% import "content/admin/groups.html" as content %}
+{% block content %}
+{% include "themes/swiss/admin/tabs.html" %}
+{% call content::content() %}
+{% endblock %}

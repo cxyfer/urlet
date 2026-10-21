@@ -19,6 +19,7 @@ pub mod secret;
 pub mod settings;
 pub mod slug;
 pub mod target;
+pub mod theme;
 pub mod time;
 pub mod tokens;
 pub mod ua;

@@ -24,6 +24,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/assets/app.css", get(routes::assets::css))
         .route("/assets/app.js", get(routes::assets::js))
         .route("/assets/theme.js", get(routes::assets::theme_js))
+        .route("/assets/theme-ui.css", get(routes::assets::theme_ui_css))
+        .route("/assets/themes/{key}", get(routes::assets::theme_css))
         .route("/assets/favicon.svg", get(routes::assets::favicon))
         .route("/favicon.ico", get(routes::assets::favicon_ico))
         .route("/", get(routes::pages::home::home))
@@ -51,6 +53,13 @@ pub fn build_router(state: AppState) -> Router {
             middleware::security::security_headers,
         ))
         .layer(axum::middleware::from_fn(middleware::request_id))
+        // Inside the locale layer so theme names can be translated, and inside
+        // the auth extractors so a page can still decide whether to show the
+        // picker. The task local is readable by error pages too.
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::theme::theme,
+        ))
         // Outermost: every handler, and every error response rendered by
         // `AppError::into_response`, runs with the request language installed.
         .layer(axum::middleware::from_fn(middleware::locale::locale))
@@ -94,6 +103,24 @@ pub async fn bootstrap(state: &AppState) -> Result<()> {
     db::settings::ensure_defaults(&state.db)
         .await
         .map_err(|err| AppError::internal(format!("cannot seed settings: {err}")))?;
+
+    let theme_keys: Vec<&str> = crate::services::theme::ALL
+        .iter()
+        .map(|key| key.key())
+        .collect();
+    db::themes::ensure_defaults(
+        &state.db,
+        &theme_keys,
+        crate::services::theme::ThemeKey::Verdant.key(),
+    )
+    .await
+    .map_err(|err| AppError::internal(format!("cannot seed themes: {err}")))?;
+    state
+        .themes
+        .reload(&state.db)
+        .await
+        .map_err(|err| AppError::internal(format!("cannot load themes: {err}")))?;
+
     bootstrap_admin(state).await?;
     warn_about_first_user(state).await?;
     Ok(())

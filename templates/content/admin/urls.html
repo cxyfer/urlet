@@ -1,0 +1,84 @@
+{% macro content() %}
+<div class="page-head">
+    <div class="page-head-main">
+        <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ lang.t("nav.admin") }}</span>
+        <h1 class="page-title">{{ lang.t("admin.urls.heading") }}</h1>
+    </div>
+    <div class="page-head-side">
+        <span class="page-note">{{ count_label }}</span>
+    </div>
+</div>
+
+<form method="get" action="/app/admin/urls" class="filters filters-links">
+    <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ lang.t("dashboard.search.placeholder") }}">
+    <input class="input" type="number" name="user_id" value="{{ user_id }}" placeholder="{{ lang.t("admin.urls.owner_id_placeholder") }}">
+    <select class="select" name="status">
+        <option value="">{{ lang.t("common.any_status") }}</option>
+        <option value="active" {% if status == "active" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
+        <option value="disabled" {% if status == "disabled" %}selected{% endif %}>{{ lang.t("common.disabled") }}</option>
+    </select>
+    <button class="btn btn-sage" type="submit">{{ lang.t("common.filter") }}</button>
+    <a class="btn btn-ghost" href="/app/admin/urls">{{ lang.t("common.reset") }}</a>
+</form>
+
+<div class="panel panel-flush mt">
+    {% if urls.len() > 0 %}
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>{{ lang.t("common.slug") }}</th><th>{{ lang.t("admin.urls.owner") }}</th><th>{{ lang.t("common.destination") }}</th><th class="num">{{ lang.t("common.clicks") }}</th>
+                    <th>{{ lang.t("common.state") }}</th><th>{{ lang.t("common.expiry") }}</th><th>{{ lang.t("common.actions") }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in urls %}
+                <tr>
+                    <td class="mono">{{ row.url.slug }}</td>
+                    <td class="small">
+                        <a href="/app/admin/urls?user_id={{ row.owner_id }}">{{ row.owner }}</a>
+                    </td>
+                    <td class="truncate" title="{{ row.url.target_url }}">{{ row.url.target_display }}</td>
+                    <td class="num">{{ row.url.click_count }}</td>
+                    <td><span class="badge {{ row.url.state_class }}">{{ row.url.state_label }}</span></td>
+                    <td class="small">
+                        {% match row.url.expires_human %}
+                        {% when Some with (human) %}{{ human }}
+                        {% when None %}<span class="muted">{{ lang.t("common.never") }}</span>{% endmatch %}
+                    </td>
+                    <td>
+                        <div class="row row-tight">
+                            <form method="post" action="/app/admin/urls/{{ row.url.id }}">
+                                <input type="hidden" name="status"
+                                       value="{% if row.url.state == "disabled" %}active{% else %}disabled{% endif %}">
+                                <button class="btn btn-sm" type="submit">
+                                    {% if row.url.state == "disabled" %}{{ lang.t("admin.urls.enable") }}{% else %}{{ lang.t("admin.urls.disable") }}{% endif %}
+                                </button>
+                            </form>
+                            <form method="post" action="/app/admin/urls/{{ row.url.id }}/delete">
+                                <button class="btn btn-sm btn-danger" type="submit"
+                                        data-confirm="{{ lang.t("admin.urls.delete_confirm") }}">{{ lang.t("common.delete") }}</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        <span class="muted small">{{ pagination_note }}</span>
+        {% for link in links %}
+        {% if link.current %}<span class="current">{{ link.label }}</span>
+        {% else %}<a class="btn btn-sm" href="{{ link.url }}">{{ link.label }}</a>{% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <p class="empty">{{ lang.t("admin.urls.empty") }}</p>
+    {% endif %}
+</div>
+{% endmacro %}

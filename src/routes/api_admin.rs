@@ -22,6 +22,8 @@ use crate::services::admin::{self, AdminContext, SystemStats};
 use crate::services::domains::DomainContext;
 use crate::services::groups::{self as group_service, GroupDraft};
 use crate::services::invite_quota::{usage_for, usage_map, InvitePeriod, InviteUsage};
+use crate::services::settings::ThemeSwitching;
+use crate::services::theme::{self as theme_service};
 use crate::services::time;
 use crate::state::AppState;
 
@@ -976,6 +978,130 @@ pub async fn delete_group(
         .delete_group(id, query.reassign_to)
         .await?;
     Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// Theme entry returned by the admin API.
+#[derive(Debug, Clone, Serialize)]
+pub struct AdminThemeDto {
+    pub key: &'static str,
+    pub name: String,
+    pub description: String,
+    pub enabled: bool,
+    pub default: bool,
+    pub dark_only: bool,
+    pub css_url: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AdminThemesDto {
+    pub themes: Vec<AdminThemeDto>,
+    /// `all` or `admin`.
+    pub switching: &'static str,
+}
+
+/// `PUT /api/v1/admin/themes` payload.
+///
+/// Every field is optional so a caller can change just the policy or just the
+/// default. Omitted fields keep their stored value, matching the partial-update
+/// convention of the rest of the admin API.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateThemesPayload {
+    #[serde(default)]
+    pub enabled: Option<Vec<String>>,
+    #[serde(default)]
+    pub default: Option<String>,
+    #[serde(default)]
+    pub switching: Option<String>,
+}
+
+/// `GET /api/v1/admin/themes`
+pub async fn get_themes(
+    State(state): State<AppState>,
+    CurrentUser { user, .. }: CurrentUser,
+) -> Result<Json<AdminThemesDto>, ApiError> {
+    require_admin(&user)?;
+    Ok(Json(themes_response(&state)))
+}
+
+/// `PUT /api/v1/admin/themes`
+pub async fn put_themes(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    CurrentUser { user, .. }: CurrentUser,
+    Json(payload): Json<UpdateThemesPayload>,
+) -> Result<Json<AdminThemesDto>, ApiError> {
+    require_admin(&user)?;
+
+    let current_rows = state.themes.rows();
+    let enabled: Vec<String> = match payload.enabled {
+        Some(keys) => keys,
+        None => current_rows
+            .iter()
+            .filter(|row| row.is_enabled)
+            .map(|row| row.key.clone())
+            .collect(),
+    };
+    let default_key = payload
+        .default
+        .unwrap_or_else(|| state.themes.default_key().key().to_string());
+    let switching = match payload.switching.as_deref() {
+        Some(raw) => {
+            let value = raw.trim().to_ascii_lowercase();
+            if value != "all" && value != "admin" {
+                return Err(ApiError(AppError::validation(
+                    "switching",
+                    "switching must be 'all' or 'admin'",
+                )));
+            }
+            ThemeSwitching::parse(&value)
+        }
+        None => state.settings.theme_switching(),
+    };
+
+    theme_service::update_selection(&state.db, &state.themes, &enabled, &default_key).await?;
+    state
+        .settings
+        .update(
+            &state.db,
+            "theme_switching",
+            switching.as_str(),
+            Some(user.id),
+        )
+        .await?;
+
+    crate::services::audit::Audit::new(crate::services::audit::action::ADMIN_THEMES_UPDATED)
+        .actor(user.id, &user.role)
+        .target(crate::services::audit::target::THEMES, "catalogue")
+        .metadata(serde_json::json!({
+            "enabled": enabled,
+            "default": default_key,
+            "switching": switching.as_str(),
+        }))
+        .ip_hash(client.ip_hash.clone())
+        .record(&state.db)
+        .await;
+
+    Ok(Json(themes_response(&state)))
+}
+
+fn themes_response(state: &AppState) -> AdminThemesDto {
+    AdminThemesDto {
+        // The JSON API is English by contract; the web page localises the same
+        // rows through the request language.
+        themes: theme_service::admin_rows(&state.themes, crate::i18n::Lang::En)
+            .into_iter()
+            .map(|row| AdminThemeDto {
+                key: row.key,
+                name: row.name,
+                description: row.description,
+                enabled: row.is_enabled,
+                default: row.is_default,
+                dark_only: row.is_dark_only,
+                css_url: row.css_url,
+            })
+            .collect(),
+        switching: state.settings.theme_switching().as_str(),
+    }
 }
 
 /// `GET /api/v1/admin/settings`

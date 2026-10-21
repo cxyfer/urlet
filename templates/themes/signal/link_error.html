@@ -1,0 +1,21 @@
+{% extends "themes/signal/base.html" %}
+
+{% block title %}{{ status_code }} — {{ title }}{% endblock %}
+
+{% block body %}
+<div class="link-page link-page-warn">
+    <div class="link-card">
+        <div class="link-accent" aria-hidden="true"></div>
+        <div class="link-brand">
+            <a href="/">{{ site_name }}</a>
+            <span class="link-brand-meta" aria-hidden="true">/// {{ status_code }}</span>
+        </div>
+        <div class="link-body">
+            <span class="link-glyph" aria-hidden="true">!</span>
+            <h1>{{ title }}</h1>
+            <p>{{ message }}</p>
+            <a class="btn btn-primary btn-block" href="/app">{{ lang.t("link.go_to") }} {{ site_name }}</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

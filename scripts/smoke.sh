@@ -393,13 +393,29 @@ echo "pages"
 for path in /app/login /app/register; do
     check "GET $path renders" "200" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE$path")"
 done
-for path in /app /app/account /app/admin /app/admin/users /app/admin/groups /app/admin/urls /app/admin/invites /app/admin/settings /app/admin/audit; do
+for path in /app /app/account /app/admin /app/admin/users /app/admin/groups /app/admin/urls /app/admin/invites /app/admin/domains /app/admin/themes /app/admin/settings /app/admin/audit; do
     check "GET $path renders for an admin" "200" \
         "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" "$BASE$path")"
 done
 check "the admin user filter accepts an empty group" "200" \
     "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" "$BASE/app/admin/users?q=&role=&status=&group_id=")"
 check "GET /app without a session redirects" "303" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/app")"
+
+# ---------------------------------------------------------------- themes
+echo
+echo "themes"
+contains "the theme catalogue is seeded" '"verdant"' "$(curl -s -b "$COOKIES" "$BASE/api/v1/admin/themes")"
+check "the theme stylesheet is embedded" "200" \
+    "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/assets/themes/paper")"
+check "an unknown theme stylesheet is 404" "404" \
+    "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/assets/themes/unknown")"
+cp "$COOKIES" "$DATA/theme-cookies.txt"
+check "a signed-in user can switch themes" "302" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -b "$DATA/theme-cookies.txt" -c "$DATA/theme-cookies.txt" "$BASE/app/theme/paper")"
+contains "the chosen theme is rendered" 'data-theme-key="paper"' \
+    "$(curl -s -b "$DATA/theme-cookies.txt" "$BASE/app")"
+contains "the chosen theme loads its stylesheet" '/assets/themes/paper' \
+    "$(curl -s -b "$DATA/theme-cookies.txt" "$BASE/app")"
 
 # ------------------------------------------------------------- persistence
 echo

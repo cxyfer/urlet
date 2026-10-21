@@ -1,0 +1,58 @@
+{% extends "themes/signal/base.html" %}
+
+{% block title %}{{ lang.t("auth.login.title") }} — {{ site_name }}{% endblock %}
+
+{% block body %}
+<div class="auth-shell">
+    <div class="auth-topline" aria-hidden="true">
+        <span>///</span>
+        <span class="auth-rule"></span>
+        <span>01</span>
+    </div>
+
+    <div class="auth-sheet">
+        <div class="auth-accent" aria-hidden="true"></div>
+        <header class="auth-head">
+            <span class="auth-index" aria-hidden="true">01 / ///</span>
+            <h1>{{ site_name }}</h1>
+            <p class="auth-sub">{{ lang.t("auth.login.subtitle") }}</p>
+        </header>
+
+        <div class="auth-body">
+            {% match notice %}
+            {% when Some with (message) %}
+            <div class="alert alert-ok">{{ message }}</div>
+            {% when None %}
+            {% endmatch %}
+
+            {% match error %}
+            {% when Some with (message) %}
+            <div class="alert alert-error">{{ message }}</div>
+            {% when None %}
+            {% endmatch %}
+
+            <form method="post" action="/app/login">
+                <input type="hidden" name="next" value="{{ next }}">
+                <div class="field">
+                    <label class="label" for="email">{{ lang.t("common.email") }}</label>
+                    <input class="input" type="email" id="email" name="email" value="{{ email }}"
+                           autocomplete="username" required autofocus>
+                </div>
+                <div class="field">
+                    <label class="label" for="password">{{ lang.t("common.password") }}</label>
+                    <input class="input" type="password" id="password" name="password"
+                           autocomplete="current-password" required>
+                </div>
+                {% include "partials/captcha.html" %}
+                <button class="btn btn-primary btn-block btn-lg" type="submit">{{ lang.t("auth.login.submit") }}</button>
+            </form>
+        </div>
+
+        <div class="auth-foot">
+            <p class="small muted">
+                {{ lang.t("auth.login.no_account") }} <a href="/app/register">{{ lang.t("auth.login.create_one") }}</a>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

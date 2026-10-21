@@ -1,0 +1,81 @@
+{% extends "themes/signal/app_base.html" %}
+
+{% block title %}{{ lang.t("admin.audit.title") }} — {{ site_name }}{% endblock %}
+
+{% block content %}
+{% include "themes/signal/admin/tabs.html" %}
+
+<div class="page-head admin-head">
+    <div class="page-head-main">
+        <div class="page-kicker" aria-hidden="true">
+            <span class="k-index">06</span>
+            <span class="k-rule"></span>
+            <span>/// LOG</span>
+        </div>
+        <h1>{{ lang.t("admin.audit.heading") }}</h1>
+    </div>
+    <div class="page-head-side">
+        <span class="page-chip page-chip-block">{{ count_label }}</span>
+    </div>
+</div>
+
+<section class="panel">
+    <div class="panel-bar">
+        <h2>{{ lang.t("admin.audit.heading") }}</h2>
+        <span class="bar-tag" aria-hidden="true">///</span>
+    </div>
+
+    <form method="get" action="/app/admin/audit" class="toolbar">
+        <input class="input" type="search" name="action" value="{{ action }}" placeholder="{{ lang.t("admin.audit.action_placeholder") }}"
+               aria-label="{{ lang.t("admin.audit.action_placeholder") }}">
+        <input class="input" type="search" name="target_type" value="{{ target_type }}"
+               placeholder="{{ lang.t("admin.audit.target_placeholder") }}"
+               aria-label="{{ lang.t("admin.audit.target_placeholder") }}">
+        <button class="btn" type="submit">{{ lang.t("common.filter") }}</button>
+        <a class="btn btn-ghost" href="/app/admin/audit">{{ lang.t("common.reset") }}</a>
+    </form>
+
+    {% if entries.len() > 0 %}
+    <div class="table-wrap" tabindex="0" role="region" aria-label="{{ lang.t("admin.audit.heading") }}">
+        <table class="table table-wide">
+            <thead>
+                <tr>
+                    <th scope="col">{{ lang.t("common.when") }}</th>
+                    <th scope="col">{{ lang.t("admin.audit.action") }}</th>
+                    <th scope="col">{{ lang.t("admin.audit.actor") }}</th>
+                    <th scope="col">{{ lang.t("admin.audit.target") }}</th>
+                    <th scope="col">{{ lang.t("admin.audit.details") }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in entries %}
+                <tr>
+                    <td class="small nowrap">{{ entry.when }}</td>
+                    <td class="mono small">{{ entry.action }}</td>
+                    <td class="small">{{ entry.actor }}</td>
+                    <td class="small">{{ entry.target }}</td>
+                    <td class="small mono truncate" title="{{ entry.metadata }}">{{ entry.metadata }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        <span class="muted small">{{ pagination_note }}</span>
+        {% for link in links %}
+        {% if link.current %}<span class="current">{{ link.label }}</span>
+        {% else %}<a class="btn btn-sm" href="{{ link.url }}">{{ link.label }}</a>{% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="empty">
+        <span class="empty-glyph" aria-hidden="true">∅</span>
+        <p>{{ lang.t("admin.audit.empty") }}</p>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

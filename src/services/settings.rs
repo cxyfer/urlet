@@ -63,7 +63,31 @@ pub const EDITABLE_KEYS: &[&str] = &[
     "captcha_on_register",
     "captcha_on_login",
     "captcha_on_create",
+    "theme_switching",
 ];
+
+/// Who may change their own theme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThemeSwitching {
+    All,
+    AdminOnly,
+}
+
+impl ThemeSwitching {
+    pub fn parse(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "admin" | "admins" | "admin_only" | "admin-only" => Self::AdminOnly,
+            _ => Self::All,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::AdminOnly => "admin",
+        }
+    }
+}
 
 /// Settings that are write only: stored, used, but never handed back out.
 pub const SECRET_KEYS: &[&str] = &["captcha_secret_key"];
@@ -241,6 +265,11 @@ impl Settings {
 
     pub fn analytics_enabled(&self) -> bool {
         self.raw_bool("analytics_enabled", true)
+    }
+
+    /// Who may switch to another theme. Administrators are never restricted.
+    pub fn theme_switching(&self) -> ThemeSwitching {
+        ThemeSwitching::parse(&self.raw("theme_switching").unwrap_or_default())
     }
 
     pub fn click_retention_days(&self) -> i64 {
@@ -469,6 +498,11 @@ fn validate_value(key: &str, value: &str) -> Result<String> {
             "1" | "true" | "yes" | "on"
         )
         .to_string()),
+        "theme_switching" => match value.to_ascii_lowercase().as_str() {
+            "all" => Ok("all".to_string()),
+            "admin" | "admins" | "admin_only" | "admin-only" => Ok("admin".to_string()),
+            _ => Err(invalid("theme switching must be 'all' or 'admin'")),
+        },
         _ => Err(invalid("unknown setting")),
     }
 }
@@ -476,6 +510,19 @@ fn validate_value(key: &str, value: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_theme_switching_modes() {
+        assert_eq!(ThemeSwitching::parse("all"), ThemeSwitching::All);
+        assert_eq!(ThemeSwitching::parse(" ADMIN "), ThemeSwitching::AdminOnly);
+        assert_eq!(
+            ThemeSwitching::parse("admin-only"),
+            ThemeSwitching::AdminOnly
+        );
+        assert_eq!(ThemeSwitching::parse("nonsense"), ThemeSwitching::All);
+        assert_eq!(ThemeSwitching::All.as_str(), "all");
+        assert_eq!(ThemeSwitching::AdminOnly.as_str(), "admin");
+    }
 
     #[test]
     fn parses_registration_modes() {
@@ -514,6 +561,12 @@ mod tests {
         );
         assert!(validate_value("unknown_key", "x").is_err());
         assert!(validate_value("site_name", "").is_err());
+        assert_eq!(validate_value("theme_switching", "all").expect("ok"), "all");
+        assert_eq!(
+            validate_value("theme_switching", "ADMIN").expect("ok"),
+            "admin"
+        );
+        assert!(validate_value("theme_switching", "some").is_err());
     }
 
     #[test]

@@ -78,10 +78,19 @@
         link.setAttribute("href", href + "?next=" + encodeURIComponent(next));
     });
 
+    /* Carry the current path into the theme picker too. */
+    document.querySelectorAll("[data-theme-switcher] a").forEach(function (link) {
+        var href = link.getAttribute("href");
+        if (!href || href.indexOf("next=") !== -1) { return; }
+        var next = window.location.pathname + window.location.search;
+        if (!next) { return; }
+        link.setAttribute("href", href + "?next=" + encodeURIComponent(next));
+    });
+
     /* Close the language dropdown on an outside click. The native <details>
        handles the toggle itself, so this is purely a polish enhancement. */
     document.addEventListener("click", function (event) {
-        document.querySelectorAll("details[data-lang-switcher][open]").forEach(function (details) {
+        document.querySelectorAll("details[data-lang-switcher][open], details[data-theme-switcher][open]").forEach(function (details) {
             if (!details.contains(event.target)) {
                 details.removeAttribute("open");
             }
@@ -90,7 +99,7 @@
 
     document.addEventListener("keydown", function (event) {
         if (event.key !== "Escape") { return; }
-        document.querySelectorAll("details[data-lang-switcher][open]").forEach(function (details) {
+        document.querySelectorAll("details[data-lang-switcher][open], details[data-theme-switcher][open]").forEach(function (details) {
             details.removeAttribute("open");
             var summary = details.querySelector("summary");
             if (summary) { summary.focus(); }

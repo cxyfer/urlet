@@ -1,0 +1,43 @@
+{% extends "themes/gilded/base.html" %}
+{% import "partials/theme_switcher.html" as theme_switcher %}
+
+{# Signed-in pages carry the switcher in the top bar instead of the footer. #}
+{% block footer_lang %}{% endblock %}
+
+{% block body %}
+<div class="topbar topbar-app">
+    <div class="topbar-inner">
+        <a class="brand" href="/app">{{ chrome.site_name }}<span>.</span></a>
+        <nav class="nav nav-main">
+            <a href="/app" {% if chrome.active == "dashboard" %}class="active"{% endif %}>{{ lang.t("nav.links") }}</a>
+            <a href="/app/account" {% if chrome.active == "account" %}class="active"{% endif %}>{{ lang.t("nav.account") }}</a>
+            <a href="/app/invites" {% if chrome.active == "invites" %}class="active"{% endif %}>{{ lang.t("nav.invites") }}</a>
+            {% if chrome.is_admin %}
+            <a href="/app/admin" {% if chrome.active == "admin" %}class="active"{% endif %}>{{ lang.t("nav.admin") }}</a>
+            {% endif %}
+        </nav>
+        <div class="nav-tools">
+            {% call theme_switcher::switcher(chrome.theme, lang) %}
+            {% include "partials/lang_switcher.html" %}
+            <span class="muted small user-email">{{ chrome.email }}</span>
+            <form method="post" action="/app/logout">
+                <button class="btn btn-outline btn-sm" type="submit">{{ lang.t("nav.sign_out") }}</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% block band %}{% endblock %}
+
+<main class="wrap">
+    {% match chrome.flash %}
+    {% when Some with (flash) %}
+    <div class="alert alert-{{ flash.kind }}" {% if flash.kind == "ok" %}data-auto-dismiss{% endif %}>
+        {{ flash.message }}
+    </div>
+    {% when None %}
+    {% endmatch %}
+
+    {% block content %}{% endblock %}
+</main>
+{% endblock %}

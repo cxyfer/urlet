@@ -1,4 +1,5 @@
-//! Admin pages: overview, users, links, invites, settings and the audit log.
+//! Admin pages: overview, users, groups, links, invites, domains, themes,
+//! settings and the audit log.
 
 use askama::Template;
 use axum::extract::rejection::FormRejection;
@@ -19,6 +20,7 @@ use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::routes::dto::UrlDto;
 use crate::routes::pages::dashboard::clean;
+use crate::routes::pages::themed::ThemedContext;
 use crate::routes::pages::{
     flash_from_query, page_links, redirect_err, redirect_ok, redirect_to_login, Chrome, PageLink,
     UrlRow,
@@ -28,15 +30,16 @@ use crate::services::captcha::CaptchaProvider;
 use crate::services::domains::{DomainContext, DomainOption, DomainRegistry};
 use crate::services::groups::{self as group_service, GroupDraft, GroupOverview};
 use crate::services::invite_quota::{usage_for, usage_map, InvitePeriod, InviteUsage};
-use crate::services::settings::Settings;
+use crate::services::settings::{Settings, ThemeSwitching};
+use crate::services::theme::{self as theme_service, AdminThemeRow};
 use crate::services::time;
 use crate::state::AppState;
+use crate::themed_page;
 
 const PER_PAGE: i64 = 25;
 
 /// Admin overview page.
-#[derive(Debug, Template)]
-#[template(path = "admin/overview.html")]
+#[derive(Debug)]
 pub struct OverviewPage {
     pub site_name: String,
     pub section: &'static str,
@@ -44,6 +47,15 @@ pub struct OverviewPage {
     pub stats: OverviewStats,
     pub lang: Lang,
 }
+
+themed_page!(overview_templates, OverviewPageView, OverviewPage,
+    Verdant => "admin/overview.html",
+    Aurora => "themes/aurora/admin/overview.html",
+    Paper => "themes/paper/admin/overview.html",
+    Signal => "themes/signal/admin/overview.html",
+    Gilded => "themes/gilded/admin/overview.html",
+    Swiss => "themes/swiss/admin/overview.html",
+);
 
 /// Numbers rendered on the overview page.
 #[derive(Debug, Clone, Default)]
@@ -63,8 +75,7 @@ pub struct OverviewStats {
 }
 
 /// Users page.
-#[derive(Debug, Template)]
-#[template(path = "admin/users.html")]
+#[derive(Debug)]
 pub struct UsersPage {
     pub site_name: String,
     pub section: &'static str,
@@ -85,6 +96,15 @@ pub struct UsersPage {
     pub pagination_note: String,
     pub lang: Lang,
 }
+
+themed_page!(users_templates, UsersPageView, UsersPage,
+    Verdant => "admin/users.html",
+    Aurora => "themes/aurora/admin/users.html",
+    Paper => "themes/paper/admin/users.html",
+    Signal => "themes/signal/admin/users.html",
+    Gilded => "themes/gilded/admin/users.html",
+    Swiss => "themes/swiss/admin/users.html",
+);
 
 /// One group as a filter option or assignment target.
 #[derive(Debug, Clone)]
@@ -120,8 +140,7 @@ pub struct AdminUserRow {
 }
 
 /// Links page.
-#[derive(Debug, Template)]
-#[template(path = "admin/urls.html")]
+#[derive(Debug)]
 pub struct AdminUrlsPage {
     pub site_name: String,
     pub section: &'static str,
@@ -141,6 +160,15 @@ pub struct AdminUrlsPage {
     pub lang: Lang,
 }
 
+themed_page!(admin_urls_templates, AdminUrlsPageView, AdminUrlsPage,
+    Verdant => "admin/urls.html",
+    Aurora => "themes/aurora/admin/urls.html",
+    Paper => "themes/paper/admin/urls.html",
+    Signal => "themes/signal/admin/urls.html",
+    Gilded => "themes/gilded/admin/urls.html",
+    Swiss => "themes/swiss/admin/urls.html",
+);
+
 /// One row of the admin link table.
 #[derive(Debug, Clone)]
 pub struct AdminUrlRow {
@@ -150,8 +178,7 @@ pub struct AdminUrlRow {
 }
 
 /// Domains page.
-#[derive(Debug, Template)]
-#[template(path = "admin/domains.html")]
+#[derive(Debug)]
 pub struct DomainsPage {
     pub site_name: String,
     pub section: &'static str,
@@ -159,6 +186,15 @@ pub struct DomainsPage {
     pub domains: Vec<DomainRow>,
     pub lang: Lang,
 }
+
+themed_page!(domains_templates, DomainsPageView, DomainsPage,
+    Verdant => "admin/domains.html",
+    Aurora => "themes/aurora/admin/domains.html",
+    Paper => "themes/paper/admin/domains.html",
+    Signal => "themes/signal/admin/domains.html",
+    Gilded => "themes/gilded/admin/domains.html",
+    Swiss => "themes/swiss/admin/domains.html",
+);
 
 /// One row of the domain table.
 #[derive(Debug, Clone)]
@@ -222,8 +258,7 @@ impl DomainRow {
 }
 
 /// Invites page.
-#[derive(Debug, Template)]
-#[template(path = "admin/invites.html")]
+#[derive(Debug)]
 pub struct InvitesPage {
     pub site_name: String,
     pub section: &'static str,
@@ -240,6 +275,15 @@ pub struct InvitesPage {
     pub lang: Lang,
 }
 
+themed_page!(admin_invites_templates, InvitesPageView, InvitesPage,
+    Verdant => "admin/invites.html",
+    Aurora => "themes/aurora/admin/invites.html",
+    Paper => "themes/paper/admin/invites.html",
+    Signal => "themes/signal/admin/invites.html",
+    Gilded => "themes/gilded/admin/invites.html",
+    Swiss => "themes/swiss/admin/invites.html",
+);
+
 /// One row of the invite table.
 #[derive(Debug, Clone)]
 pub struct InviteRow {
@@ -255,8 +299,7 @@ pub struct InviteRow {
 }
 
 /// User groups page.
-#[derive(Debug, Template)]
-#[template(path = "admin/groups.html")]
+#[derive(Debug)]
 pub struct GroupsPage {
     pub site_name: String,
     pub section: &'static str,
@@ -266,6 +309,15 @@ pub struct GroupsPage {
     pub domains: Vec<crate::services::domains::DomainOption>,
     pub lang: Lang,
 }
+
+themed_page!(groups_templates, GroupsPageView, GroupsPage,
+    Verdant => "admin/groups.html",
+    Aurora => "themes/aurora/admin/groups.html",
+    Paper => "themes/paper/admin/groups.html",
+    Signal => "themes/signal/admin/groups.html",
+    Gilded => "themes/gilded/admin/groups.html",
+    Swiss => "themes/swiss/admin/groups.html",
+);
 
 /// One row of the group table, carrying both display and form values.
 #[derive(Debug, Clone)]
@@ -481,8 +533,7 @@ fn quota_display(value: Option<i64>, site_default: i64, lang: Lang) -> String {
 }
 
 /// Settings page.
-#[derive(Debug, Template)]
-#[template(path = "admin/settings.html")]
+#[derive(Debug)]
 pub struct SettingsPage {
     pub site_name: String,
     pub section: &'static str,
@@ -490,6 +541,15 @@ pub struct SettingsPage {
     pub values: SettingsValues,
     pub lang: Lang,
 }
+
+themed_page!(settings_templates, SettingsPageView, SettingsPage,
+    Verdant => "admin/settings.html",
+    Aurora => "themes/aurora/admin/settings.html",
+    Paper => "themes/paper/admin/settings.html",
+    Signal => "themes/signal/admin/settings.html",
+    Gilded => "themes/gilded/admin/settings.html",
+    Swiss => "themes/swiss/admin/settings.html",
+);
 
 /// Current values of every editable setting.
 #[derive(Debug, Clone, Default)]
@@ -518,9 +578,29 @@ pub struct SettingsValues {
     pub captcha_state: Option<String>,
 }
 
+/// Themes page: enable/disable the compiled-in designs and choose the default.
+#[derive(Debug)]
+pub struct ThemesPage {
+    pub site_name: String,
+    pub section: &'static str,
+    pub chrome: Chrome,
+    pub themes: Vec<AdminThemeRow>,
+    /// `all` or `admin`; the raw token drives the select.
+    pub switching: String,
+    pub lang: Lang,
+}
+
+themed_page!(themes_templates, ThemesPageView, ThemesPage,
+    Verdant => "admin/themes.html",
+    Aurora => "themes/aurora/admin/themes.html",
+    Paper => "themes/paper/admin/themes.html",
+    Signal => "themes/signal/admin/themes.html",
+    Gilded => "themes/gilded/admin/themes.html",
+    Swiss => "themes/swiss/admin/themes.html",
+);
+
 /// Audit page.
-#[derive(Debug, Template)]
-#[template(path = "admin/audit.html")]
+#[derive(Debug)]
 pub struct AuditPage {
     pub site_name: String,
     pub section: &'static str,
@@ -539,6 +619,15 @@ pub struct AuditPage {
     pub pagination_note: String,
     pub lang: Lang,
 }
+
+themed_page!(audit_templates, AuditPageView, AuditPage,
+    Verdant => "admin/audit.html",
+    Aurora => "themes/aurora/admin/audit.html",
+    Paper => "themes/paper/admin/audit.html",
+    Signal => "themes/signal/admin/audit.html",
+    Gilded => "themes/gilded/admin/audit.html",
+    Swiss => "themes/swiss/admin/audit.html",
+);
 
 /// One row of the audit table.
 #[derive(Debug, Clone)]
@@ -724,6 +813,44 @@ fn parse_optional_number(field: &'static str, raw: Option<&str>) -> Result<Optio
 pub struct DeleteGroupForm {
     #[serde(default)]
     pub reassign_to: Option<String>,
+}
+
+/// `POST /app/admin/themes`.
+#[derive(Debug, Deserialize)]
+pub struct ThemeForm {
+    pub default_theme: String,
+    pub theme_switching: String,
+    #[serde(default)]
+    pub enabled_verdant: Option<String>,
+    #[serde(default)]
+    pub enabled_aurora: Option<String>,
+    #[serde(default)]
+    pub enabled_paper: Option<String>,
+    #[serde(default)]
+    pub enabled_signal: Option<String>,
+    #[serde(default)]
+    pub enabled_gilded: Option<String>,
+    #[serde(default)]
+    pub enabled_swiss: Option<String>,
+}
+
+impl ThemeForm {
+    fn enabled(&self) -> Vec<String> {
+        let mut keys = Vec::new();
+        for (key, checked) in [
+            ("verdant", self.enabled_verdant.is_some()),
+            ("aurora", self.enabled_aurora.is_some()),
+            ("paper", self.enabled_paper.is_some()),
+            ("signal", self.enabled_signal.is_some()),
+            ("gilded", self.enabled_gilded.is_some()),
+            ("swiss", self.enabled_swiss.is_some()),
+        ] {
+            if checked {
+                keys.push(key.to_string());
+            }
+        }
+        keys
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1333,6 +1460,98 @@ fn domain_error_code(err: &AppError) -> &'static str {
         AppError::RateLimited { .. } => "rate_limited",
         _ => "invalid",
     }
+}
+
+/// `GET /app/admin/themes`
+pub async fn themes_page(
+    State(state): State<AppState>,
+    MaybeUser(current): MaybeUser,
+    Query(query): Query<AdminQuery>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/themes")).into_response());
+    };
+    render_themes(
+        &state,
+        &current.user,
+        flash_from_query(query.ok.as_deref(), query.err.as_deref()),
+    )
+    .await
+}
+
+/// `POST /app/admin/themes`
+pub async fn update_themes(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    MaybeUser(current): MaybeUser,
+    form: std::result::Result<Form<ThemeForm>, FormRejection>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/themes")).into_response());
+    };
+    let Ok(Form(payload)) = form else {
+        return Ok(redirect_err("/app/admin/themes", "invalid").into_response());
+    };
+
+    let switching = match payload.theme_switching.trim().to_ascii_lowercase().as_str() {
+        "all" => ThemeSwitching::All,
+        "admin" | "admins" | "admin_only" | "admin-only" => ThemeSwitching::AdminOnly,
+        _ => return Ok(redirect_err("/app/admin/themes", "theme").into_response()),
+    };
+    let enabled = payload.enabled();
+    if let Err(err) =
+        theme_service::update_selection(&state.db, &state.themes, &enabled, &payload.default_theme)
+            .await
+    {
+        tracing::debug!(error = %err, "theme selection rejected");
+        return Ok(redirect_err("/app/admin/themes", "theme").into_response());
+    }
+
+    // Keep the policy and the catalogue in the same request. A failure here is
+    // surfaced instead of silently leaving the old policy in force.
+    if let Err(err) = context(&state, &client, &current.user)
+        .update_settings(&[(
+            "theme_switching".to_string(),
+            switching.as_str().to_string(),
+        )])
+        .await
+    {
+        tracing::error!(error = %err, "theme policy write failed after catalogue update");
+        return Ok(redirect_err("/app/admin/themes", "theme").into_response());
+    }
+
+    crate::services::audit::Audit::new(crate::services::audit::action::ADMIN_THEMES_UPDATED)
+        .actor(current.user.id, &current.user.role)
+        .target(crate::services::audit::target::THEMES, "catalogue")
+        .metadata(serde_json::json!({
+            "enabled": enabled,
+            "default": payload.default_theme,
+            "switching": switching.as_str(),
+        }))
+        .ip_hash(client.ip_hash.clone())
+        .record(&state.db)
+        .await;
+
+    Ok(redirect_ok("/app/admin/themes", "saved").into_response())
+}
+
+async fn render_themes(
+    state: &AppState,
+    user: &User,
+    flash: Option<crate::routes::pages::Flash>,
+) -> Result<Response, AppError> {
+    let lang = i18n::current();
+    render(
+        ThemesPage {
+            section: "themes",
+            site_name: state.settings.site_name(),
+            chrome: Chrome::new(state, user, "admin", flash),
+            themes: theme_service::admin_rows(&state.themes, lang),
+            switching: state.settings.theme_switching().as_str().to_string(),
+            lang,
+        },
+        StatusCode::OK,
+    )
 }
 
 /// `GET /app/admin/settings`
@@ -2017,8 +2236,8 @@ pub fn settings_values(settings: &Settings) -> SettingsValues {
     }
 }
 
-fn render<T: Template>(template: T, status: StatusCode) -> Result<Response, AppError> {
-    match template.render() {
+fn render<T: ThemedContext>(template: T, status: StatusCode) -> Result<Response, AppError> {
+    match template.themed().render() {
         Ok(html) => Ok((status, Html(html)).into_response()),
         Err(err) => Err(AppError::internal(format!("template error: {err}"))),
     }

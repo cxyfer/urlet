@@ -1,0 +1,57 @@
+{% extends "themes/swiss/base.html" %}
+{% import "partials/theme_switcher.html" as theme_switcher %}
+
+{# Signed-in pages carry the switcher in the top bar instead of the footer. #}
+{% block footer_lang %}{% endblock %}
+
+{% block body %}
+<div class="telemetry">
+    <div class="telemetry-inner">
+        <span class="telemetry-site"><span class="dot" aria-hidden="true"></span>{{ chrome.site_name }}</span>
+        <span class="telemetry-marks" aria-hidden="true">/////</span>
+        <span class="telemetry-section">
+            {% if chrome.active == "dashboard" %}{{ lang.t("nav.links") }}
+            {% else if chrome.active == "account" %}{{ lang.t("nav.account") }}
+            {% else if chrome.active == "admin" %}{{ lang.t("nav.admin") }}
+            {% else %}{{ lang.t("nav.links") }}{% endif %}
+        </span>
+        <span class="telemetry-tail">
+            {% call theme_switcher::switcher(chrome.theme, lang) %}
+            {% include "partials/lang_switcher.html" %}
+        </span>
+    </div>
+</div>
+
+<header class="masthead">
+    <div class="masthead-inner">
+        <a class="brand" href="/app">{{ chrome.site_name }}<span>.</span></a>
+        <nav class="nav">
+            <a href="/app" {% if chrome.active == "dashboard" %}class="active"{% endif %}>{{ lang.t("nav.links") }}</a>
+            <a href="/app/account" {% if chrome.active == "account" %}class="active"{% endif %}>{{ lang.t("nav.account") }}</a>
+            <a href="/app/invites" {% if chrome.active == "invites" %}class="active"{% endif %}>{{ lang.t("nav.invites") }}</a>
+            {% if chrome.is_admin %}
+            <a href="/app/admin" {% if chrome.active == "admin" %}class="active"{% endif %}>{{ lang.t("nav.admin") }}</a>
+            {% endif %}
+        </nav>
+        <div class="masthead-actions">
+            <span class="who" title="{{ chrome.email }}">{{ chrome.email }}</span>
+            <form method="post" action="/app/logout">
+                <button class="btn btn-sm" type="submit">{{ lang.t("nav.sign_out") }}</button>
+            </form>
+        </div>
+    </div>
+</header>
+
+<main class="wrap">
+    {% match chrome.flash %}
+    {% when Some with (flash) %}
+    <div class="alert alert-{{ flash.kind }}" {% if flash.kind == "ok" %}data-auto-dismiss{% endif %}>
+        <span class="alert-glyph" aria-hidden="true">{% if flash.kind == "ok" %}+{% else %}!{% endif %}</span>
+        <span>{{ flash.message }}</span>
+    </div>
+    {% when None %}
+    {% endmatch %}
+
+    {% block content %}{% endblock %}
+</main>
+{% endblock %}
