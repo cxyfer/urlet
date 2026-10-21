@@ -468,7 +468,8 @@ at `WARN`.
 Members can issue invite codes for their **own group** when that group has
 `allow_invites` enabled. Codes are pinned to the group, so anyone who redeems one
 joins it. The group's calendar quota (`max_invites` / `invite_period`) applies and
-is shared with administrator-issued codes; revoking a code does not free its slot.
+is shared with administrator-issued codes. Revoking a code that nobody redeemed
+returns its slot; a redeemed code keeps it.
 
 ### `GET /api/v1/invites`
 
@@ -526,6 +527,8 @@ exhausted.
 
 `204`, revokes one of the caller's own codes. Another member's code is reported
 as `404`; administrators use `DELETE /api/v1/admin/invites/{id}` for any code.
+Revoking a code that nobody redeemed returns its quota slot; a code that was
+already redeemed keeps it.
 
 ---
 
@@ -566,7 +569,7 @@ default, which can differ from `default_domain` when the stored group default is
 | DELETE | `/admin/urls/{id}` | `204` |
 | GET | `/admin/invites` | Invite code list with `code`, `link`, `prefix`, `group_id` / `group_name`; `code` and `link` are `null` for legacy or secret-rotated rows, and `link` is also `null` for revoked, exhausted or expired codes |
 | POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`; `link` mirrors `invite.link` and is `null` if the code is already unusable; the code stays available from `GET` and the link is returned while usable; `403` when the group's per-period invite quota is exhausted |
-| DELETE | `/admin/invites/{id}` | `204`, revoke |
+| DELETE | `/admin/invites/{id}` | `204`, revoke; an unused code returns its quota slot, a redeemed code keeps it |
 | GET | `/admin/settings` | Current settings, including `theme_switching` (`all` or `admin`) |
 | PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", "theme_switching": "admin", ... }` |
 | GET | `/admin/audit?action=&target_type=&actor=&page=` | Audit log (`metadata` is parsed into JSON) |
@@ -589,9 +592,9 @@ omitted quotas inherit).
 `max_invites` is nullable (`null` inherits the site-wide `max_invites_per_period`, `0` is
 unlimited) and `invite_period` is `day`, `week` (Monday start) or `month`, evaluated in UTC.
 Issuing past the limit returns `403` with `error.code = "forbidden"` and a message naming the
-limit. The counter lives in an issuance ledger, so revoking a code does **not** return its slot;
-it resets by itself at the next period boundary. Invites created without `group_id` consume the
-site-wide quota instead.
+limit. The counter lives in an issuance ledger: revoking a code that nobody redeemed releases its
+slot, while a redeemed code keeps it. The quota resets by itself at the next period boundary.
+Invites created without `group_id` consume the site-wide quota instead.
 
 **Guard rails**: an administrator cannot change their own role or status, cannot delete
 themselves, and the instance always keeps at least one active administrator (otherwise the

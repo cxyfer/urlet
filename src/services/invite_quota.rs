@@ -6,9 +6,10 @@
 //! how link and token quotas work. Invites that are not pinned to a group use
 //! the site-wide quota and the site-wide `invite_period` setting.
 //!
-//! The counter lives in the `invite_issuance` ledger, not in `invite_codes`, so
-//! revoking a code does not free its slot. Periods are calendar based: the
-//! counter resets on its own at the next boundary, with no scheduled job.
+//! The counter lives in the `invite_issuance` ledger, not in `invite_codes`:
+//! revoking a code that was never redeemed releases its slot, while a code that
+//! already admitted someone keeps it. Periods are calendar based: the counter
+//! resets on its own at the next boundary, with no scheduled job.
 
 use std::collections::HashMap;
 

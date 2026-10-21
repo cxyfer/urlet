@@ -103,6 +103,11 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/0013_custom_theme_appearance.sql"),
         kind: MigrationKind::Transactional,
     },
+    Migration {
+        version: "0014_invite_issuance_released",
+        sql: include_str!("../../migrations/0014_invite_issuance_released.sql"),
+        kind: MigrationKind::Transactional,
+    },
 ];
 
 /// Apply all pending migrations.
@@ -1240,6 +1245,89 @@ mod tests {
                 .expect("converted auto row");
         assert_eq!(dark, "dark");
         assert_eq!(auto, "auto");
+
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn invite_refund_migration_releases_only_unused_revoked_codes() {
+        let dir = std::env::temp_dir().join(format!(
+            "urlet-migrate-invite-refund-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = format!("{}/invite-refund.db", dir.display());
+        let options = test_options(&path);
+        let pool = test_pool(&options).await;
+
+        run_until(&pool, &options, "0013_custom_theme_appearance")
+            .await
+            .expect("schema through version 13");
+        let now = now_iso();
+        // The default group seeded by 0004 gives the ledger a valid group_id.
+        for (hash, status, used_count) in [
+            ("unused-revoked", "revoked", 0),
+            ("used-revoked", "revoked", 1),
+            ("still-active", "active", 0),
+        ] {
+            let id = sqlx::query(
+                "INSERT INTO invite_codes
+                     (code_hash, code_prefix, group_id, max_uses, used_count, status, created_at)
+                 VALUES (?, 'ABCD', 1, 1, ?, ?, ?)",
+            )
+            .bind(hash)
+            .bind(used_count)
+            .bind(status)
+            .bind(&now)
+            .execute(&pool)
+            .await
+            .expect("invite")
+            .last_insert_rowid();
+            sqlx::query(
+                "INSERT INTO invite_issuance (group_id, actor_id, invite_id, created_at)
+                 VALUES (1, NULL, ?, ?)",
+            )
+            .bind(id)
+            .bind(&now)
+            .execute(&pool)
+            .await
+            .expect("ledger row");
+        }
+
+        run(&pool, &options).await.expect("upgrade to version 14");
+        let rows: Vec<(String, Option<String>)> = sqlx::query_as(
+            "SELECT c.code_hash, i.released_at
+               FROM invite_codes c JOIN invite_issuance i ON i.invite_id = c.id
+              ORDER BY c.code_hash",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("released ledger rows");
+        for (hash, released_at) in rows {
+            match hash.as_str() {
+                "unused-revoked" => {
+                    assert!(
+                        released_at.is_some(),
+                        "a revoked, never-redeemed code returns its slot"
+                    );
+                }
+                "used-revoked" => assert!(
+                    released_at.is_none(),
+                    "a redeemed code keeps its slot even when revoked"
+                ),
+                "still-active" => assert!(released_at.is_none()),
+                other => panic!("unexpected invite {other}"),
+            }
+        }
+        let used: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM invite_issuance
+              WHERE group_id = 1 AND released_at IS NULL",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("usage");
+        assert_eq!(used, 2, "only the released row stops counting");
 
         pool.close().await;
         let _ = std::fs::remove_dir_all(&dir);

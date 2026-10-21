@@ -250,7 +250,8 @@ impl Issuer<'_> {
     }
 
     /// Revoke one of the caller's own codes. Someone else's code is reported as
-    /// missing so the endpoint cannot be used to probe for ids.
+    /// missing so the endpoint cannot be used to probe for ids. An unused code
+    /// releases its quota slot; a redeemed code keeps it.
     pub async fn revoke_owned(&self, invite_id: i64) -> Result<()> {
         let invite = invites::find_by_id(self.pool, invite_id)
             .await

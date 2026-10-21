@@ -1,8 +1,9 @@
 //! Integration tests for per-group invite issuance quotas.
 //!
 //! The quota is charged when an invite code is *issued*, lives in the
-//! `invite_issuance` ledger (so revoking does not refund a slot) and resets at
-//! the next calendar period boundary.
+//! `invite_issuance` ledger and resets at the next calendar period boundary.
+//! Revoking a code that nobody redeemed releases its slot; a redeemed code
+//! keeps it.
 
 mod common;
 
@@ -228,7 +229,7 @@ async fn a_new_period_frees_the_quota() {
 }
 
 #[tokio::test]
-async fn revoking_a_code_does_not_refund_the_slot() {
+async fn revoking_an_unused_code_refunds_the_slot() {
     let app = TestApp::spawn().await;
     let cookie = admin(&app).await;
     let group = create_group(&app, &cookie, json!({ "name": "One", "max_invites": 1 })).await;
@@ -246,12 +247,106 @@ async fn revoking_a_code_does_not_refund_the_slot() {
         .await;
     assert_eq!(revoked.status, StatusCode::NO_CONTENT, "{}", revoked.body);
 
-    // The slot was consumed when the code was issued, so revocation cannot be
-    // used to issue unlimited codes.
+    // Nobody redeemed the code, so the slot returns to the group.
+    assert_eq!(
+        group_in_listing(&app, &cookie, "One").await["invites_used"],
+        0
+    );
+    let released_at: Option<String> =
+        sqlx::query_scalar("SELECT released_at FROM invite_issuance WHERE invite_id = ?")
+            .bind(invite_id)
+            .fetch_one(&app.state.db)
+            .await
+            .expect("ledger row");
+    assert!(released_at.is_some(), "the ledger row is marked released");
+    assert_eq!(
+        create_invite(&app, &cookie, Some(group_id)).await.status,
+        StatusCode::CREATED,
+        "the refunded slot is reusable"
+    );
+}
+
+#[tokio::test]
+async fn revoking_an_unused_site_wide_code_refunds_the_site_pool() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+    set_setting(&app, &cookie, "max_invites_per_period", "1").await;
+
+    let created = create_invite(&app, &cookie, None).await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let invite_id = created.json()["invite"]["id"].as_i64().expect("invite id");
+    assert_eq!(
+        create_invite(&app, &cookie, None).await.status,
+        StatusCode::FORBIDDEN
+    );
+
+    let revoked = app
+        .send(delete_as(
+            &format!("/api/v1/admin/invites/{invite_id}"),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(revoked.status, StatusCode::NO_CONTENT, "{}", revoked.body);
+
+    assert_eq!(
+        create_invite(&app, &cookie, None).await.status,
+        StatusCode::CREATED,
+        "an unused site-wide code returns its slot too"
+    );
+}
+
+#[tokio::test]
+async fn revoking_a_redeemed_code_keeps_its_slot() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+    let group = create_group(&app, &cookie, json!({ "name": "Used", "max_invites": 1 })).await;
+    let group_id = group["id"].as_i64().expect("id");
+
+    let created = create_invite(&app, &cookie, Some(group_id)).await;
+    assert_eq!(created.status, StatusCode::CREATED);
+    let created = created.json();
+    let invite_id = created["invite"]["id"].as_i64().expect("invite id");
+    let code = created["code"].as_str().expect("code").to_string();
+
+    let registered = app
+        .post_json(
+            "/api/v1/auth/register",
+            json!({ "email": "redeemed@example.com", "password": "supersecret", "invite_code": code }),
+        )
+        .await;
+    assert_eq!(
+        registered.status,
+        StatusCode::CREATED,
+        "{}",
+        registered.body
+    );
+
+    let revoked = app
+        .send(delete_as(
+            &format!("/api/v1/admin/invites/{invite_id}"),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(revoked.status, StatusCode::NO_CONTENT, "{}", revoked.body);
+
+    // The code admitted a user, so revocation must not refund the slot; that
+    // would let a group redeem a code per period and still issue unlimited
+    // replacements.
+    assert_eq!(
+        group_in_listing(&app, &cookie, "Used").await["invites_used"],
+        1
+    );
     assert_eq!(
         create_invite(&app, &cookie, Some(group_id)).await.status,
         StatusCode::FORBIDDEN
     );
+    let released_at: Option<String> =
+        sqlx::query_scalar("SELECT released_at FROM invite_issuance WHERE invite_id = ?")
+            .bind(invite_id)
+            .fetch_one(&app.state.db)
+            .await
+            .expect("ledger row");
+    assert!(released_at.is_none(), "a redeemed code keeps its slot");
 }
 
 #[tokio::test]
@@ -759,8 +854,18 @@ async fn the_member_invite_page_renders_and_revokes() {
         "a revoked code must not offer a link: {}",
         after.body
     );
+    assert!(
+        after.body.contains("0 of 3 per week"),
+        "revoking an unused code must refund the quota in the page: {}",
+        after.body
+    );
 
     let listing = app.get_as("/api/v1/invites", &member_cookie).await.json();
+    assert_eq!(
+        listing["quota"]["used"], 0,
+        "the refund is visible through the member API"
+    );
+    assert_eq!(listing["quota"]["remaining"], 3);
     assert!(
         listing["items"][0]["link"].is_null(),
         "a revoked code must not expose a link: {}",
