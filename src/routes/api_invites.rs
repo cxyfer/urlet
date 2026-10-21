@@ -29,7 +29,8 @@ pub struct MemberInviteDto {
     pub prefix: String,
     /// `null` for codes issued before sealed storage or after a secret change.
     pub code: Option<String>,
-    /// Registration link prefilled with `code`; `null` when `code` is `null`.
+    /// Registration link prefilled with `code`; `null` when `code` is `null`
+    /// or the invite is revoked, exhausted or expired.
     pub link: Option<String>,
     pub note: Option<String>,
     pub group_id: Option<i64>,
@@ -44,14 +45,20 @@ pub struct MemberInviteDto {
 
 impl MemberInviteDto {
     fn new(invite: &Invite, now: &str, code: Option<String>, base_url: &str) -> Self {
-        let link = code
-            .as_deref()
-            .map(|code| invites::registration_link(base_url, code));
         let expired = invite
             .expires_at
             .as_deref()
             .map(|value| value <= now)
             .unwrap_or(false);
+        let usable = invite.status == "active" && !invite.is_exhausted() && !expired;
+        // A link for a revoked, exhausted or expired code is guaranteed to
+        // fail. Keep the code for history, but never hand clients a stale URL.
+        let link = if usable {
+            code.as_deref()
+                .map(|code| invites::registration_link(base_url, code))
+        } else {
+            None
+        };
         Self {
             id: invite.id,
             prefix: invite.code_prefix.clone(),
@@ -64,7 +71,7 @@ impl MemberInviteDto {
             remaining: (invite.max_uses - invite.used_count).max(0),
             expires_at: invite.expires_at.clone(),
             status: invite.status.clone(),
-            usable: invite.status == "active" && !invite.is_exhausted() && !expired,
+            usable,
             created_at: invite.created_at.clone(),
         }
     }

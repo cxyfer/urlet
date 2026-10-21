@@ -349,7 +349,8 @@ pub struct InviteDto {
     pub prefix: String,
     /// `null` for codes issued before sealed storage or after a secret change.
     pub code: Option<String>,
-    /// Registration link prefilled with `code`; `null` when `code` is `null`.
+    /// Registration link prefilled with `code`; `null` when `code` is `null`
+    /// or the invite is revoked, exhausted or expired.
     pub link: Option<String>,
     pub note: Option<String>,
     pub group_id: Option<i64>,
@@ -366,14 +367,20 @@ pub struct InviteDto {
 
 impl InviteDto {
     fn new(invite: &Invite, now: &str, code: Option<String>, base_url: &str) -> Self {
-        let link = code
-            .as_deref()
-            .map(|code| crate::services::invites::registration_link(base_url, code));
         let expired = invite
             .expires_at
             .as_deref()
             .map(|value| value <= now)
             .unwrap_or(false);
+        let usable = invite.status == "active" && !invite.is_exhausted() && !expired;
+        // A link for a revoked, exhausted or expired code is guaranteed to
+        // fail. Keep the code for history, but never hand clients a stale URL.
+        let link = if usable {
+            code.as_deref()
+                .map(|code| crate::services::invites::registration_link(base_url, code))
+        } else {
+            None
+        };
         Self {
             id: invite.id,
             prefix: invite.code_prefix.clone(),
@@ -389,7 +396,7 @@ impl InviteDto {
             expires_at: invite.expires_at.clone(),
             status: invite.status.clone(),
             created_at: invite.created_at.clone(),
-            usable: invite.status == "active" && !invite.is_exhausted() && !expired,
+            usable,
         }
     }
 
@@ -1116,13 +1123,13 @@ mod tests {
         let dto = InviteDto::new(
             &invite,
             "2026-01-01T00:00:00.000Z",
-            None,
+            Some("K7M2QPX4RT".into()),
             "https://s.example.com",
         );
         assert_eq!(dto.remaining, 0);
         assert!(!dto.usable, "an exhausted invite is not usable");
-        assert!(dto.code.is_none());
-        assert!(dto.link.is_none());
+        assert_eq!(dto.code.as_deref(), Some("K7M2QPX4RT"));
+        assert!(dto.link.is_none(), "an exhausted code has no usable link");
 
         let mut fresh = invite.clone();
         fresh.used_count = 0;
@@ -1141,6 +1148,24 @@ mod tests {
         let mut expired = invite.clone();
         expired.used_count = 0;
         expired.expires_at = Some("2000-01-01T00:00:00.000Z".into());
-        assert!(!InviteDto::new(&expired, "2026-01-01T00:00:00.000Z", None, "").usable);
+        let dto = InviteDto::new(
+            &expired,
+            "2026-01-01T00:00:00.000Z",
+            Some("K7M2QPX4RT".into()),
+            "https://s.example.com",
+        );
+        assert!(!dto.usable);
+        assert!(dto.link.is_none(), "an expired code has no usable link");
+
+        let mut revoked = fresh;
+        revoked.status = "revoked".into();
+        let dto = InviteDto::new(
+            &revoked,
+            "2026-01-01T00:00:00.000Z",
+            Some("K7M2QPX4RT".into()),
+            "https://s.example.com",
+        );
+        assert!(!dto.usable);
+        assert!(dto.link.is_none(), "a revoked code has no usable link");
     }
 }

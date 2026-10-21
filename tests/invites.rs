@@ -690,6 +690,17 @@ async fn the_member_invite_page_renders_and_revokes() {
         "a revoked code must not offer a link: {}",
         after.body
     );
+
+    let listing = app.get_as("/api/v1/invites", &member_cookie).await.json();
+    assert!(
+        listing["items"][0]["link"].is_null(),
+        "a revoked code must not expose a link: {}",
+        listing["items"][0]
+    );
+    assert!(
+        listing["items"][0]["code"].is_string(),
+        "the code stays visible for history"
+    );
 }
 
 #[tokio::test]

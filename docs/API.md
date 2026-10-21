@@ -467,7 +467,9 @@ effective quota.
 ```
 
 `code` and `link` are `null` for codes created before sealed storage or after
-`URLET_SECRET` changed; `prefix` is always present. `per_page` defaults to 20 and
+`URLET_SECRET` changed; `prefix` is always present. `link` is also `null` when
+the code is revoked, exhausted or expired, while `code` stays visible for
+history. `per_page` defaults to 20 and
 is capped at 100. `quota.allowed` is `false` when the group does not enable
 member invites: creating a code then returns `403`, but codes issued before the
 toggle was turned off remain listed and revocable. `remaining` is `null` when
@@ -528,7 +530,7 @@ default, which can differ from `default_domain` when the stored group default is
 | GET | `/admin/urls?q=&status=&user_id=&page=` | Every short link on the instance |
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |
-| GET | `/admin/invites` | Invite code list with `code`, `link`, `prefix`, `group_id` / `group_name`; `code` and `link` are `null` for legacy or secret-rotated rows |
+| GET | `/admin/invites` | Invite code list with `code`, `link`, `prefix`, `group_id` / `group_name`; `code` and `link` are `null` for legacy or secret-rotated rows, and `link` is also `null` for revoked, exhausted or expired codes |
 | POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`; the code and registration link stay available from `GET`; `403` when the group's per-period invite quota is exhausted |
 | DELETE | `/admin/invites/{id}` | `204`, revoke |
 | GET | `/admin/settings` | Current settings |
