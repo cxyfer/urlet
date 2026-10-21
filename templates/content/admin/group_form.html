@@ -14,7 +14,8 @@
     </div>
 </div>
 
-<form method="post" action="{{ form_action }}">
+<div data-group-form-panel>
+<form method="post" action="{{ form_action }}" data-group-form>
     <section class="panel mt">
         <div class="panel-head">
             <h2>{{ lang.t("admin.groups.details") }}</h2>
@@ -268,7 +269,8 @@
         </div>
 
         <div class="form-actions">
-            <a class="btn btn-ghost" href="/app/admin/groups">{{ lang.t("common.cancel") }}</a>
+            <a class="btn btn-ghost" href="/app/admin/groups"
+               data-group-dialog-close>{{ lang.t("common.cancel") }}</a>
             <button class="btn btn-primary" type="submit">{% if is_edit %}{{ lang.t("common.save") }}{% else %}{{ lang.t("admin.groups.create") }}{% endif %}</button>
         </div>
     </section>
@@ -309,4 +311,5 @@
 </section>
 {% endif %}
 {% endif %}
+</div>
 {% endmacro %}

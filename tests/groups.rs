@@ -1721,6 +1721,10 @@ async fn group_create_and_edit_share_one_form() {
         .await;
     assert_eq!(new_page.status, StatusCode::OK, "{}", new_page.body);
     assert_eq!(edit_page.status, StatusCode::OK, "{}", edit_page.body);
+    for page in [&new_page, &edit_page] {
+        assert!(page.body.contains("data-group-form-panel"));
+        assert!(page.body.contains("data-group-form"));
+    }
 
     // Both routes render the same controls, not two drifting forms.
     for needle in [
@@ -1782,6 +1786,9 @@ async fn group_create_and_edit_share_one_form() {
     assert!(list_page
         .body
         .contains(&format!("/app/admin/groups/{group_id}/edit")));
+    assert!(list_page.body.contains("<dialog class=\"group-dialog\""));
+    assert!(list_page.body.contains("data-group-dialog-root"));
+    assert!(list_page.body.contains("data-group-dialog"));
 
     let missing = app
         .get_as("/app/admin/groups/999999/edit", &admin_cookie)

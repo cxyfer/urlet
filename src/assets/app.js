@@ -116,8 +116,11 @@
 
     /* Group form: count the capabilities and offer the bulk switches. Both stay
        hidden until here, so a form without JavaScript is not left with dead
-       buttons; the checkboxes themselves work either way. */
-    document.querySelectorAll("[data-cap-block]").forEach(function (block) {
+       buttons; the checkboxes themselves work either way. The initializer is
+       reusable because the same form is inserted into the dialog after a fetch. */
+    function initCapBlock(block) {
+        if (block.hasAttribute("data-cap-ready")) { return; }
+        block.setAttribute("data-cap-ready", "");
         var boxes = block.querySelectorAll('.cap-item input[type="checkbox"]');
         var count = block.querySelector("[data-cap-count]");
         var template = count ? (count.getAttribute("data-cap-template") || "") : "";
@@ -142,12 +145,18 @@
         });
         boxes.forEach(function (box) { box.addEventListener("change", refresh); });
         refresh();
-    });
+    }
+
+    function initCapBlocks(root) {
+        root.querySelectorAll("[data-cap-block]").forEach(initCapBlock);
+    }
 
     /* The domain allowlist only applies to the "list" policy. Mark the rest
        inert instead of hiding it, so the checked domains still submit and the
        group keeps its allowlist while another policy is selected. */
-    document.querySelectorAll("[data-policy-block]").forEach(function (block) {
+    function initPolicyBlock(block) {
+        if (block.hasAttribute("data-policy-ready")) { return; }
+        block.setAttribute("data-policy-ready", "");
         var radios = block.querySelectorAll('input[name="domain_policy"]');
         var pane = block.querySelector("[data-policy-pane]");
         if (!pane || !radios.length) { return; }
@@ -165,7 +174,189 @@
 
         radios.forEach(function (radio) { radio.addEventListener("change", refresh); });
         refresh();
-    });
+    }
+
+    function initPolicyBlocks(root) {
+        root.querySelectorAll("[data-policy-block]").forEach(initPolicyBlock);
+    }
+
+    initCapBlocks(document);
+    initPolicyBlocks(document);
+
+    /* Create and edit groups in a floating <dialog>. The normal links stay in
+       the HTML, so the dedicated form pages remain the no-JavaScript fallback.
+       A rejected submission is rendered back into the same dialog with its
+       values and error banner intact. */
+    (function initGroupDialog() {
+        var dialog = document.querySelector("[data-group-dialog-root]");
+        if (!dialog || typeof dialog.showModal !== "function"
+            || typeof window.fetch !== "function"
+            || typeof window.DOMParser !== "function") {
+            return;
+        }
+        var body = dialog.querySelector("[data-group-dialog-body]");
+        var heading = dialog.querySelector("#group-dialog-title");
+        if (!body) { return; }
+        var loadingText = dialog.getAttribute("data-loading") || "Loading…";
+        var errorText = dialog.getAttribute("data-error") || "Something went wrong.";
+        var sequence = 0;
+
+        function setBusy(busy) {
+            if (busy) {
+                body.setAttribute("aria-busy", "true");
+            } else {
+                body.removeAttribute("aria-busy");
+            }
+        }
+
+        function parse(html) {
+            var doc = new DOMParser().parseFromString(html, "text/html");
+            return {
+                panel: doc.querySelector("[data-group-form-panel]"),
+                flash: doc.querySelector(".app-main > .alert"),
+                title: doc.querySelector(".page-title")
+            };
+        }
+
+        function enhance(root) {
+            initCapBlocks(root);
+            initPolicyBlocks(root);
+        }
+
+        function render(html) {
+            var parsed = parse(html);
+            if (!parsed.panel) { return false; }
+            body.textContent = "";
+            if (parsed.flash) { body.appendChild(parsed.flash); }
+            body.appendChild(parsed.panel);
+            if (heading) {
+                heading.textContent = parsed.title ? parsed.title.textContent.trim() : "";
+            }
+            enhance(body);
+            var first = body.querySelector('input:not([type="hidden"]), select, textarea');
+            if (first) { first.focus(); }
+            return true;
+        }
+
+        function showLoading() {
+            body.textContent = "";
+            var note = document.createElement("p");
+            note.className = "hint group-dialog-loading";
+            note.textContent = loadingText;
+            body.appendChild(note);
+            if (heading) { heading.textContent = loadingText; }
+            setBusy(true);
+        }
+
+        function showError(clear) {
+            var previous = body.querySelector(".group-dialog-error");
+            if (previous) { previous.remove(); }
+            if (clear) { body.textContent = ""; }
+            var note = document.createElement("p");
+            note.className = "alert alert-error group-dialog-error";
+            note.textContent = errorText;
+            body.insertBefore(note, body.firstChild);
+            setBusy(false);
+        }
+
+        function open(url) {
+            sequence += 1;
+            var ticket = sequence;
+            if (!dialog.open) { dialog.showModal(); }
+            showLoading();
+            fetch(url, { credentials: "same-origin" })
+                .then(function (response) {
+                    if (ticket !== sequence) { return null; }
+                    if (!response.ok) { return null; }
+                    return response.text();
+                })
+                .then(function (html) {
+                    if (ticket !== sequence) { return; }
+                    if (html === null || !render(html)) {
+                        window.location.assign(url);
+                        return;
+                    }
+                    setBusy(false);
+                })
+                .catch(function () {
+                    if (ticket !== sequence) { return; }
+                    showError(true);
+                });
+        }
+
+        function submit(form) {
+            var data;
+            try {
+                // The server uses axum's urlencoded Form extractor, so convert
+                // the FormData instead of sending multipart/form-data.
+                data = new URLSearchParams(new FormData(form));
+            } catch (err) {
+                // Very old browsers without URLSearchParams still get a normal
+                // urlencoded submission, just without the in-dialog update.
+                form.submit();
+                return;
+            }
+            var submitButton = form.querySelector('[type="submit"]');
+            setBusy(true);
+            if (submitButton) { submitButton.disabled = true; }
+            fetch(form.getAttribute("action"), {
+                method: (form.getAttribute("method") || "POST").toUpperCase(),
+                body: data,
+                credentials: "same-origin"
+            }).then(function (response) {
+                if (response.redirected) {
+                    window.location.assign(response.url);
+                    return null;
+                }
+                return response.text();
+            }).then(function (html) {
+                if (html === null || !dialog.open) { return; }
+                if (!render(html)) {
+                    window.location.assign(form.getAttribute("action"));
+                    return;
+                }
+                setBusy(false);
+                if (submitButton) { submitButton.disabled = false; }
+            }).catch(function () {
+                if (!dialog.open) { return; }
+                if (submitButton) { submitButton.disabled = false; }
+                showError(false);
+            });
+        }
+
+        document.addEventListener("click", function (event) {
+            var link = event.target.closest("[data-group-dialog]");
+            if (link) {
+                event.preventDefault();
+                open(link.getAttribute("href"));
+                return;
+            }
+            var close = event.target.closest("[data-group-dialog-close]");
+            if (close) {
+                event.preventDefault();
+                dialog.close();
+                return;
+            }
+            if (event.target === dialog) {
+                dialog.close();
+            }
+        });
+
+        dialog.addEventListener("submit", function (event) {
+            var form = event.target.closest("form[data-group-form]");
+            if (!form) { return; }
+            event.preventDefault();
+            submit(form);
+        });
+
+        dialog.addEventListener("close", function () {
+            sequence += 1;
+            body.textContent = "";
+            setBusy(false);
+            if (heading) { heading.textContent = ""; }
+        });
+    })();
+
     /* Theme uploads: turn the styled label into a real drop target. The native
        input remains the form control, so selecting a file still works when
        JavaScript is unavailable. */

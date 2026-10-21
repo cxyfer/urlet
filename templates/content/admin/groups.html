@@ -6,7 +6,8 @@
     </div>
     <div class="page-head-side">
         <span class="hint">{{ lang.t("admin.groups.intro") }}</span>
-        <a class="btn btn-primary" href="/app/admin/groups/new">{{ lang.t("admin.groups.new") }}</a>
+        <a class="btn btn-primary" href="/app/admin/groups/new"
+           data-group-dialog aria-haspopup="dialog">{{ lang.t("admin.groups.new") }}</a>
     </div>
 </div>
 
@@ -49,6 +50,7 @@
                     <td class="small col-created">{{ group.created }}</td>
                     <td class="col-actions">
                         <a class="btn btn-sm" href="/app/admin/groups/{{ group.id }}/edit"
+                           data-group-dialog aria-haspopup="dialog"
                            aria-label="{{ lang.t("common.edit") }} {{ group.name }}">{{ lang.t("common.edit") }}</a>
                     </td>
                 </tr>
@@ -57,4 +59,16 @@
         </table>
     </div>
 </div>
+
+<dialog class="group-dialog" data-group-dialog-root
+        data-loading="{{ lang.t("common.loading") }}"
+        data-error="{{ lang.t("common.error") }}"
+        aria-labelledby="group-dialog-title">
+    <div class="group-dialog-head">
+        <h2 id="group-dialog-title"></h2>
+        <button class="btn btn-sm btn-ghost group-dialog-close" type="button"
+                data-group-dialog-close aria-label="{{ lang.t("common.close") }}">✕</button>
+    </div>
+    <div class="group-dialog-body" data-group-dialog-body></div>
+</dialog>
 {% endmacro %}
