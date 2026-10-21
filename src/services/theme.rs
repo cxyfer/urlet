@@ -709,7 +709,9 @@ pub fn admin_rows(registry: &ThemeRegistry, lang: Lang) -> Vec<AdminThemeRow> {
     out
 }
 
-fn human_size(bytes: i64) -> String {
+/// Format a byte count for the theme tables, so the list and the edit page
+/// describe the same upload the same way.
+pub fn human_size(bytes: i64) -> String {
     let bytes = bytes.max(0) as f64;
     if bytes >= 1024.0 * 1024.0 {
         format!("{:.1} MB", bytes / (1024.0 * 1024.0))

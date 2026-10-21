@@ -1053,6 +1053,37 @@ async fn group_domain_policy_radio_drives_the_form() {
     assert_eq!(row["restrict_domains"], false);
     assert_eq!(row["allowed_domain_ids"].as_array().expect("ids").len(), 2);
 
+    // "default" turns selection off, but it must not rewrite the stored
+    // restriction: the allowlist is inert while selection is off and the API
+    // keeps reporting the flag, so a page save cannot quietly drop it.
+    let body = format!(
+        "name=Radio+Scope&max_urls=&max_api_tokens=&domain_policy=list         &default_domain_id={a}&domain_{a}=on&domain_{b}=on"
+    );
+    let response = app
+        .send(post_form_as(
+            &format!("/app/admin/groups/{group_id}"),
+            &body,
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    let body = format!(
+        "name=Radio+Scope&max_urls=&max_api_tokens=&domain_policy=default         &default_domain_id={a}&domain_{a}=on&domain_{b}=on"
+    );
+    let response = app
+        .send(post_form_as(
+            &format!("/app/admin/groups/{group_id}"),
+            &body,
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    let list = groups(&app, &admin_cookie).await;
+    let row = group_named(&list, "Radio Scope");
+    assert_eq!(row["allow_domain_selection"], false);
+    assert_eq!(row["restrict_domains"], true);
+    assert_eq!(row["allowed_domain_ids"].as_array().expect("ids").len(), 2);
+
     // An unknown value is refused instead of silently picking a scope.
     let response = app
         .send(post_form_as(

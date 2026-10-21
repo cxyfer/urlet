@@ -152,14 +152,21 @@ pub async fn create(pool: &SqlitePool, new: &NewCustomTheme) -> Result<i64, sqlx
     Ok(result.last_insert_rowid())
 }
 
-/// Update the editable name/description/dark-only flags.
-pub async fn update_metadata(
+/// Update the editable metadata and, when supplied, the replaced stylesheet in
+/// one transaction.
+///
+/// The two halves have to land together: a row whose name changed but whose
+/// `css_version` still names the old file would serve the previous stylesheet
+/// under the new label until the next restart.
+pub async fn update(
     pool: &SqlitePool,
     id: i64,
     name: &str,
     description: &str,
     appearance: ThemeAppearance,
+    replaced_css: Option<(&str, i64, &str)>,
 ) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
     sqlx::query(
         "UPDATE custom_themes
             SET name = ?, description = ?, appearance = ?, updated_at = ?
@@ -170,31 +177,23 @@ pub async fn update_metadata(
     .bind(appearance.as_str())
     .bind(now_iso())
     .bind(id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
-    Ok(())
-}
-
-/// Record a replaced stylesheet so its URL cache-busts immediately.
-pub async fn update_css(
-    pool: &SqlitePool,
-    id: i64,
-    css_version: &str,
-    css_size: i64,
-    original_filename: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE custom_themes
-            SET css_version = ?, css_size = ?, original_filename = ?, updated_at = ?
-          WHERE id = ?",
-    )
-    .bind(css_version)
-    .bind(css_size)
-    .bind(original_filename)
-    .bind(now_iso())
-    .bind(id)
-    .execute(pool)
-    .await?;
+    if let Some((css_version, css_size, original_filename)) = replaced_css {
+        sqlx::query(
+            "UPDATE custom_themes
+                SET css_version = ?, css_size = ?, original_filename = ?, updated_at = ?
+              WHERE id = ?",
+        )
+        .bind(css_version)
+        .bind(css_size)
+        .bind(original_filename)
+        .bind(now_iso())
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
     Ok(())
 }
 

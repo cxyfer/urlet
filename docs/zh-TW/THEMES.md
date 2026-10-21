@@ -67,7 +67,9 @@ volume；重啟後 registry 會從資料庫重建，上傳主題仍可選用。
 
 - 單一 `.css` 檔、UTF-8、最大 256 KiB；
 - 每個執行個體最多 32 個自訂主題；
-- 不可使用外部 `url(...)`、`@import`、`expression(...)` 或舊式 `behavior`；
+- 完全不可出現外部 URL：`url(...)`、`image-set(...)` 與裸 `https://` 都算，
+  且會先解碼 CSS 跳脫序列，`u\72l(` 無法繞過檢查；
+- 不可使用 `@import`、`expression(...)` 或舊式 `behavior`；
 - 以 `text/css` 與 `X-Content-Type-Options: nosniff` 提供，無法變成 HTML 文件。
 
 上傳主題也會決定調色盤的行為：

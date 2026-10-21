@@ -351,7 +351,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | ID | 需求 | 說明 |
 |----|------|------|
 | FR-SPLASH-1 | 模式 | 每個連結都有 `redirect_mode`：`direct`（預設，也就是既有行為）或 `splash`。建立與編輯表單及 `POST/PATCH /api/v1/urls` 皆接受此欄位；資料庫中的未知值在轉址路徑回退為 `direct` |
-| FR-SPLASH-2 | 渲染 | 有效且未受密碼保護的中轉頁連結回 `200` HTML，並帶 `Cache-Control: no-store`。頁面顯示自訂（或在地化預設）標題與說明、目的地主機、倒數與「立即前往」按鈕，並以 `<meta http-equiv="refresh">` 自動轉往目標。除了共用同源網站資源外，不額外載入腳本或外部資源，因此維持嚴格 CSP |
+| FR-SPLASH-2 | 渲染 | 有效且未受密碼保護的中轉頁連結回 `200` HTML，並帶 `Cache-Control: no-store`。頁面顯示自訂（或在地化預設）標題與說明、目的地主機、倒數與「立即前往」按鈕，並以 `<meta http-equiv="refresh">` 自動轉往目標。除了共用同源網站資源外，不額外載入腳本或外部資源，因此維持嚴格 CSP。中轉頁對所有 User-Agent 一視同仁，因此連結預覽（unfurl）看到的是中轉頁而非目的地；這是刻意行為，且頁面帶 `noindex` |
 | FR-SPLASH-3 | 點擊記錄 | 中轉頁曝光即為一次點擊，於頁面送出時排入佇列。meta refresh 與「立即前往」都直接連到目標，因此不會重複計算一次目標造訪 |
 | FR-SPLASH-4 | 密碼優先 | 有密碼的連結一律顯示密碼頁，絕不顯示中轉頁。解鎖成功後直接前往目標；密碼頁是唯一的中間頁 |
 | FR-SPLASH-5 | 文案 | `splash_title` 最多 120 字元且不得含控制字元。`splash_message` 最多 500 字元，允許換行、拒絕其他控制字元。兩者皆為選填；空白時使用在地化預設文案。標題與說明都會進行 HTML 跳脫 |
@@ -461,7 +461,7 @@ login_attempts (稽核用)
 
 ### 6.3 DDL（migration 摘要）
 
-> 完整真實來源為 `migrations/` 目錄（`0001_init.sql`、`0003_multi_domain.sql` 的多網域重建與 `0004_user_groups.sql` 的群組與 `0005_group_domains.sql` 的網域策略）；以下為結構摘要。
+> 完整真實來源為 `migrations/` 目錄（`0001_init.sql`、`0003_multi_domain.sql` 的多網域重建與 `0004_user_groups.sql` 的群組與 `0005_group_domains.sql` 的網域策略、`0011_splash_pages.sql` 的轉址中繼頁與 `0012_custom_themes.sql`／`0013_custom_theme_appearance.sql` 的上傳主題）；以下為結構摘要。
 
 | 表 | 主要欄位 | 用途 |
 |----|----------|------|

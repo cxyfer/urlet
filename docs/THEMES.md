@@ -80,7 +80,10 @@ The upload is deliberately restricted:
 
 - one `.css` file, UTF-8, 256 KiB at most;
 - at most 32 custom themes per instance;
-- no external `url(...)`, `@import`, `expression(...)` or legacy `behavior`;
+- no external URL anywhere: `url(...)`, `image-set(...)` and a bare `https://`
+  all count, and CSS escapes are decoded first, so `u\72l(` cannot smuggle one
+  past the check;
+- no `@import`, `expression(...)` or legacy `behavior`;
 - served as `text/css` with `X-Content-Type-Options: nosniff`, so it cannot turn
   into an HTML document.
 

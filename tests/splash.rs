@@ -627,6 +627,14 @@ async fn a_direct_only_group_blocks_splash_creation_but_keeps_existing_links() {
         form.header("location").as_deref(),
         Some("/app?err=mode_denied")
     );
+
+    // ... and the page actually shows the message, not just the code.
+    let flashed = app.get_as("/app?err=mode_denied", &member_cookie).await;
+    assert_eq!(flashed.status, StatusCode::OK);
+    assert!(
+        flashed.body.contains("limits the redirect mode"),
+        "the mode_denied flash must be rendered"
+    );
 }
 
 #[tokio::test]

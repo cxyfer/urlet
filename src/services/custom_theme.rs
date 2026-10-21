@@ -117,28 +117,107 @@ pub fn validate_css(bytes: &[u8]) -> Result<String> {
         ));
     }
     let lower = trimmed.to_ascii_lowercase();
-    for forbidden in [
-        "expression(",
-        "javascript:",
-        "vbscript:",
-        "-moz-binding",
-        "behavior:",
-        "@import",
-    ] {
-        if lower.contains(forbidden) {
+    // Run the same checks on the escape-decoded, comment-free text. CSS lets an
+    // author write `u\72l(` or `@\69 mport`, which a browser reads as `url(` and
+    // `@import`, so a bare substring scan would step around the list below.
+    let decoded = decode_css(trimmed);
+    for text in [&lower, &decoded] {
+        for forbidden in [
+            "expression(",
+            "javascript:",
+            "vbscript:",
+            "-moz-binding",
+            "behavior:",
+            "@import",
+        ] {
+            if text.contains(forbidden) {
+                return Err(AppError::validation(
+                    "css",
+                    format!("the stylesheet may not use {forbidden}"),
+                ));
+            }
+        }
+        if has_external_url(text) {
             return Err(AppError::validation(
                 "css",
-                format!("the stylesheet may not use {forbidden}"),
+                "the stylesheet may not load external resources",
             ));
         }
     }
-    if has_external_url(&lower) {
+    if has_external_reference(&decoded) {
         return Err(AppError::validation(
             "css",
             "the stylesheet may not load external resources",
         ));
     }
     Ok(trimmed.to_string())
+}
+
+/// Strip comments and decode CSS escapes.
+///
+/// This is not a parser: it produces the text the browser's tokenizer would
+/// recognise for the handful of tokens checked above. Comments become a space
+/// (so a URL in a comment is not a false positive) and an unterminated comment
+/// runs to the end of the file, exactly as CSS specifies.
+fn decode_css(css: &str) -> String {
+    let mut out = String::with_capacity(css.len());
+    let mut chars = css.chars().peekable();
+    while let Some(current) = chars.next() {
+        if current == '/' && chars.peek() == Some(&'*') {
+            chars.next();
+            let mut previous = '\0';
+            for next in chars.by_ref() {
+                if previous == '*' && next == '/' {
+                    break;
+                }
+                previous = next;
+            }
+            out.push(' ');
+            continue;
+        }
+        if current != '\\' {
+            out.push(current);
+            continue;
+        }
+        // A CSS escape is up to six hex digits (one optional trailing space) or
+        // the next character taken literally.
+        let mut hex = String::new();
+        while hex.len() < 6 {
+            match chars.peek() {
+                Some(next) if next.is_ascii_hexdigit() => {
+                    hex.push(*next);
+                    chars.next();
+                }
+                _ => break,
+            }
+        }
+        if hex.is_empty() {
+            if let Some(next) = chars.next() {
+                out.push(next);
+            }
+        } else {
+            if matches!(chars.peek(), Some(' ')) {
+                chars.next();
+            }
+            let decoded = u32::from_str_radix(&hex, 16)
+                .ok()
+                .and_then(char::from_u32)
+                .unwrap_or('\u{FFFD}');
+            out.push(decoded);
+        }
+    }
+    out
+}
+
+/// True when the stylesheet names an absolute URL anywhere, which also catches
+/// `image-set("https://…")` and other functional notations that do not spell
+/// `url(`.
+fn has_external_reference(text: &str) -> bool {
+    text.contains("http://")
+        || text.contains("https://")
+        || text.contains("ftp://")
+        || text.contains("data:text/html")
+        || text.contains("data:image/svg")
 }
 
 /// True when a `url(...)` token points at another origin.
@@ -320,9 +399,7 @@ pub async fn update(
 
     let mut old_path = None;
     let mut new_path = None;
-    let mut new_version = current.css_version.clone();
-    let mut new_size = current.css_size;
-    let mut new_filename = current.original_filename.clone();
+    let mut replaced = None;
     if let Some(css) = css {
         let version = version_of(css);
         if version != current.css_version {
@@ -330,27 +407,32 @@ pub async fn update(
             write_stylesheet(&path, css).await?;
             new_path = Some(path);
             old_path = Some(css_path(themes_dir, &current.key, &current.css_version));
-            new_version = version;
-            new_size = css.len() as i64;
-            new_filename = display_filename(filename);
+            replaced = Some((version, css.len() as i64, display_filename(filename)));
         } else if filename.is_some() {
-            new_filename = display_filename(filename);
+            replaced = Some((
+                current.css_version.clone(),
+                current.css_size,
+                display_filename(filename),
+            ));
         }
     }
+    let replaced_css = replaced
+        .as_ref()
+        .map(|(version, size, filename)| (version.as_str(), *size, filename.as_str()));
 
-    if let Err(err) = custom_db::update_metadata(pool, id, &name, &description, appearance).await {
-        // The database still points at the old version; remove the file that
-        // was just written rather than the one still referenced by the row.
+    // One transaction, so a name or appearance change can never land without
+    // the version it replaces (and the registry reload below always follows a
+    // committed row).
+    if let Err(err) =
+        custom_db::update(pool, id, &name, &description, appearance, replaced_css).await
+    {
+        // The row still points at the old version; remove the file that was
+        // just written rather than the one still referenced by the row.
         if let Some(path) = new_path.as_ref() {
             let _ = tokio::fs::remove_file(path).await;
         }
         return Err(AppError::internal(format!(
             "cannot update custom theme: {err}"
-        )));
-    }
-    if let Err(err) = custom_db::update_css(pool, id, &new_version, new_size, &new_filename).await {
-        return Err(AppError::internal(format!(
-            "cannot update custom theme stylesheet: {err}"
         )));
     }
 
@@ -444,6 +526,24 @@ mod tests {
         assert!(validate_css(&[0xff, 0xfe, 0xfd]).is_err());
         let huge = format!("body {{ color: red; }}/*{}*/", "x".repeat(MAX_CSS_BYTES));
         assert!(validate_css(huge.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn stylesheets_cannot_hide_tokens_behind_css_escapes() {
+        // A browser reads all three of these as `url(`, `@import` and an
+        // external image-set, so the plain substring scan must not miss them.
+        assert!(validate_css(br"body { background: u\72l(https://x.example/a.png); }").is_err());
+        assert!(validate_css(br"@\69 mport url(https://x.example/a.css);").is_err());
+        assert!(
+            validate_css(br#"body { background: image-set("https://x.example/a.png" 1x); }"#)
+                .is_err()
+        );
+        // A URL in a comment is harmless and must not reject the upload.
+        assert!(
+            validate_css(b"/* see https://example.com/docs */\n:root { --ink: #111; }").is_ok()
+        );
+        // Escapes that are not dangerous keep working.
+        assert!(validate_css(br#":root { --quote: "\201C"; }"#).is_ok());
     }
 
     #[test]

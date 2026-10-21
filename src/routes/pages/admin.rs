@@ -418,7 +418,6 @@ impl GroupRow {
             group.allow_max_clicks,
             group.allow_tags,
             group.allow_api_tokens,
-            group.allow_domain_selection,
         ]
         .into_iter()
         .filter(|allowed| *allowed)
@@ -658,7 +657,7 @@ impl CustomThemeEdit {
             name: row.name.clone(),
             description: row.description.clone(),
             appearance: row.appearance.as_str().to_string(),
-            size: format!("{} B", row.css_size.max(0)),
+            size: theme_service::human_size(row.css_size),
             created: time::humanize_lang(lang, &row.created_at),
             filename: row.original_filename.clone(),
             css_url: theme_service::custom_css_url(&row.key, &row.css_version),
@@ -812,7 +811,8 @@ pub struct GroupForm {
     pub allow_api_tokens: Option<String>,
     #[serde(default)]
     pub allow_domain_selection: Option<String>,
-    /// `direct`, `splash` or `choice`; missing falls back to `choice`.
+    /// `direct`, `splash` or `choice`; missing keeps the stored policy (a new
+    /// group takes the database default, `choice`).
     #[serde(default)]
     pub redirect_mode_policy: Option<String>,
     #[serde(default)]
@@ -838,10 +838,17 @@ impl GroupForm {
     /// narrows the choice to the checked `domain_<id>` boxes. The older
     /// `allow_domain_selection` / `restrict_domains` pair is still accepted so
     /// API-shaped posts and existing scripts keep their meaning.
-    fn domain_policy(&self) -> Result<(bool, bool), AppError> {
+    ///
+    /// `default` leaves the stored allowlist flag alone. The list is inert while
+    /// selection is off, so forcing it to `false` would only discard state that
+    /// the API can set and show back, without changing who may do what.
+    fn domain_policy(
+        &self,
+        existing: Option<&user_groups::UserGroup>,
+    ) -> Result<(bool, bool), AppError> {
         match self.domain_policy.as_deref().map(str::trim) {
             Some("all") => Ok((true, false)),
-            Some("default") => Ok((false, false)),
+            Some("default") => Ok((false, existing.is_some_and(|group| group.restrict_domains))),
             Some("list") => Ok((true, true)),
             None | Some("") => Ok((
                 self.allow_domain_selection.is_some(),
@@ -855,7 +862,7 @@ impl GroupForm {
     }
 
     fn into_draft(self, existing: Option<&user_groups::UserGroup>) -> Result<GroupDraft, AppError> {
-        let (allow_domain_selection, restrict_domains) = self.domain_policy()?;
+        let (allow_domain_selection, restrict_domains) = self.domain_policy(existing)?;
         GroupDraft {
             name: self.name,
             description: self.description,
@@ -1606,7 +1613,8 @@ pub async fn update_themes(
     };
     // Derive the enabled set from the submitted checkboxes instead of a fixed
     // field list, so a newly compiled theme is controllable without editing
-    // this handler. The service validates every key against ThemeKey.
+    // this handler. The service rejects a name the catalogue does not know,
+    // including any `custom-…` upload that no longer exists.
     let enabled: Vec<String> = payload
         .keys()
         .filter_map(|key| key.strip_prefix("enabled_"))
@@ -1751,7 +1759,22 @@ fn theme_error_code(err: &AppError) -> &'static str {
         } => "theme_quota",
         AppError::Conflict(_) => "theme_default",
         AppError::NotFound => "not_found",
+        AppError::Internal(_) => "theme_failed",
         _ => "invalid",
+    }
+}
+
+/// Log a rejected upload.
+///
+/// A validation failure is a user error and stays at `debug!`; anything else is
+/// an operational problem (a full disk, a lost file, a database error) that the
+/// administrator has to see at the default log level.
+fn log_theme_error(err: &AppError, action: &str) {
+    match err {
+        AppError::Internal(_) => {
+            tracing::warn!(error = %err, action, "custom theme operation failed")
+        }
+        _ => tracing::debug!(error = %err, action, "custom theme operation rejected"),
     }
 }
 
@@ -1771,11 +1794,15 @@ pub async fn create_custom_theme(
     let form = match read_theme_upload(multipart, true).await {
         Ok(form) => form,
         Err(err) => {
-            tracing::debug!(error = %err, "custom theme upload rejected");
+            log_theme_error(&err, "upload");
             return Ok(redirect_err("/app/admin/themes", theme_error_code(&err)).into_response());
         }
     };
-    let css = form.css.expect("required CSS was validated");
+    let Some(css) = form.css else {
+        // `read_theme_upload` already enforces this on create; a missing file
+        // means the request was rejected above, so this is unreachable.
+        return Ok(redirect_err("/app/admin/themes", "theme_css").into_response());
+    };
     let filename = form.filename.as_deref().unwrap_or("theme.css");
 
     let created = custom_theme::create(
@@ -1808,7 +1835,7 @@ pub async fn create_custom_theme(
             Ok(redirect_ok("/app/admin/themes", "theme_created").into_response())
         }
         Err(err) => {
-            tracing::debug!(error = %err, "custom theme upload failed");
+            log_theme_error(&err, "create");
             Ok(redirect_err("/app/admin/themes", theme_error_code(&err)).into_response())
         }
     }
@@ -1866,7 +1893,7 @@ pub async fn update_custom_theme(
     let form = match read_theme_upload(multipart, false).await {
         Ok(form) => form,
         Err(err) => {
-            tracing::debug!(error = %err, "custom theme update rejected");
+            log_theme_error(&err, "upload");
             return Ok(redirect_err(&edit_path, theme_error_code(&err)).into_response());
         }
     };
@@ -1904,7 +1931,7 @@ pub async fn update_custom_theme(
             Ok(redirect_err("/app/admin/themes", "not_found").into_response())
         }
         Err(err) => {
-            tracing::debug!(error = %err, "custom theme update failed");
+            log_theme_error(&err, "update");
             Ok(redirect_err(&edit_path, theme_error_code(&err)).into_response())
         }
     }
@@ -1953,7 +1980,7 @@ pub async fn delete_custom_theme(
             Ok(redirect_err("/app/admin/themes", "not_found").into_response())
         }
         Err(err) => {
-            tracing::debug!(error = %err, "custom theme delete failed");
+            log_theme_error(&err, "delete");
             Ok(redirect_err("/app/admin/themes", theme_error_code(&err)).into_response())
         }
     }

@@ -83,6 +83,13 @@ pub async fn custom_theme_css(State(state): State<AppState>, Path(key): Path<Str
             tracing::warn!(key = %key, "custom theme stylesheet is missing from the volume");
             return StatusCode::NOT_FOUND.into_response();
         }
+        // `read_css` reports a stored key or version that is not a safe path
+        // component as `PermissionDenied`; that row cannot be served, and it is
+        // a data problem, not a server failure.
+        Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+            tracing::warn!(key = %key, "custom theme row has an unusable key or version");
+            return StatusCode::NOT_FOUND.into_response();
+        }
         Err(err) => {
             tracing::error!(error = %err, key = %key, "cannot read custom theme stylesheet");
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
