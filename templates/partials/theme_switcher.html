@@ -6,7 +6,7 @@
 {% macro switcher(theme, lang) %}
 {% if theme.can_switch && theme.options.len() > 1 %}
 <details class="theme-switcher" data-theme-switcher>
-    <summary class="theme-trigger" aria-label="{{ lang.t("theme.switcher_label") }}">
+    <summary class="theme-trigger" aria-label="{{ lang.t("theme.switcher_label") }}: {{ theme.name }}">
         <span class="theme-swatch" aria-hidden="true"></span>
         <span class="theme-current">{{ theme.name }}</span>
         <span class="theme-caret" aria-hidden="true">
@@ -17,8 +17,13 @@
         </span>
     </summary>
     <div class="theme-menu" role="group" aria-label="{{ lang.t("theme.switcher_label") }}">
+        {% if theme.using_default %}
+        <span class="theme-option active" aria-current="true">{{ lang.t("theme.site_default") }}</span>
+        {% else %}
+        <a class="theme-option" href="/app/theme/default" rel="nofollow">{{ lang.t("theme.site_default") }}</a>
+        {% endif %}
         {% for option in theme.options %}
-        {% if option.current %}
+        {% if option.current && !theme.using_default %}
         <span class="theme-option active" aria-current="true">{{ option.name }}</span>
         {% else %}
         <a class="theme-option" href="/app/theme/{{ option.key }}" rel="nofollow">{{ option.name }}</a>

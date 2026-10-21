@@ -374,7 +374,11 @@ start_server
 INVITE=$(curl -s -b "$COOKIES" -X POST "$BASE/api/v1/admin/invites" -H 'content-type: application/json' \
     -H "origin: $BASE" -d '{"max_uses":1}')
 INVITE_CODE=$(echo "$INVITE" | sed -n 's/.*"code":"\([^"]*\)".*/\1/p')
+INVITE_LINK=$(echo "$INVITE" | sed -n 's/.*"link":"\([^"]*\)".*/\1/p')
 contains "an invite code is issued" '"code"' "$INVITE"
+contains "the invite response includes a registration link" "/app/register?invite=" "$INVITE_LINK"
+check "the invite link opens the registration form" "200" "$(curl -s -o /dev/null -w '%{http_code}' "$INVITE_LINK")"
+contains "the invite link prefills the code" "value=\"$INVITE_CODE\"" "$(curl -s "$INVITE_LINK")"
 curl -s -o /dev/null -b "$COOKIES" -X PUT "$BASE/api/v1/admin/settings" -H 'content-type: application/json' \
     -H "origin: $BASE" -d '{"registration_mode":"invite"}'
 check "registration without a code is refused" "403" "$(curl -s -o /dev/null -w '%{http_code}' \

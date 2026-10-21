@@ -20,7 +20,7 @@
 | P8 最終驗證 | ✅ 完成 | 見 `git log`（release 建置、映像檔策略、收尾） |
 | P10 使用者群組 (v1.2) | ✅ 完成 | 見 `git log`（migration 0004、群組 API/UI、三語字串、文件） |
 | P11 群組網域策略 (v1.2) | ✅ 完成 | 見 `git log`（migration 0005、預設網域 + 允許清單、管理 UI/API、測試） |
-| P12 可切換主題 (v1.4) | ✅ 完成 | 見 `git log`（migration 0009、主題 registry、管理目錄、六套模板、測試） |
+| P12 可切換主題 (v1.4) | ✅ 完成 | 見 `git log`（migration 0010、主題 registry、管理目錄、六套模板、測試） |
 
 驗收數據（v1.0）：`cargo test` 187 個測試全綠、`cargo clippy --all-targets -- -D warnings` 與
 `cargo fmt --check` 無警告、`scripts/smoke.sh` 81 項端對端檢查全數通過。
@@ -228,7 +228,7 @@
 
 **任務**
 
-1. `migrations/0009_themes.sql`：`themes` 表、唯一預設 partial index、六筆種子資料與 `theme_switching=all` 設定。
+1. `migrations/0010_themes.sql`：`themes` 表、唯一預設 partial index、六筆種子資料與 `theme_switching=all` 設定。
 2. `src/db/themes.rs` + `src/services/theme.rs`：主題 key、registry 快取、預設/回退解析、管理清單、切換權限與交易式選擇更新。
 3. `src/routes/pages/themed.rs`：編譯期 `themed_page!` 包裝，讓每頁在六個 Askama 模板中選擇，且不信任請求提供的路徑；頁面 context 以 `.themed()` 加入。
 4. Middleware 與資產：`urlet_theme` cookie 解析、`GET /app/theme/{key}`、`/assets/themes/{key}`、`/assets/theme-ui.css` 與共用切換器 macro。
@@ -237,7 +237,7 @@
 7. 測試：registry 預設、管理 CRUD/政策、切換權限、停用/未知回退、資產路由，以及每個主題 × 每個頁面的完整渲染迴圈。
 8. 文件：SPEC、PLAN、API、README 與 `zh-TW` 鏡像；`.env.example` 不需新增變數，因為主題完全由資料庫控制。
 
-**驗收**：六個主題可選、沒有 cookie 時使用預設、停用主題回退、管理員可預覽任何啟用主題、`all`/`admin` 切換權限生效、每個頁面在每個主題下都能渲染，且 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test` 與 `scripts/smoke.sh` 全綠。
+**驗收**：六個主題可選、沒有 cookie 時使用預設、停用主題回退、管理員可預覽任何已編譯主題（包含已停用者）、`all`/`admin` 切換權限生效、每個頁面在每個主題下都能渲染，且 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test` 與 `scripts/smoke.sh` 全綠。
 
 ---
 

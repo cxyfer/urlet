@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- urlet schema, version 9
+-- urlet schema, version 10
 --
 -- Switching themes. A theme is compiled into the binary (templates plus a CSS
 -- asset); this table decides which ones are offered, which one is the default

@@ -468,6 +468,8 @@ pub fn router() -> Router<AppState> {
         // language switcher
         .route("/lang/{code}", get(lang_switch))
         // theme picker
+        .route("/theme/default", get(theme_default))
+        .route("/theme/preview/stop", get(theme_preview_stop))
         .route("/theme/{key}", get(theme_switch))
 }
 
@@ -476,15 +478,25 @@ pub fn router() -> Router<AppState> {
 pub struct ThemeQuery {
     #[serde(default)]
     pub next: Option<String>,
+    /// `1`/`true` requests the administrator-only preview cookie.
+    #[serde(default)]
+    pub preview: Option<String>,
+}
+
+fn wants_preview(value: Option<&str>) -> bool {
+    matches!(value.map(str::trim), Some("1" | "true" | "yes" | "on"))
 }
 
 /// `GET /app/theme/{key}` — remember the choice in a cookie and go back.
 ///
-/// Only a signed-in account may switch, and only when the site policy (and the
-/// administrator's enabled set) allows it. The choice lives in a cookie so it
-/// applies before authentication too; the server validates the key against the
-/// enabled themes on every request, so a stale or hand-written value cannot
-/// load a disabled theme.
+/// Only a signed-in account may switch, and only when the site policy allows
+/// it. The choice lives in a cookie so it applies before authentication too;
+/// the server validates the key against the enabled themes on every request,
+/// so a stale or hand-written value cannot load a disabled theme.
+///
+/// An administrator can pass `?preview=1` to set the separate preview cookie,
+/// which may name a disabled theme. The theme middleware only honours that
+/// cookie for administrators.
 pub async fn theme_switch(
     State(state): State<AppState>,
     MaybeUser(current): MaybeUser,
@@ -492,8 +504,9 @@ pub async fn theme_switch(
     Query(query): Query<ThemeQuery>,
     headers: HeaderMap,
 ) -> Response {
+    let target = theme_target(&headers, &state.config.base_url, query.next.as_deref());
     let Some(current) = current else {
-        return Redirect::to("/app/login").into_response();
+        return redirect_to_login(Some(&target)).into_response();
     };
     if !theme::can_switch(&state.settings, &current.user) {
         return AppError::forbidden("theme switching is disabled for this account").into_response();
@@ -501,29 +514,101 @@ pub async fn theme_switch(
     let Some(theme_key) = ThemeKey::parse(&key) else {
         return AppError::not_found().into_response();
     };
-    if !state.themes.is_enabled(theme_key) {
-        return AppError::not_found().into_response();
+
+    let mut cookies = Vec::new();
+    if wants_preview(query.preview.as_deref()) {
+        if !current.is_admin() {
+            return AppError::forbidden("theme preview is administrator only").into_response();
+        }
+        cookies.push(crate::services::cookies::build(
+            crate::services::theme::PREVIEW_COOKIE_NAME,
+            theme_key.key(),
+            crate::services::theme::PREVIEW_COOKIE_MAX_AGE,
+            state.config.secure_cookies,
+        ));
+    } else {
+        if !state.themes.is_enabled(theme_key) {
+            return AppError::not_found().into_response();
+        }
+        cookies.push(crate::services::cookies::build(
+            crate::services::theme::COOKIE_NAME,
+            theme_key.key(),
+            crate::services::theme::COOKIE_MAX_AGE,
+            state.config.secure_cookies,
+        ));
+        // A normal picker click leaves preview mode.
+        cookies.push(crate::services::cookies::clear(
+            crate::services::theme::PREVIEW_COOKIE_NAME,
+            state.config.secure_cookies,
+        ));
     }
+    theme_redirect(&target, &cookies)
+}
 
-    let target = safe_next(query.next.as_deref())
-        .or_else(|| referrer_path(&headers, &state.config.base_url))
-        .unwrap_or_else(|| "/app".to_string());
+/// `GET /app/theme/default` — clear the explicit choice and follow the site
+/// default again.
+pub async fn theme_default(
+    State(state): State<AppState>,
+    MaybeUser(current): MaybeUser,
+    Query(query): Query<ThemeQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let target = theme_target(&headers, &state.config.base_url, query.next.as_deref());
+    let Some(current) = current else {
+        return redirect_to_login(Some(&target)).into_response();
+    };
+    if !theme::can_switch(&state.settings, &current.user) {
+        return AppError::forbidden("theme switching is disabled for this account").into_response();
+    }
+    let cookies = vec![
+        crate::services::cookies::clear(
+            crate::services::theme::COOKIE_NAME,
+            state.config.secure_cookies,
+        ),
+        crate::services::cookies::clear(
+            crate::services::theme::PREVIEW_COOKIE_NAME,
+            state.config.secure_cookies,
+        ),
+    ];
+    theme_redirect(&target, &cookies)
+}
 
+/// `GET /app/theme/preview/stop` — leave administrator preview mode.
+pub async fn theme_preview_stop(
+    State(state): State<AppState>,
+    MaybeUser(current): MaybeUser,
+    Query(query): Query<ThemeQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let target = theme_target(&headers, &state.config.base_url, query.next.as_deref());
+    if current.is_none() {
+        return redirect_to_login(Some(&target)).into_response();
+    }
+    let cookies = vec![crate::services::cookies::clear(
+        crate::services::theme::PREVIEW_COOKIE_NAME,
+        state.config.secure_cookies,
+    )];
+    theme_redirect(&target, &cookies)
+}
+
+fn theme_target(headers: &HeaderMap, base_url: &str, next: Option<&str>) -> String {
+    safe_next(next)
+        .or_else(|| referrer_path(headers, base_url))
+        .unwrap_or_else(|| "/app".to_string())
+}
+
+fn theme_redirect(target: &str, cookies: &[String]) -> Response {
     let mut response = StatusCode::FOUND.into_response();
-    let location = HeaderValue::from_str(&encode_location(&target))
+    let location = HeaderValue::from_str(&encode_location(target))
         .unwrap_or_else(|_| HeaderValue::from_static("/app"));
     response.headers_mut().insert(header::LOCATION, location);
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    let cookie = crate::services::cookies::build(
-        crate::services::theme::COOKIE_NAME,
-        theme_key.key(),
-        crate::services::theme::COOKIE_MAX_AGE,
-        state.config.secure_cookies,
-    );
-    if let Ok(value) = HeaderValue::from_str(&cookie) {
-        response.headers_mut().append(header::SET_COOKIE, value);
+    for cookie in cookies {
+        if let Ok(value) = HeaderValue::from_str(cookie) {
+            response.headers_mut().append(header::SET_COOKIE, value);
+        }
     }
     response
 }

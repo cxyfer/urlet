@@ -44,6 +44,9 @@ pub async fn theme_ui_css() -> Response {
 /// embedded asset set.
 pub async fn theme_css(Path(key): Path<String>) -> Response {
     let body = match key.as_str() {
+        // Verdant keeps the historical `/assets/app.css` URL in themes, but the
+        // catalogue route stays complete for API consumers and preview links.
+        "verdant" => assets::APP_CSS,
         "aurora" => assets::AURORA_CSS,
         "paper" => assets::PAPER_CSS,
         "signal" => assets::SIGNAL_CSS,

@@ -9,6 +9,15 @@
     </div>
 </div>
 
+{% if chrome.theme.preview %}
+<div class="alert alert-info">
+    <div>
+        {{ lang.t("admin.themes.previewing") }} <strong>{{ chrome.theme.name }}</strong>.
+        <a href="/app/theme/preview/stop?next=/app/admin/themes">{{ lang.t("admin.themes.stop_preview") }}</a>
+    </div>
+</div>
+{% endif %}
+
 <form method="post" action="/app/admin/themes" class="stack">
     <section class="panel">
         <div class="panel-head">
@@ -50,16 +59,14 @@
                 </div>
                 <div class="theme-admin-controls">
                     <label class="checkbox">
-                        <input type="checkbox" name="enabled_{{ theme.key }}" value="on"{% if theme.is_enabled %} checked{% endif %}>
+                        <input type="checkbox" name="enabled_{{ theme.key }}" value="on" aria-label="{{ lang.t("admin.themes.enabled") }} — {{ theme.name }}"{% if theme.is_enabled %} checked{% endif %}>
                         {{ lang.t("admin.themes.enabled") }}
                     </label>
                     <label class="checkbox">
-                        <input type="radio" name="default_theme" value="{{ theme.key }}"{% if theme.is_default %} checked{% endif %}>
+                        <input type="radio" name="default_theme" value="{{ theme.key }}" aria-label="{{ lang.t("admin.themes.make_default") }} — {{ theme.name }}"{% if theme.is_default %} checked{% endif %}>
                         {{ lang.t("admin.themes.make_default") }}
                     </label>
-                    {% if theme.is_enabled %}
-                    <a class="btn btn-sm btn-ghost" href="/app/theme/{{ theme.key }}?next=/app/admin/themes">{{ lang.t("admin.themes.preview") }}</a>
-                    {% endif %}
+                    <a class="btn btn-sm btn-ghost" href="/app/theme/{{ theme.key }}?preview=1&next=/app/admin/themes">{{ lang.t("admin.themes.preview") }}</a>
                 </div>
             </article>
             {% endfor %}

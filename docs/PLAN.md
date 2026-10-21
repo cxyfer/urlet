@@ -20,7 +20,7 @@
 | P8 Final verification | ✅ Done | See `git log` (release build, image strategy, wrap-up) |
 | P10 User groups (v1.2) | ✅ Done | See `git log` (migration 0004, group API/UI, trilingual strings, docs) |
 | P11 Group domain policy (v1.2) | ✅ Done | See `git log` (migration 0005, default domain + allowlist, admin UI/API, tests) |
-| P12 Switchable themes (v1.4) | ✅ Done | See `git log` (migration 0009, theme registry, admin catalogue, six template sets, tests) |
+| P12 Switchable themes (v1.4) | ✅ Done | See `git log` (migration 0010, theme registry, admin catalogue, six template sets, tests) |
 
 Acceptance data (v1.0): `cargo test` is all green with 187 tests, `cargo clippy --all-targets -- -D warnings`
 and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scripts/smoke.sh` pass.
@@ -228,7 +228,7 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 
 **Tasks**
 
-1. `migrations/0009_themes.sql`: `themes` table, partial unique default index, the six seed rows and the `theme_switching=all` setting.
+1. `migrations/0010_themes.sql`: `themes` table, partial unique default index, the six seed rows and the `theme_switching=all` setting.
 2. `src/db/themes.rs` + `src/services/theme.rs`: theme keys, registry cache, default/fallback resolution, admin list, switching permission and transactional selection updates.
 3. `src/routes/pages/themed.rs`: compile-time `themed_page!` wrapper so each page selects one of six Askama templates without trusting a request path; page contexts opt in with `.themed()`.
 4. Middleware and assets: `urlet_theme` cookie resolution, `GET /app/theme/{key}`, `/assets/themes/{key}`, `/assets/theme-ui.css`, and the shared picker macro.
@@ -237,7 +237,7 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 7. Tests: registry defaults, admin CRUD/policy, switch permission, disabled/unknown fallback, asset routes, and a full render loop over every theme and page.
 8. Docs: SPEC, PLAN, API, README and the `zh-TW` mirrors; `.env.example` needs no new variable because themes are database-only.
 
-**Acceptance**: six themes are selectable, the default applies without a cookie, disabled themes fall back, administrators can preview any enabled theme, `all`/`admin` switching is enforced, every page renders under every theme, and `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and `scripts/smoke.sh` are clean.
+**Acceptance**: six themes are selectable, the default applies without a cookie, disabled themes fall back, administrators can preview any compiled theme, including a disabled one, `all`/`admin` switching is enforced, every page renders under every theme, and `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and `scripts/smoke.sh` are clean.
 
 ---
 

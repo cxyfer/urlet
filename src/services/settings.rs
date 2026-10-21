@@ -76,8 +76,11 @@ pub enum ThemeSwitching {
 impl ThemeSwitching {
     pub fn parse(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
+            // An absent value means the default; an unknown value is treated as
+            // the restrictive mode rather than silently granting switching.
+            "" | "all" | "everyone" => Self::All,
             "admin" | "admins" | "admin_only" | "admin-only" => Self::AdminOnly,
-            _ => Self::All,
+            _ => Self::AdminOnly,
         }
     }
 
@@ -547,7 +550,7 @@ mod tests {
             ThemeSwitching::parse("admin-only"),
             ThemeSwitching::AdminOnly
         );
-        assert_eq!(ThemeSwitching::parse("nonsense"), ThemeSwitching::All);
+        assert_eq!(ThemeSwitching::parse("nonsense"), ThemeSwitching::AdminOnly);
         assert_eq!(ThemeSwitching::All.as_str(), "all");
         assert_eq!(ThemeSwitching::AdminOnly.as_str(), "admin");
     }

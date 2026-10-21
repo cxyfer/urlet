@@ -79,8 +79,13 @@ pub const MIGRATIONS: &[Migration] = &[
         kind: MigrationKind::Transactional,
     },
     Migration {
-        version: "0009_themes",
-        sql: include_str!("../../migrations/0009_themes.sql"),
+        version: "0009_invite_code_sealed",
+        sql: include_str!("../../migrations/0009_invite_code_sealed.sql"),
+        kind: MigrationKind::Transactional,
+    },
+    Migration {
+        version: "0010_themes",
+        sql: include_str!("../../migrations/0010_themes.sql"),
         kind: MigrationKind::Transactional,
     },
 ];
@@ -1129,6 +1134,47 @@ mod tests {
             applied_count(&pool).await.expect("count"),
             MIGRATIONS.len() as i64
         );
+
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn upgrades_a_pre_theme_database_with_the_seeded_catalogue() {
+        let dir = std::env::temp_dir().join(format!("urlet-migrate-themes-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = format!("{}/themes.db", dir.display());
+        let options = test_options(&path);
+        let pool = test_pool(&options).await;
+
+        run_until(&pool, &options, "0008_invite_creator_index")
+            .await
+            .expect("pre-theme schema");
+        run(&pool, &options).await.expect("theme upgrade");
+
+        let themes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM themes")
+            .fetch_one(&pool)
+            .await
+            .expect("theme count");
+        let default: String = sqlx::query_scalar("SELECT key FROM themes WHERE is_default = 1")
+            .fetch_one(&pool)
+            .await
+            .expect("default theme");
+        let switching: String =
+            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'theme_switching'")
+                .fetch_one(&pool)
+                .await
+                .expect("theme policy");
+        assert_eq!(themes, 6, "the upgrade seeds every compiled-in theme");
+        assert_eq!(default, "verdant");
+        assert_eq!(switching, "all");
+        let sealed: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('invite_codes') WHERE name = 'code_sealed'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("invite column");
+        assert_eq!(sealed, 1, "the 0009 invite column is applied first");
 
         pool.close().await;
         let _ = std::fs::remove_dir_all(&dir);

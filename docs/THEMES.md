@@ -32,10 +32,13 @@ at their original feature set.
    the theme page.
 6. Save. The selection is applied immediately; no restart is needed.
 
-Changing the policy only controls who may **change** their choice. A browser that
-already holds an enabled theme keeps showing it until it switches, the theme is
-disabled, or the cookie expires. To force everyone back to one look, disable the
-other themes (or change the default and clear the cookie at the reverse proxy).
+The policy is enforced when pages render, not only by hiding the picker. Under
+**Administrators only**, non-admin accounts and anonymous visitors always render
+the site default; an existing `urlet_theme` cookie (including one set while the
+policy was `Everyone`) is ignored. Administrators keep the picker and can use
+**Preview** to inspect any compiled theme, including one that is not enabled yet,
+without changing the visitor-facing default. The preview cookie lasts one hour.
+A normal picker click or **Stop preview** leaves preview mode.
 
 The same operation is available as `GET/PUT /api/v1/admin/themes`. The JSON API
 accepts `enabled`, `default` and `switching`; omitted fields keep their value.
@@ -49,7 +52,14 @@ accepts `enabled`, `default` and `switching`; omitted fields keep their value.
 The picker is a native `<details>` element and works without JavaScript. The
 cookie is `HttpOnly`, `SameSite=Lax`, lives for one year, and is `Secure` when
 the instance is configured for secure cookies. It is a cosmetic preference, not
-a per-user database column; a new browser starts at the default.
+a per-user database column; a new browser starts at the default. The picker's
+**Site default** entry clears the cookie and follows the administrator's default
+again.
+
+Like the language picker, the switch endpoint is a `GET`. It only writes a
+cosmetic cookie; it never changes data or permissions. A cross-site top-level
+navigation can therefore change the look, but cannot grant access or alter an
+account.
 
 ## Templates and the fallback
 

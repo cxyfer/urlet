@@ -16,6 +16,7 @@ use crate::db::invites::Invite;
 use crate::error::AppError;
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
+use crate::routes::no_store;
 use crate::routes::pages::{
     flash_from_query, page_links, redirect_err, redirect_ok, redirect_to_login, Chrome, Flash,
     PageLink,
@@ -38,8 +39,14 @@ pub struct InvitesPage {
     /// Localised "2 of 5 per month", or "Unlimited".
     pub quota_label: String,
     pub items: Vec<InviteRow>,
-    /// Plaintext code created by the current request (shown once).
+    /// Plaintext code created by the current request, so the issuer can copy
+    /// it straight away.
     pub new_code: Option<String>,
+    /// Registration link for `new_code`.
+    pub new_link: Option<String>,
+    /// At least one row cannot show its code again (legacy row or rotated
+    /// secret); the page explains why.
+    pub has_legacy: bool,
     pub max_uses_cap: i64,
     pub page: i64,
     pub total_pages: i64,
@@ -62,6 +69,10 @@ themed_page!(invites_templates, InvitesView, InvitesPage,
 pub struct InviteRow {
     pub id: i64,
     pub prefix: String,
+    /// Recoverable plaintext, or `None` for a legacy/sealed-unreadable row.
+    pub code: Option<String>,
+    /// Registration link when `code` is available.
+    pub link: Option<String>,
     pub note: String,
     pub uses: String,
     pub status: String,
@@ -150,6 +161,7 @@ pub async fn create(
         settings: &state.settings,
         actor: &current.user,
         ip_hash: client.ip_hash.as_deref(),
+        secret: state.config.secret.as_slice(),
     }
     .create_for_member(payload.note.as_deref(), max_uses)
     .await;
@@ -187,6 +199,7 @@ pub async fn revoke(
         settings: &state.settings,
         actor: &current.user,
         ip_hash: client.ip_hash.as_deref(),
+        secret: state.config.secret.as_slice(),
     }
     .revoke_owned(id)
     .await;
@@ -238,6 +251,7 @@ async fn render(
         crate::db::invites::list_by_creator(&state.db, user.id, PER_PAGE, (page - 1) * PER_PAGE)
             .await
             .map_err(AppError::from)?;
+    let mut has_legacy = false;
     let invites = rows
         .iter()
         .map(|invite: &Invite| {
@@ -246,9 +260,18 @@ async fn render(
                 .as_deref()
                 .map(|value| value <= now.as_str())
                 .unwrap_or(false);
+            let code = invite_service::reveal(state.config.secret.as_slice(), invite);
+            if code.is_none() {
+                has_legacy = true;
+            }
+            let link = code
+                .as_deref()
+                .map(|code| invite_service::registration_link(&state.config.base_url, code));
             InviteRow {
                 id: invite.id,
                 prefix: invite.code_prefix.clone(),
+                code,
+                link,
                 note: invite.note.clone().unwrap_or_default(),
                 uses: format!("{} / {}", invite.used_count, invite.max_uses),
                 status: if invite.status == "active" {
@@ -267,6 +290,10 @@ async fn render(
         })
         .collect();
 
+    let new_link = new_code
+        .as_deref()
+        .map(|code| invite_service::registration_link(&state.config.base_url, code));
+
     let html = InvitesPage {
         site_name: state.settings.site_name(),
         chrome: Chrome::new(state, user, "invites", flash),
@@ -279,6 +306,8 @@ async fn render(
         quota_label,
         items: invites,
         new_code,
+        new_link,
+        has_legacy,
         max_uses_cap: MAX_MEMBER_USES,
         page,
         total_pages,
@@ -296,5 +325,5 @@ async fn render(
     .themed()
     .render()
     .map_err(|err| AppError::internal(format!("template error: {err}")))?;
-    Ok((StatusCode::OK, Html(html)).into_response())
+    Ok(no_store((StatusCode::OK, Html(html)).into_response()))
 }

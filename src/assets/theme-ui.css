@@ -283,3 +283,56 @@
     :where(.settings-layout) { grid-template-columns: minmax(0, 1fr); }
     :where(.settings-rail) { position: static; }
 }
+
+/* Extra-domain short landing. It is a tiny page with no signed-in shell, so the
+ * older themes' stylesheets do not define these generic classes. */
+:where(.wrap) {
+    width: min(100% - 2rem, 72rem);
+    margin-inline: auto;
+}
+:where(.short-hero) {
+    display: grid;
+    place-items: center;
+    min-height: 70vh;
+    padding: 2rem 0;
+}
+:where(.short-hero .hero-copy) {
+    display: grid;
+    gap: .7rem;
+    max-width: 38rem;
+    text-align: center;
+}
+:where(.hero-chip) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .45rem;
+    font: .68rem/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    opacity: .75;
+}
+:where(.status-dot) {
+    width: .45rem;
+    height: .45rem;
+    border-radius: 50%;
+    background: var(--accent, currentColor);
+}
+:where(.short-hero h1) { margin: .2rem 0; font-size: clamp(2rem, 5vw, 3.4rem); }
+:where(.hero-dot) {
+    display: inline-block;
+    width: .25em;
+    height: .25em;
+    margin-left: .08em;
+    border-radius: 50%;
+    background: var(--accent, currentColor);
+}
+:where(.landing-tagline) { margin: 0; font-size: 1.05rem; opacity: .8; }
+:where(.landing-cta) { display: flex; justify-content: center; gap: .5rem; margin-top: .5rem; }
+
+/* Aurora places the picker in the sidebar footer, where a downward menu would
+ * be clipped by the scroll container and the viewport. Open it upward there. */
+.side-foot .theme-menu {
+    top: auto;
+    bottom: calc(100% + .4rem);
+}

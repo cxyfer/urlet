@@ -13,9 +13,21 @@ use axum::middleware::Next;
 use axum::response::Response;
 
 use crate::i18n;
+use crate::middleware::auth::{authenticate, Authenticated};
 use crate::services::cookies;
-use crate::services::theme::{self, COOKIE_NAME};
+use crate::services::settings::ThemeSwitching;
+use crate::services::theme::{self, ThemeKey, COOKIE_NAME, PREVIEW_COOKIE_NAME};
 use crate::state::AppState;
+
+/// Does this path need the account-aware view?
+///
+/// `/` and `/app/**` render the signed-in shell or the landing page and need the
+/// policy check. The redirect surface (`/{slug}`, `/{slug}/unlock`) and health
+/// endpoints do not: authenticating there would add two queries to the hot
+/// redirect path and break the NFR-PERF-1 budget.
+fn needs_account(path: &str) -> bool {
+    path == "/" || path.starts_with("/app")
+}
 
 /// Install the request theme for the rest of the stack.
 pub async fn theme(State(state): State<AppState>, request: Request, next: Next) -> Response {
@@ -26,10 +38,83 @@ pub async fn theme(State(state): State<AppState>, request: Request, next: Next) 
     if path.starts_with("/assets/") || path.starts_with("/api/") {
         return next.run(request).await;
     }
-    let requested = cookies::get(request.headers(), COOKIE_NAME);
-    let view = state.themes.view(i18n::current(), requested.as_deref());
+
+    let lang = i18n::current();
+    let switching = state.settings.theme_switching();
+
+    // The redirect surface only needs the cookie. Under `admin` it deliberately
+    // ignores the cookie, matching the anonymous default, but it never resolves
+    // a session: the redirect hot path must stay a single indexed lookup.
+    if !needs_account(path) {
+        let requested = if switching == ThemeSwitching::AdminOnly {
+            None
+        } else {
+            cookies::get(request.headers(), COOKIE_NAME)
+        };
+        let view = state
+            .themes
+            .view(lang, requested.as_deref())
+            .with_can_switch(false);
+        return theme::scope(view, next.run(request)).await;
+    }
+
+    // The theme policy needs the account. Resolve authentication once and put
+    // it in the request extensions so the page extractors reuse it instead of
+    // querying the session/token a second time.
+    let (mut parts, body) = request.into_parts();
+    let current = authenticate(&parts, &state).await;
+    parts.extensions.insert(Authenticated(current.clone()));
+    let request = Request::from_parts(parts, body);
+
+    let is_admin = current
+        .as_ref()
+        .map(|current| current.is_admin())
+        .unwrap_or(false);
+
+    // Preview is reserved for administrators and may name a disabled theme.
+    let preview = if is_admin {
+        cookies::get(request.headers(), PREVIEW_COOKIE_NAME)
+            .and_then(|value| ThemeKey::parse(&value))
+    } else {
+        None
+    };
+
+    let view = if let Some(key) = preview {
+        state.themes.preview_view(lang, key).with_can_switch(true)
+    } else {
+        // Under `admin` policy the cookie is ignored for non-admin accounts, so
+        // the permission is enforced at render time and not only on the switch
+        // endpoint. A stale cookie from a previous `all` policy also falls back
+        // to the default.
+        let requested = if switching == ThemeSwitching::AdminOnly && !is_admin {
+            None
+        } else {
+            cookies::get(request.headers(), COOKIE_NAME)
+        };
+        let mut view = state.themes.view(lang, requested.as_deref());
+        view.can_switch = current
+            .as_ref()
+            .map(|current| theme::can_switch(&state.settings, &current.user))
+            .unwrap_or(false);
+        view
+    };
 
     // HTML responses depend on the Cookie header, but only in the same way the
     // language does. `locale` already merges `Cookie` into `Vary` for HTML.
     theme::scope(view, next.run(request)).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_redirect_surface_skips_authentication() {
+        assert!(needs_account("/"));
+        assert!(needs_account("/app"));
+        assert!(needs_account("/app/admin/themes"));
+        assert!(!needs_account("/promo"));
+        assert!(!needs_account("/promo/unlock"));
+        assert!(!needs_account("/health"));
+    }
 }

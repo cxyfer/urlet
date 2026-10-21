@@ -17,6 +17,9 @@ pub mod health;
 pub mod pages;
 pub mod redirect;
 
+use axum::http::{header, HeaderValue};
+use axum::response::Response;
+
 use crate::error::{ApiError, AppError};
 use crate::middleware::auth::ClientInfo;
 use crate::services::captcha::{CaptchaFlow, CaptchaGuard};
@@ -30,6 +33,18 @@ pub async fn not_found() -> AppError {
 /// Fallback handler for unknown `/api/v1` paths: JSON, not HTML.
 pub async fn api_not_found() -> ApiError {
     ApiError(AppError::not_found())
+}
+
+/// Mark a response that may contain a bearer invite code as uncacheable.
+///
+/// Invite codes and their registration links stay usable until they are
+/// revoked or exhausted, so a browser cache or shared proxy must not keep them
+/// after the session ends.
+pub fn no_store(mut response: Response) -> Response {
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
 }
 
 /// Reject a JSON API request when `flow` is guarded and the token does not

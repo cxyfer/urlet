@@ -31,9 +31,3 @@
     </section>
 </main>
 {% endblock %}
-
-{% block footer_tools %}
-<div class="footer-tools">
-    {% if !self.theme_is_dark_only() %}{% include "partials/theme_toggle.html" %}{% endif %}
-</div>
-{% endblock %}

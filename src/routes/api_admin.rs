@@ -343,11 +343,16 @@ impl GroupPayload {
     }
 }
 
-/// Invite representation. The plain code is never stored.
+/// Invite representation, including the recoverable plaintext and share link
+/// when this instance can still decrypt them.
 #[derive(Debug, Clone, Serialize)]
 pub struct InviteDto {
     pub id: i64,
     pub prefix: String,
+    /// `null` for codes issued before sealed storage or after a secret change.
+    pub code: Option<String>,
+    /// Registration link prefilled with `code`; `null` when `code` is `null`.
+    pub link: Option<String>,
     pub note: Option<String>,
     pub group_id: Option<i64>,
     pub group_name: Option<String>,
@@ -362,7 +367,10 @@ pub struct InviteDto {
 }
 
 impl InviteDto {
-    fn new(invite: &Invite, now: &str) -> Self {
+    fn new(invite: &Invite, now: &str, code: Option<String>, base_url: &str) -> Self {
+        let link = code
+            .as_deref()
+            .map(|code| crate::services::invites::registration_link(base_url, code));
         let expired = invite
             .expires_at
             .as_deref()
@@ -371,6 +379,8 @@ impl InviteDto {
         Self {
             id: invite.id,
             prefix: invite.code_prefix.clone(),
+            code,
+            link,
             note: invite.note.clone(),
             group_id: invite.group_id,
             group_name: None,
@@ -495,8 +505,10 @@ pub struct InviteList {
 
 #[derive(Debug, Serialize)]
 pub struct CreatedInviteResponse {
-    /// Plain invite code — returned exactly once.
+    /// Plain invite code, also available from the list endpoint afterwards.
     pub code: String,
+    /// Registration link that prefills `code`.
+    pub link: String,
     pub invite: InviteDto,
 }
 
@@ -814,22 +826,24 @@ pub async fn delete_url(
 pub async fn list_invites(
     State(state): State<AppState>,
     CurrentUser { user, .. }: CurrentUser,
-) -> Result<Json<InviteList>, ApiError> {
+) -> Result<Response, ApiError> {
     require_admin(&user)?;
     let now = crate::services::time::now_iso();
     let rows = crate::db::invites::list(&state.db, 200, 0).await?;
     let group_names = group_service::name_map(&state.db).await?;
-    Ok(Json(InviteList {
+    let body = InviteList {
         items: rows
             .iter()
             .map(|row| {
                 let group_name = row
                     .group_id
                     .and_then(|group_id| group_names.get(&group_id).cloned());
-                InviteDto::new(row, &now).with_group_name(group_name)
+                let code = crate::services::invites::reveal(state.config.secret.as_slice(), row);
+                InviteDto::new(row, &now, code, &state.config.base_url).with_group_name(group_name)
             })
             .collect(),
-    }))
+    };
+    Ok(crate::routes::no_store(Json(body).into_response()))
 }
 
 /// `POST /api/v1/admin/invites`
@@ -853,11 +867,17 @@ pub async fn create_invite(
         Some(group_id) => group_service::name_map(&state.db).await?.remove(&group_id),
         None => None,
     };
+    let code = created.plain_code;
+    let link = crate::services::invites::registration_link(&state.config.base_url, &code);
     let body = CreatedInviteResponse {
-        code: created.plain_code,
-        invite: InviteDto::new(&created.invite, &now).with_group_name(group_name),
+        code: code.clone(),
+        link,
+        invite: InviteDto::new(&created.invite, &now, Some(code), &state.config.base_url)
+            .with_group_name(group_name),
     };
-    Ok((StatusCode::CREATED, Json(body)).into_response())
+    Ok(crate::routes::no_store(
+        (StatusCode::CREATED, Json(body)).into_response(),
+    ))
 }
 
 /// `DELETE /api/v1/admin/invites/{id}`
@@ -1032,18 +1052,6 @@ pub async fn put_themes(
 ) -> Result<Json<AdminThemesDto>, ApiError> {
     require_admin(&user)?;
 
-    let current_rows = state.themes.rows();
-    let enabled: Vec<String> = match payload.enabled {
-        Some(keys) => keys,
-        None => current_rows
-            .iter()
-            .filter(|row| row.is_enabled)
-            .map(|row| row.key.clone())
-            .collect(),
-    };
-    let default_key = payload
-        .default
-        .unwrap_or_else(|| state.themes.default_key().key().to_string());
     let switching = match payload.switching.as_deref() {
         Some(raw) => {
             let value = raw.trim().to_ascii_lowercase();
@@ -1053,17 +1061,20 @@ pub async fn put_themes(
                     "switching must be 'all' or 'admin'",
                 )));
             }
-            ThemeSwitching::parse(&value)
+            Some(ThemeSwitching::parse(&value))
         }
-        None => state.settings.theme_switching(),
+        None => None,
     };
 
-    theme_service::update_selection(
+    // `enabled` and `default` stay optional: the service resolves them under
+    // the same lock as the write, so a request that only changes the policy
+    // cannot revert a catalogue update that committed in between.
+    let applied = theme_service::update_selection(
         &state.db,
         &state.themes,
         &state.settings,
-        &enabled,
-        &default_key,
+        payload.enabled.as_deref(),
+        payload.default.as_deref(),
         switching,
         Some(user.id),
     )
@@ -1073,9 +1084,9 @@ pub async fn put_themes(
         .actor(user.id, &user.role)
         .target(crate::services::audit::target::THEMES, "catalogue")
         .metadata(serde_json::json!({
-            "enabled": enabled,
-            "default": default_key,
-            "switching": switching.as_str(),
+            "enabled": applied.enabled,
+            "default": applied.default_key,
+            "switching": applied.switching.as_str(),
         }))
         .ip_hash(client.ip_hash.clone())
         .record(&state.db)
@@ -1209,6 +1220,7 @@ mod tests {
             id: 1,
             code_hash: "hash".into(),
             code_prefix: "ABCD".into(),
+            code_sealed: None,
             note: None,
             group_id: None,
             created_by: Some(1),
@@ -1218,17 +1230,34 @@ mod tests {
             status: "active".into(),
             created_at: "2026-01-01T00:00:00.000Z".into(),
         };
-        let dto = InviteDto::new(&invite, "2026-01-01T00:00:00.000Z");
+        let dto = InviteDto::new(
+            &invite,
+            "2026-01-01T00:00:00.000Z",
+            None,
+            "https://s.example.com",
+        );
         assert_eq!(dto.remaining, 0);
         assert!(!dto.usable, "an exhausted invite is not usable");
+        assert!(dto.code.is_none());
+        assert!(dto.link.is_none());
 
         let mut fresh = invite.clone();
         fresh.used_count = 0;
-        assert!(InviteDto::new(&fresh, "2026-01-01T00:00:00.000Z").usable);
+        let dto = InviteDto::new(
+            &fresh,
+            "2026-01-01T00:00:00.000Z",
+            Some("K7M2QPX4RT".into()),
+            "https://s.example.com",
+        );
+        assert!(dto.usable);
+        assert_eq!(
+            dto.link.as_deref(),
+            Some("https://s.example.com/app/register?invite=K7M2QPX4RT")
+        );
 
         let mut expired = invite.clone();
         expired.used_count = 0;
         expired.expires_at = Some("2000-01-01T00:00:00.000Z".into());
-        assert!(!InviteDto::new(&expired, "2026-01-01T00:00:00.000Z").usable);
+        assert!(!InviteDto::new(&expired, "2026-01-01T00:00:00.000Z", None, "").usable);
     }
 }

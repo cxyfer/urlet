@@ -24,6 +24,13 @@ use crate::services::settings::{Settings, ThemeSwitching};
 /// Cookie remembering an explicit theme choice.
 pub const COOKIE_NAME: &str = "urlet_theme";
 
+/// Administrator-only preview cookie. It may name a disabled theme and is only
+/// honoured for a signed-in administrator.
+pub const PREVIEW_COOKIE_NAME: &str = "urlet_theme_preview";
+
+/// Preview is intentionally short-lived: an hour is enough to inspect a theme.
+pub const PREVIEW_COOKIE_MAX_AGE: i64 = 3_600;
+
 /// Lifetime of the theme cookie: one year.
 pub const COOKIE_MAX_AGE: i64 = 31_536_000;
 
@@ -148,6 +155,10 @@ pub struct ThemeView {
     pub options: Vec<ThemeOptionView>,
     /// Whether the current account may change the theme.
     pub can_switch: bool,
+    /// Whether no explicit (or only a stale) cookie selected this look.
+    pub using_default: bool,
+    /// Whether this view was selected through the administrator preview cookie.
+    pub preview: bool,
 }
 
 impl ThemeView {
@@ -160,10 +171,10 @@ impl ThemeView {
                 current: *key == selected,
             })
             .collect();
-        // A stale cookie can point at a theme that has just been disabled. The
-        // selected theme is then the default, which is always in `enabled`;
-        // still, keep the picker internally consistent if the list is empty.
-        if options.is_empty() {
+        // A stale cookie can point at a theme that has just been disabled, and
+        // an administrator can preview a theme that is not enabled. Keep the
+        // current selection in the picker either way.
+        if !options.iter().any(|option| option.key == selected.key()) {
             options.push(ThemeOptionView {
                 key: selected.key(),
                 name: lang.t(selected.name_key()).to_string(),
@@ -179,6 +190,8 @@ impl ThemeView {
             is_dark_only: selected.is_dark_only(),
             options,
             can_switch,
+            using_default: false,
+            preview: false,
         }
     }
 
@@ -186,6 +199,18 @@ impl ThemeView {
     /// built without a user.
     pub fn with_can_switch(mut self, can_switch: bool) -> Self {
         self.can_switch = can_switch;
+        self
+    }
+
+    /// Mark the view as the site default rather than an explicit cookie.
+    pub fn with_using_default(mut self, using_default: bool) -> Self {
+        self.using_default = using_default;
+        self
+    }
+
+    /// Mark the view as an administrator preview.
+    pub fn with_preview(mut self, preview: bool) -> Self {
+        self.preview = preview;
         self
     }
 }
@@ -350,8 +375,19 @@ impl ThemeRegistry {
 
     /// Build the request view for a cookie value.
     pub fn view(&self, lang: Lang, requested: Option<&str>) -> ThemeView {
+        let requested_key = requested.and_then(ThemeKey::parse);
         let selected = self.resolve(requested);
+        let using_default = match requested_key {
+            Some(key) => !self.is_enabled(key) || key != selected,
+            None => true,
+        };
         ThemeView::from_parts(lang, selected, &self.enabled_keys(), false)
+            .with_using_default(using_default)
+    }
+
+    /// Build a preview view for an administrator. The key may be disabled.
+    pub fn preview_view(&self, lang: Lang, key: ThemeKey) -> ThemeView {
+        ThemeView::from_parts(lang, key, &self.enabled_keys(), true).with_preview(true)
     }
 }
 
@@ -395,26 +431,55 @@ pub fn admin_rows(registry: &ThemeRegistry, lang: Lang) -> Vec<AdminThemeRow> {
     out
 }
 
+/// The values actually written by [`update_selection`].
+#[derive(Debug, Clone)]
+pub struct AppliedSelection {
+    pub enabled: Vec<String>,
+    pub default_key: String,
+    pub switching: ThemeSwitching,
+}
+
 /// Validate and apply an administrator selection.
 ///
 /// The invariant is the same one the partial index protects: at least one
-/// enabled theme, and the default must be enabled. The catalogue and the
-/// `theme_switching` policy are committed in one database transaction, then the
-/// two in-memory caches are updated from the values that transaction wrote.
+/// enabled theme, and the default must be enabled. Omitted fields are resolved
+/// to the current values **after** taking the settings write lock, so a
+/// concurrent catalogue update cannot be silently reverted by a request that
+/// only changes the policy. The catalogue and the `theme_switching` policy are
+/// committed in one database transaction, then the two in-memory caches are
+/// updated from the values that transaction wrote.
 pub async fn update_selection(
     pool: &SqlitePool,
     registry: &ThemeRegistry,
     settings: &Settings,
-    enabled: &[String],
-    default_key: &str,
-    switching: ThemeSwitching,
+    enabled: Option<&[String]>,
+    default_key: Option<&str>,
+    switching: Option<ThemeSwitching>,
     actor: Option<i64>,
-) -> Result<()> {
-    let requested_default = ThemeKey::parse(default_key)
+) -> Result<AppliedSelection> {
+    // Serialise with settings writes: this guard covers the read of the
+    // omitted fields, the transaction and the cache update.
+    let _settings_guard = settings.lock_updates().await;
+
+    let enabled = match enabled {
+        Some(values) => values.to_vec(),
+        None => registry
+            .rows()
+            .into_iter()
+            .filter(|row| row.is_enabled)
+            .filter_map(|row| ThemeKey::parse(&row.key).map(|key| key.key().to_string()))
+            .collect(),
+    };
+    let requested_default = default_key
+        .map(str::to_string)
+        .unwrap_or_else(|| registry.default_key().key().to_string());
+    let switching = switching.unwrap_or_else(|| settings.theme_switching());
+
+    let default_key = ThemeKey::parse(&requested_default)
         .ok_or_else(|| AppError::validation("default_theme", "unknown theme"))?;
 
     let mut keys: Vec<ThemeKey> = Vec::new();
-    for raw in enabled {
+    for raw in &enabled {
         let Some(key) = ThemeKey::parse(raw) else {
             return Err(AppError::validation("enabled_themes", "unknown theme"));
         };
@@ -428,34 +493,27 @@ pub async fn update_selection(
             "at least one theme must stay enabled",
         ));
     }
-    if !keys.contains(&requested_default) {
+    if !keys.contains(&default_key) {
         return Err(AppError::validation(
             "default_theme",
             "the default theme must be enabled",
         ));
     }
 
-    // Serialise with settings writes: this guard covers the transaction and the
-    // cache update, so a concurrent settings PUT cannot apply an older policy
-    // after this one committed.
-    let _settings_guard = settings.lock_updates().await;
-
     let keys: Vec<String> = keys.iter().map(|key| key.key().to_string()).collect();
-    theme_db::set_state_and_setting(
-        pool,
-        &keys,
-        requested_default.key(),
-        switching.as_str(),
-        actor,
-    )
-    .await
-    .map_err(|err| AppError::internal(format!("cannot update themes: {err}")))?;
+    theme_db::set_state_and_setting(pool, &keys, default_key.key(), switching.as_str(), actor)
+        .await
+        .map_err(|err| AppError::internal(format!("cannot update themes: {err}")))?;
 
     // Only after the commit: mirror the committed values into the caches. No
     // second database read (or settings validation) can fail at this point.
-    registry.apply_state(&keys, requested_default.key());
+    registry.apply_state(&keys, default_key.key());
     settings.set_cached("theme_switching", switching.as_str());
-    Ok(())
+    Ok(AppliedSelection {
+        enabled: keys,
+        default_key: default_key.key().to_string(),
+        switching,
+    })
 }
 
 #[cfg(test)]

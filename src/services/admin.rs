@@ -352,6 +352,7 @@ impl AdminContext<'_> {
             settings: self.settings,
             actor: self.actor,
             ip_hash: self.ip_hash,
+            secret: self.config.secret.as_slice(),
         }
         .create(InviteRequest {
             group_id,

@@ -92,7 +92,10 @@ macro_rules! themed_page {
                                 Self::$variant($variant { ctx })
                             }
                         )+
-                        _ => unreachable!("theme is not registered for this page"),
+                        // A newly compiled theme that a page has not listed yet
+                        // must not take the whole page down. Verdant is always
+                        // present in every invocation and is the base template.
+                        _ => Self::Verdant(Verdant { ctx }),
                     }
                 }
             }
