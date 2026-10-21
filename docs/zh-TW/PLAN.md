@@ -43,7 +43,7 @@
 | P9 | 多語系、防機器人驗證與導覽首頁 | 三份內嵌語言目錄、語言協商與切換、註冊／登入／建立流程的 Turnstile／reCAPTCHA 驗證、`/` 導覽首頁 | 語言協商、cookie 切換、驗證碼失敗關閉（含登入）與導覽首頁皆有測試涵蓋；`/` 回 200 | `📝 docs: ...` / `✨ feat(i18n): ...` |
 | P10 | 使用者群組 (v1.2) | `user_groups` 提供各群組連結／Token 配額與七個功能開關（含網域選擇）；可透過使用者或邀請碼指派；含管理頁面與 API | 16 張表／31 個索引、升級不改變行為、配額與開關生效（管理員亦然）、刪組需改派、測試與 smoke 全綠 | `✨ feat(groups): ...` |
 | P11 | 群組網域策略 (v1.2) | 各群組 `default_domain_id`、`restrict_domains` 與 `group_domains` 允許清單；建立/移動連結時強制，透過 `/api/v1/auth/me` 與 `/api/v1/domains` 曝光，管理群組表單可編輯 | 16 張表／31 個索引、既有群組維持所有 active 網域、限制清單為空時只能用預設、預設網域停用時回退全站預設、測試與 smoke 全綠 | `✨ feat(domains): ...` |
-| P12 | 可切換主題 (v1.4) | 六個內建模板／CSS 主題、`themes` 表與 registry、管理啟用／預設／政策頁面與 API、`urlet_theme` cookie、主題切換器與共享回退內容 | 17 張表／32 個索引、每個主題都能渲染每個頁面、權限與回退皆有測試、fmt/clippy/test/smoke 全綠 | `✨ feat(themes): ...` |
+| P12 | 可切換主題 (v1.4) | 六個內建模板／CSS 主題、`themes` 表與 registry、管理啟用／預設／政策頁面與 API、`urlet_theme` cookie、主題切換器與共享回退內容 | 18 張表／34 個索引、每個主題都能渲染每個頁面、權限與回退皆有測試、fmt/clippy/test/smoke 全綠 | `✨ feat(themes): ...` |
 
 ---
 

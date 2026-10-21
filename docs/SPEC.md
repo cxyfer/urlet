@@ -34,7 +34,7 @@ and users keep their choice in a cookie.
 | P4 | Docker Compose deployment | A single `docker-compose.yml` (app + named volume), with an optional Caddy TLS overlay |
 | P5 | As lightweight as possible | One binary, SQLite (no MySQL/Redis), SSR templates (no Node build), image < 40 MB |
 | P6 | Rust implementation | Rust 2021 + Axum 0.8 + Tokio + sqlx (SQLite) |
-| P7 | Well-designed schema | 17 tables, 32 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
+| P7 | Well-designed schema | 18 tables, 34 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
 | P8 | Sensible extra features | Tags, click analytics, API tokens, invite codes, admin panel, audit log, daily rollups, trilingual UI, optional bot protection, quota/feature user groups, switchable themes |
 
 ### 1.2 Relationship to the Earlier Prototypes (OURLS / OURLS2)
@@ -466,6 +466,7 @@ login_attempts (auditing)
 | `url_daily_stats` | url_id, day, clicks, unique_clicks, bot_clicks (PK: url_id+day) | Daily rollups |
 | `audit_logs` | id, actor_user_id, actor_role, action, target_type, target_id, metadata, ip_hash, created_at | Auditing |
 | `themes` | id, key(UNIQUE), is_enabled, is_default, sort_order, created_at, updated_at | Administrator's choice among the compiled-in themes; one default enforced by a partial unique index |
+| `invite_issuance` | id, group_id, actor_id, invite_id, created_at | Per-group invite issuance ledger; counts quota usage even after a code is revoked |
 | `settings` | key(PK), value, updated_at, updated_by | Site settings |
 | `invite_codes` | id, code_hash(UNIQUE), code_prefix, note, group_id, created_by, max_uses, used_count, expires_at, status, created_at | Invite codes |
 | `invite_redemptions` | id, invite_id, user_id, redeemed_at, UNIQUE(invite_id,user_id) | Invite redemption records |
@@ -494,9 +495,10 @@ login_attempts (auditing)
 The v1.1 changes add settings **keys** only; because `settings` is a key-value table, v1.1 kept
 the schema at 14 tables and 27 indexes. v1.2 adds the `user_groups` and `group_domains`
 tables, the nullable `users.group_id` / `invite_codes.group_id` columns, the
-`user_groups.default_domain_id` / `restrict_domains` columns and four indexes, for **16 tables and
-31 indexes** (§6.1, §6.3, §6.4). v1.4 adds the `themes` table and its single-default index, for
-**17 tables and 32 indexes**.
+`user_groups.default_domain_id` / `restrict_domains` columns and four indexes. The invite-ledger
+work added `invite_issuance` and its index, taking the schema to **17 tables and 33 indexes**
+before themes. v1.4 adds the `themes` table and its single-default index, for **18 tables and
+34 indexes** (§6.1, §6.3, §6.4).
 
 ### 6.5 Seed Data
 
@@ -754,7 +756,7 @@ v1.1 additions (this batch):
 
 v1.4 additions (this batch):
 
-- [x] `themes` (17 tables, 32 indexes): six compiled-in designs, administrator enable/default switches, a site-wide switch permission, a `urlet_theme` cookie, and per-theme template directories that keep every v1.2 page working
+- [x] `themes` (18 tables, 34 indexes): six compiled-in designs, administrator enable/default switches, a site-wide switch permission, a `urlet_theme` cookie, and per-theme template directories that keep every v1.2 page working
 
 v1.2 additions (this batch):
 

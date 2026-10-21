@@ -30,7 +30,7 @@ v1.4 起新增**可切換主題**：視覺識別由編譯進 binary 的模板集
 | P4 | Docker Compose 部署 | 單一 `docker-compose.yml`（app + named volume），可選 Caddy TLS overlay |
 | P5 | 盡可能輕量化 | 單一二進位、SQLite（無 MySQL/Redis）、SSR 模板（無 Node 建置）、映像檔 < 40 MB |
 | P6 | Rust 實作 | Rust 2021 + Axum 0.8 + Tokio + sqlx(SQLite) |
-| P7 | 完善的資料表設計 | 17 張表、32 個索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
+| P7 | 完善的資料表設計 | 18 張表、34 個索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
 | P8 | 適度添加功能 | 標籤、點擊分析、API Token、邀請碼、管理後台、稽核日誌、每日彙總、三語介面、可選防機器人驗證、配額／功能開關使用者群組、可切換主題 |
 
 ### 1.2 與先前半成品 (OURLS / OURLS2) 的關係
@@ -453,6 +453,7 @@ login_attempts (稽核用)
 | `url_daily_stats` | url_id, day, clicks, unique_clicks, bot_clicks (PK: url_id+day) | 每日彙總 |
 | `audit_logs` | id, actor_user_id, actor_role, action, target_type, target_id, metadata, ip_hash, created_at | 稽核 |
 | `themes` | id, key(UNIQUE), is_enabled, is_default, sort_order, created_at, updated_at | 管理員對內建主題的選擇；以 partial unique index 確保唯一預設 |
+| `invite_issuance` | id, group_id, actor_id, invite_id, created_at | 各群組邀請碼發行帳本；即使邀請碼被撤銷仍計入配額 |
 | `settings` | key(PK), value, updated_at, updated_by | 全站設定 |
 | `invite_codes` | id, code_hash(UNIQUE), code_prefix, note, group_id, created_by, max_uses, used_count, expires_at, status, created_at | 邀請碼 |
 | `invite_redemptions` | id, invite_id, user_id, redeemed_at, UNIQUE(invite_id,user_id) | 邀請碼使用紀錄 |
@@ -480,8 +481,9 @@ login_attempts (稽核用)
 
 v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表，v1.1 維持 **14 張表、27 個索引**。
 v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` / `invite_codes.group_id` 欄位、
-`user_groups.default_domain_id` / `restrict_domains` 欄位及四個索引，共 **16 張表、31 個索引**（§6.1、§6.3、§6.4）。
-v1.4 新增 `themes` 表及其唯一預設索引，共 **17 張表、32 個索引**。
+`user_groups.default_domain_id` / `restrict_domains` 欄位及四個索引。邀請碼配額工作新增
+`invite_issuance` 表與索引，使 schema 在主題之前為 **17 張表、33 個索引**；v1.4 新增
+`themes` 表及其唯一預設索引，共 **18 張表、34 個索引**（§6.1、§6.3、§6.4）。
 
 ### 6.5 預設資料 (seed)
 
@@ -729,7 +731,7 @@ v1.1 新增項目（本批次）：
 - [ ] `cargo test`（完整測試套件）、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過，`scripts/smoke.sh` 端對端檢查全過，且容器映像可在 musl 下建置並執行（§3.3）
 
 v1.4 新增項目（本批次）：
-- [x] `themes`（17 張表、32 個索引）：六個內建設計、管理員啟用/預設切換、全站切換權限、`urlet_theme` cookie，以及讓所有 v1.2 頁面維持可用的各主題模板目錄
+- [x] `themes`（18 張表、34 個索引）：六個內建設計、管理員啟用/預設切換、全站切換權限、`urlet_theme` cookie，以及讓所有 v1.2 頁面維持可用的各主題模板目錄
 
 v1.2 新增項目（本批次）：
 
