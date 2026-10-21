@@ -18,7 +18,7 @@
 v1.1 起介面提供三種語言（英文／繁體中文／簡體中文）、可選的防機器人驗證，並新增公開導覽首頁。
 v1.2 起新增**使用者群組**：可為不同群組設定各自的連結與 API Token 配額及功能開關，
 讓同一套單一二進位部署能支援分級方案（例如免費組與付費組）。
-v1.4 起新增**可切換主題**：視覺識別由編譯進 binary 的模板集與樣式表組成，管理員可決定提供哪些設計與誰能切換，使用者則以 cookie 記住選擇。
+v1.4 起新增**可切換主題**：視覺識別可由編譯進 binary 的模板集與樣式表組成，管理員也可上傳純 CSS 的自訂主題；管理員決定提供哪些設計與誰能切換，使用者則以 cookie 記住選擇。
 
 ### 1.1 核心設計原則 (來自需求方)
 
@@ -30,8 +30,8 @@ v1.4 起新增**可切換主題**：視覺識別由編譯進 binary 的模板集
 | P4 | Docker Compose 部署 | 單一 `docker-compose.yml`（app + named volume），可選 Caddy TLS overlay |
 | P5 | 盡可能輕量化 | 單一二進位、SQLite（無 MySQL/Redis）、SSR 模板（無 Node 建置）、映像檔 < 40 MB |
 | P6 | Rust 實作 | Rust 2021 + Axum 0.8 + Tokio + sqlx(SQLite) |
-| P7 | 完善的資料表設計 | 18 張表、34 個索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
-| P8 | 適度添加功能 | 標籤、點擊分析、API Token、邀請碼、管理後台、稽核日誌、每日彙總、三語介面、可選防機器人驗證、配額／功能開關使用者群組、可切換主題 |
+| P7 | 完善的資料表設計 | 19 張表、35 個索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
+| P8 | 適度添加功能 | 標籤、點擊分析、API Token、邀請碼、管理後台、稽核日誌、每日彙總、三語介面、可選防機器人驗證、配額／功能開關使用者群組、可切換與可上傳主題 |
 
 ### 1.2 與先前半成品 (OURLS / OURLS2) 的關係
 
@@ -242,7 +242,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | FR-ADMIN-6 | 系統資訊 | 版本、資料庫大小、使用者/網址/點擊總數、運行時間 |
 | FR-ADMIN-7 | 授權 | 所有 `/api/v1/admin/**` 與 `/app/admin/**` 需 `role = admin`，否則 403 |
 | FR-ADMIN-8 | 群組管理 | 於 `/app/admin/groups` 與 `/api/v1/admin/groups` 建立、編輯、設為預設、設定網域策略與刪除使用者群組（FR-GROUP-1、FR-GROUP-9） |
-| FR-ADMIN-9 | 主題管理 | 於 `/app/admin/themes` 與 `/api/v1/admin/themes` 啟用/停用內建主題、選擇唯一預設並設定誰能切換（FR-THEME-2） |
+| FR-ADMIN-9 | 主題管理 | 於 `/app/admin/themes` 與 `/api/v1/admin/themes` 啟用/停用內建與上傳主題、上傳/編輯/刪除自訂樣式表、選擇唯一預設並設定誰能切換（FR-THEME-2、FR-THEME-10） |
 
 ### 4.9 JSON API (FR-API)
 
@@ -274,7 +274,10 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | `/app/theme/{key}` | 主題切換 | 需要登入與切換權限；設定 `urlet_theme` cookie 並轉往同站 `next`（或 `Referer`，或 `/app`）。`?preview=1` 設定管理員專用預覽 cookie，可包含已停用主題 |
 | `/app/theme/default` | 網站預設 | 清除明確選擇與預覽 cookie，重新跟隨管理員預設 |
 | `/app/theme/preview/stop` | 結束預覽 | 清除管理員預覽 cookie |
-| `/app/admin/themes` | 主題管理 | 啟用/停用主題、選擇預設與設定 `theme_switching` 政策 |
+| `/app/admin/themes` | 主題管理 | 啟用/停用內建與上傳主題、上傳自訂樣式表、選擇預設與設定 `theme_switching` 政策 |
+| `/app/admin/themes/custom` | 自訂主題上傳 | `POST` multipart 上傳（名稱、說明、僅深色、CSS）；僅限管理員 |
+| `/app/admin/themes/custom/{id}` | 自訂主題編輯 | `GET` 編輯表單、`POST` 更新中介資料與選填的樣式表替換 |
+| `/app/admin/themes/custom/{id}/delete` | 自訂主題刪除 | `POST` 移除目錄資料列與 CSS 檔；預設主題不可刪除 |
 | `/{slug}` | 轉址 / 密碼頁 / 410 / 404 | 公開 |
 | 額外網域 | 僅轉址 | `/` 顯示簡單首頁、`/{slug}` 轉址、`/app` 308 回 canonical、`/api` 回 404 |
 
@@ -326,15 +329,16 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 
 | ID | 需求 | 說明 |
 |----|------|------|
-| FR-THEME-1 | 主題目錄 | binary 內建六個主題：`verdant`（v1.2 預設）、`aurora`、`paper`、`signal`、`gilded`、`swiss`。每個主題擁有 `templates/themes/<key>/` 模板目錄與內嵌 CSS；主題是程式碼而非上傳內容，啟用/停用不會寫入或刪除模板 |
-| FR-THEME-2 | 管理 | `/app/admin/themes` 與 `GET/PUT /api/v1/admin/themes` 列出所有主題、啟用/停用、選擇唯一預設與設定 `theme_switching`。至少要有一個啟用主題，且預設必須啟用；違反時回 `422 validation_error`。預設標記由 partial unique index 保護 |
+| FR-THEME-1 | 主題目錄 | binary 內建六個主題：`verdant`（v1.2 預設）、`aurora`、`paper`、`signal`、`gilded`、`swiss`。每個主題擁有 `templates/themes/<key>/` 模板目錄與內嵌 CSS。管理員另可註冊 `custom-…` 主題：它們是 CSS 檔、沿用 Verdant 模板，永不新增或修改模板 |
+| FR-THEME-2 | 管理 | `/app/admin/themes` 與 `GET/PUT /api/v1/admin/themes` 列出所有主題（內建與上傳）、啟用/停用、選擇唯一預設與設定 `theme_switching`。上傳主題可於管理頁建立、編輯與刪除。至少要有一個啟用主題，且預設必須啟用；違反時回 `422 validation_error`。預設標記由 partial unique index 保護 |
 | FR-THEME-3 | 選擇 | `GET /app/theme/{key}` 需要登入，僅接受已啟用的 key，設定 `urlet_theme` cookie（`Path=/`、`SameSite=Lax`、`HttpOnly`、一年，設定時加 `Secure`），並轉往同站 `next`、否則 `Referer` 路徑、否則 `/app`。未知或已停用的 key 回 404；未登入者帶著 `next` 導向登入頁。`?preview=1` 設定獨立的管理員預覽 cookie，可指向已停用主題；`/app/theme/default` 清除兩種 cookie，`/app/theme/preview/stop` 結束預覽 |
 | FR-THEME-4 | 權限 | `theme_switching` 為 `all`（預設）或 `admin`。政策在頁面渲染時強制執行：設為 `admin` 時，非管理員帳號與未登入訪客一律顯示預設，忽略既有 cookie。管理員永遠看得到切換器，並可透過獨立的預覽 cookie 檢視任何已編譯主題（包含已停用者）。無權限的直接切換請求回 403。停用主題不會刪除資料 |
 | FR-THEME-5 | 預設與回退 | 恰有一個已啟用主題標記為預設。沒有 cookie、未知 key 或 key 已被停用時一律使用預設；切換器依 migration 的順序列出已啟用主題，並提供會清除 cookie 的**網站預設**項目；管理員可在不改變預設的情況下預覽已停用主題 |
 | FR-THEME-6 | 模板 | `templates/` 下的基底模板即 Verdant 主題與回退。主題目錄可覆寫任一頁面；未覆寫的頁面與共享的 v1.2 頁面內容仍可使用。主題模板由 `themed_page!` 在編譯期選擇，絕不使用請求提供的路徑 |
-| FR-THEME-7 | 資產 | `/assets/themes/{key}` 只提供固定的內建 key，`/assets/theme-ui.css` 提供切換器與管理目錄的共用樣式。不引入外部字型、圖片、腳本或 CDN，維持 `default-src 'self'` CSP 與零建置部署 |
-| FR-THEME-8 | 外觀 | Verdant 保留持久化的明暗控制；五個舊設計跟隨 `prefers-color-scheme`，因此保留作業系統選擇；Aurora 僅有深色，隱藏明暗控制 |
-| FR-THEME-9 | 持久化 | 選擇存在 cookie，而非每位使用者的資料庫欄位。已停用的主題在下一個請求即被拒絕，管理員可隨時為沒有偏好的訪客更改預設。主題切換不觸碰任何連結、使用者或點擊資料 |
+| FR-THEME-7 | 資產 | `/assets/themes/{key}` 只提供固定的內建 key；`/assets/custom-themes/{key}` 依資料庫資料列提供上傳樣式表（前面接上 Verdant 基礎 CSS，讓上傳能與預設設計疊加），URL 帶有 `/assets/custom-themes/{key}?v=<內容雜湊>`；`/assets/theme-ui.css` 提供切換器與管理目錄的共用樣式。不引入外部字型、圖片、腳本或 CDN，維持 `default-src 'self'` CSP 與零建置部署 |
+| FR-THEME-8 | 外觀 | Verdant 保留持久化的明暗控制；五個舊設計跟隨 `prefers-color-scheme`，因此保留作業系統選擇；Aurora 僅有深色，隱藏明暗控制。上傳主題有管理員選擇的僅深色旗標；否則保留明暗控制 |
+| FR-THEME-9 | 持久化 | 選擇存在 cookie，而非每位使用者的資料庫欄位。已停用的主題在下一個請求即被拒絕，管理員可隨時為沒有偏好的訪客更改預設。上傳主題的中介資料在 `custom_themes`、樣式表在持久化 volume 的 `URLET_THEMES_DIR`、目錄狀態在 `themes`，重啟後仍可選用。主題切換不觸碰任何連結、使用者或點擊資料 |
+| FR-THEME-10 | 上傳 | 上傳、編輯與刪除僅限管理員。上傳內容為單一 UTF-8 `.css` 檔、最大 256 KiB；名稱 1–60 字元、說明最多 200 字元；每個執行個體最多 32 個上傳。CSS 以 `text/css` 與 `nosniff` 提供，接在 Verdant 基礎樣式表之後，且不可使用外部 `url(...)`、`@import`、`expression(...)` 或舊式 `behavior`。替換樣式表會改變內容雜湊 URL；刪除會移除檔案；預設主題不可刪除 |
 
 ---
 
@@ -361,7 +365,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | NFR-SEC-14 | 密碼雜湊在 `spawn_blocking` 中執行，並以信號量限制同時最多 4 個 Argon2 計算（每個約 19 MiB） |
 | NFR-SEC-15 | 驗證碼驗證失敗一律關閉：以表單編碼 HTTPS POST 搭配 5 秒逾時呼叫設定的供應商，並透過 `ureq` 2 + rustls + webpki-roots 發出（不需 OpenSSL）；逾時、非 2xx 或無法解析的回應一律拒絕請求。secret key 永不回顯於管理後台 |
 | NFR-SEC-16 | 語言 cookie `urlet_lang` 刻意不設 HttpOnly（由前端程式讀取），內容僅為白名單語言標籤；切換端點的 `next` 只接受同站相對路徑，以防開放轉址 |
-| NFR-SEC-17 | 主題 cookie `urlet_theme` 為 HttpOnly、`SameSite=Lax`、一年，設定時加 `Secure`；管理員專用的預覽 cookie 屬性相同，但生命週期為一小時。其值只會與固定的內建主題 key 比對；預覽 cookie 僅對管理員生效，切換端點需要登入與 `theme_switching` 權限，且 `next`／`Referer` 會先化為同站路徑再轉址 |
+| NFR-SEC-17 | 主題 cookie `urlet_theme` 為 HttpOnly、`SameSite=Lax`、一年，設定時加 `Secure`；管理員專用的預覽 cookie 屬性相同，但生命週期為一小時。其值只會與已知目錄 key 比對；上傳 CSS 由產生的 key 提供，使用 `text/css` 與 `nosniff`，並拒絕外部資源與 `@import`。預覽 cookie 僅對管理員生效，切換端點需要登入與 `theme_switching` 權限，且 `next`／`Referer` 會先化為同站路徑再轉址 |
 
 ### 5.2 效能 (NFR-PERF)
 
@@ -379,13 +383,13 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 |----|------|
 | NFR-OPS-1 | `docker compose up -d` 即完成部署；首次啟動自動遷移 + 建立管理員 |
 | NFR-OPS-2 | 健康檢查：`GET /health`（200 JSON）與 `urlet healthcheck` 子命令（供 Docker HEALTHCHECK 使用） |
-| NFR-OPS-3 | 資料持久化於 named volume `urlet-data`，路徑 `/data` |
+| NFR-OPS-3 | 資料持久化於 named volume `urlet-data`，路徑 `/data`；上傳樣式表也在此，另有選用的 `urlet-themes` volume 掛載於 `/data/themes` |
 | NFR-OPS-4 | 日誌輸出 stdout（`tracing`，JSON 或 compact 由 `URLET_LOG_FORMAT` 控制） |
 | NFR-OPS-5 | 設定全部來自環境變數（12-factor），`.env.example` 完整說明 |
 | NFR-OPS-6 | 每日維護任務：清理過期 Session、可選清理過期點擊紀錄 |
-| NFR-OPS-7 | 備份 = 複製 `urlet.db`（WAL checkpoint 後），README 說明 |
+| NFR-OPS-7 | 備份 = 複製 `urlet.db`（WAL checkpoint 後），以及 `URLET_THEMES_DIR` 的上傳主題檔案；README 與 DEPLOYMENT 有說明 |
 | NFR-OPS-8 | 非 root 使用者執行容器；唯讀根檔案系統可運作 |
-| NFR-OPS-9 | 語言目錄以 `include_str!` 內嵌於二進位檔，部署仍為單一檔案，不需要可寫入的資產目錄 |
+| NFR-OPS-9 | 語言目錄以 `include_str!` 內嵌於二進位檔，部署仍為單一 binary；唯一可寫入的資產目錄是 `URLET_THEMES_DIR`，供管理員上傳使用 |
 
 ### 5.4 可維護性 (NFR-MAINT)
 
@@ -419,6 +423,7 @@ users ─┬─< sessions
 domains ─< urls
 settings (key-value)
 themes (獨立)
+custom_themes (中介資料；CSS 在持久化 volume)
 login_attempts (稽核用)
 ```
 
@@ -454,7 +459,8 @@ login_attempts (稽核用)
 | `clicks` | id, url_id, clicked_at, ip_hash, visitor_hash, user_agent, referrer, referrer_host, country_code, device_type, browser, os, is_bot, is_unique, password_protected | 點擊明細 |
 | `url_daily_stats` | url_id, day, clicks, unique_clicks, bot_clicks (PK: url_id+day) | 每日彙總 |
 | `audit_logs` | id, actor_user_id, actor_role, action, target_type, target_id, metadata, ip_hash, created_at | 稽核 |
-| `themes` | id, key(UNIQUE), is_enabled, is_default, sort_order, created_at, updated_at | 管理員對內建主題的選擇；以 partial unique index 確保唯一預設 |
+| `themes` | id, key(UNIQUE), is_enabled, is_default, sort_order, created_at, updated_at | 管理員對所有主題的選擇；上傳主題註冊時會建立對應資料列；以 partial unique index 確保唯一預設 |
+| `custom_themes` | id, key(UNIQUE), name, description, is_dark_only, css_version, css_size, original_filename, created_by, created_at, updated_at | 管理員上傳樣式表的中介資料；檔案位於 `URLET_THEMES_DIR` |
 | `invite_issuance` | id, group_id, actor_id, invite_id, created_at | 各群組邀請碼發行帳本；即使邀請碼被撤銷仍計入配額 |
 | `settings` | key(PK), value, updated_at, updated_by | 全站設定 |
 | `invite_codes` | id, code_hash(UNIQUE), code_prefix, code_sealed, note, group_id, created_by, max_uses, used_count, expires_at, status, created_at | 邀請碼；`code_sealed` 為可再次顯示邀請碼的加密封存 |
@@ -480,13 +486,14 @@ login_attempts (稽核用)
 | `invite_codes(group_id)` | 依群組查詢邀請碼 |
 | `group_domains(domain_id)` | 網域刪除與允許清單查詢 |
 | `themes(is_default) WHERE is_default = 1` UNIQUE | 最多一個預設主題 |
+| `custom_themes(created_by)` | 上傳歸屬與清理 |
 
 v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表，v1.1 維持 **14 張表、27 個索引**。
 v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` / `invite_codes.group_id` 欄位、
 `user_groups.default_domain_id` / `restrict_domains` 欄位及四個索引，共 **16 張表、31 個索引**（§6.1、§6.3、§6.4）。
 邀請碼配額工作新增 `invite_issuance` 表與索引，使 schema 成為 **17 張表、33 個索引**；v1.3 僅新增可空的
-`invite_codes.code_sealed` 欄位，表與索引數量不變；v1.4 新增 `themes` 表及其唯一預設索引，
-共 **18 張表、34 個索引**。
+`invite_codes.code_sealed` 欄位，表與索引數量不變；v1.4 新增 `themes` 表及其唯一預設索引；
+可上傳主題再新增 `custom_themes` 與其建立者索引，共 **19 張表、35 個索引**。
 
 ### 6.5 預設資料 (seed)
 
@@ -569,8 +576,8 @@ v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` /
 | POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, default_domain_id?, restrict_domains?, domain_ids?, is_default?}` → 201；domain_ids 必須存在，default_domain_id 必須 active；名稱重複或第二個預設群組回 409 |
 | PUT | `/api/v1/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`default_domain_id: null` 表示全站預設；`domain_ids: null` 或 `[]` 會清空允許清單；`is_default: true` 會在同一交易內轉移預設標記 |
 | DELETE | `/api/v1/admin/groups/{id}?reassign_to={id}` | 先把成員搬到 `reassign_to`，再刪除 → 204；預設群組或目標不存在/不合法回 409 |
-| GET | `/api/v1/admin/themes` | 主題目錄：key、名稱、說明、`enabled`、`default`、`dark_only`、`css_url`，以及目前的 `switching` 政策 |
-| PUT | `/api/v1/admin/themes` | `{enabled?: [keys], default?: key, switching?: "all"\|"admin"}`；省略的欄位維持原值；至少一個啟用主題且預設必須啟用 |
+| GET | `/api/v1/admin/themes` | 主題目錄：key、名稱、說明、`enabled`、`default`、`dark_only`、`css_url`、`custom`，以及目前的 `switching` 政策 |
+| PUT | `/api/v1/admin/themes` | `{enabled?: [keys], default?: key, switching?: "all"\|"admin"}`；省略的欄位維持原值；至少一個啟用主題且預設必須啟用。`keys` 可包含 `custom-…` 上傳主題 |
 | GET | `/api/v1/admin/urls` | 全站網址列表 |
 | PATCH | `/api/v1/admin/urls/{id}` | 強制停用/啟用/刪除 |
 | GET | `/api/v1/admin/invites` | 邀請碼列表，含 `code`、`link`、`prefix`、`group_id` / `group_name`；舊版或密鑰更換後的列為 `null`；已撤銷、次數用盡或到期的邀請碼 `link` 也為 `null` |
@@ -609,6 +616,7 @@ v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` /
 | `URLET_DOMAINS` | 空 | 額外網域（僅轉址），逗號分隔；第一次啟動插入為 `active`，不覆寫既有資料 |
 | `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite 連線字串 |
 | `URLET_DATA_DIR` | 資料庫所在目錄 | 自動產生密鑰的存放位置 |
+| `URLET_THEMES_DIR` | `<URLET_DATA_DIR>/themes` | 上傳主題樣式表的存放目錄；docker compose 將 `urlet-themes` volume 掛載於此 |
 | `URLET_HEALTHCHECK_URL` | 由 `URLET_BIND` 推導 | `urlet healthcheck` 的目標 URL |
 | `URLET_SECRET` | 自動產生並存檔 | Session/解鎖 Cookie/IP 雜湊的 HMAC 密鑰（至少 16 字元；自動產生的為 44 字元 base64，寫入資料目錄的 `secret.key`） |
 | `URLET_ADMIN_EMAIL` | — | 啟動時建立/升級的管理員 Email |
@@ -646,7 +654,7 @@ urlet/
 ├── docker-compose.tls.yml        # 可選：Caddy 自動 HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql
+├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_custom_themes.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama 模板（base、app_base、landing.html + 各頁面 + admin/）
@@ -677,11 +685,12 @@ services:
     image: urlet:latest
     ports: ["8080:8080"]
     env_file: [.env]
-    volumes: [urlet-data:/data]
+    volumes: [urlet-data:/data, urlet-themes:/data/themes]
     healthcheck: ...   # urlet healthcheck
     restart: unless-stopped
 volumes:
   urlet-data:
+  urlet-themes:
 ```
 
 `docker-compose.tls.yml`：額外加入 Caddy（80/443、自動 Let's Encrypt），
@@ -734,7 +743,7 @@ v1.1 新增項目（本批次）：
 - [ ] `cargo test`（完整測試套件）、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過，`scripts/smoke.sh` 端對端檢查全過，且容器映像可在 musl 下建置並執行（§3.3）
 
 v1.4 新增項目（本批次）：
-- [x] `themes`（18 張表、34 個索引）：六個內建設計、管理員啟用/預設切換、全站切換權限、`urlet_theme` cookie，以及讓所有 v1.2 頁面維持可用的各主題模板目錄
+- [x] `themes`（19 張表、35 個索引）：六個內建設計與管理員 CSS 上傳、啟用/預設切換、全站切換權限、`urlet_theme` cookie、各主題模板目錄，以及持久化於 `/data/themes` 的 `custom_themes` 目錄與檔案
 
 v1.2 新增項目（本批次）：
 

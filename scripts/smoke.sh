@@ -421,6 +421,29 @@ contains "the chosen theme is rendered" 'data-theme-key="paper"' \
 contains "the chosen theme loads its stylesheet" '/assets/themes/paper' \
     "$(curl -s -b "$DATA/theme-cookies.txt" "$BASE/app")"
 
+# ----------------------------------------------------------- custom themes
+echo
+echo "custom themes"
+printf 'body { color: #123456; }\n' > "$DATA/custom-theme.css"
+check "an administrator can upload a custom theme" "303" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" -H "Origin: $BASE" \
+        -F "name=Smoke Custom" -F "description=uploaded by the smoke test" \
+        -F "css=@$DATA/custom-theme.css;type=text/css" \
+        "$BASE/app/admin/themes/custom")"
+CATALOGUE=$(curl -s -b "$COOKIES" "$BASE/api/v1/admin/themes")
+contains "the upload is in the admin catalogue" '"custom":true' "$CATALOGUE"
+CUSTOM_KEY=$(printf '%s' "$CATALOGUE" | grep -o '"key":"custom-[^"]*"' | head -1 | sed 's/.*"key":"//; s/"$//')
+if [ -n "$CUSTOM_KEY" ]; then pass "the custom theme has a generated key"; else fail "the custom theme has no key"; fi
+check "the custom stylesheet is served" "200" \
+    "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/assets/custom-themes/$CUSTOM_KEY")"
+contains "the custom stylesheet includes the base design" '--forest' \
+    "$(curl -s "$BASE/assets/custom-themes/$CUSTOM_KEY")"
+check "the custom theme can become the default" "200" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" -H "Origin: $BASE" \
+        -H 'content-type: application/json' -X PUT \
+        -d "{\"default\":\"$CUSTOM_KEY\"}" "$BASE/api/v1/admin/themes")"
+contains "the custom theme is rendered" "data-theme-key=\"$CUSTOM_KEY\"" "$(curl -s "$BASE/")"
+
 # ------------------------------------------------------------- persistence
 echo
 echo "persistence"
@@ -433,6 +456,9 @@ check "the redirect still works after a restart" "302" \
     "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/demo")"
 check "the session cookie survives a restart" "200" \
     "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" "$BASE/api/v1/auth/me")"
+check "the uploaded stylesheet survives a restart" "200" \
+    "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/assets/custom-themes/$CUSTOM_KEY")"
+contains "the uploaded theme is still the default" "data-theme-key=\"$CUSTOM_KEY\"" "$(curl -s "$BASE/")"
 
 echo
 echo "-----------------------------------------------"

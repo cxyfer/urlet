@@ -1,0 +1,58 @@
+{% macro content() %}
+<div class="page-head">
+    <div class="page-head-main">
+        <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ lang.t("nav.admin") }}</span>
+        <h1 class="page-title">{{ lang.t("admin.themes.custom.edit_heading") }}</h1>
+    </div>
+    <div class="page-head-side">
+        <span class="hint">{{ lang.t("admin.themes.custom.edit_hint") }}</span>
+    </div>
+</div>
+
+<form method="post" action="/app/admin/themes/custom/{{ custom_theme.id }}" enctype="multipart/form-data" class="stack">
+    <section class="panel">
+        <div class="panel-head">
+            <h2>{{ custom_theme.name }}</h2>
+            <span class="panel-sub" aria-hidden="true">{{ custom_theme.key }}</span>
+        </div>
+
+        <div class="field field-narrow">
+            <label class="label" for="custom_name">{{ lang.t("admin.themes.custom.name") }}</label>
+            <input class="input" type="text" id="custom_name" name="name" maxlength="60" value="{{ custom_theme.name }}" required>
+        </div>
+        <div class="field field-narrow">
+            <label class="label" for="custom_description">{{ lang.t("admin.themes.custom.description") }}</label>
+            <input class="input" type="text" id="custom_description" name="description" maxlength="200" value="{{ custom_theme.description }}">
+            <span class="hint">{{ lang.t("admin.themes.custom.description_hint") }}</span>
+        </div>
+        <div class="field field-narrow">
+            <label class="label" for="custom_css">{{ lang.t("admin.themes.custom.replace_css") }}</label>
+            <input class="input" type="file" id="custom_css" name="css" accept=".css,text/css">
+            <span class="hint">{{ lang.t("admin.themes.custom.replace_css_hint") }}</span>
+        </div>
+        <label class="checkbox">
+            <input type="checkbox" name="is_dark_only" value="on"{% if custom_theme.is_dark_only %} checked{% endif %}>
+            {{ lang.t("admin.themes.custom.dark_only") }}
+        </label>
+
+        <dl class="meta mt">
+            <dt>{{ lang.t("admin.themes.custom.key") }}</dt><dd>{{ custom_theme.key }}</dd>
+            <dt>{{ lang.t("admin.themes.custom.size") }}</dt><dd>{{ custom_theme.size }}</dd>
+            <dt>{{ lang.t("admin.themes.custom.created") }}</dt><dd>{{ custom_theme.created }}</dd>
+            <dt>{{ lang.t("admin.themes.custom.filename") }}</dt><dd>{{ custom_theme.filename }}</dd>
+            <dt>{{ lang.t("admin.themes.custom.stylesheet") }}</dt><dd><a href="{{ custom_theme.css_url }}" rel="nofollow">{{ custom_theme.css_url }}</a></dd>
+        </dl>
+
+        <div class="form-actions">
+            <a class="btn btn-ghost" href="/app/admin/themes">{{ lang.t("admin.themes.custom.back") }}</a>
+            <button class="btn btn-primary" type="submit">{{ lang.t("admin.themes.custom.save") }}</button>
+        </div>
+    </section>
+</form>
+
+<form method="post" action="/app/admin/themes/custom/{{ custom_theme.id }}/delete" class="mt">
+    <p class="hint">{{ lang.t("admin.themes.custom.delete_hint") }}</p>
+    <button class="btn btn-danger" type="submit"
+            data-confirm="{{ lang.t("admin.themes.custom.delete_confirm") }}">{{ lang.t("admin.themes.custom.delete") }}</button>
+</form>
+{% endmacro %}

@@ -23,11 +23,11 @@ service, no frontend build step.
 | ✉️ Invite links | Every invite code has a registration link that prefills the code; the code stays viewable for history and the link is returned while the code is usable |
 | 🌐 Multi-domain | Add extra domains in the admin panel; each domain has its own slug namespace and serves redirects only |
 | 👥 User groups | Per-group link, API-token and invite quotas (per day/week/month), feature toggles, default domains and domain allowlists; members can issue their own invite codes when the group allows it |
-| 🎨 Themes | Six compiled-in designs (Verdant, Aurora, Paper, Signal, Gilded, Swiss); administrators choose which are offered, the default and whether members may switch |
+| 🎨 Themes | Six compiled-in designs (Verdant, Aurora, Paper, Signal, Gilded, Swiss) plus administrator-uploaded CSS themes; choose which are offered, the default and whether members may switch. Uploads persist in the `urlet-themes` volume |
 | 🛠 Admin panel | User management, user groups, all site links, domains, invite codes, themes, site settings, audit log |
 | 🌐 Localized UI | English, Traditional Chinese, and Simplified Chinese; the first visit follows the browser's `Accept-Language` header and falls back to English |
 | 🤖 Bot protection | Cloudflare Turnstile or Google reCAPTCHA v2, enabled through environment variables or the admin panel; applies to the registration, sign-in and link creation forms |
-| 🐳 Deployment | Single container plus a named volume; published multi-arch images on GHCR; optional Caddy overlay for automatic HTTPS |
+| 🐳 Deployment | Single container plus named volumes; published multi-arch images on GHCR; optional Caddy overlay for automatic HTTPS |
 | 🪶 Lightweight | 5.7 MB (glibc) / 5.8 MB (musl) binary, 14.8 MB container image, 8.7 MB RSS after 500 requests, and sub-millisecond redirect latency at P95 (see the note below) |
 
 > The binary and image figures include the embedded locale catalogs and the TLS stack used by the

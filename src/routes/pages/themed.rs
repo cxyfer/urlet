@@ -61,18 +61,18 @@ macro_rules! themed_page {
                 #[allow(dead_code)]
                 impl $variant {
                     /// Stylesheet of the request theme.
-                    pub fn theme_css_url(&self) -> &'static str {
-                        $crate::services::theme::selected_key().css_url()
+                    pub fn theme_css_url(&self) -> String {
+                        $crate::services::theme::current_css_url()
                     }
 
                     /// Stable key, exposed as `data-theme-key` for CSS hooks.
-                    pub fn theme_key(&self) -> &'static str {
-                        $crate::services::theme::selected_key().key()
+                    pub fn theme_key(&self) -> String {
+                        $crate::services::theme::current_key()
                     }
 
                     /// Whether the theme is dark-only (no light/dark control).
                     pub fn theme_is_dark_only(&self) -> bool {
-                        $crate::services::theme::selected_key().is_dark_only()
+                        $crate::services::theme::current_is_dark_only()
                     }
                 }
             )+

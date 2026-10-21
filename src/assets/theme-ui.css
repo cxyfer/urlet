@@ -134,6 +134,28 @@
 .theme-admin-swatch[data-theme-swatch="signal"] { background: linear-gradient(135deg, #f4f0e6 45%, #e6392e 45%); }
 .theme-admin-swatch[data-theme-swatch="gilded"] { background: linear-gradient(135deg, #0e3b33, #d9b968); }
 .theme-admin-swatch[data-theme-swatch="swiss"] { background: linear-gradient(135deg, #f4f0e6 45%, #111 45%); }
+.theme-admin-swatch[data-theme-swatch="custom"] { background: linear-gradient(135deg, #3d4a63, #a8c9d9, #7d5c9e); }
+.inline-form { display: inline; }
+.custom-theme-list {
+    display: grid;
+    gap: .55rem;
+}
+.custom-theme-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .45rem 1rem;
+    padding: .7rem .85rem;
+    border: 1px solid var(--line, rgba(127, 127, 127, .35));
+    border-radius: var(--radius-sm, .6rem);
+    background: var(--surface, transparent);
+}
+.custom-theme-main { flex: 1 1 14rem; min-width: 0; }
+.custom-theme-meta { font-size: .76rem; opacity: .68; }
+.custom-theme-actions { display: flex; align-items: center; gap: .35rem; margin-left: auto; }
+@media (max-width: 520px) {
+    .custom-theme-actions { margin-left: 0; width: 100%; }
+}
 .theme-admin-meta { display: flex; flex-wrap: wrap; gap: .3rem; }
 .theme-admin-controls {
     display: flex;

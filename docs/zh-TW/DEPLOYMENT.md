@@ -96,6 +96,7 @@ URLET_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-*
 | `URLET_BIND` | `0.0.0.0:8080` | 監聽位址 |
 | `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite 連線字串 |
 | `URLET_DATA_DIR` | 資料庫所在目錄 | 自動產生密鑰的存放位置 |
+| `URLET_THEMES_DIR` | `<URLET_DATA_DIR>/themes` | 上傳主題樣式表的存放目錄。docker compose 將 `urlet-themes` volume 掛載於 `/data/themes` |
 | `URLET_SECRET` | 自動產生 | HMAC 密鑰（至少 16 字元，建議 32+；自動產生的為 44 字元 base64）；**更換會讓所有 Session 與解鎖 Cookie 失效，既有邀請碼也無法再顯示（但仍可兌換）** |
 | `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` | — | 啟動時建立或升級管理員 |
 | `URLET_REGISTRATION` | 讀取設定表 | 覆寫註冊模式：`open` / `invite` / `closed` |
@@ -263,13 +264,15 @@ urlet 解析這個位址的方式與速率限制完全相同：
 
 ## 6. 資料與備份
 
-所有狀態都在 `/data`（volume `urlet-data`）：
+所有狀態都在 `/data`：`urlet-data` volume 存放資料庫與密鑰，`urlet-themes` volume（掛載於
+`/data/themes`）存放上傳的主題樣式表：
 
 ```
-/data/urlet.db         # 主要資料庫
-/data/urlet.db-wal     # write-ahead log
+/data/urlet.db          # 主要資料庫
+/data/urlet.db-wal      # write-ahead log
 /data/urlet.db-shm
-/data/secret.key        # 未設定 URLET_SECRET 時自動產生的密鑰（0600）
+/data/secret.key         # 未設定 URLET_SECRET 時自動產生的密鑰（0600）
+/data/themes/*.css       # 上傳主題（urlet-themes volume）
 ```
 
 ### 備份
@@ -299,12 +302,24 @@ docker compose start urlet
 否則還原後所有 Session 與解鎖 Cookie 都會失效，既有邀請碼也無法再顯示（但仍可兌換）。
 資料目錄備份同時包含資料庫與該密鑰，且邀請碼熵值低，請將整份備份視為敏感資料。
 
+上傳主題分散在兩個 volume：資料庫存目錄資料列與中介資料，CSS 檔在 `urlet-themes`。
+兩者都要備份，否則還原後會列出樣式表 404 的主題。例如：
+
+```bash
+docker run --rm -v urlet-themes:/themes -v "$PWD":/backup alpine \
+  tar -czf "/backup/urlet-themes-$(date +%F).tar.gz" -C /themes .
+```
+
+還原時使用相同工具，並修正擁有者（`chown -R 10001:10001`）。
+
 ### 還原
 
 ```bash
 docker compose down
 docker run --rm -v urlet-data:/data -v "$PWD":/backup alpine \
   sh -c 'rm -f /data/urlet.db*; cp /backup/urlet-YYYY-MM-DD.db /data/urlet.db; chown 10001:10001 /data/urlet.db'
+docker run --rm -v urlet-themes:/themes -v "$PWD":/backup alpine \
+  sh -c 'rm -rf /themes/*; tar -xzf /backup/urlet-themes-YYYY-MM-DD.tar.gz -C /themes; chown -R 10001:10001 /themes'
 docker compose up -d
 ```
 

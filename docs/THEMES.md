@@ -2,9 +2,12 @@
 
 # Themes
 
-urlet ships six visual themes inside the single binary. A theme is **code**: an
-Askama template directory under `templates/themes/<key>/` plus one embedded CSS
-file. Nothing is uploaded, and no theme can read a path from the request.
+urlet ships six visual themes inside the single binary, and an administrator can
+upload additional stylesheet-only themes at runtime. A **compiled-in theme** is
+code: an Askama template directory under `templates/themes/<key>/` plus one
+embedded CSS file. An **uploaded theme** is a CSS file stored on the persistent
+volume; it reuses the base page layout because Askama templates are compiled into
+the binary and cannot be added at runtime.
 
 | Key | Name | Notes |
 |-----|------|-------|
@@ -14,38 +17,81 @@ file. Nothing is uploaded, and no theme can read a path from the request.
 | `signal` | Signal | Brutalist signal board; follows `prefers-color-scheme` |
 | `gilded` | Gilded Circuit | Art Deco ivory/emerald/gold; follows `prefers-color-scheme` |
 | `swiss` | Swiss Telemetry | Swiss grid with numbered sections; follows `prefers-color-scheme` |
+| `custom-…` | Uploaded | A stylesheet added from **Admin → Themes**; reuses the Verdant templates |
 
-The five non-default themes are the designs proposed in the closed pull requests
-#5, #6, #7, #9 and #10. They were ported to the v1.2 page model rather than frozen
-at their original feature set.
+The five non-default compiled-in themes are the designs proposed in the closed
+pull requests #5, #6, #7, #9 and #10. They were ported to the v1.2 page model
+rather than frozen at their original feature set.
 
 ## Administrator workflow
 
 1. Open **Admin → Themes** (`/app/admin/themes`).
-2. Tick the designs that should be offered. At least one theme must stay enabled.
-3. Pick the **Default** theme. It must be enabled; visitors without a cookie see it.
-4. Choose **Who can change their theme**:
+2. Upload a custom stylesheet: give it a name, an optional description, choose a
+   `.css` file and optionally mark it **Dark only**. The upload appears in the
+   catalogue immediately, enabled.
+3. Tick the designs that should be offered. At least one theme must stay enabled.
+4. Pick the **Default** theme. It must be enabled; visitors without a cookie see it.
+5. Choose **Who can change their theme**:
    - `Everyone` — signed-in members may switch (the default).
    - `Administrators only` — administrators keep the picker for previews; members
      do not see it, and a direct switch returns `403`.
-5. **Preview** applies a theme to the current administrator only, then returns to
+6. **Preview** applies a theme to the current administrator only, then returns to
    the theme page.
-6. Save. The selection is applied immediately; no restart is needed.
+7. Save. The selection is applied immediately; no restart is needed.
+
+An uploaded theme can be renamed, marked dark-only and have its stylesheet
+replaced from its edit page. **Delete** removes the catalogue row and the CSS
+file; a theme that is currently the default cannot be deleted, so choose another
+default first. The original file name is kept for display only; the stored path
+is derived from a generated key and the content hash.
 
 The policy is enforced when pages render, not only by hiding the picker. Under
 **Administrators only**, non-admin accounts and anonymous visitors always render
 the site default; an existing `urlet_theme` cookie (including one set while the
 policy was `Everyone`) is ignored. Administrators keep the picker and can use
-**Preview** to inspect any compiled theme, including one that is not enabled yet,
-without changing the visitor-facing default. The preview cookie lasts one hour.
-A normal picker click or **Stop preview** leaves preview mode.
+**Preview** to inspect any theme, including one that is not enabled yet, without
+changing the visitor-facing default. The preview cookie lasts one hour. A normal
+picker click or **Stop preview** leaves preview mode.
 
-The same operation is available as `GET/PUT /api/v1/admin/themes`. The JSON API
+The same selection is available as `GET/PUT /api/v1/admin/themes`. The JSON API
 accepts `enabled`, `default` and `switching`; omitted fields keep their value.
+Uploads themselves are a browser multipart form: the JSON API is read/update for
+the catalogue, not a file-upload endpoint. `GET` includes uploaded themes with
+`"custom": true` and a hashed `css_url`.
+
+## Custom theme storage
+
+| Item | Location |
+|------|----------|
+| Metadata | `custom_themes` table in the SQLite database |
+| Catalogue state | A matching `themes` row (`key`, enabled, default, order) |
+| Stylesheet | `<URLET_THEMES_DIR>/<key>-<content hash>.css` |
+| Default directory | `<URLET_DATA_DIR>/themes` |
+| Docker | The `urlet-themes` volume, mounted at `/data/themes` |
+
+The content hash is part of `/assets/custom-themes/{key}?v=<hash>`, so replacing
+a stylesheet changes the URL and cannot be masked by the one-hour asset cache.
+The metadata and the file live on the persistent `/data` volume; a restart
+rebuilds the in-memory registry from the database and the upload remains
+selectable.
+
+The upload is deliberately restricted:
+
+- one `.css` file, UTF-8, 256 KiB at most;
+- at most 32 custom themes per instance;
+- no external `url(...)`, `@import`, `expression(...)` or legacy `behavior`;
+- served as `text/css` with `X-Content-Type-Options: nosniff`, so it cannot turn
+  into an HTML document.
+
+Uploaded CSS is served **after** the Verdant stylesheet, so a small colour or
+layout override composes with the default design and wins the cascade. The base
+stylesheet is linked from the upload panel for reference. Custom uploads never
+change the document templates: they can restyle every page, but cannot add
+markup or scripts.
 
 ## How a visitor's theme is chosen
 
-1. `urlet_theme` cookie, when it names an enabled theme.
+1. `urlet_theme` cookie, when it names an enabled theme (compiled in or uploaded).
 2. Otherwise the administrator's default.
 3. A cookie for a disabled or unknown theme is ignored and the default is used.
 
@@ -64,7 +110,7 @@ account.
 ## Templates and the fallback
 
 `templates/` at the repository root is **both** the Verdant theme and the
-fallback. A theme directory may override any page:
+fallback. A compiled-in theme directory may override any page:
 
 ```
 templates/
@@ -99,8 +145,10 @@ The template is selected at compile time by `themed_page!` in
 `src/routes/pages/themed.rs`. Each page context gets `.themed()`, and the macro
 generates one small wrapper per theme that dereferences to the same context.
 Askama's compile-time field checking therefore still applies to every theme.
+Uploaded themes select the Verdant wrapper at compile time and only replace the
+stylesheet URL.
 
-## Adding a theme
+## Adding a compiled-in theme
 
 1. Add a variant to `ThemeKey` in `src/services/theme.rs` (key, name key,
    description key, CSS URL, dark-only flag).
@@ -121,8 +169,13 @@ Askama's compile-time field checking therefore still applies to every theme.
 
 ## Deliberate limits
 
-- No theme editor or upload: themes are compiled in so the binary stays
-  self-contained and the CSP stays `default-src 'self'`.
+- Uploads are stylesheets, not templates. The CSP stays `default-src 'self'` and
+  the binary stays self-contained; a custom theme cannot add markup or scripts.
+- Uploads are administrator-only. There is no per-user theme marketplace or
+  per-account upload quota; the site-wide catalogue stays the single source of
+  truth.
+- No remote theme fetch: the server never downloads a stylesheet, and external
+  `url(...)` / `@import` are rejected in addition to being blocked by the CSP.
 - No fine-grained per-account permission: the policy is site-wide (`all` or
   `admin`). The existing user-group feature toggles cover per-group data
   capabilities, not cosmetics.

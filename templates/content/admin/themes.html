@@ -18,11 +18,72 @@
 </div>
 {% endif %}
 
+<section class="panel">
+    <div class="panel-head">
+        <h2>{{ lang.t("admin.themes.custom.heading") }}</h2>
+        <span class="panel-sub" aria-hidden="true">THM / 01</span>
+    </div>
+    <p class="hint">{{ lang.t("admin.themes.custom.hint") }}</p>
+    <p class="small"><strong>{{ custom_count }}</strong> / {{ max_custom }} · {{ lang.t("admin.themes.custom.used") }}</p>
+
+    <form method="post" action="/app/admin/themes/custom" enctype="multipart/form-data" class="stack">
+        <div class="field field-narrow">
+            <label class="label" for="custom_name">{{ lang.t("admin.themes.custom.name") }}</label>
+            <input class="input" type="text" id="custom_name" name="name" maxlength="60" required>
+        </div>
+        <div class="field field-narrow">
+            <label class="label" for="custom_description">{{ lang.t("admin.themes.custom.description") }}</label>
+            <input class="input" type="text" id="custom_description" name="description" maxlength="200">
+            <span class="hint">{{ lang.t("admin.themes.custom.description_hint") }}</span>
+        </div>
+        <div class="field field-narrow">
+            <label class="label" for="custom_css">{{ lang.t("admin.themes.custom.css") }}</label>
+            <input class="input" type="file" id="custom_css" name="css" accept=".css,text/css" required>
+            <span class="hint">{{ lang.t("admin.themes.custom.css_hint") }} <a href="/assets/app.css" target="_blank" rel="noopener">{{ lang.t("admin.themes.custom.base_css") }}</a></span>
+        </div>
+        <label class="checkbox">
+            <input type="checkbox" name="is_dark_only" value="on">
+            {{ lang.t("admin.themes.custom.dark_only") }}
+        </label>
+        <div class="form-actions">
+            <button class="btn btn-primary" type="submit">{{ lang.t("admin.themes.custom.submit") }}</button>
+        </div>
+    </form>
+
+    {% if custom_count == 0 %}
+    <p class="hint mt">{{ lang.t("admin.themes.custom.empty") }}</p>
+    {% else %}
+    <div class="custom-theme-list mt">
+        {% for theme in themes %}
+        {% if theme.is_custom %}
+        <article class="custom-theme-row">
+            <div class="custom-theme-main">
+                <strong>{{ theme.name }}</strong>
+                <span class="badge badge-muted">{{ lang.t("admin.themes.custom.badge") }}</span>
+                <div class="theme-admin-key">{{ theme.key }}</div>
+            </div>
+            <div class="custom-theme-meta">
+                {{ theme.size }} · {{ theme.created }}
+            </div>
+            <div class="custom-theme-actions">
+                <a class="btn btn-sm btn-ghost" href="{{ theme.edit_url }}">{{ lang.t("admin.themes.custom.edit") }}</a>
+                <form method="post" action="{{ theme.delete_url }}" class="inline-form">
+                    <button class="btn btn-sm btn-danger" type="submit"
+                            data-confirm="{{ lang.t("admin.themes.custom.delete_confirm") }}">{{ lang.t("admin.themes.custom.delete") }}</button>
+                </form>
+            </div>
+        </article>
+        {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+</section>
+
 <form method="post" action="/app/admin/themes" class="stack">
     <section class="panel">
         <div class="panel-head">
             <h2>{{ lang.t("admin.themes.permission") }}</h2>
-            <span class="panel-sub" aria-hidden="true">THM / 01</span>
+            <span class="panel-sub" aria-hidden="true">THM / 02</span>
         </div>
         <div class="field field-narrow">
             <label class="label" for="theme_switching">{{ lang.t("admin.themes.switching") }}</label>
@@ -37,7 +98,7 @@
     <section class="panel">
         <div class="panel-head">
             <h2>{{ lang.t("admin.themes.catalog") }}</h2>
-            <span class="panel-sub" aria-hidden="true">{{ themes.len() }} / 06</span>
+            <span class="panel-sub" aria-hidden="true">{{ themes.len() }}</span>
         </div>
         <p class="hint">{{ lang.t("admin.themes.catalog_hint") }}</p>
 
@@ -49,10 +110,11 @@
                         <h3 class="theme-admin-name">{{ theme.name }}</h3>
                         <span class="theme-admin-key">{{ theme.key }}</span>
                     </div>
-                    <span class="theme-admin-swatch" data-theme-swatch="{{ theme.key }}" aria-hidden="true"></span>
+                    <span class="theme-admin-swatch" data-theme-swatch="{% if theme.is_custom %}custom{% else %}{{ theme.key }}{% endif %}" aria-hidden="true"></span>
                 </div>
                 <p class="hint">{{ theme.description }}</p>
                 <div class="theme-admin-meta">
+                    {% if theme.is_custom %}<span class="badge badge-muted">{{ lang.t("admin.themes.custom.badge") }}</span>{% endif %}
                     {% if theme.is_default %}<span class="badge badge-accent">{{ lang.t("admin.themes.default_badge") }}</span>{% endif %}
                     {% if theme.is_dark_only %}<span class="badge badge-muted">{{ lang.t("admin.themes.dark_only") }}</span>{% endif %}
                     {% if !theme.is_enabled %}<span class="badge badge-muted">{{ lang.t("admin.themes.disabled_badge") }}</span>{% endif %}

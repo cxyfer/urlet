@@ -16,7 +16,7 @@ use crate::i18n;
 use crate::middleware::auth::{authenticate, Authenticated};
 use crate::services::cookies;
 use crate::services::settings::ThemeSwitching;
-use crate::services::theme::{self, ThemeKey, COOKIE_NAME, PREVIEW_COOKIE_NAME};
+use crate::services::theme::{self, COOKIE_NAME, PREVIEW_COOKIE_NAME};
 use crate::state::AppState;
 
 /// Does this path need the account-aware view?
@@ -71,16 +71,17 @@ pub async fn theme(State(state): State<AppState>, request: Request, next: Next) 
         .map(|current| current.is_admin())
         .unwrap_or(false);
 
-    // Preview is reserved for administrators and may name a disabled theme.
+    // Preview is reserved for administrators and may name a disabled theme,
+    // including an uploaded one.
     let preview = if is_admin {
         cookies::get(request.headers(), PREVIEW_COOKIE_NAME)
-            .and_then(|value| ThemeKey::parse(&value))
+            .and_then(|value| state.themes.preview_view(lang, &value))
     } else {
         None
     };
 
-    let view = if let Some(key) = preview {
-        state.themes.preview_view(lang, key).with_can_switch(true)
+    let view = if let Some(preview) = preview {
+        preview
     } else {
         // Under `admin` policy the cookie is ignored for non-admin accounts, so
         // the permission is enforced at render time and not only on the switch

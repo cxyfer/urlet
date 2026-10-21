@@ -54,7 +54,7 @@ FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata \
     && addgroup -S -g 10001 urlet \
     && adduser -S -u 10001 -G urlet -H -s /sbin/nologin urlet \
-    && mkdir -p /data \
+    && mkdir -p /data/themes \
     && chown -R urlet:urlet /data
 
 COPY --from=builder /urlet /usr/local/bin/urlet
@@ -64,6 +64,7 @@ USER 10001:10001
 ENV URLET_BIND=0.0.0.0:8080 \
     URLET_DATABASE_URL="sqlite:///data/urlet.db?mode=rwc" \
     URLET_DATA_DIR=/data \
+    URLET_THEMES_DIR=/data/themes \
     URLET_LOG=info \
     URLET_LOG_FORMAT=compact
 

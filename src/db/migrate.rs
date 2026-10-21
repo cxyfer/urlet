@@ -88,6 +88,11 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/0010_themes.sql"),
         kind: MigrationKind::Transactional,
     },
+    Migration {
+        version: "0011_custom_themes",
+        sql: include_str!("../../migrations/0011_custom_themes.sql"),
+        kind: MigrationKind::Transactional,
+    },
 ];
 
 /// Apply all pending migrations.
@@ -385,6 +390,8 @@ mod tests {
             "settings",
             "audit_logs",
             "domains",
+            "themes",
+            "custom_themes",
         ] {
             assert!(
                 tables.contains(&expected.to_string()),

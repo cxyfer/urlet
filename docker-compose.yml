@@ -28,6 +28,9 @@ services:
       URLET_DOMAINS: ${URLET_DOMAINS:-}
       URLET_DATABASE_URL: "sqlite:///data/urlet.db?mode=rwc"
       URLET_DATA_DIR: /data
+      # Uploaded theme stylesheets; a dedicated volume keeps them independent
+      # from the database backup and writable under the read-only root fs.
+      URLET_THEMES_DIR: /data/themes
       # Leave the secret empty to let the container generate one into the volume.
       URLET_SECRET: ${URLET_SECRET:-}
       URLET_ADMIN_EMAIL: ${URLET_ADMIN_EMAIL:-}
@@ -57,6 +60,7 @@ services:
 
     volumes:
       - urlet-data:/data
+      - urlet-themes:/data/themes
 
     # Hardening: the process only ever writes to /data.
     read_only: true
@@ -83,3 +87,5 @@ services:
 volumes:
   urlet-data:
     name: urlet-data
+  urlet-themes:
+    name: urlet-themes

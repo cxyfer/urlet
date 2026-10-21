@@ -21,6 +21,7 @@
 | P10 User groups (v1.2) | ✅ Done | See `git log` (migration 0004, group API/UI, trilingual strings, docs) |
 | P11 Group domain policy (v1.2) | ✅ Done | See `git log` (migration 0005, default domain + allowlist, admin UI/API, tests) |
 | P12 Switchable themes (v1.4) | ✅ Done | See `git log` (migration 0010, theme registry, admin catalogue, six template sets, tests) |
+| P13 Uploadable themes (v1.4) | ✅ Done | See `git log` (migration 0011, CSS upload/edit/delete, hashed assets, persistent theme volume, tests) |
 
 Acceptance data (v1.0): `cargo test` is all green with 187 tests, `cargo clippy --all-targets -- -D warnings`
 and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scripts/smoke.sh` pass.
@@ -44,6 +45,7 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 | P10 | User groups (v1.2) | `user_groups` with per-group link/token quotas and seven feature toggles (including domain selection), assignment through users and invite codes, admin page and API | 16 tables / 31 indexes, upgrade changes no behaviour, quotas/toggles enforced (admins included), deletion reassigns members, tests and smoke green | `✨ feat(groups): ...` |
 | P11 | Group domain policy (v1.2) | Per-group `default_domain_id`, `restrict_domains` and `group_domains` allowlist; group default/allowlist enforced on create/move, exposed through `/api/v1/auth/me` and `/api/v1/domains`, editable in the admin group form | 16 tables / 31 indexes, existing groups keep every active domain, empty restricted list allows only the default, disabled default falls back to the site default, tests and smoke green | `✨ feat(domains): ...` |
 | P12 | Switchable themes (v1.4) | Six compiled-in template/CSS themes, `themes` table and registry, admin enable/default/policy page and API, `urlet_theme` cookie, theme picker and shared fallback content | 18 tables / 34 indexes, every theme renders every page, permission and fallback covered, fmt/clippy/test/smoke green | `✨ feat(themes): ...` |
+| P13 | Uploadable themes (v1.4) | `custom_themes` metadata, CSS upload/edit/delete from the admin theme page, content-hashed `/assets/custom-themes/{key}`, validation and limits, `URLET_THEMES_DIR` + `urlet-themes` volume | 19 tables / 35 indexes, uploads survive a reload/restart, default/delete rules and member authorization covered, fmt/clippy/test/smoke green | `✨ feat(themes): ...` |
 
 ---
 
@@ -238,6 +240,34 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 8. Docs: SPEC, PLAN, API, README and the `zh-TW` mirrors; `.env.example` needs no new variable because themes are database-only.
 
 **Acceptance**: six themes are selectable, the default applies without a cookie, disabled themes fall back, administrators can preview any compiled theme, including a disabled one, `all`/`admin` switching is enforced, every page renders under every theme, and `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and `scripts/smoke.sh` are clean.
+
+---
+
+## P13 — Uploadable Themes (v1.4)
+
+Uploads extend the theme catalogue without changing the compile-time template model.
+
+1. `migrations/0011_custom_themes.sql`: metadata table for uploaded stylesheets, keyed by a generated
+   `custom-…` key; a matching `themes` row carries enabled/default/order.
+2. `src/db/custom_themes.rs`: create/update/delete metadata and the catalogue row in one transaction.
+3. `src/services/custom_theme.rs`: CSS validation (UTF-8, size, no external resources), atomic file
+   writes, content hashes and the settings-lock serialization shared with `update_selection`.
+4. `src/services/theme.rs`: one dynamic `ThemeDef` for compiled-in and uploaded themes; the picker,
+   default resolution, preview and admin rows no longer assume a closed `ThemeKey` set.
+5. Routes and templates: multipart upload from `/app/admin/themes`, an edit page, delete, audit
+   actions and the `custom` flag in the catalogue API.
+6. Assets: `/assets/custom-themes/{key}` reads the current database row and serves
+   `URLET_THEMES_DIR/<key>-<hash>.css` with a one-hour cache; replacing the CSS changes the URL.
+7. Persistence: `URLET_THEMES_DIR` defaults to `<data dir>/themes`, Docker creates `/data/themes` and
+   compose mounts the dedicated `urlet-themes` volume.
+8. Tests and docs: upload/manage/delete, validation, authorization, persisted reload, audit entries,
+   both language mirrors and the Docker/compose/backup notes.
+
+**Acceptance**: an administrator can upload a CSS theme, select it, make it the default, replace its
+stylesheet, and delete it after moving the default; members receive 403 for every upload route; a
+reload rebuilds the catalogue from SQLite; the CSS file exists in `URLET_THEMES_DIR`; and
+`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and
+`scripts/smoke.sh` are clean.
 
 ---
 
