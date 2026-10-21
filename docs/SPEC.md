@@ -475,7 +475,7 @@ login_attempts (auditing)
 
 ### 6.3 DDL (migration summary)
 
-> The complete source of truth is the migration files (`0001_init.sql`, `0003_multi_domain.sql` for the multi-domain rebuild, `0004_user_groups.sql` for groups, `0005_group_domains.sql` for the domain policy and `0011_splash_pages.sql` for splash pages); the table below is a structural summary.
+> The complete source of truth is `migrations/` (`0001_init.sql` through `0014_invite_issuance_released.sql`): `0003_multi_domain.sql` rebuilds the domain schema, `0004_user_groups.sql`–`0007_member_invites.sql` add groups and invite quotas, `0010`/`0012`/`0013` add themes, `0011_splash_pages.sql` adds splash pages, and `0014_invite_issuance_released.sql` adds the invite-refund column. The table below is a structural summary.
 
 
 | Table | Main columns | Purpose |
@@ -531,7 +531,9 @@ taking the schema to **17 tables and 33 indexes**. v1.3 adds only the nullable
 `themes` table and its single-default index. v1.5 adds the `urls` splash columns and
 `user_groups.redirect_mode_policy` without changing the table count, plus uploadable themes'
 `custom_themes` and its creator index, for **19 tables and 35 indexes**. The invite-refund work adds
-the nullable `invite_issuance.released_at` column; the table and index counts stay at 19/35.
+the nullable `invite_issuance.released_at` column; the table and index counts stay at 19/35. On the
+first start after upgrading, codes that were already revoked and never redeemed are released too,
+so `invites_used` can drop once.
 
 ### 6.5 Seed Data
 

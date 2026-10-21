@@ -260,15 +260,14 @@ impl Issuer<'_> {
         if invite.created_by != Some(self.actor.id) {
             return Err(AppError::not_found());
         }
-        let revoked = invites::revoke(self.pool, invite_id)
+        let released = invites::revoke(self.pool, invite_id)
             .await
-            .map_err(AppError::from)?;
-        if !revoked {
-            return Err(AppError::not_found());
-        }
+            .map_err(AppError::from)?
+            .ok_or_else(AppError::not_found)?;
         Audit::new(action::INVITE_REVOKED)
             .actor(self.actor.id, &self.actor.role)
             .target(target::INVITE, invite_id)
+            .metadata(serde_json::json!({ "released": released }))
             .ip_hash(self.ip_hash.map(str::to_string))
             .record(self.pool)
             .await;

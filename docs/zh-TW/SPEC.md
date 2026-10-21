@@ -461,7 +461,7 @@ login_attempts (稽核用)
 
 ### 6.3 DDL（migration 摘要）
 
-> 完整真實來源為 `migrations/` 目錄（`0001_init.sql`、`0003_multi_domain.sql` 的多網域重建與 `0004_user_groups.sql` 的群組與 `0005_group_domains.sql` 的網域策略、`0011_splash_pages.sql` 的轉址中繼頁與 `0012_custom_themes.sql`／`0013_custom_theme_appearance.sql` 的上傳主題）；以下為結構摘要。
+> 完整真實來源為 `migrations/` 目錄（`0001_init.sql` 至 `0014_invite_issuance_released.sql`）：`0003_multi_domain.sql` 重建網域 schema，`0004_user_groups.sql`–`0007_member_invites.sql` 新增群組與邀請碼配額，`0010`／`0012`／`0013` 新增主題，`0011_splash_pages.sql` 新增轉址中繼頁，`0014_invite_issuance_released.sql` 新增邀請碼退還欄位；以下為結構摘要。
 
 | 表 | 主要欄位 | 用途 |
 |----|----------|------|
@@ -514,6 +514,7 @@ v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` /
 v1.5 新增 `urls` 的中轉頁欄位與 `user_groups.redirect_mode_policy`（表／索引數量不變），
 可上傳主題再新增 `custom_themes` 與其建立者索引，共 **19 張表、35 個索引**。
 邀請碼退還額度工作新增可空的 `invite_issuance.released_at` 欄位，表／索引數量維持 19/35。
+升級後首次啟動時，也會釋放「已撤銷且從未兌換」的既有邀請碼，因此 `invites_used` 可能一次下降。
 
 ### 6.5 預設資料 (seed)
 

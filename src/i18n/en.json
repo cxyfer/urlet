@@ -691,7 +691,7 @@
   "invites.note_placeholder": "for the design team",
   "invites.max_uses": "Max uses",
   "invites.max_uses_hint": "How many people may redeem this code (1–10).",
-  "invites.create_hint": "Codes count against your group's per-period quota, even after you revoke them.",
+  "invites.create_hint": "Codes count against your group's per-period quota until you revoke them; a code that was already redeemed stays counted.",
   "invites.list_heading": "Your invite codes",
   "invites.empty": "You have not created any invite codes yet.",
   "invites.quota": "{used} of {limit} per {period}",

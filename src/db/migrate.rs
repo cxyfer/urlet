@@ -1264,19 +1264,26 @@ mod tests {
         run_until(&pool, &options, "0013_custom_theme_appearance")
             .await
             .expect("schema through version 13");
+        let group_id: i64 = sqlx::query_scalar("SELECT id FROM user_groups WHERE is_default = 1")
+            .fetch_one(&pool)
+            .await
+            .expect("default group");
         let now = now_iso();
-        // The default group seeded by 0004 gives the ledger a valid group_id.
-        for (hash, status, used_count) in [
-            ("unused-revoked", "revoked", 0),
-            ("used-revoked", "revoked", 1),
-            ("still-active", "active", 0),
+        // Group-less (site-wide) rows prove that the backfill does not filter on
+        // group_id, and the unused/used/active rows cover every release branch.
+        for (hash, status, used_count, group) in [
+            ("unused-revoked", "revoked", 0, Some(group_id)),
+            ("used-revoked", "revoked", 1, Some(group_id)),
+            ("still-active", "active", 0, Some(group_id)),
+            ("sitewide-revoked", "revoked", 0, None),
         ] {
             let id = sqlx::query(
                 "INSERT INTO invite_codes
                      (code_hash, code_prefix, group_id, max_uses, used_count, status, created_at)
-                 VALUES (?, 'ABCD', 1, 1, ?, ?, ?)",
+                 VALUES (?, 'ABCD', ?, 1, ?, ?, ?)",
             )
             .bind(hash)
+            .bind(group)
             .bind(used_count)
             .bind(status)
             .bind(&now)
@@ -1286,14 +1293,27 @@ mod tests {
             .last_insert_rowid();
             sqlx::query(
                 "INSERT INTO invite_issuance (group_id, actor_id, invite_id, created_at)
-                 VALUES (1, NULL, ?, ?)",
+                 VALUES (?, NULL, ?, ?)",
             )
+            .bind(group)
             .bind(id)
             .bind(&now)
             .execute(&pool)
             .await
             .expect("ledger row");
         }
+        // A code from before the ledger (or one whose ledger row is gone) must
+        // not gain a release timestamp out of nowhere.
+        sqlx::query(
+            "INSERT INTO invite_codes
+                 (code_hash, code_prefix, group_id, max_uses, used_count, status, created_at)
+             VALUES ('legacy-no-ledger', 'LEGA', ?, 1, 0, 'revoked', ?)",
+        )
+        .bind(group_id)
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("legacy invite");
 
         run(&pool, &options).await.expect("upgrade to version 14");
         let rows: Vec<(String, Option<String>)> = sqlx::query_as(
@@ -1306,10 +1326,11 @@ mod tests {
         .expect("released ledger rows");
         for (hash, released_at) in rows {
             match hash.as_str() {
-                "unused-revoked" => {
+                "unused-revoked" | "sitewide-revoked" => {
+                    let value = released_at.expect("revoked, never-redeemed code is released");
                     assert!(
-                        released_at.is_some(),
-                        "a revoked, never-redeemed code returns its slot"
+                        crate::services::time::parse_iso(&value).is_some(),
+                        "released_at must use the canonical timestamp format: {value}"
                     );
                 }
                 "used-revoked" => assert!(
@@ -1320,14 +1341,45 @@ mod tests {
                 other => panic!("unexpected invite {other}"),
             }
         }
-        let used: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM invite_issuance
-              WHERE group_id = 1 AND released_at IS NULL",
+        let ledger_rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM invite_issuance")
+            .fetch_one(&pool)
+            .await
+            .expect("ledger rows");
+        assert_eq!(
+            ledger_rows, 4,
+            "the legacy invite must not gain a ledger row"
+        );
+        let legacy_status: String = sqlx::query_scalar(
+            "SELECT status FROM invite_codes WHERE code_hash = 'legacy-no-ledger'",
         )
         .fetch_one(&pool)
         .await
-        .expect("usage");
-        assert_eq!(used, 2, "only the released row stops counting");
+        .expect("legacy status");
+        assert_eq!(legacy_status, "revoked");
+
+        let group_used: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM invite_issuance
+              WHERE group_id = ? AND released_at IS NULL",
+        )
+        .bind(group_id)
+        .fetch_one(&pool)
+        .await
+        .expect("group usage");
+        assert_eq!(group_used, 2, "only the released row stops counting");
+        let site_used: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM invite_issuance
+              WHERE group_id IS NULL AND released_at IS NULL",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("site usage");
+        assert_eq!(site_used, 0, "the site-wide revoked row is released");
+
+        let violations = sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(&pool)
+            .await
+            .expect("foreign key check");
+        assert!(violations.is_empty());
 
         pool.close().await;
         let _ = std::fs::remove_dir_all(&dir);

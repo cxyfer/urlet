@@ -594,6 +594,7 @@ unlimited) and `invite_period` is `day`, `week` (Monday start) or `month`, evalu
 Issuing past the limit returns `403` with `error.code = "forbidden"` and a message naming the
 limit. The counter lives in an issuance ledger: revoking a code that nobody redeemed releases its
 slot, while a redeemed code keeps it. The quota resets by itself at the next period boundary.
+Upgrading releases codes that were already revoked and never redeemed, so the counter can drop once.
 Invites created without `group_id` consume the site-wide quota instead.
 
 **Guard rails**: an administrator cannot change their own role or status, cannot delete

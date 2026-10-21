@@ -367,13 +367,12 @@ impl AdminContext<'_> {
     /// Revoke an invite code. An unused code releases its quota slot; a code
     /// that was already redeemed keeps it.
     pub async fn revoke_invite(&self, invite_id: i64) -> Result<()> {
-        let revoked = invites::revoke(self.pool, invite_id)
+        let released = invites::revoke(self.pool, invite_id)
             .await
-            .map_err(AppError::from)?;
-        if !revoked {
-            return Err(AppError::not_found());
-        }
+            .map_err(AppError::from)?
+            .ok_or_else(AppError::not_found)?;
         self.audit(action::INVITE_REVOKED, target::INVITE, invite_id)
+            .metadata(serde_json::json!({ "released": released }))
             .record(self.pool)
             .await;
         Ok(())
