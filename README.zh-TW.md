@@ -19,6 +19,7 @@
 | 📊 點擊分析 | 每日趨勢、來源網域、裝置/瀏覽器/作業系統分佈、最近點擊 |
 | 🧩 標籤 | 依標籤篩選與分類，附使用次數 |
 | 🔑 API Token | `Authorization: Bearer ur_...`，可設到期與撤銷 |
+| ✉️ 邀請連結 | 每組邀請碼都有會預填邀請碼的註冊連結；邀請碼會保留供查閱，連結則只在邀請碼可用時提供 |
 | 🌐 多網域 | 可在管理後台新增額外網域；各網域有獨立 slug，僅提供轉址 |
 | 👥 使用者群組 | 各群組可設定連結、API Token 與邀請碼配額（每日／每週／每月）、功能開關、預設網域與允許網域；成員可在群組允許時自行產生邀請碼 |
 | 🎨 佈景主題 | 六個內建設計（Verdant、Aurora、Paper、Signal、Gilded、Swiss）；管理員可決定提供哪些、預設主題，以及成員是否能切換 |
@@ -93,7 +94,8 @@ urlet version | help
 1. 若設定了 `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD`，啟動時會建立管理員。
 2. 若資料庫中**沒有任何帳號**，第一位註冊的使用者會自動成為管理員。
 3. 之後可在 **Admin → Invites** 產生邀請碼，並在 **Admin → Settings** 把註冊模式改為
-   `invite`（僅邀請碼）或 `closed`（關閉註冊）。
+   `invite`（僅邀請碼）或 `closed`（關閉註冊）。每組邀請碼都會附一組註冊連結，可直接
+   傳送連結，開啟後會自動預填邀請碼。
 
 ## 畫面
 
@@ -169,7 +171,7 @@ urlet/
 cargo test                 # 單元 + 整合測試（374 個）
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收（108 項）
+bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收（119 項）
 bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 ```
 
@@ -199,7 +201,10 @@ bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 
 ## 安全性
 
-- Argon2id 密碼雜湊；Session / API Token / 邀請碼只存雜湊值
+- Argon2id 密碼雜湊；Session 與 API Token 只存雜湊值。邀請碼保留 SHA-256 雜湊供查詢，
+  另存以 `URLET_SECRET` 衍生金鑰進行 ChaCha20-Poly1305 加密封存的副本；這能避免資料庫直接
+  出現明文，但雜湊與四字元前綴仍可離線猜測，且自動產生的 `secret.key` 就在資料庫旁，
+  因此資料庫與資料目錄備份仍應視為敏感資料。更換密鑰會讓既有封存無法顯示（邀請碼本身仍可兌換）
 - Cookie：`HttpOnly`、`SameSite=Lax`、可強制 `Secure`
 - CSRF：Cookie 認證的狀態變更請求檢查同源；表單類請求一律檢查
 - 安全標頭：CSP（`default-src 'self'`）、`X-Content-Type-Options`、
