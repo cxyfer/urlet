@@ -2,6 +2,8 @@
 
 use sqlx::{FromRow, SqliteConnection, SqlitePool};
 
+use crate::db::invite_issuance;
+
 #[derive(Debug, Clone, FromRow)]
 pub struct Invite {
     pub id: i64,
@@ -189,15 +191,40 @@ pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
         .await
 }
 
-/// Revoke an invite.
-pub async fn revoke(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error> {
+/// Revoke an active invite and, when nobody redeemed it, release its quota slot.
+///
+/// The status change and the ledger release commit together. The redemption
+/// count is read after the write lock is taken, so a concurrent redemption
+/// either commits first (the slot stays charged) or fails because the code is
+/// no longer active. Returns `None` when the invite was missing or already
+/// revoked, or `Some(released)` where `released` reports whether the quota slot
+/// was actually returned.
+pub async fn revoke(pool: &SqlitePool, id: i64) -> Result<Option<bool>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
     let result = sqlx::query(
         "UPDATE invite_codes SET status = 'revoked' WHERE id = ? AND status = 'active'",
     )
     .bind(id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
-    Ok(result.rows_affected() > 0)
+    if result.rows_affected() == 0 {
+        tx.rollback().await?;
+        return Ok(None);
+    }
+    let used_count: i64 = sqlx::query_scalar("SELECT used_count FROM invite_codes WHERE id = ?")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+    // A redeemed code did real work: revocation must not hand the slot back,
+    // otherwise code creation + redemption + revocation could bypass the
+    // per-period quota.
+    let released = if used_count == 0 {
+        invite_issuance::release(&mut tx, id, &crate::services::time::now_iso()).await?
+    } else {
+        false
+    };
+    tx.commit().await?;
+    Ok(Some(released))
 }
 
 #[cfg(test)]

@@ -1,8 +1,9 @@
 //! Integration tests for per-group invite issuance quotas.
 //!
 //! The quota is charged when an invite code is *issued*, lives in the
-//! `invite_issuance` ledger (so revoking does not refund a slot) and resets at
-//! the next calendar period boundary.
+//! `invite_issuance` ledger and resets at the next calendar period boundary.
+//! Revoking a code that nobody redeemed releases its slot; a redeemed code
+//! keeps it.
 
 mod common;
 
@@ -50,6 +51,29 @@ async fn set_setting(app: &TestApp, cookie: &str, key: &str, value: &str) {
         ))
         .await;
     assert_eq!(response.status, StatusCode::OK, "{}", response.body);
+}
+
+/// The release timestamp of an invite's ledger row (`None` while it still counts).
+async fn released_at(app: &TestApp, invite_id: i64) -> Option<String> {
+    sqlx::query_scalar("SELECT released_at FROM invite_issuance WHERE invite_id = ?")
+        .bind(invite_id)
+        .fetch_one(&app.state.db)
+        .await
+        .expect("ledger row")
+}
+
+/// Metadata of the latest `invite.revoked` audit entry for `invite_id`.
+async fn revoke_audit(app: &TestApp, invite_id: i64) -> Value {
+    let raw: String = sqlx::query_scalar(
+        "SELECT metadata FROM audit_logs
+          WHERE action = 'invite.revoked' AND target_type = 'invite' AND target_id = ?
+          ORDER BY id DESC LIMIT 1",
+    )
+    .bind(invite_id)
+    .fetch_one(&app.state.db)
+    .await
+    .expect("revoke audit row");
+    serde_json::from_str(&raw).expect("audit metadata")
 }
 
 #[tokio::test]
@@ -228,7 +252,7 @@ async fn a_new_period_frees_the_quota() {
 }
 
 #[tokio::test]
-async fn revoking_a_code_does_not_refund_the_slot() {
+async fn revoking_an_unused_code_refunds_the_slot() {
     let app = TestApp::spawn().await;
     let cookie = admin(&app).await;
     let group = create_group(&app, &cookie, json!({ "name": "One", "max_invites": 1 })).await;
@@ -246,11 +270,114 @@ async fn revoking_a_code_does_not_refund_the_slot() {
         .await;
     assert_eq!(revoked.status, StatusCode::NO_CONTENT, "{}", revoked.body);
 
-    // The slot was consumed when the code was issued, so revocation cannot be
-    // used to issue unlimited codes.
+    // Nobody redeemed the code, so the slot returns to the group.
+    assert_eq!(
+        group_in_listing(&app, &cookie, "One").await["invites_used"],
+        0
+    );
+    let released = released_at(&app, invite_id).await;
+    assert!(released.is_some(), "the ledger row is marked released");
+    assert_eq!(revoke_audit(&app, invite_id).await["released"], json!(true));
+
+    // A second revoke is a 404 and must not release the row (or its timestamp)
+    // twice.
+    let again = app
+        .send(delete_as(
+            &format!("/api/v1/admin/invites/{invite_id}"),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(again.status, StatusCode::NOT_FOUND);
+    assert_eq!(released_at(&app, invite_id).await, released);
+
+    assert_eq!(
+        create_invite(&app, &cookie, Some(group_id)).await.status,
+        StatusCode::CREATED,
+        "the refunded slot is reusable"
+    );
+}
+
+#[tokio::test]
+async fn revoking_an_unused_site_wide_code_refunds_the_site_pool() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+    set_setting(&app, &cookie, "max_invites_per_period", "1").await;
+
+    let created = create_invite(&app, &cookie, None).await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let invite_id = created.json()["invite"]["id"].as_i64().expect("invite id");
+    assert_eq!(
+        create_invite(&app, &cookie, None).await.status,
+        StatusCode::FORBIDDEN
+    );
+
+    let revoked = app
+        .send(delete_as(
+            &format!("/api/v1/admin/invites/{invite_id}"),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(revoked.status, StatusCode::NO_CONTENT, "{}", revoked.body);
+
+    assert_eq!(
+        create_invite(&app, &cookie, None).await.status,
+        StatusCode::CREATED,
+        "an unused site-wide code returns its slot too"
+    );
+}
+
+#[tokio::test]
+async fn revoking_a_redeemed_code_keeps_its_slot() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+    let group = create_group(&app, &cookie, json!({ "name": "Used", "max_invites": 1 })).await;
+    let group_id = group["id"].as_i64().expect("id");
+
+    let created = create_invite(&app, &cookie, Some(group_id)).await;
+    assert_eq!(created.status, StatusCode::CREATED);
+    let created = created.json();
+    let invite_id = created["invite"]["id"].as_i64().expect("invite id");
+    let code = created["code"].as_str().expect("code").to_string();
+
+    let registered = app
+        .post_json(
+            "/api/v1/auth/register",
+            json!({ "email": "redeemed@example.com", "password": "supersecret", "invite_code": code }),
+        )
+        .await;
+    assert_eq!(
+        registered.status,
+        StatusCode::CREATED,
+        "{}",
+        registered.body
+    );
+
+    let revoked = app
+        .send(delete_as(
+            &format!("/api/v1/admin/invites/{invite_id}"),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(revoked.status, StatusCode::NO_CONTENT, "{}", revoked.body);
+
+    // The code admitted a user, so revocation must not refund the slot; that
+    // would let a group redeem a code per period and still issue unlimited
+    // replacements.
+    assert_eq!(
+        group_in_listing(&app, &cookie, "Used").await["invites_used"],
+        1
+    );
     assert_eq!(
         create_invite(&app, &cookie, Some(group_id)).await.status,
         StatusCode::FORBIDDEN
+    );
+    assert!(
+        released_at(&app, invite_id).await.is_none(),
+        "a redeemed code keeps its slot"
+    );
+    assert_eq!(
+        revoke_audit(&app, invite_id).await["released"],
+        json!(false)
     );
 }
 
@@ -494,6 +621,60 @@ async fn members_can_issue_codes_when_the_group_allows_it() {
 }
 
 #[tokio::test]
+async fn member_revoking_a_redeemed_code_keeps_its_slot() {
+    let app = TestApp::spawn().await;
+    let admin_cookie = admin(&app).await;
+    let group = create_group(
+        &app,
+        &admin_cookie,
+        json!({ "name": "Member used", "allow_invites": true, "max_invites": 1 }),
+    )
+    .await;
+    let group_id = group["id"].as_i64().expect("group id");
+    let (member_cookie, _) =
+        member_in_group(&app, &admin_cookie, "member-used@example.com", group_id).await;
+
+    let created = member_create(&app, &member_cookie, Some(1)).await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let created = created.json();
+    let invite_id = created["invite"]["id"].as_i64().expect("invite id");
+    let code = created["code"].as_str().expect("code").to_string();
+
+    let registered = app
+        .post_json(
+            "/api/v1/auth/register",
+            json!({ "email": "member-redeemed@example.com", "password": "supersecret", "invite_code": code }),
+        )
+        .await;
+    assert_eq!(
+        registered.status,
+        StatusCode::CREATED,
+        "{}",
+        registered.body
+    );
+
+    let revoked = app
+        .send(delete_as(
+            &format!("/api/v1/invites/{invite_id}"),
+            &member_cookie,
+        ))
+        .await;
+    assert_eq!(revoked.status, StatusCode::NO_CONTENT, "{}", revoked.body);
+
+    // The member path shares the same rule: the redeemed code keeps its slot.
+    let listing = app.get_as("/api/v1/invites", &member_cookie).await.json();
+    assert_eq!(listing["quota"]["used"], 1);
+    assert_eq!(
+        revoke_audit(&app, invite_id).await["released"],
+        json!(false)
+    );
+    assert_eq!(
+        member_create(&app, &member_cookie, Some(1)).await.status,
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
 async fn member_api_hides_links_for_exhausted_and_expired_codes() {
     let app = TestApp::spawn().await;
     let admin_cookie = admin(&app).await;
@@ -648,11 +829,20 @@ async fn members_cannot_see_or_revoke_each_others_codes() {
         .send(delete_as(&format!("/api/v1/invites/{invite_id}"), &bob))
         .await;
     assert_eq!(stolen.status, StatusCode::NOT_FOUND);
+    // A rejected revoke must not change the code or refund the slot.
+    let after_stolen = app.get_as("/api/v1/invites", &alice).await.json();
+    assert_eq!(after_stolen["quota"]["used"], 1);
+    assert_eq!(after_stolen["items"][0]["status"], "active");
+    assert!(released_at(&app, invite_id).await.is_none());
+
     // The code is still active and revocable by its owner.
     let own = app
         .send(delete_as(&format!("/api/v1/invites/{invite_id}"), &alice))
         .await;
     assert_eq!(own.status, StatusCode::NO_CONTENT, "{}", own.body);
+    let after_own = app.get_as("/api/v1/invites", &alice).await.json();
+    assert_eq!(after_own["quota"]["used"], 0, "the unused slot is refunded");
+    assert_eq!(revoke_audit(&app, invite_id).await["released"], json!(true));
 }
 
 #[tokio::test]
@@ -710,6 +900,16 @@ async fn the_member_invite_page_renders_and_revokes() {
         "{}",
         page.body
     );
+    assert!(
+        page.body.contains("until you revoke them"),
+        "the invite hint must describe the refund: {}",
+        page.body
+    );
+    assert!(
+        !page.body.contains("even after you revoke them"),
+        "the stale no-refund hint must be gone: {}",
+        page.body
+    );
 
     let created = app
         .send(common::post_form_as(
@@ -759,8 +959,18 @@ async fn the_member_invite_page_renders_and_revokes() {
         "a revoked code must not offer a link: {}",
         after.body
     );
+    assert!(
+        after.body.contains("0 of 3 per week"),
+        "revoking an unused code must refund the quota in the page: {}",
+        after.body
+    );
 
     let listing = app.get_as("/api/v1/invites", &member_cookie).await.json();
+    assert_eq!(
+        listing["quota"]["used"], 0,
+        "the refund is visible through the member API"
+    );
+    assert_eq!(listing["quota"]["remaining"], 3);
     assert!(
         listing["items"][0]["link"].is_null(),
         "a revoked code must not expose a link: {}",
@@ -1171,4 +1381,54 @@ async fn concurrent_member_issuance_cannot_exceed_the_quota() {
         1,
         "{statuses:?}"
     );
+}
+
+#[tokio::test]
+async fn a_redemption_racing_a_revocation_never_refunds_a_used_slot() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+    let group = create_group(
+        &app,
+        &cookie,
+        json!({ "name": "Redeem race", "max_invites": 0 }),
+    )
+    .await;
+    let group_id = group["id"].as_i64().expect("id");
+    // One account is enough: the UNIQUE(invite_id, user_id) key is per invite,
+    // and every iteration issues a fresh code.
+    let (_, body) = app.register("racer@example.com", "supersecret").await;
+    let user_id = body["user"]["id"].as_i64().expect("user id");
+
+    for attempt in 0..20 {
+        let created = create_invite(&app, &cookie, Some(group_id)).await;
+        assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+        let invite_id = created.json()["invite"]["id"].as_i64().expect("invite id");
+
+        let now = urlet::services::time::now_iso();
+        let (redeemed, revoked) = tokio::join!(
+            urlet::db::invites::redeem(&app.state.db, invite_id, user_id, &now),
+            urlet::db::invites::revoke(&app.state.db, invite_id)
+        );
+        let redeemed = redeemed.expect("redeem");
+        let released = revoked.expect("revoke").expect("active invite");
+        let used_count: i64 =
+            sqlx::query_scalar("SELECT used_count FROM invite_codes WHERE id = ?")
+                .bind(invite_id)
+                .fetch_one(&app.state.db)
+                .await
+                .expect("used count");
+        let release = released_at(&app, invite_id).await;
+
+        // Whichever transaction wins, an admitted redemption and a released
+        // slot must never coexist.
+        if redeemed {
+            assert_eq!(used_count, 1, "attempt {attempt}");
+            assert!(!released, "attempt {attempt}");
+            assert!(release.is_none(), "attempt {attempt}");
+        } else {
+            assert_eq!(used_count, 0, "attempt {attempt}");
+            assert!(released, "attempt {attempt}");
+            assert!(release.is_some(), "attempt {attempt}");
+        }
+    }
 }

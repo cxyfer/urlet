@@ -254,7 +254,7 @@ target is still met.
 |----|-------------|-------------|
 | FR-ADMIN-1 | User management | List, search (including by group), change role, assign a user group, suspend/restore, reset password, soft delete |
 | FR-ADMIN-2 | All links | List, search, force-disable/delete |
-| FR-ADMIN-3 | Invite codes | Create (uses/expiry/note/optional target group), list, revoke; registration in `invite` mode requires an invite code. A code with a group assigns the redeemer to that group (FR-GROUP-4). The code and a registration link (`/app/register?invite=CODE`) stay viewable after creation; sealed copies issued before v1.3, or after a secret change, fall back to the prefix |
+| FR-ADMIN-3 | Invite codes | Create (uses/expiry/note/optional target group), list, revoke; registration in `invite` mode requires an invite code. A code with a group assigns the redeemer to that group (FR-GROUP-4). The code and a registration link (`/app/register?invite=CODE`) stay viewable after creation; sealed copies issued before v1.3, or after a secret change, fall back to the prefix. Revoking a code that was never redeemed returns its invite-quota slot; a redeemed code keeps it |
 | FR-ADMIN-4 | Site settings | Edit the `settings` table (site name, registration mode, site-wide link and token quotas, default redirect type, analytics switch, retention days, captcha) |
 | FR-ADMIN-5 | Audit log | Records logins, registrations, link changes, group changes, admin actions, and setting changes; filterable by action/target |
 | FR-ADMIN-6 | System info | Version, database size, user/link/click totals, uptime |
@@ -475,7 +475,7 @@ login_attempts (auditing)
 
 ### 6.3 DDL (migration summary)
 
-> The complete source of truth is the migration files (`0001_init.sql`, `0003_multi_domain.sql` for the multi-domain rebuild, `0004_user_groups.sql` for groups, `0005_group_domains.sql` for the domain policy and `0011_splash_pages.sql` for splash pages); the table below is a structural summary.
+> The complete source of truth is `migrations/` (`0001_init.sql` through `0014_invite_issuance_released.sql`): `0003_multi_domain.sql` rebuilds the domain schema, `0004_user_groups.sql`–`0007_member_invites.sql` add groups and invite quotas, `0010`/`0012`/`0013` add themes, `0011_splash_pages.sql` adds splash pages, and `0014_invite_issuance_released.sql` adds the invite-refund column. The table below is a structural summary.
 
 
 | Table | Main columns | Purpose |
@@ -494,7 +494,7 @@ login_attempts (auditing)
 | `audit_logs` | id, actor_user_id, actor_role, action, target_type, target_id, metadata, ip_hash, created_at | Auditing |
 | `themes` | id, key(UNIQUE), is_enabled, is_default, sort_order, created_at, updated_at | Administrator's choice among all themes; uploaded themes get a row when they are registered; one default enforced by a partial unique index |
 | `custom_themes` | id, key(UNIQUE), name, description, appearance, is_dark_only(legacy), css_version, css_size, original_filename, created_by, created_at, updated_at | Metadata for administrator-uploaded stylesheets, including the `auto`/`light`/`dark` appearance; the file lives in `URLET_THEMES_DIR` |
-| `invite_issuance` | id, group_id, actor_id, invite_id, created_at | Per-group invite issuance ledger; counts quota usage even after a code is revoked |
+| `invite_issuance` | id, group_id, actor_id, invite_id, created_at, released_at | Per-group invite issuance ledger; a released row (an unused code revoked before redemption) no longer counts towards the quota |
 | `settings` | key(PK), value, updated_at, updated_by | Site settings |
 | `invite_codes` | id, code_hash(UNIQUE), code_prefix, code_sealed, note, group_id, created_by, max_uses, used_count, expires_at, status, created_at | Invite codes; `code_sealed` is the encrypted copy used to display a code again |
 | `invite_redemptions` | id, invite_id, user_id, redeemed_at, UNIQUE(invite_id,user_id) | Invite redemption records |
@@ -530,7 +530,10 @@ taking the schema to **17 tables and 33 indexes**. v1.3 adds only the nullable
 `invite_codes.code_sealed` column, so the table and index counts stay at 17/33. v1.4 adds the
 `themes` table and its single-default index. v1.5 adds the `urls` splash columns and
 `user_groups.redirect_mode_policy` without changing the table count, plus uploadable themes'
-`custom_themes` and its creator index, for **19 tables and 35 indexes**.
+`custom_themes` and its creator index, for **19 tables and 35 indexes**. The invite-refund work adds
+the nullable `invite_issuance.released_at` column; the table and index counts stay at 19/35. On the
+first start after upgrading, codes that were already revoked and never redeemed are released too,
+so `invites_used` can drop once.
 
 ### 6.5 Seed Data
 
@@ -704,7 +707,7 @@ urlet/
 ├── docker-compose.tls.yml        # optional: Caddy automatic HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_splash_pages.sql 0012_custom_themes.sql 0013_custom_theme_appearance.sql
+├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_splash_pages.sql 0012_custom_themes.sql 0013_custom_theme_appearance.sql 0014_invite_issuance_released.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama templates (base, app_base, landing.html + pages + admin/)

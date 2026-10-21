@@ -691,7 +691,7 @@
   "invites.note_placeholder": "例如：设计团队",
   "invites.max_uses": "可兑换次数",
   "invites.max_uses_hint": "这组邀请码可被几个人兑换（1–10）。",
-  "invites.create_hint": "邀请码会计入用户组的每周期配额，即使撤销也不会退回。",
+  "invites.create_hint": "邀请码会计入用户组的每周期配额，直到你撤销为止；已被兑换的邀请码在撤销后仍会计入。",
   "invites.list_heading": "你的邀请码",
   "invites.empty": "你还没有生成任何邀请码。",
   "invites.quota": "{used} / {limit}（每{period}）",

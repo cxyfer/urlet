@@ -691,7 +691,7 @@
   "invites.note_placeholder": "例如：設計團隊",
   "invites.max_uses": "可兌換次數",
   "invites.max_uses_hint": "這組邀請碼可被幾個人兌換（1–10）。",
-  "invites.create_hint": "邀請碼會計入群組的每週期配額，即使撤銷也不會退回。",
+  "invites.create_hint": "邀請碼會計入群組的每週期配額，直到你撤銷為止；已被兌換的邀請碼在撤銷後仍會計入。",
   "invites.list_heading": "你的邀請碼",
   "invites.empty": "你還沒有產生任何邀請碼。",
   "invites.quota": "{used} / {limit}（每{period}）",

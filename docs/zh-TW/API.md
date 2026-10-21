@@ -431,7 +431,7 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 
 當群組開啟 `allow_invites` 時，成員可為**自己的群組**產生邀請碼。邀請碼會綁定該群組，
 兌換者加入同一個群組。群組的日曆配額（`max_invites` / `invite_period`）同樣適用，且與
-管理員發出的邀請碼共用；撤銷邀請碼不會退回額度。
+管理員發出的邀請碼共用。撤銷從未被兌換的邀請碼會退回額度；已被兌換的邀請碼則維持計入。
 
 ### `GET /api/v1/invites`
 
@@ -479,7 +479,8 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 ### `DELETE /api/v1/invites/{id}`
 
 `204`，撤銷自己的邀請碼。他人的邀請碼一律回 `404`；管理員可用
-`DELETE /api/v1/admin/invites/{id}` 撤銷任何邀請碼。
+`DELETE /api/v1/admin/invites/{id}` 撤銷任何邀請碼。撤銷從未被兌換的邀請碼會退回配額；
+已被兌換的邀請碼則維持計入。
 
 ---
 
@@ -520,7 +521,7 @@ JSON API 刻意不提供檔案上傳端點。上傳僅限 CSS、最大 256 KiB�
 | DELETE | `/admin/urls/{id}` | `204` |
 | GET | `/admin/invites` | 邀請碼列表，含 `code`、`link`、`prefix`、`group_id` / `group_name`；舊版或密鑰更換後的列為 `null`；已撤銷、次數用盡或到期的邀請碼 `link` 也為 `null` |
 | POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`；`link` 與 `invite.link` 一致，若建立後已不可用則為 `null`；`GET` 一律保留 `code`，`link` 只在可用時回傳；群組的週期配額用盡時回 `403` |
-| DELETE | `/admin/invites/{id}` | `204`，撤銷 |
+| DELETE | `/admin/invites/{id}` | `204`，撤銷；未被兌換的邀請碼會退回配額，已兌換的維持計入 |
 | GET | `/admin/settings` | 目前設定，包含 `theme_switching`（`all` 或 `admin`） |
 | PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", "theme_switching": "admin", ... }` |
 | GET | `/admin/audit?action=&target_type=&actor=&page=` | 稽核日誌（`metadata` 已解析為 JSON） |
@@ -540,8 +541,9 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 **邀請碼配額。** 每個群組可限制每個日曆週期能「產生」的邀請碼數量。`max_invites` 可為
 `null`（跟隨全站 `max_invites_per_period`）或 `0`（無上限）；`invite_period` 為 `day`、
 `week`（週一起算）或 `month`，以 UTC 計算。超過上限會回 `403`，訊息會標明上限。計數保存在
-發放流水帳中，因此**撤銷邀請碼不會退回額度**，額度會在週期交界自動重置。未指定 `group_id`
-的邀請碼改為消耗全站配額。
+發放流水帳中：撤銷從未被兌換的邀請碼會退回額度，已被兌換的邀請碼則維持計入；額度會在
+週期交界自動重置。升級時也會釋放「已撤銷且從未兌換」的既有邀請碼，因此計數可能一次下降。
+未指定 `group_id` 的邀請碼改為消耗全站配額。
 
 **保護機制**：管理員不能變更自己的角色或狀態、不能刪除自己，且系統永遠保留至少一位
 有效管理員（否則回 `409`）。預設群組不可刪除，請先以 `PUT` 轉移標記。
