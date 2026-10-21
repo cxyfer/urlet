@@ -52,7 +52,7 @@ pub fn reveal(secret: &[u8], invite: &invites::Invite) -> Option<String> {
     invite
         .code_sealed
         .as_deref()
-        .and_then(|sealed| invite_code::open(secret, sealed))
+        .and_then(|sealed| invite_code::open(secret, &invite.code_hash, sealed))
 }
 
 /// Public registration URL that carries `code` into the form.
@@ -154,7 +154,7 @@ impl Issuer<'_> {
         let plain_code = secret::random_code(INVITE_CODE_LEN);
         let code_hash = secret::sha256_hex(&plain_code);
         let prefix: String = plain_code.chars().take(4).collect();
-        let code_sealed = invite_code::seal(self.secret, &plain_code);
+        let code_sealed = invite_code::seal(self.secret, &code_hash, &plain_code);
 
         // Reserve the slot and create the code in one transaction. The
         // conditional INSERT is the authoritative quota check, and committing

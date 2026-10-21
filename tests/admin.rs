@@ -417,13 +417,14 @@ async fn invite_form_creates_a_code_and_keeps_it_visible() {
 
     // The stored copy is encrypted, but the page can show the plaintext and
     // its registration link again.
-    let sealed: String =
-        sqlx::query_scalar("SELECT code_sealed FROM invite_codes WHERE note = 'team'")
+    let (sealed, code_hash): (String, String) =
+        sqlx::query_as("SELECT code_sealed, code_hash FROM invite_codes WHERE note = 'team'")
             .fetch_one(&app.state.db)
             .await
             .expect("sealed code");
-    let code = urlet::services::invite_code::open(app.state.config.secret.as_slice(), &sealed)
-        .expect("decrypt");
+    let code =
+        urlet::services::invite_code::open(app.state.config.secret.as_slice(), &code_hash, &sealed)
+            .expect("decrypt");
     assert!(!sealed.contains(&code), "plaintext must not be stored");
     let link = urlet::services::invites::registration_link(&app.state.config.base_url, &code);
     assert!(response.body.contains(&code), "{}", response.body);
