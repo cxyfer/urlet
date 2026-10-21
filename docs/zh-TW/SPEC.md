@@ -615,7 +615,7 @@ urlet/
 ├── docker-compose.tls.yml        # 可選：Caddy 自動 HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql  migrations/0003_multi_domain.sql  migrations/0004_user_groups.sql  migrations/0005_group_domains.sql
+├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama 模板（base、app_base、landing.html + 各頁面 + admin/）
@@ -624,11 +624,11 @@ urlet/
 │   ├── assets/{app.css,app.js,favicon.svg}
 │   ├── i18n/{mod.rs,en.json,zh-Hant.json,zh-Hans.json}
 │   ├── db/{mod,migrate,users,user_groups,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
-│   ├── services/{auth,urls,admin,domains,domain_policy,groups,limits,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
+│   ├── services/{auth,urls,admin,domains,domain_policy,groups,invite_code,invite_quota,invites,limits,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
 │   ├── middleware/{mod,auth,csrf,domain,security,locale}.rs
-│   └── routes/{mod,api,api_auth,api_urls,api_domains,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract}.rs
-│       └── pages/{mod,auth,dashboard,urls,account,admin,home}.rs
-└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs,groups.rs,i18n.rs,captcha.rs}
+│   └── routes/{mod,api,api_auth,api_urls,api_domains,api_tags,api_tokens,api_stats,api_admin,api_invites,api_public,redirect,health,assets,dto,extract}.rs
+│       └── pages/{mod,auth,dashboard,urls,account,admin,home,invites}.rs
+└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs,groups.rs,invites.rs,i18n.rs,captcha.rs}
 ```
 
 ### 9.2 Dockerfile 策略
