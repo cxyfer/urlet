@@ -110,7 +110,9 @@ Askama's compile-time field checking therefore still applies to every theme.
 4. Create `templates/themes/<key>/` with at least `base.html`, `app_base.html`,
    `landing.html`, the auth/link/error pages, the admin tabs and the app pages.
    Reuse the content macros for the dense app pages.
-5. Add `templates/themes/<key>/...` paths to every `themed_page!` call.
+5. Add `templates/themes/<key>/...` paths to every `themed_page!` call. Keep the
+   `Verdant` entry in each invocation: it is also the fallback used when a page
+   has not listed a newly added theme yet.
 6. Add the theme to `ALL`, the migration seed and the admin tests. A new release
    can also rely on `db::themes::ensure_defaults` at startup for an existing
    database.

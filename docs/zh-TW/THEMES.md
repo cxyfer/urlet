@@ -97,7 +97,8 @@ context 加上 `.themed()`，macro 會為每個主題產生一個 Deref 到同�
 4. 建立 `templates/themes/<key>/`，至少包含 `base.html`、`app_base.html`、
    `landing.html`、登入／註冊／連結錯誤頁、管理 tabs 與應用頁面；密集頁面可重用
    content macro。
-5. 在每個 `themed_page!` 呼叫加入 `templates/themes/<key>/...` 路徑。
+5. 在每個 `themed_page!` 呼叫加入 `templates/themes/<key>/...` 路徑。每個呼叫都要保留
+   `Verdant` 項目，它也是頁面尚未列出新主題時的回退。
 6. 將主題加入 `ALL`、migration 種子與管理測試；既有資料庫在啟動時也可依賴
    `db::themes::ensure_defaults` 補上。
 7. 執行 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、

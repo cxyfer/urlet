@@ -232,7 +232,8 @@ async fn disabled_and_unknown_themes_are_rejected_or_fall_back() {
 #[tokio::test]
 async fn theme_assets_are_embedded_and_unknown_keys_are_404() {
     let app = TestApp::spawn().await;
-    for key in ["verdant", "aurora", "paper", "signal", "gilded", "swiss"] {
+    for theme in urlet::services::theme::ALL {
+        let key = theme.key();
         let response = app.get(&format!("/assets/themes/{key}")).await;
         assert_eq!(response.status, StatusCode::OK, "{key}");
         assert_eq!(
@@ -848,4 +849,57 @@ async fn the_referer_keeps_theme_switch_on_the_same_site() {
     let response = app.send(request).await;
     assert_eq!(response.status, StatusCode::FOUND);
     assert_eq!(response.header("location").as_deref(), Some("/app"));
+}
+
+#[tokio::test]
+async fn concurrent_partial_updates_do_not_lose_the_catalogue() {
+    let app = TestApp::spawn().await;
+    let enabled = vec!["paper".to_string()];
+
+    let catalogue = urlet::services::theme::update_selection(
+        &app.state.db,
+        &app.state.themes,
+        &app.state.settings,
+        Some(&enabled),
+        Some("paper"),
+        None,
+        None,
+    );
+    let policy = urlet::services::theme::update_selection(
+        &app.state.db,
+        &app.state.themes,
+        &app.state.settings,
+        None,
+        None,
+        Some(urlet::services::settings::ThemeSwitching::AdminOnly),
+        None,
+    );
+    let (catalogue, policy) = tokio::join!(catalogue, policy);
+    catalogue.expect("catalogue update");
+    policy.expect("policy update");
+
+    let paper: (i64, i64) =
+        sqlx::query_as("SELECT is_enabled, is_default FROM themes WHERE key = 'paper'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("paper row");
+    let switching: String =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'theme_switching'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("policy");
+    assert_eq!(
+        paper,
+        (1, 1),
+        "the policy update must keep paper enabled/default"
+    );
+    assert_eq!(switching, "admin");
+    assert_eq!(
+        app.state.settings.theme_switching(),
+        urlet::services::settings::ThemeSwitching::AdminOnly
+    );
+    assert!(app
+        .state
+        .themes
+        .is_enabled(urlet::services::theme::ThemeKey::Paper));
 }
