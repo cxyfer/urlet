@@ -387,6 +387,13 @@ async fn invites_drive_invite_only_registration() {
         ))
         .await;
     assert_eq!(revoked.status, StatusCode::NO_CONTENT);
+    let listing = app.get_as("/api/v1/admin/invites", &cookie).await.json();
+    assert_eq!(listing["items"][0]["code"], code.as_str());
+    assert!(
+        listing["items"][0]["link"].is_null(),
+        "a revoked code must not expose a link: {}",
+        listing["items"][0]
+    );
     let blocked = app
         .post_json(
             "/api/v1/auth/register",

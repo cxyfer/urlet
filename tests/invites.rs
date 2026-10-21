@@ -494,6 +494,75 @@ async fn members_can_issue_codes_when_the_group_allows_it() {
 }
 
 #[tokio::test]
+async fn member_api_hides_links_for_exhausted_and_expired_codes() {
+    let app = TestApp::spawn().await;
+    let admin_cookie = admin(&app).await;
+    let group = create_group(
+        &app,
+        &admin_cookie,
+        json!({ "name": "Unusable links", "allow_invites": true, "max_invites": 0 }),
+    )
+    .await;
+    let group_id = group["id"].as_i64().expect("group id");
+    let (member_cookie, _) =
+        member_in_group(&app, &admin_cookie, "unusable@example.com", group_id).await;
+
+    // A single-use code: usable before redemption, link-gone afterwards.
+    let created = member_create(&app, &member_cookie, Some(1)).await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let created = created.json();
+    let exhausted_id = created["invite"]["id"].as_i64().expect("invite id");
+    let code = created["code"].as_str().expect("code").to_string();
+    assert!(created["link"].is_string());
+
+    let registered = app
+        .post_json(
+            "/api/v1/auth/register",
+            json!({ "email": "exhausted@example.com", "password": "supersecret", "invite_code": code }),
+        )
+        .await;
+    assert_eq!(
+        registered.status,
+        StatusCode::CREATED,
+        "{}",
+        registered.body
+    );
+
+    let listing = app.get_as("/api/v1/invites", &member_cookie).await.json();
+    let item = listing["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .find(|item| item["id"].as_i64() == Some(exhausted_id))
+        .expect("exhausted invite");
+    assert_eq!(item["usable"], false);
+    assert!(item["code"].is_string(), "the code stays for history");
+    assert!(item["link"].is_null(), "an exhausted code has no link");
+
+    // Member-issued codes cannot set an expiry, so age one directly.
+    let created = member_create(&app, &member_cookie, Some(2)).await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let created = created.json();
+    let expired_id = created["invite"]["id"].as_i64().expect("invite id");
+    sqlx::query("UPDATE invite_codes SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = ?")
+        .bind(expired_id)
+        .execute(&app.state.db)
+        .await
+        .expect("expire invite");
+
+    let listing = app.get_as("/api/v1/invites", &member_cookie).await.json();
+    let item = listing["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .find(|item| item["id"].as_i64() == Some(expired_id))
+        .expect("expired invite");
+    assert_eq!(item["usable"], false);
+    assert!(item["code"].is_string(), "the code stays for history");
+    assert!(item["link"].is_null(), "an expired code has no link");
+}
+
+#[tokio::test]
 async fn members_are_blocked_when_the_group_disallows_invites() {
     let app = TestApp::spawn().await;
     let admin_cookie = admin(&app).await;
@@ -689,6 +758,17 @@ async fn the_member_invite_page_renders_and_revokes() {
         !after.body.contains("Copy link"),
         "a revoked code must not offer a link: {}",
         after.body
+    );
+
+    let listing = app.get_as("/api/v1/invites", &member_cookie).await.json();
+    assert!(
+        listing["items"][0]["link"].is_null(),
+        "a revoked code must not expose a link: {}",
+        listing["items"][0]
+    );
+    assert!(
+        listing["items"][0]["code"].is_string(),
+        "the code stays visible for history"
     );
 }
 

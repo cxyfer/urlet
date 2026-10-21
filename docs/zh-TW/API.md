@@ -433,6 +433,7 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 ```
 
 `code` 與 `link` 在 v1.3 之前建立、或 `URLET_SECRET` 更換後會是 `null`；`prefix` 一律存在。
+已撤銷、次數用盡或到期的邀請碼只保留 `code` 供查閱，`link` 為 `null`。
 `per_page` 預設 20、上限 100。`quota.allowed` 為 `false` 表示群組未開放成員發碼：
 此時建立邀請碼會回 `403`，但關閉開關前已發出的邀請碼仍會列出並可撤銷。`limit` 為 `0`
 （無上限）時 `remaining` 為 `null`。若帳號的群組連結遺失，會回退到預設群組。
@@ -449,7 +450,8 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
   "invite": { "...": "..." }, "quota": { "...": "..." } }
 ```
 
-邀請碼與連結也會由 `GET /api/v1/invites` 回傳，不會因關閉回應而遺失。成員發碼的
+邀請碼與連結也會由 `GET /api/v1/invites` 回傳，不會因關閉回應而遺失。頂層 `link` 與
+`invite.link` 一致；若建立後的邀請碼已不可用，兩者都會是 `null`。成員發碼的
 `max_uses` 必須介於 1–10。群組未開放或本週期配額用盡時回 `403`
 （`error.code = "forbidden"`）；每小時爆量上限用盡時回 `429`。
 
@@ -490,8 +492,8 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | GET | `/admin/urls?q=&status=&user_id=&page=` | 全站短網址 |
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |
-| GET | `/admin/invites` | 邀請碼列表，含 `code`、`link`、`prefix`、`group_id` / `group_name`；舊版或密鑰更換後的列為 `null` |
-| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`；同一組 code 與 link 之後仍可由 `GET` 取得；群組的週期配額用盡時回 `403` |
+| GET | `/admin/invites` | 邀請碼列表，含 `code`、`link`、`prefix`、`group_id` / `group_name`；舊版或密鑰更換後的列為 `null`；已撤銷、次數用盡或到期的邀請碼 `link` 也為 `null` |
+| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`；`link` 與 `invite.link` 一致，若建立後已不可用則為 `null`；`GET` 一律保留 `code`，`link` 只在可用時回傳；群組的週期配額用盡時回 `403` |
 | DELETE | `/admin/invites/{id}` | `204`，撤銷 |
 | GET | `/admin/settings` | 目前設定，包含 `theme_switching`（`all` 或 `admin`） |
 | PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", "theme_switching": "admin", ... }` |

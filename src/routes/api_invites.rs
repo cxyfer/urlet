@@ -29,7 +29,8 @@ pub struct MemberInviteDto {
     pub prefix: String,
     /// `null` for codes issued before sealed storage or after a secret change.
     pub code: Option<String>,
-    /// Registration link prefilled with `code`; `null` when `code` is `null`.
+    /// Registration link prefilled with `code`; `null` when `code` is `null`
+    /// or the invite is revoked, exhausted or expired.
     pub link: Option<String>,
     pub note: Option<String>,
     pub group_id: Option<i64>,
@@ -44,14 +45,15 @@ pub struct MemberInviteDto {
 
 impl MemberInviteDto {
     fn new(invite: &Invite, now: &str, code: Option<String>, base_url: &str) -> Self {
-        let link = code
-            .as_deref()
-            .map(|code| invites::registration_link(base_url, code));
-        let expired = invite
-            .expires_at
-            .as_deref()
-            .map(|value| value <= now)
-            .unwrap_or(false);
+        let usable = invite.is_usable(now);
+        // A link for a revoked, exhausted or expired code is guaranteed to
+        // fail. Keep the code for history, but never hand clients a stale URL.
+        let link = if usable {
+            code.as_deref()
+                .map(|code| invites::registration_link(base_url, code))
+        } else {
+            None
+        };
         Self {
             id: invite.id,
             prefix: invite.code_prefix.clone(),
@@ -64,7 +66,7 @@ impl MemberInviteDto {
             remaining: (invite.max_uses - invite.used_count).max(0),
             expires_at: invite.expires_at.clone(),
             status: invite.status.clone(),
-            usable: invite.status == "active" && !invite.is_exhausted() && !expired,
+            usable,
             created_at: invite.created_at.clone(),
         }
     }
@@ -106,10 +108,23 @@ pub struct CreateMemberInvitePayload {
 pub struct CreatedMemberInvite {
     /// Plaintext code, also available from the list endpoint afterwards.
     pub code: String,
-    /// Registration link that prefills `code`.
-    pub link: String,
+    /// Registration link that prefills `code`, or `null` when the new code is
+    /// already unusable.
+    pub link: Option<String>,
     pub invite: MemberInviteDto,
     pub quota: MemberQuotaDto,
+}
+
+impl CreatedMemberInvite {
+    fn new(code: String, invite: MemberInviteDto, quota: MemberQuotaDto) -> Self {
+        let link = invite.link.clone();
+        Self {
+            code,
+            link,
+            invite,
+            quota,
+        }
+    }
 }
 
 async fn quota_for(
@@ -187,19 +202,14 @@ pub async fn create(
     .create_for_member(payload.note.as_deref(), payload.max_uses)
     .await?;
 
-    let code = created.plain_code;
-    let link = invites::registration_link(&state.config.base_url, &code);
-    let body = CreatedMemberInvite {
-        code: code.clone(),
-        link,
-        invite: MemberInviteDto::new(
-            &created.invite,
-            &time::now_iso(),
-            Some(code),
-            &state.config.base_url,
-        ),
-        quota: quota_for(&state, &user).await?,
-    };
+    let invite = MemberInviteDto::new(
+        &created.invite,
+        &time::now_iso(),
+        Some(created.plain_code.clone()),
+        &state.config.base_url,
+    );
+    let quota = quota_for(&state, &user).await?;
+    let body = CreatedMemberInvite::new(created.plain_code, invite, quota);
     Ok(crate::routes::no_store(
         (StatusCode::CREATED, Json(body)).into_response(),
     ))

@@ -467,7 +467,9 @@ effective quota.
 ```
 
 `code` and `link` are `null` for codes created before sealed storage or after
-`URLET_SECRET` changed; `prefix` is always present. `per_page` defaults to 20 and
+`URLET_SECRET` changed; `prefix` is always present. `link` is also `null` when
+the code is revoked, exhausted or expired, while `code` stays visible for
+history. `per_page` defaults to 20 and
 is capped at 100. `quota.allowed` is `false` when the group does not enable
 member invites: creating a code then returns `403`, but codes issued before the
 toggle was turned off remain listed and revocable. `remaining` is `null` when
@@ -488,7 +490,9 @@ with no finite quota is otherwise unlimited.
 ```
 
 The code and link are also returned by `GET /api/v1/invites`, so they are not
-lost when the response is dismissed. `max_uses` must be between 1 and 10 for
+lost when the response is dismissed. The top-level `link` mirrors `invite.link`;
+both are `null` if the created code is already unusable. `max_uses` must be
+between 1 and 10 for
 member codes. `403` when the group does not allow invites or the period quota is
 exhausted (`error.code = "forbidden"`), and `429` when the hourly burst limit is
 exhausted.
@@ -530,8 +534,8 @@ default, which can differ from `default_domain` when the stored group default is
 | GET | `/admin/urls?q=&status=&user_id=&page=` | Every short link on the instance |
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |
-| GET | `/admin/invites` | Invite code list with `code`, `link`, `prefix`, `group_id` / `group_name`; `code` and `link` are `null` for legacy or secret-rotated rows |
-| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`; the code and registration link stay available from `GET`; `403` when the group's per-period invite quota is exhausted |
+| GET | `/admin/invites` | Invite code list with `code`, `link`, `prefix`, `group_id` / `group_name`; `code` and `link` are `null` for legacy or secret-rotated rows, and `link` is also `null` for revoked, exhausted or expired codes |
+| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`; `link` mirrors `invite.link` and is `null` if the code is already unusable; the code stays available from `GET` and the link is returned while usable; `403` when the group's per-period invite quota is exhausted |
 | DELETE | `/admin/invites/{id}` | `204`, revoke |
 | GET | `/admin/settings` | Current settings, including `theme_switching` (`all` or `admin`) |
 | PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", "theme_switching": "admin", ... }` |

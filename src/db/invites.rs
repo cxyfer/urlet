@@ -24,6 +24,20 @@ impl Invite {
     pub fn is_exhausted(&self) -> bool {
         self.used_count >= self.max_uses
     }
+
+    /// Whether the invite can still be redeemed at `now`.
+    ///
+    /// This mirrors the conditions in [`find_active_by_hash`] and [`redeem`]:
+    /// an expiry equal to `now` is already too late.
+    pub fn is_usable(&self, now: &str) -> bool {
+        self.status == "active"
+            && !self.is_exhausted()
+            && self
+                .expires_at
+                .as_deref()
+                .map(|value| value > now)
+                .unwrap_or(true)
+    }
 }
 
 const SELECT: &str = "SELECT id, code_hash, code_prefix, code_sealed, note, group_id, created_by, \
@@ -184,4 +198,40 @@ pub async fn revoke(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error> {
     .execute(pool)
     .await?;
     Ok(result.rows_affected() > 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn invite(status: &str, used: i64, max: i64, expires: Option<&str>) -> Invite {
+        Invite {
+            id: 1,
+            code_hash: "hash".into(),
+            code_prefix: "ABCD".into(),
+            code_sealed: None,
+            note: None,
+            group_id: None,
+            created_by: None,
+            max_uses: max,
+            used_count: used,
+            expires_at: expires.map(str::to_string),
+            status: status.into(),
+            created_at: "2026-01-01T00:00:00.000Z".into(),
+        }
+    }
+
+    #[test]
+    fn usability_matches_redemption_conditions() {
+        let now = "2026-01-01T00:00:00.000Z";
+        assert!(invite("active", 0, 1, None).is_usable(now));
+        assert!(!invite("active", 1, 1, None).is_usable(now), "exhausted");
+        assert!(!invite("revoked", 0, 1, None).is_usable(now), "revoked");
+        assert!(invite("active", 0, 1, Some("2026-01-01T00:00:01.000Z")).is_usable(now));
+        assert!(
+            !invite("active", 0, 1, Some(now)).is_usable(now),
+            "an expiry equal to now is already too late"
+        );
+        assert!(!invite("active", 0, 1, Some("2025-12-31T23:59:59.000Z")).is_usable(now));
+    }
 }
