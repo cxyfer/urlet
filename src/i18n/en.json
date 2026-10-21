@@ -710,5 +710,11 @@
   "admin.themes.custom.base_css": "Download the base stylesheet",
   "flash.ok.theme_created": "Custom theme uploaded.",
   "flash.ok.theme_updated": "Custom theme updated.",
-  "flash.ok.theme_deleted": "Custom theme deleted."
+  "flash.ok.theme_deleted": "Custom theme deleted.",
+  "admin.themes.custom.drop_title": "Drag a stylesheet here",
+  "admin.themes.custom.drop_hint": "or click to choose a .css file",
+  "admin.themes.custom.drop_clear": "Choose another",
+  "admin.themes.custom.drop_invalid": "Choose a .css file.",
+  "admin.themes.custom.drop_required": "Choose a CSS file to upload.",
+  "admin.themes.custom.replace_drop_title": "Drag a replacement stylesheet"
 }

@@ -710,5 +710,11 @@
   "admin.themes.custom.base_css": "下载基础样式表",
   "flash.ok.theme_created": "已上传自定义主题。",
   "flash.ok.theme_updated": "已更新自定义主题。",
-  "flash.ok.theme_deleted": "已删除自定义主题。"
+  "flash.ok.theme_deleted": "已删除自定义主题。",
+  "admin.themes.custom.drop_title": "将样式表拖拽到这里",
+  "admin.themes.custom.drop_hint": "或点击选择 .css 文件",
+  "admin.themes.custom.drop_clear": "重新选择",
+  "admin.themes.custom.drop_invalid": "请选择 .css 文件。",
+  "admin.themes.custom.drop_required": "请选择要上传的 CSS 文件。",
+  "admin.themes.custom.replace_drop_title": "拖拽替换的样式表"
 }

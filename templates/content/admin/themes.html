@@ -26,25 +26,56 @@
     <p class="hint">{{ lang.t("admin.themes.custom.hint") }}</p>
     <p class="small"><strong>{{ custom_count }}</strong> / {{ max_custom }} · {{ lang.t("admin.themes.custom.used") }}</p>
 
-    <form method="post" action="/app/admin/themes/custom" enctype="multipart/form-data" class="stack">
-        <div class="field field-narrow">
-            <label class="label" for="custom_name">{{ lang.t("admin.themes.custom.name") }}</label>
-            <input class="input" type="text" id="custom_name" name="name" maxlength="60" required>
+    <form method="post" action="/app/admin/themes/custom" enctype="multipart/form-data" class="theme-upload">
+        <div class="theme-upload-grid">
+            <div class="theme-upload-fields">
+                <div class="field">
+                    <label class="label" for="custom_name">{{ lang.t("admin.themes.custom.name") }}</label>
+                    <input class="input" type="text" id="custom_name" name="name" maxlength="60" required>
+                </div>
+                <div class="field">
+                    <label class="label" for="custom_description">{{ lang.t("admin.themes.custom.description") }}</label>
+                    <input class="input" type="text" id="custom_description" name="description" maxlength="200">
+                    <span class="hint">{{ lang.t("admin.themes.custom.description_hint") }}</span>
+                </div>
+                <label class="checkbox">
+                    <input type="checkbox" name="is_dark_only" value="on">
+                    {{ lang.t("admin.themes.custom.dark_only") }}
+                </label>
+            </div>
+            <div class="theme-upload-file">
+                <span class="label" id="custom_css_label">{{ lang.t("admin.themes.custom.css") }}</span>
+                <div class="theme-drop" data-theme-drop
+                     data-drop-invalid="{{ lang.t("admin.themes.custom.drop_invalid") }}"
+                     data-drop-required="{{ lang.t("admin.themes.custom.drop_required") }}">
+                    <input class="theme-drop-input" type="file" id="custom_css" name="css"
+                           accept=".css,text/css" required
+                           aria-labelledby="custom_css_label" aria-describedby="custom_css_hint"
+                           data-theme-drop-input>
+                    <label class="theme-drop-zone" for="custom_css" data-theme-drop-zone>
+                        <span class="theme-drop-icon" aria-hidden="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 15V3"></path><path d="m7 8 5-5 5 5"></path>
+                                <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"></path>
+                            </svg>
+                        </span>
+                        <span class="theme-drop-title">{{ lang.t("admin.themes.custom.drop_title") }}</span>
+                        <span class="theme-drop-hint">{{ lang.t("admin.themes.custom.drop_hint") }}</span>
+                    </label>
+                    <div class="theme-drop-file" data-theme-drop-file hidden>
+                        <span class="theme-drop-file-icon" aria-hidden="true">CSS</span>
+                        <span class="theme-drop-file-main">
+                            <strong data-theme-drop-name></strong>
+                            <span class="theme-drop-file-meta" data-theme-drop-size></span>
+                        </span>
+                        <button class="btn btn-sm btn-ghost" type="button" data-theme-drop-clear>{{ lang.t("admin.themes.custom.drop_clear") }}</button>
+                    </div>
+                    <p class="theme-drop-error" data-theme-drop-error role="alert" hidden></p>
+                </div>
+                <span class="hint" id="custom_css_hint">{{ lang.t("admin.themes.custom.css_hint") }} <a href="/assets/app.css" target="_blank" rel="noopener">{{ lang.t("admin.themes.custom.base_css") }}</a></span>
+            </div>
         </div>
-        <div class="field field-narrow">
-            <label class="label" for="custom_description">{{ lang.t("admin.themes.custom.description") }}</label>
-            <input class="input" type="text" id="custom_description" name="description" maxlength="200">
-            <span class="hint">{{ lang.t("admin.themes.custom.description_hint") }}</span>
-        </div>
-        <div class="field field-narrow">
-            <label class="label" for="custom_css">{{ lang.t("admin.themes.custom.css") }}</label>
-            <input class="input" type="file" id="custom_css" name="css" accept=".css,text/css" required>
-            <span class="hint">{{ lang.t("admin.themes.custom.css_hint") }} <a href="/assets/app.css" target="_blank" rel="noopener">{{ lang.t("admin.themes.custom.base_css") }}</a></span>
-        </div>
-        <label class="checkbox">
-            <input type="checkbox" name="is_dark_only" value="on">
-            {{ lang.t("admin.themes.custom.dark_only") }}
-        </label>
         <div class="form-actions">
             <button class="btn btn-primary" type="submit">{{ lang.t("admin.themes.custom.submit") }}</button>
         </div>

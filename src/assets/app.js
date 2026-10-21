@@ -114,6 +114,106 @@
         if (target) { target.hidden = !toggle.checked; }
     });
 
+    /* Theme uploads: turn the styled label into a real drop target. The native
+       input remains the form control, so selecting a file still works when
+       JavaScript is unavailable. */
+    function formatBytes(bytes) {
+        if (!bytes) { return ""; }
+        if (bytes >= 1048576) { return (bytes / 1048576).toFixed(1) + " MB"; }
+        if (bytes >= 1024) { return (bytes / 1024).toFixed(1) + " KB"; }
+        return bytes + " B";
+    }
+
+    function initThemeDrop(container) {
+        var input = container.querySelector("[data-theme-drop-input]");
+        var zone = container.querySelector("[data-theme-drop-zone]");
+        var fileBox = container.querySelector("[data-theme-drop-file]");
+        var nameBox = container.querySelector("[data-theme-drop-name]");
+        var sizeBox = container.querySelector("[data-theme-drop-size]");
+        var errorBox = container.querySelector("[data-theme-drop-error]");
+        var clear = container.querySelector("[data-theme-drop-clear]");
+        if (!input || !zone || !fileBox) { return; }
+
+        function showError(message) {
+            if (!errorBox) { return; }
+            errorBox.textContent = message || "";
+            errorBox.hidden = !message;
+            container.classList.toggle("is-invalid", !!message);
+        }
+
+        function render() {
+            var chosen = input.files && input.files.length ? input.files[0] : null;
+            container.classList.toggle("has-file", !!chosen);
+            fileBox.hidden = !chosen;
+            zone.hidden = !!chosen;
+            if (nameBox) { nameBox.textContent = chosen ? chosen.name : ""; }
+            if (sizeBox) { sizeBox.textContent = chosen ? formatBytes(chosen.size) : ""; }
+        }
+
+        function accept(files) {
+            if (!files || !files.length) { return; }
+            var candidate = files[0];
+            var isCss = /\.css$/i.test(candidate.name) || candidate.type === "text/css";
+            if (!isCss) {
+                showError(container.getAttribute("data-drop-invalid") || "Choose a .css file.");
+                return;
+            }
+            try {
+                var transfer = new DataTransfer();
+                transfer.items.add(candidate);
+                input.files = transfer.files;
+            } catch (err) {
+                try {
+                    input.files = files;
+                } catch (err2) {
+                    return;
+                }
+            }
+            showError("");
+            render();
+        }
+
+        input.addEventListener("change", function () {
+            showError("");
+            render();
+        });
+        input.addEventListener("invalid", function () {
+            showError(container.getAttribute("data-drop-required") || "Choose a CSS file.");
+        });
+
+        ["dragenter", "dragover"].forEach(function (type) {
+            container.addEventListener(type, function (event) {
+                event.preventDefault();
+                if (event.dataTransfer) { event.dataTransfer.dropEffect = "copy"; }
+                container.classList.add("is-dragging");
+            });
+        });
+        ["dragleave", "dragend", "drop"].forEach(function (type) {
+            container.addEventListener(type, function (event) {
+                if (type === "dragleave" && container.contains(event.relatedTarget)) { return; }
+                container.classList.remove("is-dragging");
+            });
+        });
+        container.addEventListener("drop", function (event) {
+            event.preventDefault();
+            if (event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files.length) {
+                accept(event.dataTransfer.files);
+            }
+        });
+
+        if (clear) {
+            clear.addEventListener("click", function () {
+                input.value = "";
+                showError("");
+                render();
+                input.focus();
+            });
+        }
+        render();
+    }
+
+    document.querySelectorAll("[data-theme-drop]").forEach(initThemeDrop);
+
     /* Dismiss alerts after a while so success banners do not pile up. */
     window.setTimeout(function () {
         document.querySelectorAll(".alert-ok[data-auto-dismiss]").forEach(function (node) {

@@ -403,6 +403,8 @@ for path in /app /app/account /app/admin /app/admin/users /app/admin/groups /app
 done
 check "the admin user filter accepts an empty group" "200" \
     "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" "$BASE/app/admin/users?q=&role=&status=&group_id=")"
+contains "the theme upload is a drop zone" 'data-theme-drop' \
+    "$(curl -s -b "$COOKIES" "$BASE/app/admin/themes")"
 check "GET /app without a session redirects" "303" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/app")"
 
 # ---------------------------------------------------------------- themes

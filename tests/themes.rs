@@ -1008,6 +1008,8 @@ async fn an_administrator_can_upload_manage_and_delete_a_custom_theme() {
     assert_eq!(page.status, StatusCode::OK);
     assert!(page.body.contains("Night Bloom"), "{}", page.body);
     assert!(page.body.contains("/app/admin/themes/custom/"));
+    assert!(page.body.contains("data-theme-drop"));
+    assert!(page.body.contains("data-theme-drop-input"));
 
     let rows = custom_theme_rows(&app).await;
     assert_eq!(rows.len(), 1);
@@ -1071,6 +1073,8 @@ async fn an_administrator_can_upload_manage_and_delete_a_custom_theme() {
     assert_eq!(edit.status, StatusCode::OK, "{}", edit.body);
     assert!(edit.body.contains("Night Bloom"));
     assert!(edit.body.contains(&key));
+    assert!(edit.body.contains("data-theme-drop"));
+    assert!(edit.body.contains("data-theme-drop-input"));
 
     // Make the upload the only enabled theme and the default.
     let response = app

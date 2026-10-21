@@ -26,9 +26,10 @@ rather than frozen at their original feature set.
 ## Administrator workflow
 
 1. Open **Admin → Themes** (`/app/admin/themes`).
-2. Upload a custom stylesheet: give it a name, an optional description, choose a
-   `.css` file and optionally mark it **Dark only**. The upload appears in the
-   catalogue immediately, enabled.
+2. Upload a custom stylesheet: give it a name, an optional description, then
+   drag a `.css` file onto the drop zone (or click it to choose a file) and
+   optionally mark it **Dark only**. The upload appears in the catalogue
+   immediately, enabled.
 3. Tick the designs that should be offered. At least one theme must stay enabled.
 4. Pick the **Default** theme. It must be enabled; visitors without a cookie see it.
 5. Choose **Who can change their theme**:

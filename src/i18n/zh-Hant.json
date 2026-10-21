@@ -710,5 +710,11 @@
   "admin.themes.custom.base_css": "下載基礎樣式表",
   "flash.ok.theme_created": "已上傳自訂主題。",
   "flash.ok.theme_updated": "已更新自訂主題。",
-  "flash.ok.theme_deleted": "已刪除自訂主題。"
+  "flash.ok.theme_deleted": "已刪除自訂主題。",
+  "admin.themes.custom.drop_title": "將樣式表拖曳到這裡",
+  "admin.themes.custom.drop_hint": "或點擊選擇 .css 檔",
+  "admin.themes.custom.drop_clear": "重新選擇",
+  "admin.themes.custom.drop_invalid": "請選擇 .css 檔。",
+  "admin.themes.custom.drop_required": "請選擇要上傳的 CSS 檔。",
+  "admin.themes.custom.replace_drop_title": "拖曳替換的樣式表"
 }
