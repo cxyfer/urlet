@@ -243,21 +243,22 @@ async fn render(
             .await
             .map_err(AppError::from)?;
     let mut has_legacy = false;
-    let invites = rows
+    let invites: Vec<InviteRow> = rows
         .iter()
         .map(|invite: &Invite| {
-            let expired = invite
-                .expires_at
-                .as_deref()
-                .map(|value| value <= now.as_str())
-                .unwrap_or(false);
+            let usable = invite.is_usable(&now);
             let code = invite_service::reveal(state.config.secret.as_slice(), invite);
             if code.is_none() {
                 has_legacy = true;
             }
-            let link = code
-                .as_deref()
-                .map(|code| invite_service::registration_link(&state.config.base_url, code));
+            // Only a usable code gets a link; the table and the create banner
+            // must both hide a URL that redemption would reject.
+            let link = if usable {
+                code.as_deref()
+                    .map(|code| invite_service::registration_link(&state.config.base_url, code))
+            } else {
+                None
+            };
             InviteRow {
                 id: invite.id,
                 prefix: invite.code_prefix.clone(),
@@ -270,7 +271,7 @@ async fn render(
                 } else {
                     lang.t("admin.invites.status.revoked").to_string()
                 },
-                usable: invite.status == "active" && !invite.is_exhausted() && !expired,
+                usable,
                 expires: invite
                     .expires_at
                     .as_deref()
@@ -281,9 +282,12 @@ async fn render(
         })
         .collect();
 
-    let new_link = new_code
-        .as_deref()
-        .map(|code| invite_service::registration_link(&state.config.base_url, code));
+    let new_link = new_code.as_deref().and_then(|code| {
+        invites
+            .iter()
+            .find(|row| row.code.as_deref() == Some(code))
+            .and_then(|row| row.link.clone())
+    });
 
     let html = InvitesPage {
         site_name: state.settings.site_name(),

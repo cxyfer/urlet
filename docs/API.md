@@ -533,7 +533,7 @@ default, which can differ from `default_domain` when the stored group default is
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |
 | GET | `/admin/invites` | Invite code list with `code`, `link`, `prefix`, `group_id` / `group_name`; `code` and `link` are `null` for legacy or secret-rotated rows, and `link` is also `null` for revoked, exhausted or expired codes |
-| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`; `link` mirrors `invite.link` and is `null` if the code is already unusable; the code and registration link stay available from `GET`; `403` when the group's per-period invite quota is exhausted |
+| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`; `link` mirrors `invite.link` and is `null` if the code is already unusable; the code stays available from `GET` and the link is returned while usable; `403` when the group's per-period invite quota is exhausted |
 | DELETE | `/admin/invites/{id}` | `204`, revoke |
 | GET | `/admin/settings` | Current settings |
 | PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", ... }` |

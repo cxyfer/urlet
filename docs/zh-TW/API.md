@@ -491,7 +491,7 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |
 | GET | `/admin/invites` | 邀請碼列表，含 `code`、`link`、`prefix`、`group_id` / `group_name`；舊版或密鑰更換後的列為 `null`；已撤銷、次數用盡或到期的邀請碼 `link` 也為 `null` |
-| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`；`link` 與 `invite.link` 一致，若建立後已不可用則為 `null`；同一組 code 與 link 之後仍可由 `GET` 取得；群組的週期配額用盡時回 `403` |
+| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`；`link` 與 `invite.link` 一致，若建立後已不可用則為 `null`；`GET` 一律保留 `code`，`link` 只在可用時回傳；群組的週期配額用盡時回 `403` |
 | DELETE | `/admin/invites/{id}` | `204`，撤銷 |
 | GET | `/admin/settings` | 目前設定 |
 | PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", ... }` |

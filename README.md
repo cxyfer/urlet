@@ -20,7 +20,7 @@ service, no frontend build step.
 | 📊 Click analytics | Daily trends, referrer domains, device/browser/OS breakdown, recent clicks |
 | 🧩 Tags | Filter and group links by tag, with usage counts |
 | 🔑 API tokens | `Authorization: Bearer ur_...`, with optional expiry and revocation |
-| ✉️ Invite links | Every invite code has a registration link that prefills the code; the code and link stay viewable by the issuer and administrators |
+| ✉️ Invite links | Every invite code has a registration link that prefills the code; the code stays viewable for history and the link is returned while the code is usable |
 | 🌐 Multi-domain | Add extra domains in the admin panel; each domain has its own slug namespace and serves redirects only |
 | 👥 User groups | Per-group link, API-token and invite quotas (per day/week/month), feature toggles, default domains and domain allowlists; members can issue their own invite codes when the group allows it |
 | 🛠 Admin panel | User management, user groups, all site links, domains, invite codes, site settings, audit log |

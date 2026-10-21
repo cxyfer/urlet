@@ -367,12 +367,7 @@ pub struct InviteDto {
 
 impl InviteDto {
     fn new(invite: &Invite, now: &str, code: Option<String>, base_url: &str) -> Self {
-        let expired = invite
-            .expires_at
-            .as_deref()
-            .map(|value| value <= now)
-            .unwrap_or(false);
-        let usable = invite.status == "active" && !invite.is_exhausted() && !expired;
+        let usable = invite.is_usable(now);
         // A link for a revoked, exhausted or expired code is guaranteed to
         // fail. Keep the code for history, but never hand clients a stale URL.
         let link = if usable {
