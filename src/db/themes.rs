@@ -93,15 +93,22 @@ pub async fn ensure_defaults(
     Ok(())
 }
 
-/// Replace the enabled set and the default marker in one transaction.
+/// Replace the enabled set, the default marker and the switching policy in one
+/// transaction.
 ///
 /// `enabled` must contain at least one key and `default_key` must be one of
 /// them; callers validate that before reaching the database. The partial unique
 /// index on `is_default` means the previous marker has to be cleared first.
-pub async fn set_state(
+///
+/// The catalogue and `theme_switching` are written together on purpose: a
+/// failure while saving the policy must not leave the enabled/default set
+/// changed while the endpoint reports an error.
+pub async fn set_state_and_setting(
     pool: &SqlitePool,
     enabled: &[String],
     default_key: &str,
+    switching: &str,
+    updated_by: Option<i64>,
 ) -> Result<(), sqlx::Error> {
     let now = now_iso();
     let mut tx = pool.begin().await?;
@@ -128,6 +135,19 @@ pub async fn set_state(
         .bind(default_key)
         .execute(&mut *tx)
         .await?;
+
+    sqlx::query(
+        "INSERT INTO settings (key, value, updated_at, updated_by)
+         VALUES ('theme_switching', ?, ?, ?)
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value,
+                                        updated_at = excluded.updated_at,
+                                        updated_by = excluded.updated_by",
+    )
+    .bind(switching)
+    .bind(&now)
+    .bind(updated_by)
+    .execute(&mut *tx)
+    .await?;
 
     tx.commit().await?;
     Ok(())

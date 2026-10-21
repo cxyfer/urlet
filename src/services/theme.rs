@@ -275,6 +275,21 @@ impl ThemeRegistry {
         Ok(())
     }
 
+    /// Apply a committed enabled/default selection to the in-memory rows.
+    ///
+    /// The database transaction is the source of truth; this method only mirrors
+    /// the values that transaction just committed. It does not touch the
+    /// database, so it cannot fail after the commit and leave the caller with a
+    /// stale cache and a successful audit.
+    pub fn apply_state(&self, enabled: &[String], default_key: &str) {
+        if let Ok(mut rows) = self.rows.write() {
+            for row in rows.iter_mut() {
+                row.is_enabled = enabled.iter().any(|key| key == &row.key);
+                row.is_default = row.key == default_key;
+            }
+        }
+    }
+
     /// Snapshot of every row, including disabled themes. Used by the admin page.
     pub fn rows(&self) -> Vec<ThemeRow> {
         self.rows
@@ -383,13 +398,17 @@ pub fn admin_rows(registry: &ThemeRegistry, lang: Lang) -> Vec<AdminThemeRow> {
 /// Validate and apply an administrator selection.
 ///
 /// The invariant is the same one the partial index protects: at least one
-/// enabled theme, and the default must be enabled. The write is one transaction
-/// in the database layer, and the registry is reloaded only after it commits.
+/// enabled theme, and the default must be enabled. The catalogue and the
+/// `theme_switching` policy are committed in one database transaction, then the
+/// two in-memory caches are updated from the values that transaction wrote.
 pub async fn update_selection(
     pool: &SqlitePool,
     registry: &ThemeRegistry,
+    settings: &Settings,
     enabled: &[String],
     default_key: &str,
+    switching: ThemeSwitching,
+    actor: Option<i64>,
 ) -> Result<()> {
     let requested_default = ThemeKey::parse(default_key)
         .ok_or_else(|| AppError::validation("default_theme", "unknown theme"))?;
@@ -416,11 +435,26 @@ pub async fn update_selection(
         ));
     }
 
+    // Serialise with settings writes: this guard covers the transaction and the
+    // cache update, so a concurrent settings PUT cannot apply an older policy
+    // after this one committed.
+    let _settings_guard = settings.lock_updates().await;
+
     let keys: Vec<String> = keys.iter().map(|key| key.key().to_string()).collect();
-    theme_db::set_state(pool, &keys, requested_default.key())
-        .await
-        .map_err(|err| AppError::internal(format!("cannot update themes: {err}")))?;
-    registry.reload(pool).await?;
+    theme_db::set_state_and_setting(
+        pool,
+        &keys,
+        requested_default.key(),
+        switching.as_str(),
+        actor,
+    )
+    .await
+    .map_err(|err| AppError::internal(format!("cannot update themes: {err}")))?;
+
+    // Only after the commit: mirror the committed values into the caches. No
+    // second database read (or settings validation) can fail at this point.
+    registry.apply_state(&keys, requested_default.key());
+    settings.set_cached("theme_switching", switching.as_str());
     Ok(())
 }
 

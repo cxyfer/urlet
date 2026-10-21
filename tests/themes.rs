@@ -457,3 +457,44 @@ async fn every_theme_renders_the_extra_domain_landing() {
         assert!(response.body.contains("noindex"));
     }
 }
+
+#[tokio::test]
+async fn catalogue_and_policy_roll_back_together() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+
+    // Remove the destination table of the second write. The theme transaction
+    // must fail as a whole: the enabled/default rows written before the settings
+    // insert have to roll back, not be left behind under a 500 response.
+    sqlx::query("DROP TABLE settings")
+        .execute(&app.state.db)
+        .await
+        .expect("drop settings");
+
+    let response = app
+        .send(put_json_as(
+            "/api/v1/admin/themes",
+            json!({
+                "enabled": ["paper"],
+                "default": "paper",
+                "switching": "admin"
+            }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::INTERNAL_SERVER_ERROR);
+
+    let enabled: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM themes WHERE is_enabled = 1")
+        .fetch_one(&app.state.db)
+        .await
+        .expect("enabled count");
+    let default: String = sqlx::query_scalar("SELECT key FROM themes WHERE is_default = 1")
+        .fetch_one(&app.state.db)
+        .await
+        .expect("default key");
+    assert_eq!(enabled, 6, "the enabled set must roll back with the policy");
+    assert_eq!(
+        default, "verdant",
+        "the default must roll back with the policy"
+    );
+}

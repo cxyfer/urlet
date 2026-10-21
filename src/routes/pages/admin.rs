@@ -1499,24 +1499,18 @@ pub async fn update_themes(
         _ => return Ok(redirect_err("/app/admin/themes", "theme").into_response()),
     };
     let enabled = payload.enabled();
-    if let Err(err) =
-        theme_service::update_selection(&state.db, &state.themes, &enabled, &payload.default_theme)
-            .await
+    if let Err(err) = theme_service::update_selection(
+        &state.db,
+        &state.themes,
+        &state.settings,
+        &enabled,
+        &payload.default_theme,
+        switching,
+        Some(current.user.id),
+    )
+    .await
     {
         tracing::debug!(error = %err, "theme selection rejected");
-        return Ok(redirect_err("/app/admin/themes", "theme").into_response());
-    }
-
-    // Keep the policy and the catalogue in the same request. A failure here is
-    // surfaced instead of silently leaving the old policy in force.
-    if let Err(err) = context(&state, &client, &current.user)
-        .update_settings(&[(
-            "theme_switching".to_string(),
-            switching.as_str().to_string(),
-        )])
-        .await
-    {
-        tracing::error!(error = %err, "theme policy write failed after catalogue update");
         return Ok(redirect_err("/app/admin/themes", "theme").into_response());
     }
 

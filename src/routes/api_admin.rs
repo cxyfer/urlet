@@ -1058,16 +1058,16 @@ pub async fn put_themes(
         None => state.settings.theme_switching(),
     };
 
-    theme_service::update_selection(&state.db, &state.themes, &enabled, &default_key).await?;
-    state
-        .settings
-        .update(
-            &state.db,
-            "theme_switching",
-            switching.as_str(),
-            Some(user.id),
-        )
-        .await?;
+    theme_service::update_selection(
+        &state.db,
+        &state.themes,
+        &state.settings,
+        &enabled,
+        &default_key,
+        switching,
+        Some(user.id),
+    )
+    .await?;
 
     crate::services::audit::Audit::new(crate::services::audit::action::ADMIN_THEMES_UPDATED)
         .actor(user.id, &user.role)

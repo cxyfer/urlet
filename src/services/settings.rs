@@ -94,6 +94,11 @@ pub const SECRET_KEYS: &[&str] = &["captcha_secret_key"];
 
 pub struct Settings {
     values: RwLock<HashMap<String, String>>,
+    /// Serialises writes to the stored settings and the cache. Theme updates
+    /// also write `theme_switching`, so they take this guard across their own
+    /// transaction; that keeps a concurrent settings update from applying its
+    /// cache entry after a newer theme transaction committed.
+    update_lock: tokio::sync::Mutex<()>,
     registration_override: Option<RegistrationMode>,
     slug_length_override: Option<usize>,
     captcha_provider_override: Option<CaptchaProvider>,
@@ -157,6 +162,7 @@ impl Settings {
             .map_err(|err| AppError::internal(format!("cannot load settings: {err}")))?;
         Ok(Self {
             values: RwLock::new(values),
+            update_lock: tokio::sync::Mutex::new(()),
             registration_override: config
                 .registration_override
                 .as_deref()
@@ -391,6 +397,9 @@ impl Settings {
         }
 
         // Phase 1: nothing is stored until every pair is known to be valid.
+        // The write lock also covers the cache update below, so two successful
+        // writes cannot leave the cache reflecting the older one.
+        let _guard = self.update_lock.lock().await;
         let mut normalized: Vec<(String, String)> = Vec::with_capacity(values.len());
         for (key, value) in values {
             if !EDITABLE_KEYS.contains(&key.as_str()) {
@@ -412,6 +421,25 @@ impl Settings {
             }
         }
         Ok(())
+    }
+
+    /// Serialise a caller that writes one of these settings itself (the theme
+    /// catalogue writes `theme_switching` atomically with the theme rows).
+    pub(crate) async fn lock_updates(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.update_lock.lock().await
+    }
+
+    /// Apply a value that was already validated and committed by another
+    /// transaction, without re-reading the settings table.
+    ///
+    /// Used by the theme catalogue when it writes `theme_switching` atomically
+    /// with the theme rows: the cache must follow the commit, but a second
+    /// database read could fail after the commit and leave the endpoint
+    /// reporting an error for a successful write.
+    pub(crate) fn set_cached(&self, key: &str, value: &str) {
+        if let Ok(mut cache) = self.values.write() {
+            cache.insert(key.to_string(), value.to_string());
+        }
     }
 }
 
