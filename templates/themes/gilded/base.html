@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{{ site_name }}{% endblock %}</title>
-    <link rel="stylesheet" href="{{ self.theme_css_url() }}">
-    <link rel="stylesheet" href="/assets/theme-ui.css">
+    <link rel="stylesheet" href="{{ self.theme_css_url() }}?v={{ self.asset_version() }}">
+    <link rel="stylesheet" href="/assets/theme-ui.css?v={{ self.asset_version() }}">
     <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
     {% block head %}{% endblock %}
 </head>
@@ -22,6 +22,6 @@
     {% block footer_lang %}{% include "partials/lang_switcher.html" %}{% endblock %}
 </footer>
 {% endblock %}
-<script src="/assets/app.js" defer></script>
+<script src="/assets/app.js?v={{ self.asset_version() }}" defer></script>
 </body>
 </html>
