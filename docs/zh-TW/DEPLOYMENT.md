@@ -96,7 +96,7 @@ URLET_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-*
 | `URLET_BIND` | `0.0.0.0:8080` | 監聽位址 |
 | `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite 連線字串 |
 | `URLET_DATA_DIR` | 資料庫所在目錄 | 自動產生密鑰的存放位置 |
-| `URLET_SECRET` | 自動產生 | HMAC 密鑰（至少 16 字元，建議 32+；自動產生的為 44 字元 base64）；**更換會讓所有 Session 與解鎖 Cookie 失效** |
+| `URLET_SECRET` | 自動產生 | HMAC 密鑰（至少 16 字元，建議 32+；自動產生的為 44 字元 base64）；**更換會讓所有 Session 與解鎖 Cookie 失效，既有邀請碼也無法再顯示（但仍可兌換）** |
 | `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` | — | 啟動時建立或升級管理員 |
 | `URLET_REGISTRATION` | 讀取設定表 | 覆寫註冊模式：`open` / `invite` / `closed` |
 | `URLET_SECURE_COOKIES` | 依 `BASE_URL` 判斷 | 強制 Cookie `Secure`。compose 檔一律會帶入值（預設 `false`），因此在 Docker 環境自行終結 TLS 時請明確設為 `true`；TLS overlay 已自動處理 |
@@ -296,7 +296,7 @@ docker compose start urlet
 ```
 
 別忘了 `secret.key`：若你依賴自動產生的密鑰，備份它（或改用 `URLET_SECRET` 環境變數），
-否則還原後所有 Session 與解鎖 Cookie 都會失效。
+否則還原後所有 Session 與解鎖 Cookie 都會失效，既有邀請碼也無法再顯示（但仍可兌換）。
 
 ### 還原
 
