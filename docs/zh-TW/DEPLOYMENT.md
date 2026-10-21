@@ -297,6 +297,7 @@ docker compose start urlet
 
 別忘了 `secret.key`：若你依賴自動產生的密鑰，備份它（或改用 `URLET_SECRET` 環境變數），
 否則還原後所有 Session 與解鎖 Cookie 都會失效，既有邀請碼也無法再顯示（但仍可兌換）。
+資料目錄備份同時包含資料庫與該密鑰，且邀請碼熵值低，請將整份備份視為敏感資料。
 
 ### 還原
 
@@ -345,6 +346,8 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
   其次取 `X-Forwarded-For` 最右側的位址，因此附加式代理也安全；
   隨附的 `deploy/Caddyfile` 已設定 `header_up X-Real-IP {remote_host}`。
 - 需要傳遞 `Host`、`X-Forwarded-For`、`X-Forwarded-Proto`；Caddy 會自動處理。
+- 邀請連結會在 `?invite=` 攜帶邀請碼；若反向代理的存取日誌記錄 query string，就會留下邀請碼。
+  請限制或遮蔽該日誌，或改為只分享邀請碼。
 
 ## 9. 監控
 

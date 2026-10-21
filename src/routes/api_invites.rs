@@ -138,14 +138,14 @@ pub async fn list(
     State(state): State<AppState>,
     CurrentUser { user, .. }: CurrentUser,
     Query(pagination): Query<Pagination>,
-) -> Result<Json<MemberInviteList>, ApiError> {
+) -> Result<Response, ApiError> {
     let per_page = pagination.per_page();
     let rows =
         crate::db::invites::list_by_creator(&state.db, user.id, per_page, pagination.offset())
             .await?;
     let total = crate::db::invites::count_by_creator(&state.db, user.id).await?;
     let now = time::now_iso();
-    Ok(Json(MemberInviteList {
+    let body = MemberInviteList {
         items: rows
             .iter()
             .map(|invite| {
@@ -157,7 +157,8 @@ pub async fn list(
         per_page,
         total,
         quota: quota_for(&state, &user).await?,
-    }))
+    };
+    Ok(crate::routes::no_store(Json(body).into_response()))
 }
 
 /// `POST /api/v1/invites`
@@ -199,7 +200,9 @@ pub async fn create(
         ),
         quota: quota_for(&state, &user).await?,
     };
-    Ok((StatusCode::CREATED, Json(body)).into_response())
+    Ok(crate::routes::no_store(
+        (StatusCode::CREATED, Json(body)).into_response(),
+    ))
 }
 
 /// `DELETE /api/v1/invites/{id}` — revoke one of the caller's own codes.

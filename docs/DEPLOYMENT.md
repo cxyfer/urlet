@@ -318,7 +318,9 @@ docker compose start urlet
 
 Do not forget `secret.key`: if you rely on the auto-generated secret, back it up (or switch to the
 `URLET_SECRET` environment variable), otherwise every session and unlock cookie is invalidated
-after a restore and existing invite codes can no longer be displayed (they still redeem).
+after a restore and existing invite codes can no longer be displayed (they still redeem). A
+data-directory backup contains both the database and that key, and invite codes are low-entropy, so
+treat the whole backup as sensitive.
 
 ### Restore
 
@@ -371,6 +373,8 @@ upgrading.
   `deploy/Caddyfile` already sets `header_up X-Real-IP {remote_host}`.
 - `Host`, `X-Forwarded-For` and `X-Forwarded-Proto` must be forwarded; Caddy handles this
   automatically.
+- Invite links carry the code in `?invite=`; reverse-proxy access logs that record query strings
+  expose it. Restrict or redact those logs, or share the code instead.
 
 ## 9. Monitoring
 

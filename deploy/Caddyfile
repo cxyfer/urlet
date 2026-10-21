@@ -19,7 +19,9 @@
 {$URLET_DOMAIN} {
 	encode zstd gzip
 
-	# Never log query strings or cookies at the edge.
+	# Caddy logs the request URI, including query strings. Invite links carry
+	# a code in `?invite=`, so restrict access to edge logs or add a redaction
+	# filter if that exposure matters.
 	log {
 		output stdout
 		format console

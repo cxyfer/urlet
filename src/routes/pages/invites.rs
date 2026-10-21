@@ -16,6 +16,7 @@ use crate::db::invites::Invite;
 use crate::error::AppError;
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
+use crate::routes::no_store;
 use crate::routes::pages::{
     flash_from_query, page_links, redirect_err, redirect_ok, redirect_to_login, Chrome, Flash,
     PageLink,
@@ -314,5 +315,5 @@ async fn render(
     }
     .render()
     .map_err(|err| AppError::internal(format!("template error: {err}")))?;
-    Ok((StatusCode::OK, Html(html)).into_response())
+    Ok(no_store((StatusCode::OK, Html(html)).into_response()))
 }

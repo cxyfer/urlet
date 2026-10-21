@@ -49,10 +49,20 @@ pub struct IssuedInvite {
 /// such a code still redeems when someone knows it, but it cannot be displayed
 /// again. Callers fall back to `code_prefix`.
 pub fn reveal(secret: &[u8], invite: &invites::Invite) -> Option<String> {
-    invite
-        .code_sealed
-        .as_deref()
-        .and_then(|sealed| invite_code::open(secret, &invite.code_hash, sealed))
+    let sealed = invite.code_sealed.as_deref()?;
+    match invite_code::open(secret, &invite.code_hash, sealed) {
+        Some(code) => Some(code),
+        None => {
+            // NULL is a legacy row; a present-but-unopenable value points at a
+            // rotated secret, a corrupted row or a swap attempt. Never log the
+            // sealed value or any candidate plaintext.
+            tracing::debug!(
+                invite_id = invite.id,
+                "sealed invite code could not be opened; falling back to the prefix"
+            );
+            None
+        }
+    }
 }
 
 /// Public registration URL that carries `code` into the form.

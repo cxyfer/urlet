@@ -11,6 +11,7 @@ use serde::Deserialize;
 use crate::error::{AppError, Result};
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
+use crate::routes::no_store;
 use crate::routes::pages::{
     captcha_rejected, captcha_widget, query_string, redirect_err, redirect_ok, safe_next,
 };
@@ -431,15 +432,6 @@ pub async fn logout(
         .unwrap_or_else(|_| HeaderValue::from_static("")),
     );
     Ok(response)
-}
-
-/// A registration page may carry an invite code in its query string, so it must
-/// not end up in a shared cache.
-fn no_store(mut response: Response) -> Response {
-    response
-        .headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    response
 }
 
 fn render<T: Template>(template: T) -> Response {

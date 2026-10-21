@@ -212,7 +212,9 @@ Chinese translations of these documents live under `docs/zh-TW/`.
 
 - Argon2id password hashing; sessions and API tokens are stored as hashes only. Invite codes keep
   a SHA-256 hash for lookup plus a ChaCha20-Poly1305 copy sealed with a key derived from
-  `URLET_SECRET`, so a database dump or backup alone does not reveal them; changing the secret
+  `URLET_SECRET`. This keeps plaintext out of the database, but the hash and four-character prefix
+  still permit offline guessing of a ten-character code, and the auto-generated `secret.key` sits
+  beside the database; treat database and data-directory backups as sensitive. Changing the secret
   hides the sealed copies (the codes still redeem if someone knows them)
 - Cookies: `HttpOnly`, `SameSite=Lax`, `Secure` when enforced
 - CSRF: state-changing requests authenticated by cookie are checked for same origin; form

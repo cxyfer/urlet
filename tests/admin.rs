@@ -337,6 +337,7 @@ async fn invites_drive_invite_only_registration() {
         ))
         .await;
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    assert_eq!(created.header("cache-control").as_deref(), Some("no-store"));
     let body = created.json();
     let code = body["code"].as_str().expect("code").to_string();
     assert_eq!(code.len(), 10);
@@ -352,7 +353,9 @@ async fn invites_drive_invite_only_registration() {
     assert_eq!(body["invite"]["link"], link);
 
     // The code and link stay available in later listings.
-    let listing = app.get_as("/api/v1/admin/invites", &cookie).await.json();
+    let listing = app.get_as("/api/v1/admin/invites", &cookie).await;
+    assert_eq!(listing.header("cache-control").as_deref(), Some("no-store"));
+    let listing = listing.json();
     assert_eq!(listing["items"].as_array().expect("items").len(), 1);
     assert_eq!(listing["items"][0]["code"], code.as_str());
     assert_eq!(listing["items"][0]["link"], link.as_str());
@@ -413,6 +416,10 @@ async fn invite_form_creates_a_code_and_keeps_it_visible() {
         ))
         .await;
     assert_eq!(response.status, StatusCode::OK, "{}", response.body);
+    assert_eq!(
+        response.header("cache-control").as_deref(),
+        Some("no-store")
+    );
     assert!(response.body.contains("Invite code created."));
 
     // The stored copy is encrypted, but the page can show the plaintext and
@@ -431,6 +438,7 @@ async fn invite_form_creates_a_code_and_keeps_it_visible() {
     assert!(response.body.contains(&link), "{}", response.body);
 
     let page = app.get_as("/app/admin/invites", &cookie).await;
+    assert_eq!(page.header("cache-control").as_deref(), Some("no-store"));
     assert!(page.body.contains("team"));
     assert!(page.body.contains(&code), "{}", page.body);
     assert!(page.body.contains(&link), "{}", page.body);
@@ -456,12 +464,62 @@ async fn legacy_invites_fall_back_to_the_prefix() {
     .expect("legacy invite");
 
     let page = app.get_as("/app/admin/invites", &cookie).await;
+    assert_eq!(page.header("cache-control").as_deref(), Some("no-store"));
     assert!(page.body.contains("OLD0…"), "{}", page.body);
     assert!(
         page.body.contains("Codes issued before this version"),
         "{}",
         page.body
     );
+
+    let listing = app.get_as("/api/v1/admin/invites", &cookie).await;
+    assert_eq!(listing.header("cache-control").as_deref(), Some("no-store"));
+    let listing = listing.json();
+    assert!(listing["items"][0]["code"].is_null());
+    assert!(listing["items"][0]["link"].is_null());
+}
+
+#[tokio::test]
+async fn sealed_codes_cannot_be_swapped_between_rows() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = admin(&app).await;
+
+    for note in ["first", "second"] {
+        let created = app
+            .post_json_as(
+                "/api/v1/admin/invites",
+                json!({ "note": note, "max_uses": 1 }),
+                &cookie,
+            )
+            .await;
+        assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    }
+
+    let rows: Vec<(i64, String)> =
+        sqlx::query_as("SELECT id, code_sealed FROM invite_codes ORDER BY id")
+            .fetch_all(&app.state.db)
+            .await
+            .expect("sealed rows");
+    assert_eq!(rows.len(), 2);
+    sqlx::query("UPDATE invite_codes SET code_sealed = ? WHERE id = ?")
+        .bind(&rows[1].1)
+        .bind(rows[0].0)
+        .execute(&app.state.db)
+        .await
+        .expect("swap first");
+    sqlx::query("UPDATE invite_codes SET code_sealed = ? WHERE id = ?")
+        .bind(&rows[0].1)
+        .bind(rows[1].0)
+        .execute(&app.state.db)
+        .await
+        .expect("swap second");
+
+    // The AAD carries each row's code_hash, so neither swapped value opens.
+    let listing = app.get_as("/api/v1/admin/invites", &cookie).await.json();
+    for item in listing["items"].as_array().expect("items") {
+        assert!(item["code"].is_null(), "{item}");
+        assert!(item["link"].is_null(), "{item}");
+    }
 }
 
 #[tokio::test]

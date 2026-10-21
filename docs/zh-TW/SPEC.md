@@ -323,7 +323,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 
 | ID | 需求 |
 |----|------|
-| NFR-SEC-1 | 密碼：Argon2id；Session/API Token 僅存 SHA-256 雜湊，查詢以雜湊值進行索引比對。邀請碼保留 SHA-256 雜湊供查詢，另存以 `URLET_SECRET` 衍生的金鑰進行 ChaCha20-Poly1305 加密封存的副本，因此單獨取得資料庫無法還原邀請碼，發碼者與管理員仍可再次顯示；更換密鑰會讓既有封存無法解開（邀請碼本身仍可兌換）。解鎖 Cookie 的簽章以常數時間比較 |
+| NFR-SEC-1 | 密碼：Argon2id；Session/API Token 僅存 SHA-256 雜湊，查詢以雜湊值進行索引比對。邀請碼保留 SHA-256 雜湊供查詢，另存以 `URLET_SECRET` 衍生的金鑰進行 ChaCha20-Poly1305 加密封存的副本，讓發碼者與管理員可再次顯示，且資料庫不存明文。但這不是資料庫的機密性邊界：雜湊與四字元前綴仍可離線猜測，且自動產生的 `secret.key` 就在資料庫旁。更換密鑰會讓既有封存無法解開（邀請碼本身仍可兌換）。解鎖 Cookie 的簽章以常數時間比較 |
 | NFR-SEC-2 | Cookie：`HttpOnly`、`SameSite=Lax`、`Secure`（當 `URLET_SECURE_COOKIES=true` 或 Base URL 為 https） |
 | NFR-SEC-3 | CSRF：狀態變更請求檢查 `Origin`/`Referer` 同源；Cookie 認證 + 非 GET 一律驗證；Bearer Token 請求豁免 |
 | NFR-SEC-4 | 安全標頭：`Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: strict-origin-when-cross-origin`、`X-Frame-Options: DENY`、https 時 `Strict-Transport-Security` |

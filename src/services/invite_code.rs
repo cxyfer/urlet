@@ -8,7 +8,8 @@
 //! `code_sealed` therefore holds a second, encrypted copy. The key is derived
 //! from `URLET_SECRET`, and the copy is authenticated with ChaCha20-Poly1305:
 //!
-//!   * a database dump or backup on its own does not reveal the codes;
+//!   * the plaintext is not stored verbatim, and a database reader cannot
+//!     decrypt the copy without the server secret;
 //!   * a corrupted or truncated value is rejected instead of being displayed;
 //!   * the row's `code_hash` is authenticated data, so a sealed value copied to
 //!     another invite row cannot be decrypted there;
@@ -16,8 +17,13 @@
 //!     rows still redeem normally when someone knows the code; the UI falls
 //!     back to the stored prefix and asks the issuer to create a new code.
 //!
-//! The plaintext never leaves this module except as the return value of
-//! [`open`], and the sealed value is not logged.
+//! This is not a confidentiality boundary for the database itself. The lookup
+//! hash and the four-character prefix still let an attacker who obtains the
+//! database guess a ten-character code offline, and the auto-generated
+//! `secret.key` lives beside the database. Treat database and data-directory
+//! backups as sensitive regardless of the sealed column. The plaintext never
+//! leaves this module except as the return value of [`open`], and the sealed
+//! value is not logged.
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;

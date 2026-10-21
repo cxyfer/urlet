@@ -10,6 +10,10 @@
 --     link later, without storing the plaintext in the database. The key is
 --     derived from URLET_SECRET, so changing the secret makes old copies
 --     unreadable; those rows fall back to `code_prefix`.
+--   * This does not make a database dump confidential by itself: the lookup
+--     hash and four-character prefix still allow offline guessing of a
+--     ten-character code, and the auto-generated secret.key sits beside the
+--     database. Protect database and data-directory backups.
 --   * Existing rows keep `code_sealed = NULL`: hashed codes cannot be
 --     recovered, so they stay visible by prefix only.
 -- ---------------------------------------------------------------------------

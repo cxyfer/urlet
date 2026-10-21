@@ -18,6 +18,7 @@ use crate::error::AppError;
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::routes::dto::UrlDto;
+use crate::routes::no_store;
 use crate::routes::pages::dashboard::clean;
 use crate::routes::pages::{
     flash_from_query, page_links, redirect_err, redirect_ok, redirect_to_login, Chrome, PageLink,
@@ -1951,7 +1952,7 @@ async fn render_invites(
             }
         })
         .collect();
-    render(
+    let response = render(
         InvitesPage {
             section: "invites",
             site_name: state.settings.site_name(),
@@ -1970,7 +1971,8 @@ async fn render_invites(
             lang,
         },
         StatusCode::OK,
-    )
+    )?;
+    Ok(no_store(response))
 }
 
 fn render_settings(

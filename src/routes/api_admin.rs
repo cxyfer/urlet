@@ -824,12 +824,12 @@ pub async fn delete_url(
 pub async fn list_invites(
     State(state): State<AppState>,
     CurrentUser { user, .. }: CurrentUser,
-) -> Result<Json<InviteList>, ApiError> {
+) -> Result<Response, ApiError> {
     require_admin(&user)?;
     let now = crate::services::time::now_iso();
     let rows = crate::db::invites::list(&state.db, 200, 0).await?;
     let group_names = group_service::name_map(&state.db).await?;
-    Ok(Json(InviteList {
+    let body = InviteList {
         items: rows
             .iter()
             .map(|row| {
@@ -840,7 +840,8 @@ pub async fn list_invites(
                 InviteDto::new(row, &now, code, &state.config.base_url).with_group_name(group_name)
             })
             .collect(),
-    }))
+    };
+    Ok(crate::routes::no_store(Json(body).into_response()))
 }
 
 /// `POST /api/v1/admin/invites`
@@ -872,7 +873,9 @@ pub async fn create_invite(
         invite: InviteDto::new(&created.invite, &now, Some(code), &state.config.base_url)
             .with_group_name(group_name),
     };
-    Ok((StatusCode::CREATED, Json(body)).into_response())
+    Ok(crate::routes::no_store(
+        (StatusCode::CREATED, Json(body)).into_response(),
+    ))
 }
 
 /// `DELETE /api/v1/admin/invites/{id}`

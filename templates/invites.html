@@ -91,6 +91,7 @@
                     </td>
                     <td class="small">{{ invite.created }}</td>
                     <td>
+                        {% if invite.usable %}
                         {% match invite.link %}
                         {% when Some with (link) %}
                         <input type="hidden" id="invite-link-{{ invite.id }}" value="{{ link }}">
@@ -98,7 +99,6 @@
                                 data-copy="#invite-link-{{ invite.id }}">{{ lang.t("common.copy_link") }}</button>
                         {% when None %}
                         {% endmatch %}
-                        {% if invite.usable %}
                         <form method="post" action="/app/invites/{{ invite.id }}/delete">
                             <button class="btn btn-ghost btn-sm" type="submit"
                                     data-confirm="{{ lang.t("invites.confirm") }}">{{ lang.t("common.revoke") }}</button>
