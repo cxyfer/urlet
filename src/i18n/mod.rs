@@ -353,6 +353,13 @@ fn message_key(english: &str) -> Option<&'static str> {
         "that slug is already taken" => "error.slug.taken_short",
         // links
         "redirect type must be 301, 302, 307 or 308" => "error.redirect_type",
+        "redirect mode must be 'direct' or 'splash'" => "error.redirect_mode.invalid",
+        "redirect mode policy must be direct, splash or choice" => "error.redirect_mode.policy",
+        "the splash delay must be between 1 and 60 seconds" => "error.splash.delay_range",
+        "the splash title must not contain control characters" => "error.splash.title_control",
+        "the splash message must not contain control characters" => "error.splash.message_control",
+        "your group only allows splash pages" => "error.splash.direct_blocked",
+        "your group only allows direct redirects" => "error.splash.splash_blocked",
         "expiry must be a date or empty" => "error.expiry.empty",
         "expiry must look like 2030-01-31T12:00:00Z" => "error.expiry.format",
         "expiry must be in the future" => "error.expiry.future",
@@ -413,6 +420,16 @@ const VALUE_PATTERNS: &[(&str, &str, &str)] = &[
         "the title must be at most ",
         " characters",
         "error.title.length",
+    ),
+    (
+        "the splash title must be at most ",
+        " characters",
+        "error.splash.title_length",
+    ),
+    (
+        "the splash message must be at most ",
+        " characters",
+        "error.splash.message_length",
     ),
     (
         "notes must be at most ",

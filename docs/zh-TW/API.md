@@ -107,6 +107,7 @@
     "allow_tags": true,
     "allow_api_tokens": true,
     "allow_domain_selection": true,
+    "redirect_mode_policy": "choice",
     "default_domain": "links.example.com",
     "allowed_domains": ["links.example.com", "go.example.com"]
   }
@@ -116,7 +117,8 @@
 未分組帳號的 `group` 為 `null`，改為套用全站設定。`limits` 是解析後的值：群組配額非 `NULL` 時
 才覆蓋全站值，`0` 表示無上限。`default_domain` 是生效的群組預設網域（不存在或停用時回退全站
 預設）；`allowed_domains` 是生效的可選清單。`allow_domain_selection` 為 `false` 時，建立連結
-或移動連結只接受該預設網域。
+或移動連結只接受該預設網域。`redirect_mode_policy` 為 `direct`、`splash` 或 `choice`，
+只限制**新**連結的轉址方式，不會改寫既有連結；未分組帳號為 `choice`。
 
 ### `PATCH /api/v1/auth/me`
 
@@ -196,6 +198,10 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
   "expires_at": "2030-06-30 12:00",
   "max_clicks": 500,
   "redirect_type": 302,
+  "redirect_mode": "splash",
+  "splash_delay_seconds": 7,
+  "splash_title": "Launch day",
+  "splash_message": "Welcome aboard",
   "captcha_token": "0.abc..."
 }
 ```
@@ -209,6 +215,11 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 - `slug` 可省略（自動產生 7 字元 base62）；僅允許 `[A-Za-z0-9_-]`，長度 1–64，且不得為保留字；若 slug **在選定網域上**已被使用，回 `409`
 - `expires_at` 必須是未來時間；`max_clicks` ≥ 1
 - `redirect_type` ∈ {301, 302, 307, 308}
+- `redirect_mode` 為 `direct`（預設）或 `splash`。省略時採用群組政策的預設值（僅中轉頁政策下為
+  `splash`，其餘為 `direct`）；群組封鎖的模式回 `403`
+- `splash_delay_seconds` 介於 1–60（預設 5）。`splash_title`（最多 120 字元）與
+  `splash_message`（最多 500 字元，可含換行）皆為選填；空白或省略時使用在地化的預設文案。
+  即使連結目前是直接跳轉也會保存這些文案，切換模式時可直接沿用
 - 超過 `max_urls_per_user` 配額 → `403`
 
 ### `GET /api/v1/urls/{id}`
@@ -270,6 +281,10 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
   "click_count": 42,
   "unique_click_count": 3,
   "redirect_type": 302,
+  "redirect_mode": "splash",
+  "splash_delay_seconds": 7,
+  "splash_title": "Launch day",
+  "splash_message": "Welcome aboard",
   "status": "active",
   "is_expired": false,
   "state": "active",
@@ -282,7 +297,8 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 **群組限制。** 生效的 `max_urls` 用盡時，建立短網址會回 `403`。群組功能開關會擋下建立時對應欄位
 （`slug`、`password`、`expires_at`、`max_clicks`、`tags`）的提交，`PATCH` 時也不允許「新開啟」。
-省略欄位代表維持原值，清除被封鎖的欄位則可接受；非空的連結密碼一律視為新值，在密碼被封鎖時會被拒絕。
+省略欄位代表維持原值，清除被封鎖的欄位則可接受；非空的連結密碼一律視為新值，在密碼被封鎖時會被拒絕。轉址方式政策會擋下新的
+`redirect_mode`（或 `PATCH` 時切換到被封鎖的模式），但允許維持目前模式與清除中轉頁文案。
 
 ---
 
@@ -315,8 +331,13 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 ### `GET /{slug}`
 
-- 有效且無密碼 → `30x` + `Location`（301/308 為 `private, max-age=300`，302/307 為 `private, no-store`）
-- 需要密碼 → `200` 密碼輸入頁（**不洩漏目標網址**）
+- 有效、無密碼且 `redirect_mode = direct` → `30x` + `Location`（301/308 為
+  `private, max-age=300`，302/307 為 `private, no-store`）
+- 有效、無密碼且 `redirect_mode = splash` → `200` 中轉頁（`no-store`）。頁面顯示自訂
+  文案、目的地主機與倒數，並以 `<meta http-equiv="refresh">` 自動前往，同時提供「立即前往」
+  按鈕。點擊是在中轉頁送出時記錄，不是訪客離開時
+- 需要密碼 → `200` 密碼輸入頁（**不洩漏目標網址**）。解鎖成功後直接前往目的地：密碼頁是唯一
+  的中間頁，因此受密碼保護的連結不會再顯示中轉頁
 - 已過期或達點擊上限 → `410`
 - 不存在／已刪除／已停用 → `404`
 
@@ -338,7 +359,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 公開中介資料，不含目標網址。省略 `domain` 時使用預設網域，讓多網域之前既有的呼叫對預設網域上的連結仍然有效。
 
 ```json
-{ "domain": "go.example.com", "slug": "promo", "title": "Launch", "has_password": true, "is_expired": false, "state": "active" }
+{ "domain": "go.example.com", "slug": "promo", "title": "Launch", "has_password": true, "redirect_mode": "splash", "is_expired": false, "state": "active" }
 ```
 
 ### `GET /api/v1/domains`
@@ -477,7 +498,7 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | PATCH | `/admin/domains/{id}` | `{ "status"?: "active"\|"disabled", "is_default"?: true }` |
 | DELETE | `/admin/domains/{id}` | `204`；僅限沒有連結、非預設的 UI 網域 |
 | GET | `/admin/groups?page=&per_page=` | 使用者群組列表（含成員數，分頁） |
-| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "max_invites"?, "invite_period"?, "allow_invites"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "default_domain_id"?, "restrict_domains"?, "domain_ids"?, "is_default"? }` → `201`；`default_domain_id` 必須指向 active 網域；`domain_ids` 必須指向存在的網域（停用的項目會保留但無法選取） |
+| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "max_invites"?, "invite_period"?, "allow_invites"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "redirect_mode_policy"?, "default_domain_id"?, "restrict_domains"?, "domain_ids"?, "is_default"? }` → `201`；`default_domain_id` 必須指向 active 網域；`domain_ids` 必須指向存在的網域（停用的項目會保留但無法選取） |
 | PUT | `/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` / `max_invites` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`default_domain_id: null` 表示全站預設；`domain_ids: null` 或 `[]` 會清空允許清單；`is_default: true` 會轉移唯一的預設標記 |
 | DELETE | `/admin/groups/{id}?reassign_to={id}` | `204`，先移動成員再刪除；預設群組或目標不存在/不合法回 `409` |
 | GET | `/admin/themes` | 主題目錄（key、名稱、說明、`enabled`、`default`、`dark_only`、`css_url`）與 `switching`（`all` 或 `admin`） |
@@ -502,11 +523,13 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 
 **使用者群組。** 群組物件為
 `{ id, name, description, max_urls, max_api_tokens, max_invites, invite_period, allow_*,
-is_default, members, created_at, updated_at }`。`allow_invites` 預設為 `false`（需明確開啟），
+is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `direct`、`splash` 或
+`choice`（建立時預設 `choice`）。`allow_invites` 預設為 `false`（需明確開啟），
 開啟後成員可自行發碼，並與管理員發出的邀請碼共用同一份配額。
 配額可為 `null`（跟隨全站設定）或 `0`（無上限）。功能開關預設 `true`，只影響新的使用，
 不會修改既有連結或 Token。管理員與一般使用者適用同一套規則。`PUT` 接受部分群組表示：省略欄位
-即維持原值，配額設為 `null` 代表跟隨全站，`description: null` 會清除說明，`is_default: true`
+即維持原值，配額設為 `null` 代表跟隨全站，`description: null` 會清除說明，`redirect_mode_policy` 為
+`direct`、`splash` 或 `choice`，省略即維持原值，`is_default: true`
 會轉移預設標記。`POST` 仍採建立預設值（省略開關視為允許、省略配額視為跟隨全站）。
 
 **邀請碼配額。** 每個群組可限制每個日曆週期能「產生」的邀請碼數量。`max_invites` 可為

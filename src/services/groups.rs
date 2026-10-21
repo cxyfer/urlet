@@ -11,6 +11,7 @@ use sqlx::SqlitePool;
 use crate::db::user_groups::{self, GroupValues, UserGroup};
 use crate::error::{AppError, Result};
 use crate::services::invite_quota::InvitePeriod;
+use crate::services::redirect_mode::RedirectModePolicy;
 
 /// Longest accepted group name.
 pub const MAX_NAME: usize = 40;
@@ -38,6 +39,8 @@ pub struct GroupDraft {
     pub allow_tags: bool,
     pub allow_api_tokens: bool,
     pub allow_domain_selection: bool,
+    /// Which redirect modes this group may use for new links.
+    pub redirect_mode_policy: RedirectModePolicy,
     /// Group default domain; `None` means the site-wide default.
     pub default_domain_id: Option<i64>,
     /// When true, only `allowed_domain_ids` (plus the default) may be selected.
@@ -67,6 +70,7 @@ impl GroupDraft {
             allow_tags,
             allow_api_tokens,
             allow_domain_selection,
+            redirect_mode_policy,
             default_domain_id,
             restrict_domains,
             allowed_domain_ids,
@@ -121,6 +125,7 @@ impl GroupDraft {
             allow_tags,
             allow_api_tokens,
             allow_domain_selection,
+            redirect_mode_policy,
             default_domain_id,
             restrict_domains,
             allowed_domain_ids: allowed_domain_ids.map(|mut ids| {
@@ -149,6 +154,7 @@ impl GroupDraft {
             allow_tags: self.allow_tags,
             allow_api_tokens: self.allow_api_tokens,
             allow_domain_selection: self.allow_domain_selection,
+            redirect_mode_policy: self.redirect_mode_policy.as_str(),
             default_domain_id: self.default_domain_id,
             restrict_domains: self.restrict_domains,
         }
@@ -222,6 +228,7 @@ mod tests {
             allow_tags: true,
             allow_api_tokens: true,
             allow_domain_selection: true,
+            redirect_mode_policy: RedirectModePolicy::Choice,
             default_domain_id: None,
             restrict_domains: false,
             allowed_domain_ids: None,

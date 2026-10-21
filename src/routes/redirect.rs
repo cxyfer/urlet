@@ -15,8 +15,9 @@ use crate::routes::extract::Flexible;
 use crate::services::click::ClickInput;
 use crate::services::cookies;
 use crate::services::ratelimit::limits;
+use crate::services::redirect_mode::RedirectMode;
 use crate::services::theme::{self, ThemeView};
-use crate::services::{password, unlock};
+use crate::services::{password, target, unlock};
 use crate::state::AppState;
 use crate::themed_page;
 
@@ -59,6 +60,33 @@ themed_page!(link_error_templates, LinkErrorPageView, LinkErrorPage,
     Swiss => "themes/swiss/link_error.html",
 );
 
+/// Splash/interstitial page shown before the destination.
+#[derive(Debug)]
+pub struct SplashPage {
+    pub site_name: String,
+    /// Custom heading, or the localised default.
+    pub heading: String,
+    /// Custom message, or the localised default.
+    pub message: String,
+    pub target_url: String,
+    /// Host of the destination, shown so the visitor knows where they are going.
+    pub destination_host: String,
+    pub delay_seconds: i64,
+    /// Localised "Redirecting in N seconds…" line.
+    pub countdown: String,
+    pub lang: i18n::Lang,
+    pub theme: ThemeView,
+}
+
+themed_page!(link_splash_templates, SplashPageView, SplashPage,
+    Verdant => "link_splash.html",
+    Aurora => "themes/aurora/link_splash.html",
+    Paper => "themes/paper/link_splash.html",
+    Signal => "themes/signal/link_splash.html",
+    Gilded => "themes/gilded/link_splash.html",
+    Swiss => "themes/swiss/link_splash.html",
+);
+
 #[derive(Debug, Deserialize)]
 pub struct UnlockPayload {
     pub password: String,
@@ -97,11 +125,20 @@ pub async fn redirect(
             "link.limit.message",
         )),
         UrlState::Active => {
-            if url.has_password() && !is_unlocked(&state, &client, &domain.hostname, &url.slug) {
+            let has_password = url.has_password();
+            if has_password && !is_unlocked(&state, &client, &domain.hostname, &url.slug) {
                 return Ok(password_page(&state, &url.slug, None, StatusCode::OK));
             }
             spawn_click(&state, &client, &url);
-            Ok(redirect_response(&url))
+            // A password page is the only interstitial a protected link shows:
+            // after a successful unlock the visitor goes straight to the target.
+            if has_password {
+                return Ok(redirect_response(&url));
+            }
+            match RedirectMode::from_db(&url.redirect_mode) {
+                RedirectMode::Splash => Ok(splash_page(&state, &url)),
+                RedirectMode::Direct => Ok(redirect_response(&url)),
+            }
         }
     }
 }
@@ -277,6 +314,45 @@ fn redirect_response(url: &Url) -> Response {
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
     response
+}
+
+fn splash_page(state: &AppState, url: &Url) -> Response {
+    let lang = i18n::current();
+    let delay_seconds = url.splash_delay_seconds.clamp(
+        crate::services::redirect_mode::MIN_DELAY,
+        crate::services::redirect_mode::MAX_DELAY,
+    );
+    let heading = url
+        .splash_title
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| lang.t("link.splash.heading"))
+        .to_string();
+    let message = url
+        .splash_message
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| lang.t("link.splash.body"))
+        .to_string();
+    let page = SplashPage {
+        site_name: state.settings.site_name(),
+        heading,
+        message,
+        target_url: url.target_url.clone(),
+        destination_host: target::host_of(&url.target_url).unwrap_or_default(),
+        delay_seconds,
+        countdown: i18n::format(
+            lang,
+            "link.splash.countdown",
+            &[("seconds", delay_seconds.to_string())],
+        ),
+        lang,
+        theme: theme::for_anonymous(),
+    }
+    .themed();
+    render(page, StatusCode::OK)
 }
 
 fn password_page(

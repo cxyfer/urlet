@@ -16,13 +16,14 @@ service, no frontend build step.
 | 🏠 Landing page | `/` is an introduction and navigation page with sign-in and sign-up entries; it no longer redirects straight to the login form |
 | 🔗 Link management | Custom or generated slugs, titles, notes, tags, enable/disable, soft delete |
 | 🔒 Password protection | Per-link passwords (Argon2id); after unlocking, a signed cookie remembers the visitor for 30 minutes |
+| 🚏 Splash pages | Optional interstitial with a countdown, custom heading/message and destination host before the target; automatic and manual continuation, and a per-link delay |
 | ⏳ Expiry | Absolute expiration time and click limits; expired links return 410 Gone |
 | 📊 Click analytics | Daily trends, referrer domains, device/browser/OS breakdown, recent clicks |
 | 🧩 Tags | Filter and group links by tag, with usage counts |
 | 🔑 API tokens | `Authorization: Bearer ur_...`, with optional expiry and revocation |
 | ✉️ Invite links | Every invite code has a registration link that prefills the code; the code stays viewable for history and the link is returned while the code is usable |
 | 🌐 Multi-domain | Add extra domains in the admin panel; each domain has its own slug namespace and serves redirects only |
-| 👥 User groups | Per-group link, API-token and invite quotas (per day/week/month), feature toggles, default domains and domain allowlists; members can issue their own invite codes when the group allows it |
+| 👥 User groups | Per-group link, API-token and invite quotas (per day/week/month), feature toggles, redirect-mode policy (direct only, splash only or member's choice), default domains and domain allowlists; members can issue their own invite codes when the group allows it |
 | 🎨 Themes | Six compiled-in designs (Verdant, Aurora, Paper, Signal, Gilded, Swiss); administrators choose which are offered, the default and whether members may switch |
 | 🛠 Admin panel | User management, user groups, all site links, domains, invite codes, themes, site settings, audit log |
 | 🌐 Localized UI | English, Traditional Chinese, and Simplified Chinese; the first visit follows the browser's `Accept-Language` header and falls back to English |

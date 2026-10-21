@@ -32,6 +32,8 @@ pub struct UserGroup {
     pub allow_tags: bool,
     pub allow_api_tokens: bool,
     pub allow_domain_selection: bool,
+    /// Which redirect modes members may use: `direct`, `splash` or `choice`.
+    pub redirect_mode_policy: String,
     pub default_domain_id: Option<i64>,
     pub restrict_domains: bool,
     pub is_default: bool,
@@ -42,7 +44,8 @@ pub struct UserGroup {
 const SELECT: &str = "SELECT id, name, description, max_urls, max_api_tokens, max_invites, \
                       invite_period, allow_invites, allow_custom_slug, allow_password, allow_expiry, \
                       allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection, \
-                      default_domain_id, restrict_domains, is_default, created_at, updated_at \
+                      redirect_mode_policy, default_domain_id, restrict_domains, is_default, \
+                      created_at, updated_at \
                       FROM user_groups";
 
 /// Every field an administrator can write, already validated and canonicalised.
@@ -62,6 +65,8 @@ pub struct GroupValues<'a> {
     pub allow_tags: bool,
     pub allow_api_tokens: bool,
     pub allow_domain_selection: bool,
+    /// Which redirect modes members may use: `direct`, `splash` or `choice`.
+    pub redirect_mode_policy: &'a str,
     pub default_domain_id: Option<i64>,
     pub restrict_domains: bool,
 }
@@ -140,9 +145,9 @@ pub async fn create(
         "INSERT INTO user_groups
             (name, description, max_urls, max_api_tokens, max_invites, invite_period,
              allow_invites, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks,
-             allow_tags, allow_api_tokens, allow_domain_selection, default_domain_id,
-             restrict_domains, is_default, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             allow_tags, allow_api_tokens, allow_domain_selection, redirect_mode_policy,
+             default_domain_id, restrict_domains, is_default, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(values.name)
     .bind(values.description)
@@ -158,6 +163,7 @@ pub async fn create(
     .bind(values.allow_tags)
     .bind(values.allow_api_tokens)
     .bind(values.allow_domain_selection)
+    .bind(values.redirect_mode_policy)
     .bind(values.default_domain_id)
     .bind(values.restrict_domains)
     .bind(is_default)
@@ -197,8 +203,8 @@ pub async fn update(
                 max_invites = ?, invite_period = ?, allow_invites = ?,
                 allow_custom_slug = ?, allow_password = ?, allow_expiry = ?,
                 allow_max_clicks = ?, allow_tags = ?, allow_api_tokens = ?,
-                allow_domain_selection = ?, default_domain_id = ?, restrict_domains = ?,
-                updated_at = ?
+                allow_domain_selection = ?, redirect_mode_policy = ?, default_domain_id = ?,
+                restrict_domains = ?, updated_at = ?
           WHERE id = ?",
     )
     .bind(values.name)
@@ -215,6 +221,7 @@ pub async fn update(
     .bind(values.allow_tags)
     .bind(values.allow_api_tokens)
     .bind(values.allow_domain_selection)
+    .bind(values.redirect_mode_policy)
     .bind(values.default_domain_id)
     .bind(values.restrict_domains)
     .bind(&now)

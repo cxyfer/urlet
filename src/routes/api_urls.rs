@@ -75,6 +75,16 @@ pub struct CreatePayload {
     pub max_clicks: Option<i64>,
     #[serde(default)]
     pub redirect_type: Option<i64>,
+    /// `direct` or `splash`; omitted takes the group policy's default mode.
+    #[serde(default)]
+    pub redirect_mode: Option<String>,
+    /// Splash countdown, 1-60 seconds (default 5).
+    #[serde(default)]
+    pub splash_delay_seconds: Option<i64>,
+    #[serde(default)]
+    pub splash_title: Option<String>,
+    #[serde(default)]
+    pub splash_message: Option<String>,
     /// Bot protection token. Only needed when the instance protects link
     /// creation and the caller authenticates with a session cookie; a Bearer
     /// API token is exempt. Optional in the schema either way.
@@ -106,6 +116,14 @@ pub struct UpdatePayload {
     pub max_clicks: Option<Option<i64>>,
     #[serde(default)]
     pub redirect_type: Option<i64>,
+    #[serde(default)]
+    pub redirect_mode: Option<String>,
+    #[serde(default)]
+    pub splash_delay_seconds: Option<i64>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub splash_title: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub splash_message: Option<Option<String>>,
     #[serde(default)]
     pub status: Option<String>,
 }
@@ -208,6 +226,10 @@ pub async fn create(
             expires_at: payload.expires_at,
             max_clicks: payload.max_clicks,
             redirect_type: payload.redirect_type,
+            redirect_mode: payload.redirect_mode,
+            splash_delay_seconds: payload.splash_delay_seconds,
+            splash_title: payload.splash_title,
+            splash_message: payload.splash_message,
         })
         .await?;
 
@@ -251,6 +273,10 @@ pub async fn update(
                 expires_at: payload.expires_at,
                 max_clicks: payload.max_clicks,
                 redirect_type: payload.redirect_type,
+                redirect_mode: payload.redirect_mode,
+                splash_delay_seconds: payload.splash_delay_seconds,
+                splash_title: payload.splash_title,
+                splash_message: payload.splash_message,
                 status: payload.status,
             },
         )

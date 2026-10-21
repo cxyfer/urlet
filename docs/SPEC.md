@@ -2,7 +2,7 @@
 
 # urlet — Lightweight Multi-User URL Shortener Specification
 
-> Version: 1.4
+> Version: 1.5
 > Status: Approved for implementation
 > Last updated: 2026-10-21
 
@@ -22,7 +22,9 @@ Simplified Chinese), optional bot protection, and a public landing page. The v1.
 operated with tiers (for example a free and a paid group) without changing the single-binary
 deployment model. The v1.4 line adds **switchable themes**: the visual identity is a compiled-in
 template set plus stylesheet, administrators choose which designs are offered and who may switch,
-and users keep their choice in a cookie.
+and users keep their choice in a cookie. The v1.5 line adds **splash pages**: a link can show a
+promotional interstitial with a countdown before the destination, and a per-group policy decides
+whether members may use direct redirects, splash pages, or either.
 
 ### 1.1 Core Design Principles (from the requester)
 
@@ -35,7 +37,7 @@ and users keep their choice in a cookie.
 | P5 | As lightweight as possible | One binary, SQLite (no MySQL/Redis), SSR templates (no Node build), image < 40 MB |
 | P6 | Rust implementation | Rust 2021 + Axum 0.8 + Tokio + sqlx (SQLite) |
 | P7 | Well-designed schema | 18 tables, 34 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
-| P8 | Sensible extra features | Tags, click analytics, API tokens, invite codes, admin panel, audit log, daily rollups, trilingual UI, optional bot protection, quota/feature user groups, switchable themes |
+| P8 | Sensible extra features | Tags, click analytics, API tokens, invite codes, admin panel, audit log, daily rollups, trilingual UI, optional bot protection, quota/feature user groups, switchable themes, splash pages |
 
 ### 1.2 Relationship to the Earlier Prototypes (OURLS / OURLS2)
 
@@ -81,6 +83,9 @@ per-action permission matrix.
 | Theme | A compiled-in visual identity: a directory of Askama template overrides plus one embedded CSS asset. Themes are not uploaded or edited at runtime |
 | Default theme | The single enabled theme used when a visitor has no cookie, or the cookie points at a disabled/unknown theme |
 | Theme catalogue | The six themes compiled into this binary: Verdant, Aurora, Paper, Signal, Gilded and Swiss |
+| Splash page | The interstitial served for a link whose `redirect_mode` is `splash`; it shows optional promotional copy, the destination host and a countdown before continuing |
+| Redirect mode | How a link hands over the visitor: `direct` (an immediate 30x response) or `splash` (the interstitial first). Stored in `urls.redirect_mode` |
+| Redirect-mode policy | The per-group `redirect_mode_policy` (`direct`, `splash` or `choice`) that limits the mode of **new** links. Existing links keep their mode |
 
 ---
 
@@ -94,7 +99,7 @@ per-action permission matrix.
 Browser / curl          │                                                 │
 ───────────────────►    │ Axum Router                                     │
 :8080                   │  ├─ /                 landing / navigation page │
-                        │  ├─ /{slug}           redirect / password page  │
+                        │  ├─ /{slug}     redirect / password / splash  │
                         │  ├─ /api/v1/**        JSON API                  │
                         │  ├─ /app/**           SSR user + admin UI       │
                         │  ├─ /app/lang/{code}  language switch (302)     │
@@ -174,10 +179,10 @@ target is still met.
 
 | ID | Requirement | Description |
 |----|-------------|-------------|
-| FR-URL-1 | Create | `target_url` is required; `slug`, title, notes, tags, password, expiry, click cap, and redirect type are optional |
+| FR-URL-1 | Create | `target_url` is required; `slug`, title, notes, tags, password, expiry, click cap, redirect type, redirect mode, and splash copy are optional |
 | FR-URL-2 | Automatic slug | When no slug is given, generate a 7-character base62 slug and retry on collision (at most 5 times) |
 | FR-URL-3 | Custom slug | Length 1–64, only `[A-Za-z0-9_-]`, must not be a reserved word, globally unique |
-| FR-URL-4 | Edit | Change target, title, notes, tags, password (set/clear), expiry, click cap, redirect type, and status |
+| FR-URL-4 | Edit | Change target, title, notes, tags, password (set/clear), expiry, click cap, redirect type, redirect mode, splash copy, and status |
 | FR-URL-5 | Delete | Soft delete (`deleted_at`); the slug is retained and never released (so links cannot be hijacked), and click records are kept |
 | FR-URL-6 | List | Pagination, keyword search (slug/target/title), tag filter, status filter, sorting (creation time / click count) |
 | FR-URL-7 | Status toggle | `active` / `disabled`; a `disabled` link does not redirect (returns a 404 page) |
@@ -217,8 +222,9 @@ target is still met.
 | FR-REDIR-4 | User-agent parsing | Parses device_type / browser / os; bot user agents are flagged with `is_bot = 1` |
 | FR-REDIR-5 | Privacy | Only `ip_hash = HMAC(secret, ip)` and `visitor_hash = HMAC(secret, "{ip_hash}\|{user_agent}\|{day}")` (the HMAC is taken over the already-hashed IP, not the raw address) are stored; **the raw IP is never stored** |
 | FR-REDIR-6 | Unique visitors | The first click for a given `visitor_hash` on a given URL is recorded with `is_unique = 1` |
-| FR-REDIR-7 | Cache control | Password pages / 410 / 404 are `no-store`; 302/307 redirects are `private, no-store`; 301/308 redirects are `private, max-age=300` (permanent redirects may be cached briefly; everything else is uncached to keep click counts accurate) |
+| FR-REDIR-7 | Cache control | Password pages / splash pages / 410 / 404 are `no-store`; 302/307 redirects are `private, no-store`; 301/308 redirects are `private, max-age=300` (permanent redirects may be cached briefly; everything else is uncached to keep click counts accurate) |
 | FR-REDIR-8 | Analytics switch | When `analytics_enabled = false`, no click is written |
+| FR-REDIR-9 | Redirect mode | `urls.redirect_mode` is `direct` or `splash`. A splash link returns a 200 interstitial instead of a 30x response; the click is recorded when the interstitial is served. Password-protected links never show it (FR-SPLASH-4) |
 
 ### 4.6 Analytics (FR-STAT)
 
@@ -280,13 +286,13 @@ target is still met.
 | `/app/account` | Account | Profile, change password, session list, API token management |
 | `/app/admin` | Admin panel | Users, user groups, all links, domains, invite codes, settings, audit log |
 | `/app/admin/domains` | Domain management | Add, activate, disable, set default and delete domains |
-| `/app/admin/groups` | User groups | Create/edit/delete groups, quotas, feature toggles, default domain, domain allowlist and default marker |
+| `/app/admin/groups` | User groups | Create/edit/delete groups, quotas, feature toggles, redirect-mode policy, default domain, domain allowlist and default marker |
 | `/app/lang/{code}` | Language switch | Sets the `urlet_lang` cookie and 302-redirects to `next` (or to `/app`) |
 | `/app/theme/{key}` | Theme switch | Requires a session and the switch permission; sets the `urlet_theme` cookie and redirects to a same-site `next` (or the `Referer`, or `/app`). `?preview=1` sets the administrator-only preview cookie, including for a disabled theme |
 | `/app/theme/default` | Site default | Clears the explicit and preview cookies and follows the administrator's default |
 | `/app/theme/preview/stop` | Stop preview | Clears the administrator preview cookie |
 | `/app/admin/themes` | Theme management | Enable/disable themes, choose the default and the `theme_switching` policy |
-| `/{slug}` | Redirect / password page / 410 / 404 | Public |
+| `/{slug}` | Redirect / password page / splash page / 410 / 404 | Public |
 | Extra domain | Redirect-only | `/` shows a small landing page, `/{slug}` redirects, `/app` 308s to canonical, `/api` is 404 |
 
 **UI technology**: Askama templates + hand-written CSS (including `prefers-color-scheme` dark mode) +
@@ -331,8 +337,9 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 | FR-GROUP-5 | Default group | Exactly one row has `is_default = 1`, enforced by a partial unique index. The marker can be moved from the group edit form (one transaction unsets the previous default); the group currently marked default cannot be deleted. The migration seeds a group named `Standard` with both quotas `NULL` and assigns every existing user to it, so upgrading changes no behaviour |
 | FR-GROUP-6 | Deletion | Deleting a group requires a reassignment target (`reassign_to` on the API, a select in the web dialog). All members move to the target in the same transaction, and invite codes pointing at the deleted group fall back to the default group through `ON DELETE SET NULL`. Reassigning to the group being deleted, or deleting the default group, is rejected with 409 |
 | FR-GROUP-7 | Enforcement scope | Quotas and toggles apply equally to administrators. Lowering a quota or switching a toggle off never deletes or disables existing links or tokens; it only blocks new creations (and newly enabling a blocked feature on update) |
-| FR-GROUP-8 | Visibility | The account page shows the group name plus link usage `used / quota` and token usage `used / quota`; `GET /api/v1/auth/me` returns `group` and a `limits` object with the effective quotas, toggles, default domain and allowed domains so API clients can predict refusals |
+| FR-GROUP-8 | Visibility | The account page shows the group name plus link usage `used / quota` and token usage `used / quota`; `GET /api/v1/auth/me` returns `group` and a `limits` object with the effective quotas, toggles, redirect-mode policy, default domain and allowed domains so API clients can predict refusals |
 | FR-GROUP-9 | Domain policy | `user_groups.default_domain_id` is the group default (`NULL` = site default); new links without a domain use it, and a missing, disabled or deleted default falls back to the site default. `restrict_domains = 1` limits selection to `group_domains` rows plus the effective default; with restriction on and no rows only the default is available. `allow_domain_selection = false` also limits selection to the group default. Keeping an existing link on its current domain is always allowed; ungrouped users get the site default and every active domain. |
+| FR-GROUP-10 | Redirect-mode policy | `user_groups.redirect_mode_policy` is `direct`, `splash` or `choice` and defaults to `choice`, so an upgrade changes no behaviour. A request that creates a link in a blocked mode, or switches an existing link to one, returns `403`; keeping the current mode and clearing splash copy are accepted. The policy only affects new links and mode switches, never existing behaviour (FR-GROUP-7) |
 
 ### 4.14 Switchable Themes (FR-THEME)
 
@@ -347,6 +354,18 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 | FR-THEME-7 | Assets | `/assets/themes/{key}` serves only the fixed compiled-in keys and `/assets/theme-ui.css` carries the shared picker and admin catalogue styles. No external font, image, script or CDN is introduced, so the `default-src 'self'` CSP and the no-build deployment stay intact |
 | FR-THEME-8 | Appearance | Verdant keeps the persisted light/dark control. The five earlier designs follow `prefers-color-scheme` and therefore keep the operating-system choice; Aurora is dark-only and hides the light/dark control |
 | FR-THEME-9 | Persistence | The choice is a cookie, not a per-user database column. A disabled theme is rejected on the next request, and the administrator can always change the default for visitors without a preference. No link, user or click data is touched by a theme change |
+
+### 4.15 Splash Pages (FR-SPLASH)
+
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-SPLASH-1 | Mode | Every link has a `redirect_mode`: `direct` (default, the historical behaviour) or `splash`. The create and edit forms and `POST/PATCH /api/v1/urls` accept it; stored values that are unknown fall back to `direct` on the redirect path |
+| FR-SPLASH-2 | Rendering | A valid, unprotected splash link returns `200` HTML with `Cache-Control: no-store`. The page shows the custom (or localised default) heading and message, the destination host, a countdown and a "Continue now" link, and auto-redirects with a `<meta http-equiv="refresh">`. It adds no script or external asset beyond the shared same-origin site bundle, so the strict CSP is unchanged |
+| FR-SPLASH-3 | Click recording | The splash impression is the click: it is queued when the splash page is served. The meta refresh and the continue link go straight to the target, so the target visit is not counted a second time |
+| FR-SPLASH-4 | Password precedence | A link with a password always shows the password page, never the splash page. After a successful unlock the target is served directly; the password page is the only interstitial |
+| FR-SPLASH-5 | Copy | `splash_title` is at most 120 characters and must not contain control characters. `splash_message` is at most 500 characters, allows newlines and rejects every other control character. Both are optional; an empty value uses the localised built-in copy. The heading and message are HTML-escaped |
+| FR-SPLASH-6 | Countdown | `splash_delay_seconds` is an integer in `1..=60`, default `5`. A value outside the range is rejected by both forms and the API; a stored out-of-range value is clamped when rendering so a manual database edit cannot break the page |
+| FR-SPLASH-7 | Group policy | `user_groups.redirect_mode_policy` is `direct` (new links must redirect immediately), `splash` (new links must use the interstitial) or `choice` (the default, either mode). It gates creation and switching modes on update, never rewrites existing links, and the web forms hide the blocked option; a refused request is `403`. The policy is exposed in `GET /api/v1/auth/me` as `limits.redirect_mode_policy` |
 
 ---
 
@@ -450,18 +469,18 @@ login_attempts (auditing)
 
 ### 6.3 DDL (migration summary)
 
-> The complete source of truth is the migration files (`0001_init.sql`, `0003_multi_domain.sql` for the multi-domain rebuild and `0004_user_groups.sql` for groups and `0005_group_domains.sql` for the domain policy); the table below is a structural summary.
+> The complete source of truth is the migration files (`0001_init.sql`, `0003_multi_domain.sql` for the multi-domain rebuild, `0004_user_groups.sql` for groups, `0005_group_domains.sql` for the domain policy and `0011_splash_pages.sql` for splash pages); the table below is a structural summary.
 
 
 | Table | Main columns | Purpose |
 |-------|--------------|---------|
 | `users` | id, email, email_normalized(UNIQUE), password_hash, display_name, role, status, group_id, email_verified_at, last_login_at, created_at, updated_at, deleted_at | Users |
-| `user_groups` | id, name(UNIQUE, NOCASE), description, max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection, default_domain_id, restrict_domains, is_default, created_at, updated_at | Quota, feature-toggle and domain-policy groups |
+| `user_groups` | id, name(UNIQUE, NOCASE), description, max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection, redirect_mode_policy, default_domain_id, restrict_domains, is_default, created_at, updated_at | Quota, feature-toggle, redirect-mode and domain-policy groups |
 | `group_domains` | group_id, domain_id (PK) | Explicit per-group domain allowlist |
 | `sessions` | id, user_id, token_hash(UNIQUE), user_agent, ip_hash, created_at, last_seen_at, expires_at, revoked_at | Login state |
 | `api_tokens` | id, user_id, name, token_prefix, token_hash(UNIQUE), scopes, last_used_at, expires_at, created_at, revoked_at | API credentials |
 | `domains` | id, hostname(UNIQUE, NOCASE), is_default, is_verified, status, source, created_by, created_at, updated_at | Canonical/system, `URLET_DOMAINS`/env and admin/UI domains; `pending`/`active`/`disabled` |
-| `urls` | id, user_id, domain_id(NOT NULL), slug, target_url, title, notes, password_hash, expires_at, max_clicks, click_count, unique_click_count, redirect_type, status, is_custom_slug, last_clicked_at, created_at, updated_at, deleted_at, UNIQUE(domain_id,slug) | Short links; the slug namespace is per domain |
+| `urls` | id, user_id, domain_id(NOT NULL), slug, target_url, title, notes, password_hash, expires_at, max_clicks, click_count, unique_click_count, redirect_type, redirect_mode, splash_delay_seconds, splash_title, splash_message, status, is_custom_slug, last_clicked_at, created_at, updated_at, deleted_at, UNIQUE(domain_id,slug) | Short links; the slug namespace is per domain |
 | `tags` | id, user_id, name, color, created_at, UNIQUE(user_id,name) | Tags |
 | `url_tags` | url_id, tag_id (PK) | Tag associations |
 | `clicks` | id, url_id, clicked_at, ip_hash, visitor_hash, user_agent, referrer, referrer_host, country_code, device_type, browser, os, is_bot, is_unique, password_protected | Click details |
@@ -501,7 +520,9 @@ tables, the nullable `users.group_id` / `invite_codes.group_id` columns, the
 31 indexes** (§6.1, §6.3, §6.4). The invite-ledger work then added `invite_issuance` and its index,
 taking the schema to **17 tables and 33 indexes**. v1.3 adds only the nullable
 `invite_codes.code_sealed` column, so the table and index counts stay at 17/33. v1.4 adds the
-`themes` table and its single-default index, for **18 tables and 34 indexes**.
+`themes` table and its single-default index, for **18 tables and 34 indexes**. v1.5 adds only the
+`urls` splash columns and `user_groups.redirect_mode_policy`, so the counts stay at **18 tables and
+34 indexes**.
 
 ### 6.5 Seed Data
 
@@ -517,6 +538,9 @@ taking the schema to **17 tables and 33 indexes**. v1.3 adds only the nullable
 - `user_groups` (v1.2): one row named `Standard` with `max_urls = NULL`, `max_api_tokens = NULL`,
   all seven toggles `1` (including `allow_domain_selection`), `default_domain_id = NULL`,
   `restrict_domains = 0` and `is_default = 1`; the migration assigns every existing user to it.
+- Splash defaults (v1.5): the column defaults give every existing link `redirect_mode = direct` and
+  `splash_delay_seconds = 5` with no custom copy, and every existing group `redirect_mode_policy =
+  choice`, so the upgrade changes no behaviour.
 - `themes` (v1.4): `verdant` is enabled and default; `aurora`, `paper`, `signal`, `gilded` and
   `swiss` are enabled and not default, with sort orders 10–50. The migration is additive, so an
   upgrade keeps the current look until an administrator changes the default.
@@ -538,7 +562,7 @@ taking the schema to **17 tables and 33 indexes**. v1.3 adds only the nullable
 | POST | `/api/v1/auth/register` | `{email, password, invite_code?, captcha_token?}` → 201 `{user}`; 400 `captcha_failed` when captcha verification fails |
 | POST | `/api/v1/auth/login` | `{email, password, captcha_token?}` → 200 `{user}` + Set-Cookie; 400 `captcha_failed` when captcha verification fails |
 | POST | `/api/v1/auth/logout` | Revoke the current session → 204 |
-| GET | `/api/v1/auth/me` | Current user → 200 `{user}`; also returns `group` (id/name or null) and `limits` (effective quotas, toggles, default domain and allowed domains, FR-GROUP-8) |
+| GET | `/api/v1/auth/me` | Current user → 200 `{user}`; also returns `group` (id/name or null) and `limits` (effective quotas, toggles, redirect-mode policy, default domain and allowed domains, FR-GROUP-8) |
 | PATCH | `/api/v1/auth/me` | `{display_name}` → 200 `{user}` |
 | POST | `/api/v1/auth/password` | `{current_password, new_password}` → 204 |
 | GET | `/api/v1/auth/sessions` | List my sessions |
@@ -554,16 +578,16 @@ name and effective limits are exposed through `GET /api/v1/auth/me`.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/v1/urls` | Query parameters: `q, tag, status, page, per_page, sort(created_at\|clicks\|slug\|updated\|expires)` |
-| POST | `/api/v1/urls` | `{target_url, domain?, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?, captcha_token?}`; API-token calls are captcha-exempt, session-cookie calls honour `on_create` |
+| POST | `/api/v1/urls` | `{target_url, domain?, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?, redirect_mode?, splash_delay_seconds?, splash_title?, splash_message?, captcha_token?}`; API-token calls are captcha-exempt, session-cookie calls honour `on_create` |
 | GET | `/api/v1/domains` | Active domains available for new links, filtered by the caller's group policy (includes the effective `is_default`) |
 | GET | `/api/v1/urls/{id}` | Single link (with `short_url`, `is_expired`, `has_password`) |
-| PATCH | `/api/v1/urls/{id}` | Partial update; `domain` moves the link; `password: null` clears the password; `expires_at: null` clears the expiry |
+| PATCH | `/api/v1/urls/{id}` | Partial update; `domain` moves the link; `password: null` clears the password; `expires_at: null` clears the expiry; `splash_title` / `splash_message: null` clear the custom copy |
 | DELETE | `/api/v1/urls/{id}` | Soft delete → 204 |
 | GET | `/api/v1/urls/{id}/stats?days=30` | Daily trend + dimension breakdown + summary |
 | GET | `/api/v1/urls/{id}/clicks?page=1` | Click details (paginated) |
 
-A link quota exhaustion, or a group toggle that blocks a submitted field, returns 403 `forbidden`
-with a descriptive message. On `PATCH`, omitting a field keeps its current value and clearing a
+A link quota exhaustion, a group toggle that blocks a submitted field, or a redirect mode outside
+the group policy returns 403 `forbidden` with a descriptive message. On `PATCH`, omitting a field keeps its current value and clearing a
 blocked field is accepted; switching a blocked feature on is refused. A non-empty link password is
 always a new value, so it is refused while passwords are blocked (FR-GROUP-3).
 
@@ -589,7 +613,7 @@ old token frees a slot immediately (FR-TOK-6).
 | POST | `/api/v1/admin/users/{id}/password` | `{new_password}` reset |
 | DELETE | `/api/v1/admin/users/{id}` | Soft delete (their links are soft-deleted too) |
 | GET | `/api/v1/admin/groups` | Group list with member counts, stored default/allowlist domain fields (paginated) |
-| POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, default_domain_id?, restrict_domains?, domain_ids?, is_default?}` → 201; domain_ids must exist and default_domain_id must be active; a duplicate name or a second default returns 409 |
+| POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, redirect_mode_policy?, default_domain_id?, restrict_domains?, domain_ids?, is_default?}` → 201; domain_ids must exist and default_domain_id must be active; a duplicate name or a second default returns 409 |
 | PUT | `/api/v1/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` set to `null` inherit the site quota; `description: null` clears it; `default_domain_id: null` means the site default; `domain_ids: null` or `[]` clears the allowlist; `is_default: true` moves the marker in one transaction |
 | DELETE | `/api/v1/admin/groups/{id}?reassign_to={id}` | Move members to `reassign_to`, then delete → 204; 409 for the default group or a missing/invalid target |
 | GET | `/api/v1/admin/themes` | Theme catalogue: key, name, description, `enabled`, `default`, `dark_only`, `css_url`, plus the current `switching` policy |
@@ -618,9 +642,9 @@ Every group mutation is audited (`admin.group_created`, `admin.group_updated`,
 | GET | `/` | Landing / navigation page (HTML) |
 | GET | `/health` | `{status, version, database, uptime_seconds}` |
 | GET | `/app/lang/{code}` | Set the `urlet_lang` cookie and 302 to `next`, or to `/app` when `next` is missing or not a same-site relative path |
-| GET | `/{slug}` | Redirect (302 and friends), password page (HTML), or a 410/404 page |
+| GET | `/{slug}` | Redirect (302 and friends), splash page (HTML), password page (HTML), or a 410/404 page |
 | POST | `/{slug}/unlock` | Form or JSON `{password}`; on success a JSON request returns 200 `{ok, redirect}` and a form request 303 → `/{slug}` |
-| GET | `/api/v1/public/urls/{slug}?domain=<hostname>` | Public metadata: `{domain, slug, has_password, is_expired, state, title?}` (**never includes the target**); without `domain` the default domain is used |
+| GET | `/api/v1/public/urls/{slug}?domain=<hostname>` | Public metadata: `{domain, slug, has_password, redirect_mode, is_expired, state, title?}` (**never includes the target**); without `domain` the default domain is used |
 
 ---
 
@@ -671,7 +695,7 @@ urlet/
 ├── docker-compose.tls.yml        # optional: Caddy automatic HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql
+├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_splash_pages.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama templates (base, app_base, landing.html + pages + admin/)
@@ -680,11 +704,11 @@ urlet/
 │   ├── assets/{app.css,app.js,favicon.svg}
 │   ├── i18n/{mod.rs,en.json,zh-Hant.json,zh-Hans.json}
 │   ├── db/{mod,migrate,users,user_groups,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
-│   ├── services/{auth,urls,admin,domains,domain_policy,groups,invite_code,invite_quota,invites,limits,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
+│   ├── services/{auth,urls,admin,domains,domain_policy,groups,invite_code,invite_quota,invites,limits,redirect_mode,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
 │   ├── middleware/{mod,auth,csrf,domain,security,locale}.rs
 │   └── routes/{mod,api,api_auth,api_urls,api_domains,api_tags,api_tokens,api_stats,api_admin,api_invites,api_public,redirect,health,assets,dto,extract}.rs
 │       └── pages/{mod,auth,dashboard,urls,account,admin,home,invites}.rs
-└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs,groups.rs,invites.rs,i18n.rs,captcha.rs}
+└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,splash.rs,pages.rs,admin.rs,groups.rs,invites.rs,i18n.rs,captcha.rs}
 ```
 
 ### 9.2 Dockerfile Strategy
@@ -719,7 +743,7 @@ urlet port, so Caddy reverse-proxies it.
 | Layer | Scope | Tooling |
 |-------|-------|---------|
 | Unit tests | Slug generation/validation/reserved words, UA parsing, expiry decisions, settings parsing, group limit inheritance (NULL / 0 / value, ungrouped fallback), password hashing, IP hashing, CSRF same-origin checks, `Accept-Language` negotiation (`q=` weights, fallback to English), locale fallback, the captcha enablement matrix, and captcha fail-closed classification | `#[cfg(test)]` modules |
-| Integration tests | Register → login → create → redirect → analytics; the password protection flow; expiry and click caps; ownership isolation; admin authorization; API tokens; group CRUD and default-marker transfer; per-group link and token quotas; feature-toggle enforcement on create and update; invite codes that carry a group; group deletion with reassignment; CSRF rejection; language negotiation and cookie switching; API JSON staying English; captcha rejection on register, sign-in and create (web forms and JSON API); the landing page | `tests/integration.rs` + `tower::ServiceExt::oneshot` + a temporary SQLite database |
+| Integration tests | Register → login → create → redirect → analytics; the password protection flow; expiry and click caps; ownership isolation; admin authorization; API tokens; group CRUD and default-marker transfer; per-group link and token quotas; feature-toggle enforcement on create and update; invite codes that carry a group; group deletion with reassignment; CSRF rejection; language negotiation and cookie switching; API JSON staying English; captcha rejection on register, sign-in and create (web forms and JSON API); the landing page; splash rendering, group policy enforcement and password precedence | `tests/integration.rs` + `tower::ServiceExt::oneshot` + a temporary SQLite database |
 | End-to-end smoke test | Runs the main flows against the real binary with curl | `scripts/smoke.sh` |
 | Static checks | `cargo fmt --check`, `cargo clippy -D warnings` | CI commands (documented in the README) |
 
@@ -757,6 +781,15 @@ v1.1 additions (this batch):
 - [ ] `POST /api/v1/urls` is captcha-exempt only for API-token calls (a session-cookie call honours `on_create`), and the admin secret-key field is write-only
 - [ ] `GET /` returns 200 as a landing/navigation page for anonymous and signed-in visitors, and no longer redirects to `/app`
 - [ ] `cargo test` (the full suite), `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are clean, `scripts/smoke.sh` passes all end-to-end checks, and the container image builds and runs under musl (§3.3)
+
+v1.5 additions (this batch):
+
+- [x] `urls.redirect_mode` (`direct` / `splash`), `splash_delay_seconds` (1–60, default 5), `splash_title` (≤120) and `splash_message` (≤500, newlines allowed); existing links stay `direct`
+- [x] A splash link returns a 200 interstitial with the custom or localised copy, destination host, countdown, meta refresh and continue link; it records the click when served, sets `no-store`, and loads no external asset
+- [x] Password-protected links keep the password page as their only interstitial and go straight to the target after unlocking
+- [x] `user_groups.redirect_mode_policy` (`direct` / `splash` / `choice`, default `choice`) gates create and mode changes only, is exposed in `GET /api/v1/auth/me`, and both web forms hide the blocked option
+- [x] Splash templates ship for all six themes, and the three locale catalogues cover every new string
+- [x] `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `scripts/smoke.sh` and `scripts/merge-check.sh` are green
 
 v1.4 additions (this batch):
 

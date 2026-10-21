@@ -1,0 +1,38 @@
+{% extends "themes/signal/base.html" %}
+
+{% block title %}{{ heading }} — {{ site_name }}{% endblock %}
+
+{% block head %}
+<meta name="robots" content="noindex">
+<meta http-equiv="refresh" content="{{ delay_seconds }};url={{ target_url }}">
+{% endblock %}
+
+{% block body %}
+<div class="link-page link-page-blue">
+    <div class="link-card">
+        <div class="link-accent" aria-hidden="true"></div>
+        <div class="link-brand">
+            <a href="/">{{ site_name }}</a>
+            <span class="link-brand-meta" aria-hidden="true">/// 200</span>
+        </div>
+        <div class="link-body">
+            <span class="link-glyph" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square">
+                    <path d="M4 12h14"/>
+                    <path d="m12 6 6 6-6 6"/>
+                </svg>
+            </span>
+            <h1>{{ heading }}</h1>
+            <p class="splash-message">{{ message }}</p>
+            <div class="splash-meter" style="--splash-delay: {{ delay_seconds }}s" aria-hidden="true"><span></span></div>
+            <p class="small muted splash-countdown">{{ countdown }}</p>
+            <div class="splash-destination">
+                <span class="label">{{ lang.t("link.splash.destination") }}</span>
+                <span class="splash-host">{{ destination_host }}</span>
+            </div>
+            <a class="btn btn-primary" href="{{ target_url }}" rel="noopener">{{ lang.t("link.splash.continue") }}</a>
+            <p class="hint">{{ lang.t("link.splash.manual") }}</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

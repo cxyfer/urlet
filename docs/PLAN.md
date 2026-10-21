@@ -2,7 +2,7 @@
 
 # urlet — Phased Implementation Plan
 
-> Spec: `docs/SPEC.md` v1.4
+> Spec: `docs/SPEC.md` v1.5
 > Principle: at the end of every phase the code must **compile, test, and commit**; each phase gets one (or a few) local commits.
 
 ## Results (completed)
@@ -21,6 +21,7 @@
 | P10 User groups (v1.2) | ✅ Done | See `git log` (migration 0004, group API/UI, trilingual strings, docs) |
 | P11 Group domain policy (v1.2) | ✅ Done | See `git log` (migration 0005, default domain + allowlist, admin UI/API, tests) |
 | P12 Switchable themes (v1.4) | ✅ Done | See `git log` (migration 0010, theme registry, admin catalogue, six template sets, tests) |
+| P13 Splash pages and redirect-mode policy (v1.5) | ✅ Done | See `git log` (migration 0011, splash templates for six themes, per-group policy, trilingual strings, docs, tests) |
 
 Acceptance data (v1.0): `cargo test` is all green with 187 tests, `cargo clippy --all-targets -- -D warnings`
 and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scripts/smoke.sh` pass.
@@ -44,6 +45,7 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 | P10 | User groups (v1.2) | `user_groups` with per-group link/token quotas and seven feature toggles (including domain selection), assignment through users and invite codes, admin page and API | 16 tables / 31 indexes, upgrade changes no behaviour, quotas/toggles enforced (admins included), deletion reassigns members, tests and smoke green | `✨ feat(groups): ...` |
 | P11 | Group domain policy (v1.2) | Per-group `default_domain_id`, `restrict_domains` and `group_domains` allowlist; group default/allowlist enforced on create/move, exposed through `/api/v1/auth/me` and `/api/v1/domains`, editable in the admin group form | 16 tables / 31 indexes, existing groups keep every active domain, empty restricted list allows only the default, disabled default falls back to the site default, tests and smoke green | `✨ feat(domains): ...` |
 | P12 | Switchable themes (v1.4) | Six compiled-in template/CSS themes, `themes` table and registry, admin enable/default/policy page and API, `urlet_theme` cookie, theme picker and shared fallback content | 18 tables / 34 indexes, every theme renders every page, permission and fallback covered, fmt/clippy/test/smoke green | `✨ feat(themes): ...` |
+| P13 | Splash pages and redirect-mode policy (v1.5) | `urls.redirect_mode` and splash copy, six theme templates, `user_groups.redirect_mode_policy`, forms/API/`/auth/me`, locale catalogs | Existing links stay direct, password pages stay the only interstitial, mode policy enforced on create/update only, fmt/clippy/test/smoke green | `✨ feat(splash): ...` |
 
 ---
 

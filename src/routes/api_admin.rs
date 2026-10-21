@@ -22,6 +22,7 @@ use crate::services::admin::{self, AdminContext, SystemStats};
 use crate::services::domains::DomainContext;
 use crate::services::groups::{self as group_service, GroupDraft};
 use crate::services::invite_quota::{usage_for, usage_map, InvitePeriod, InviteUsage};
+use crate::services::redirect_mode::RedirectModePolicy;
 use crate::services::settings::ThemeSwitching;
 use crate::services::theme::{self as theme_service};
 use crate::services::time;
@@ -172,6 +173,8 @@ pub struct GroupDto {
     pub allow_tags: bool,
     pub allow_api_tokens: bool,
     pub allow_domain_selection: bool,
+    /// `direct`, `splash` or `choice` for new links created by members.
+    pub redirect_mode_policy: String,
     pub default_domain_id: Option<i64>,
     pub default_domain: Option<String>,
     pub restrict_domains: bool,
@@ -209,6 +212,7 @@ impl GroupDto {
             allow_tags: group.allow_tags,
             allow_api_tokens: group.allow_api_tokens,
             allow_domain_selection: group.allow_domain_selection,
+            redirect_mode_policy: group.redirect_mode_policy.clone(),
             default_domain_id: group.default_domain_id,
             default_domain: group.default_domain_id.and_then(|id| domains.hostname(id)),
             restrict_domains: group.restrict_domains,
@@ -260,6 +264,9 @@ pub struct GroupPayload {
     pub allow_api_tokens: Option<bool>,
     #[serde(default)]
     pub allow_domain_selection: Option<bool>,
+    /// `direct`, `splash` or `choice`; omitted keeps the current policy.
+    #[serde(default)]
+    pub redirect_mode_policy: Option<String>,
     /// `null` means the site-wide default; omitting it keeps the current value.
     #[serde(default, deserialize_with = "crate::routes::dto::double_option")]
     pub default_domain_id: Option<Option<i64>>,
@@ -324,6 +331,17 @@ impl GroupPayload {
             allow_domain_selection: current(self.allow_domain_selection, |group| {
                 group.allow_domain_selection
             }),
+            redirect_mode_policy: match self.redirect_mode_policy {
+                Some(value) => RedirectModePolicy::parse(&value).ok_or_else(|| {
+                    ApiError::from(AppError::validation(
+                        "redirect_mode_policy",
+                        "redirect mode policy must be direct, splash or choice",
+                    ))
+                })?,
+                None => existing
+                    .map(|group| RedirectModePolicy::from_db(&group.redirect_mode_policy))
+                    .unwrap_or_default(),
+            },
             default_domain_id: match self.default_domain_id {
                 Some(value) => value,
                 None => existing.and_then(|group| group.default_domain_id),
