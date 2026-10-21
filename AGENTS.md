@@ -51,6 +51,9 @@ ship GitHub's generated notes as the final body.
 6. Image tags mirror the git tag and keep the `v` prefix (`v1.3.0`, `v1.3`, `v1`); `latest` is
    the only tag without it. The exact tag is generated with `pattern={{raw}}` because
    `metadata-action` ignores custom patterns for pre-releases.
+7. Keep every prose paragraph and highlight bullet on one source line: GitHub renders a newline
+   inside a release body as a hard break. Check the draft with
+   [`scripts/release-notes-lint.sh`](scripts/release-notes-lint.sh) before publishing.
 
 Never push a release tag until the version bump and a refreshed `Cargo.lock` are on `master`: the
 workflow validates the tag against `Cargo.toml`, and a published tag cannot be reused.

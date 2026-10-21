@@ -55,7 +55,9 @@
 8. **預發布版永遠不會有 `latest`。** 請使用 `-rc.1`、`-beta.1`、`-alpha.1` 之類的後綴。
 9. **GitHub Release 由人工發布，格式固定。** 映像發布完成後，用
    [`scripts/release-notes.sh`](../../scripts/release-notes.sh) 產生草稿，並依
-   [`.github/release-notes-template.md`](../../.github/release-notes-template.md) 撰寫。
+   [`.github/release-notes-template.md`](../../.github/release-notes-template.md) 撰寫。每一段
+   散文與每個 highlight 項目都放在同一行——GitHub 會把 release body 內的換行渲染成強制換行
+   ——並用 [`scripts/release-notes-lint.sh`](../../scripts/release-notes-lint.sh) 檢查草稿。
 10. **GHCR 可見性是儲存庫設定。** 私有儲存庫會產生私有套件；請執行
     `docker login ghcr.io`（token 需要 `read:packages`），或把套件設為公開。
 11. **[docker-compose.yml](../../docker-compose.yml) 的 `image:` 只是本機建置標籤。** 更新它
@@ -132,10 +134,15 @@ docker run --rm ghcr.io/cxyfer/urlet:v1.2.3 version   # 印出 "urlet 1.2.3"
 ```bash
 ./scripts/release-notes.sh v1.2.3      # 產生 What's Changed、New Contributors、Full Changelog
 $EDITOR .tmp/release-notes-v1.2.3.md   # 補上 callout 與 ## Highlights
+./scripts/release-notes-lint.sh .tmp/release-notes-v1.2.3.md
 
 gh release create v1.2.3 --title "urlet 1.2.3" \
   --notes-file .tmp/release-notes-v1.2.3.md --verify-tag
 ```
+
+callout 的每一段與每個 highlight 項目都請寫在同一行；草稿若仍有換行，lint 會直接失敗。
+GitHub 會把 release body 內的一個換行渲染成強制換行，因此原始檔的換行會讓發布頁面從句子
+中間斷開。
 
 `-rc.N` 標籤請加上 `--prerelease`。格式由
 [`.github/release-notes-template.md`](../../.github/release-notes-template.md) 固定：開頭是
@@ -199,6 +206,7 @@ git push origin "v$VERSION"
 # 映像發布完成後：
 ./scripts/release-notes.sh "v$VERSION"
 $EDITOR ".tmp/release-notes-v$VERSION.md"
+./scripts/release-notes-lint.sh ".tmp/release-notes-v$VERSION.md"
 gh release create "v$VERSION" --title "urlet $VERSION" \
   --notes-file ".tmp/release-notes-v$VERSION.md" --verify-tag
 ```

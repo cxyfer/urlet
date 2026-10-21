@@ -10,6 +10,10 @@
 # Contributors and Full Changelog are filled in from the commits and pull
 # requests between the two tags.
 #
+# Write each paragraph and each highlight bullet on a single line: GitHub turns
+# a newline inside a release body into a hard break. Check the draft with
+# scripts/release-notes-lint.sh before publishing it.
+#
 # Why not GitHub's "Generate release notes": it matches pull requests by merge
 # commit, and this repository rebases before merging. A rewritten merge commit
 # silently drops the pull request (#12 and #14 were missing for v1.3.0-rc.1).
@@ -95,9 +99,7 @@ done < <(sort -u -k1,1 "$AUTHORS")
 > [!IMPORTANT]
 > TODO: one paragraph on what this release is and why it matters.
 >
-> TODO: what changes for an existing install — migrations that run at startup, defaults that
-> moved, anything the reader must do before or after upgrading. Delete this paragraph when
-> there is nothing to say.
+> TODO: what changes for an existing install — migrations that run at startup, defaults that moved, anything the reader must do before or after upgrading. Delete this paragraph when there is nothing to say.
 
 ## Highlights
 
@@ -122,3 +124,4 @@ EOF
 } > "$OUT"
 
 echo "wrote $OUT ($PREV -> $TAG)"
+echo "next: fill in the TODO markers (one line per paragraph), then run ./scripts/release-notes-lint.sh $OUT"
