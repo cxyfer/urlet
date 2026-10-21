@@ -637,7 +637,7 @@
   "invites.unlimited": "无上限",
   "invites.confirm": "要撤销这组邀请码吗？",
   "invites.created_flash": "邀请码已生成，邀请码与链接都会保留在列表中。",
-  "invites.legacy_hint": "此版本之前创建的邀请码无法完整显示；如果你知道原码仍可使用。请撤销并重新创建，以获取可复制的链接。",
+  "invites.legacy_hint": "此版本之前创建、或服务器密钥更换后的邀请码无法完整显示；如果你知道原码仍可使用。请撤销并重新创建，以获取可复制的链接。",
   "flash.err.invites_disabled": "你的用户组不允许生成邀请码。",
   "admin.groups.feature.invites": "邀请码"
 }

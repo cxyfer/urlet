@@ -637,7 +637,7 @@
   "invites.unlimited": "無上限",
   "invites.confirm": "要撤銷這組邀請碼嗎？",
   "invites.created_flash": "邀請碼已產生，邀請碼與連結都會保留在列表中。",
-  "invites.legacy_hint": "此版本之前建立的邀請碼無法完整顯示；若你知道原碼仍可使用。請撤銷並重新建立，以取得可複製的連結。",
+  "invites.legacy_hint": "此版本之前建立、或伺服器密鑰更換後的邀請碼無法完整顯示；若你知道原碼仍可使用。請撤銷並重新建立，以取得可複製的連結。",
   "flash.err.invites_disabled": "你的群組不允許產生邀請碼。",
   "admin.groups.feature.invites": "邀請碼"
 }

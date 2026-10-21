@@ -400,7 +400,7 @@ fn register_redirect(err: &str, invite: Option<&str>, next: Option<&str>) -> Res
     if let Some(next) = safe_next(next) {
         params.push(("next", next));
     }
-    Redirect::to(&format!("/app/register?{}", query_string(&params))).into_response()
+    no_store(Redirect::to(&format!("/app/register?{}", query_string(&params))).into_response())
 }
 
 /// `POST /app/logout`
@@ -462,6 +462,13 @@ mod tests {
                 .get(header::LOCATION)
                 .and_then(|value| value.to_str().ok()),
             Some("/app/register?err=invite&invite=K7M2QPX4RT&next=%2Fapp%2Fadmin")
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-store")
         );
     }
 

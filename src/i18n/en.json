@@ -637,7 +637,7 @@
   "invites.unlimited": "Unlimited",
   "invites.confirm": "Revoke this invite code?",
   "invites.created_flash": "Invite code created. The code and link stay available in the list.",
-  "invites.legacy_hint": "Codes issued before this version cannot be shown in full; they still work if you know them. Revoke the code and create a new one to get a copyable link.",
+  "invites.legacy_hint": "Codes issued before this version, or after the server secret changed, cannot be shown in full; they still work if you know them. Revoke the code and create a new one to get a copyable link.",
   "flash.err.invites_disabled": "Your group does not allow invite codes.",
   "admin.groups.feature.invites": "Invite codes"
 }
