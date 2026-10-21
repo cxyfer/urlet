@@ -21,11 +21,16 @@ use crate::services::ratelimit::limits;
 use crate::services::time;
 use crate::state::AppState;
 
-/// One invite code, without the plaintext value.
+/// One invite code, including the recoverable plaintext and share link when
+/// this instance can still decrypt them.
 #[derive(Debug, Clone, Serialize)]
 pub struct MemberInviteDto {
     pub id: i64,
     pub prefix: String,
+    /// `null` for codes issued before sealed storage or after a secret change.
+    pub code: Option<String>,
+    /// Registration link prefilled with `code`; `null` when `code` is `null`.
+    pub link: Option<String>,
     pub note: Option<String>,
     pub group_id: Option<i64>,
     pub max_uses: i64,
@@ -38,7 +43,10 @@ pub struct MemberInviteDto {
 }
 
 impl MemberInviteDto {
-    fn new(invite: &Invite, now: &str) -> Self {
+    fn new(invite: &Invite, now: &str, code: Option<String>, base_url: &str) -> Self {
+        let link = code
+            .as_deref()
+            .map(|code| invites::registration_link(base_url, code));
         let expired = invite
             .expires_at
             .as_deref()
@@ -47,6 +55,8 @@ impl MemberInviteDto {
         Self {
             id: invite.id,
             prefix: invite.code_prefix.clone(),
+            code,
+            link,
             note: invite.note.clone(),
             group_id: invite.group_id,
             max_uses: invite.max_uses,
@@ -94,8 +104,10 @@ pub struct CreateMemberInvitePayload {
 
 #[derive(Debug, Serialize)]
 pub struct CreatedMemberInvite {
-    /// Plaintext code — returned exactly once.
+    /// Plaintext code, also available from the list endpoint afterwards.
     pub code: String,
+    /// Registration link that prefills `code`.
+    pub link: String,
     pub invite: MemberInviteDto,
     pub quota: MemberQuotaDto,
 }
@@ -126,23 +138,27 @@ pub async fn list(
     State(state): State<AppState>,
     CurrentUser { user, .. }: CurrentUser,
     Query(pagination): Query<Pagination>,
-) -> Result<Json<MemberInviteList>, ApiError> {
+) -> Result<Response, ApiError> {
     let per_page = pagination.per_page();
     let rows =
         crate::db::invites::list_by_creator(&state.db, user.id, per_page, pagination.offset())
             .await?;
     let total = crate::db::invites::count_by_creator(&state.db, user.id).await?;
     let now = time::now_iso();
-    Ok(Json(MemberInviteList {
+    let body = MemberInviteList {
         items: rows
             .iter()
-            .map(|invite| MemberInviteDto::new(invite, &now))
+            .map(|invite| {
+                let code = invites::reveal(state.config.secret.as_slice(), invite);
+                MemberInviteDto::new(invite, &now, code, &state.config.base_url)
+            })
             .collect(),
         page: pagination.page(),
         per_page,
         total,
         quota: quota_for(&state, &user).await?,
-    }))
+    };
+    Ok(crate::routes::no_store(Json(body).into_response()))
 }
 
 /// `POST /api/v1/invites`
@@ -166,16 +182,27 @@ pub async fn create(
         settings: &state.settings,
         actor: &user,
         ip_hash: client.ip_hash.as_deref(),
+        secret: state.config.secret.as_slice(),
     }
     .create_for_member(payload.note.as_deref(), payload.max_uses)
     .await?;
 
+    let code = created.plain_code;
+    let link = invites::registration_link(&state.config.base_url, &code);
     let body = CreatedMemberInvite {
-        code: created.plain_code,
-        invite: MemberInviteDto::new(&created.invite, &time::now_iso()),
+        code: code.clone(),
+        link,
+        invite: MemberInviteDto::new(
+            &created.invite,
+            &time::now_iso(),
+            Some(code),
+            &state.config.base_url,
+        ),
         quota: quota_for(&state, &user).await?,
     };
-    Ok((StatusCode::CREATED, Json(body)).into_response())
+    Ok(crate::routes::no_store(
+        (StatusCode::CREATED, Json(body)).into_response(),
+    ))
 }
 
 /// `DELETE /api/v1/invites/{id}` — revoke one of the caller's own codes.
@@ -190,6 +217,7 @@ pub async fn revoke(
         settings: &state.settings,
         actor: &user,
         ip_hash: client.ip_hash.as_deref(),
+        secret: state.config.secret.as_slice(),
     }
     .revoke_owned(id)
     .await?;

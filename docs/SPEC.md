@@ -152,7 +152,7 @@ target is still met.
 
 | ID | Requirement | Description |
 |----|-------------|-------------|
-| FR-AUTH-1 | Registration | Email + password. The registration mode is controlled by the `registration_mode` setting: `open` / `invite` / `closed` |
+| FR-AUTH-1 | Registration | Email + password. The registration mode is controlled by the `registration_mode` setting: `open` / `invite` / `closed`. `GET /app/register?invite=CODE` prefills the invite field, so a registration link works without retyping the code |
 | FR-AUTH-2 | Login | Email + password; on success a session is created (HttpOnly cookie, default TTL 7 days). Each activity (at most one write per minute) refreshes both `last_seen_at` and `expires_at` and re-issues the cookie, so continuous use never logs the user out |
 | FR-AUTH-3 | Logout | Revoke the current session (`revoked_at`) and clear the cookie |
 | FR-AUTH-4 | Change password | Requires the current password; on success all other sessions of that user are revoked |
@@ -241,7 +241,7 @@ target is still met.
 |----|-------------|-------------|
 | FR-ADMIN-1 | User management | List, search (including by group), change role, assign a user group, suspend/restore, reset password, soft delete |
 | FR-ADMIN-2 | All links | List, search, force-disable/delete |
-| FR-ADMIN-3 | Invite codes | Create (uses/expiry/note/optional target group), list, revoke; registration in `invite` mode requires an invite code. A code with a group assigns the redeemer to that group (FR-GROUP-4) |
+| FR-ADMIN-3 | Invite codes | Create (uses/expiry/note/optional target group), list, revoke; registration in `invite` mode requires an invite code. A code with a group assigns the redeemer to that group (FR-GROUP-4). The code and a registration link (`/app/register?invite=CODE`) stay viewable after creation; sealed copies issued before v1.3, or after a secret change, fall back to the prefix |
 | FR-ADMIN-4 | Site settings | Edit the `settings` table (site name, registration mode, site-wide link and token quotas, default redirect type, analytics switch, retention days, captcha) |
 | FR-ADMIN-5 | Audit log | Records logins, registrations, link changes, group changes, admin actions, and setting changes; filterable by action/target |
 | FR-ADMIN-6 | System info | Version, database size, user/link/click totals, uptime |
@@ -267,7 +267,7 @@ target is still met.
 |------|------|-------------|
 | `/` | Landing / navigation | Hero, feature highlights, login and register entry points, language switcher, and footer; a signed-in visitor also gets an entry point to the dashboard. This is no longer a 302 redirect to `/app` |
 | `/app/login` | Login | Email + password |
-| `/app/register` | Register | Shows the invite-code field or a "closed" notice depending on the registration mode |
+| `/app/register` | Register | Shows the invite-code field or a "closed" notice depending on the registration mode; `?invite=CODE` prefills the field |
 | `/app` | Dashboard | Stat cards, daily trend chart, link list (search/filter/pagination), create form |
 | `/app/urls/{id}` | Link detail | Edit form, analytics charts, recent clicks, delete (QR codes are a non-goal) |
 | `/app/account` | Account | Profile, change password, session list, API token management |
@@ -331,7 +331,7 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 
 | ID | Requirement |
 |----|-------------|
-| NFR-SEC-1 | Passwords: Argon2id; sessions/API tokens/invite codes store only a SHA-256 hash and are looked up by indexed hash comparison (no plaintext is stored, so there is no comparable length difference); the unlock cookie signature is compared in constant time |
+| NFR-SEC-1 | Passwords: Argon2id; sessions/API tokens store only a SHA-256 hash and are looked up by indexed hash comparison. Invite codes keep the SHA-256 hash for lookup plus a ChaCha20-Poly1305 sealed copy under a key derived from `URLET_SECRET`. This keeps plaintext out of the database and lets the issuer and administrators display a code again, but it is not a confidentiality boundary: the hash and four-character prefix still permit offline guessing, and the auto-generated `secret.key` sits beside the database. Rotating the secret makes existing sealed copies unreadable (the codes still redeem). The unlock cookie signature is compared in constant time |
 | NFR-SEC-2 | Cookies: `HttpOnly`, `SameSite=Lax`, `Secure` (when `URLET_SECURE_COOKIES=true` or the base URL is https) |
 | NFR-SEC-3 | CSRF: state-changing requests check that `Origin`/`Referer` are same-origin; cookie-authenticated non-GET requests are always verified; Bearer token requests are exempt |
 | NFR-SEC-4 | Security headers: `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`, and `Strict-Transport-Security` over https |
@@ -441,7 +441,7 @@ login_attempts (auditing)
 | `url_daily_stats` | url_id, day, clicks, unique_clicks, bot_clicks (PK: url_id+day) | Daily rollups |
 | `audit_logs` | id, actor_user_id, actor_role, action, target_type, target_id, metadata, ip_hash, created_at | Auditing |
 | `settings` | key(PK), value, updated_at, updated_by | Site settings |
-| `invite_codes` | id, code_hash(UNIQUE), code_prefix, note, group_id, created_by, max_uses, used_count, expires_at, status, created_at | Invite codes |
+| `invite_codes` | id, code_hash(UNIQUE), code_prefix, code_sealed, note, group_id, created_by, max_uses, used_count, expires_at, status, created_at | Invite codes; `code_sealed` is the encrypted copy used to display a code again |
 | `invite_redemptions` | id, invite_id, user_id, redeemed_at, UNIQUE(invite_id,user_id) | Invite redemption records |
 | `login_attempts` | id, identifier_hash, ip_hash, success, created_at | Login auditing/lockout |
 
@@ -468,7 +468,8 @@ The v1.1 changes add settings **keys** only; because `settings` is a key-value t
 the schema at 14 tables and 27 indexes. v1.2 adds the `user_groups` and `group_domains`
 tables, the nullable `users.group_id` / `invite_codes.group_id` columns, the
 `user_groups.default_domain_id` / `restrict_domains` columns and four indexes, for **16 tables and
-31 indexes** (§6.1, §6.3, §6.4).
+31 indexes** (§6.1, §6.3, §6.4). v1.3 adds only the nullable `invite_codes.code_sealed` column, so
+the table and index counts are unchanged.
 
 ### 6.5 Seed Data
 
@@ -509,7 +510,8 @@ tables, the nullable `users.group_id` / `invite_codes.group_id` columns, the
 | DELETE | `/api/v1/auth/sessions/{id}` | Revoke the given session → 204 |
 
 Registration assigns the default group; a supplied invite code is validated even in `open` mode,
-and its group wins over the default (FR-GROUP-4). The `user` object includes `group_id`; the group
+and its group wins over the default (FR-GROUP-4). `GET /app/register?invite=CODE` prefills the
+web form; the JSON payload is unchanged. The `user` object includes `group_id`; the group
 name and effective limits are exposed through `GET /api/v1/auth/me`.
 
 ### 7.2 Short Links
@@ -557,8 +559,8 @@ old token frees a slot immediately (FR-TOK-6).
 | DELETE | `/api/v1/admin/groups/{id}?reassign_to={id}` | Move members to `reassign_to`, then delete → 204; 409 for the default group or a missing/invalid target |
 | GET | `/api/v1/admin/urls` | Site-wide link list |
 | PATCH | `/api/v1/admin/urls/{id}` | Force disable/enable/delete |
-| GET | `/api/v1/admin/invites` | Invite code list (includes `group_id` / `group_name`) |
-| POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?, group_id?}` → 201 `{code: "K7M2QPX4RT", invite}` (a 10-character code with no prefix) |
+| GET | `/api/v1/admin/invites` | Invite code list, including `code`, `link`, `prefix`, `group_id` / `group_name`; `code` and `link` are `null` for legacy or secret-rotated rows |
+| POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?, group_id?}` → 201 `{code: "K7M2QPX4RT", link: "https://host/app/register?invite=K7M2QPX4RT", invite}`; the same code and link stay available from `GET` |
 | DELETE | `/api/v1/admin/invites/{id}` | Revoke → 204 |
 | GET | `/api/v1/admin/settings` | Site settings |
 | PUT | `/api/v1/admin/settings` | Update settings (whitelisted keys, including `max_api_tokens_per_user`) |
@@ -632,7 +634,7 @@ urlet/
 ├── docker-compose.tls.yml        # optional: Caddy automatic HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql  migrations/0003_multi_domain.sql  migrations/0004_user_groups.sql  migrations/0005_group_domains.sql
+├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama templates (base, app_base, landing.html + pages + admin/)
@@ -641,11 +643,11 @@ urlet/
 │   ├── assets/{app.css,app.js,favicon.svg}
 │   ├── i18n/{mod.rs,en.json,zh-Hant.json,zh-Hans.json}
 │   ├── db/{mod,migrate,users,user_groups,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
-│   ├── services/{auth,urls,admin,domains,domain_policy,groups,limits,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
+│   ├── services/{auth,urls,admin,domains,domain_policy,groups,invite_code,invite_quota,invites,limits,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
 │   ├── middleware/{mod,auth,csrf,domain,security,locale}.rs
-│   └── routes/{mod,api,api_auth,api_urls,api_domains,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract}.rs
-│       └── pages/{mod,auth,dashboard,urls,account,admin,home}.rs
-└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs,groups.rs,i18n.rs,captcha.rs}
+│   └── routes/{mod,api,api_auth,api_urls,api_domains,api_tags,api_tokens,api_stats,api_admin,api_invites,api_public,redirect,health,assets,dto,extract}.rs
+│       └── pages/{mod,auth,dashboard,urls,account,admin,home,invites}.rs
+└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs,groups.rs,invites.rs,i18n.rs,captcha.rs}
 ```
 
 ### 9.2 Dockerfile Strategy

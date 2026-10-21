@@ -62,6 +62,8 @@
 邀請碼可指定使用者群組。`invite` 模式下必須帶邀請碼；`open` 模式下為選填，但一旦提供就會驗證，
 且其群組優先於預設群組。回應的 `user` 物件包含 `group_id`。
 
+網頁表單也接受 `/app/register?invite=CODE` 的連結，會自動預填邀請碼；JSON 內容不變。
+
 `captcha_token` 是網頁註冊表單上驗證元件的 token，只在註冊流程啟用防機器人驗證時檢查，
 否則會忽略此欄位。詳見[防機器人驗證](#防機器人驗證)。
 
@@ -412,13 +414,15 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 
 ### `GET /api/v1/invites`
 
-`GET /api/v1/invites?page=&per_page=` → `200`：自己產生的邀請碼（僅前綴，新到舊）
-與生效配額。
+`GET /api/v1/invites?page=&per_page=` → `200`：自己產生的邀請碼（新到舊），
+包含可顯示的邀請碼與註冊連結，以及生效配額。
 
 ```json
 {
   "items": [
-    { "id": 4, "prefix": "RW6M", "note": "team", "group_id": 4, "max_uses": 2,
+    { "id": 4, "prefix": "RW6M", "code": "RW6MF6C6JG",
+      "link": "https://s.example.com/app/register?invite=RW6MF6C6JG",
+      "note": "team", "group_id": 4, "max_uses": 2,
       "used_count": 1, "remaining": 1, "expires_at": null, "status": "active",
       "usable": true, "created_at": "2026-03-18T10:00:00.000Z" }
   ],
@@ -428,6 +432,7 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 }
 ```
 
+`code` 與 `link` 在 v1.3 之前建立、或 `URLET_SECRET` 更換後會是 `null`；`prefix` 一律存在。
 `per_page` 預設 20、上限 100。`quota.allowed` 為 `false` 表示群組未開放成員發碼：
 此時建立邀請碼會回 `403`，但關閉開關前已發出的邀請碼仍會列出並可撤銷。`limit` 為 `0`
 （無上限）時 `remaining` 為 `null`。若帳號的群組連結遺失，會回退到預設群組。
@@ -440,11 +445,13 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 `{ "note"?: "team", "max_uses"?: 2 }` → `201`：
 
 ```json
-{ "code": "RW6MF6C6JG", "invite": { "...": "..." }, "quota": { "...": "..." } }
+{ "code": "RW6MF6C6JG", "link": "https://s.example.com/app/register?invite=RW6MF6C6JG",
+  "invite": { "...": "..." }, "quota": { "...": "..." } }
 ```
 
-明文邀請碼只回傳一次。成員發碼的 `max_uses` 必須介於 1–10。群組未開放或本週期配額
-用盡時回 `403`（`error.code = "forbidden"`）；每小時爆量上限用盡時回 `429`。
+邀請碼與連結也會由 `GET /api/v1/invites` 回傳，不會因關閉回應而遺失。成員發碼的
+`max_uses` 必須介於 1–10。群組未開放或本週期配額用盡時回 `403`
+（`error.code = "forbidden"`）；每小時爆量上限用盡時回 `429`。
 
 ### `DELETE /api/v1/invites/{id}`
 
@@ -481,8 +488,8 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | GET | `/admin/urls?q=&status=&user_id=&page=` | 全站短網址 |
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |
-| GET | `/admin/invites` | 邀請碼列表（僅顯示前綴，另含 `group_id` / `group_name`） |
-| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201`，**明文邀請碼只回一次**；群組的週期配額用盡時回 `403` |
+| GET | `/admin/invites` | 邀請碼列表，含 `code`、`link`、`prefix`、`group_id` / `group_name`；舊版或密鑰更換後的列為 `null` |
+| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`；同一組 code 與 link 之後仍可由 `GET` 取得；群組的週期配額用盡時回 `403` |
 | DELETE | `/admin/invites/{id}` | `204`，撤銷 |
 | GET | `/admin/settings` | 目前設定 |
 | PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", ... }` |

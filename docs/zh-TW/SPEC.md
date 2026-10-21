@@ -145,7 +145,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 
 | ID | 需求 | 說明 |
 |----|------|------|
-| FR-AUTH-1 | 註冊 | Email + 密碼。註冊模式由設定 `registration_mode` 控制：`open` / `invite` / `closed` |
+| FR-AUTH-1 | 註冊 | Email + 密碼。註冊模式由設定 `registration_mode` 控制：`open` / `invite` / `closed`。`GET /app/register?invite=CODE` 會預填邀請碼欄位，註冊連結可直接使用 |
 | FR-AUTH-2 | 登入 | Email + 密碼，成功後建立 Session（HttpOnly Cookie，預設 TTL 7 天）。每次活動（最多每分鐘一次寫入）同時更新 `last_seen_at` 與 `expires_at`，並重新簽發 Cookie，因此持續使用不會被登出 |
 | FR-AUTH-3 | 登出 | 撤銷當前 Session（`revoked_at`）並清除 Cookie |
 | FR-AUTH-4 | 修改密碼 | 需驗證當前密碼；成功後撤銷該使用者其他所有 Session |
@@ -234,7 +234,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 |----|------|------|
 | FR-ADMIN-1 | 使用者管理 | 列表、搜尋（含依群組）、改角色、指派群組、停權/復權、重設密碼、軟刪除 |
 | FR-ADMIN-2 | 全站網址 | 列表、搜尋、強制停用/刪除 |
-| FR-ADMIN-3 | 邀請碼 | 建立（次數/到期/備註/可選目標群組）、列表、撤銷；`invite` 模式下註冊需邀請碼。指定群組的邀請碼會在兌換時將使用者加入該群組（FR-GROUP-4） |
+| FR-ADMIN-3 | 邀請碼 | 建立（次數/到期/備註/可選目標群組）、列表、撤銷；`invite` 模式下註冊需邀請碼。指定群組的邀請碼會在兌換時將使用者加入該群組（FR-GROUP-4）。邀請碼與註冊連結（`/app/register?invite=CODE`）在建立後仍可查看；v1.3 之前建立或密鑰更換後的加密封存會回退為前綴 |
 | FR-ADMIN-4 | 全站設定 | 編輯 `settings` 表（站名、註冊模式、全站連結與 Token 配額、預設轉址類型、統計開關、保留天數、驗證碼） |
 | FR-ADMIN-5 | 稽核日誌 | 記錄登入、註冊、網址異動、群組異動、管理操作、設定變更；可依動作/對象篩選 |
 | FR-ADMIN-6 | 系統資訊 | 版本、資料庫大小、使用者/網址/點擊總數、運行時間 |
@@ -260,7 +260,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 |------|------|------|
 | `/` | 導覽首頁 | hero、功能亮點、登入與註冊入口、語言切換、頁尾；已登入者另顯示進入儀表板的入口。不再是 302 轉到 `/app` |
 | `/app/login` | 登入 | Email + 密碼 |
-| `/app/register` | 註冊 | 依註冊模式顯示邀請碼欄位或關閉提示 |
+| `/app/register` | 註冊 | 依註冊模式顯示邀請碼欄位或關閉提示；`?invite=CODE` 會預填欄位 |
 | `/app` | 儀表板 | 統計卡片、每日趨勢圖、網址列表（搜尋/篩選/分頁）、建立表單 |
 | `/app/urls/{id}` | 網址詳情 | 編輯表單、QR 免（Non-Goal）、統計圖表、最近點擊、刪除 |
 | `/app/account` | 帳號 | 個人資料、修改密碼、Session 清單、API Token 管理 |
@@ -323,7 +323,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 
 | ID | 需求 |
 |----|------|
-| NFR-SEC-1 | 密碼：Argon2id；Session/API Token/邀請碼僅存 SHA-256 雜湊，查詢以雜湊值進行索引比對（不儲存明文，因此無可比較的長度差異）；解鎖 Cookie 的簽章以常數時間比較 |
+| NFR-SEC-1 | 密碼：Argon2id；Session/API Token 僅存 SHA-256 雜湊，查詢以雜湊值進行索引比對。邀請碼保留 SHA-256 雜湊供查詢，另存以 `URLET_SECRET` 衍生的金鑰進行 ChaCha20-Poly1305 加密封存的副本，讓發碼者與管理員可再次顯示，且資料庫不存明文。但這不是資料庫的機密性邊界：雜湊與四字元前綴仍可離線猜測，且自動產生的 `secret.key` 就在資料庫旁。更換密鑰會讓既有封存無法解開（邀請碼本身仍可兌換）。解鎖 Cookie 的簽章以常數時間比較 |
 | NFR-SEC-2 | Cookie：`HttpOnly`、`SameSite=Lax`、`Secure`（當 `URLET_SECURE_COOKIES=true` 或 Base URL 為 https） |
 | NFR-SEC-3 | CSRF：狀態變更請求檢查 `Origin`/`Referer` 同源；Cookie 認證 + 非 GET 一律驗證；Bearer Token 請求豁免 |
 | NFR-SEC-4 | 安全標頭：`Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: strict-origin-when-cross-origin`、`X-Frame-Options: DENY`、https 時 `Strict-Transport-Security` |
@@ -432,7 +432,7 @@ login_attempts (稽核用)
 | `url_daily_stats` | url_id, day, clicks, unique_clicks, bot_clicks (PK: url_id+day) | 每日彙總 |
 | `audit_logs` | id, actor_user_id, actor_role, action, target_type, target_id, metadata, ip_hash, created_at | 稽核 |
 | `settings` | key(PK), value, updated_at, updated_by | 全站設定 |
-| `invite_codes` | id, code_hash(UNIQUE), code_prefix, note, group_id, created_by, max_uses, used_count, expires_at, status, created_at | 邀請碼 |
+| `invite_codes` | id, code_hash(UNIQUE), code_prefix, code_sealed, note, group_id, created_by, max_uses, used_count, expires_at, status, created_at | 邀請碼；`code_sealed` 為可再次顯示邀請碼的加密封存 |
 | `invite_redemptions` | id, invite_id, user_id, redeemed_at, UNIQUE(invite_id,user_id) | 邀請碼使用紀錄 |
 | `login_attempts` | id, identifier_hash, ip_hash, success, created_at | 登入稽核/鎖定 |
 
@@ -458,6 +458,7 @@ login_attempts (稽核用)
 v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表，v1.1 維持 **14 張表、27 個索引**。
 v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` / `invite_codes.group_id` 欄位、
 `user_groups.default_domain_id` / `restrict_domains` 欄位及四個索引，共 **16 張表、31 個索引**（§6.1、§6.3、§6.4）。
+v1.3 僅新增可空的 `invite_codes.code_sealed` 欄位，表與索引數量不變。
 
 ### 6.5 預設資料 (seed)
 
@@ -495,8 +496,8 @@ v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` /
 | DELETE | `/api/v1/auth/sessions/{id}` | 撤銷指定 Session → 204 |
 
 註冊時指派預設群組；即使在 `open` 模式，提供的邀請碼也會驗證，且其群組優先於預設群組
-（FR-GROUP-4）。`user` 物件包含 `group_id`；群組名稱與生效額度透過
-`GET /api/v1/auth/me` 取得。
+（FR-GROUP-4）。網頁表單可用 `GET /app/register?invite=CODE` 預填邀請碼；JSON 內容不變。
+`user` 物件包含 `group_id`；群組名稱與生效額度透過 `GET /api/v1/auth/me` 取得。
 
 ### 7.2 短網址
 
@@ -541,8 +542,8 @@ v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` /
 | DELETE | `/api/v1/admin/groups/{id}?reassign_to={id}` | 先把成員搬到 `reassign_to`，再刪除 → 204；預設群組或目標不存在/不合法回 409 |
 | GET | `/api/v1/admin/urls` | 全站網址列表 |
 | PATCH | `/api/v1/admin/urls/{id}` | 強制停用/啟用/刪除 |
-| GET | `/api/v1/admin/invites` | 邀請碼列表（含 `group_id` / `group_name`） |
-| POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?, group_id?}` → 201 `{code: "K7M2QPX4RT", invite}`（10 碼、無前綴） |
+| GET | `/api/v1/admin/invites` | 邀請碼列表，含 `code`、`link`、`prefix`、`group_id` / `group_name`；舊版或密鑰更換後的列為 `null` |
+| POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?, group_id?}` → 201 `{code: "K7M2QPX4RT", link: "https://host/app/register?invite=K7M2QPX4RT", invite}`；同一組 code 與 link 之後仍可由 `GET` 取得 |
 | DELETE | `/api/v1/admin/invites/{id}` | 撤銷 → 204 |
 | GET | `/api/v1/admin/settings` | 全站設定 |
 | PUT | `/api/v1/admin/settings` | 更新設定（白名單鍵，含 `max_api_tokens_per_user`） |
@@ -614,7 +615,7 @@ urlet/
 ├── docker-compose.tls.yml        # 可選：Caddy 自動 HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql  migrations/0002_clicks_indexes.sql  migrations/0003_multi_domain.sql  migrations/0004_user_groups.sql  migrations/0005_group_domains.sql
+├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama 模板（base、app_base、landing.html + 各頁面 + admin/）
@@ -623,11 +624,11 @@ urlet/
 │   ├── assets/{app.css,app.js,favicon.svg}
 │   ├── i18n/{mod.rs,en.json,zh-Hant.json,zh-Hans.json}
 │   ├── db/{mod,migrate,users,user_groups,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
-│   ├── services/{auth,urls,admin,domains,domain_policy,groups,limits,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
+│   ├── services/{auth,urls,admin,domains,domain_policy,groups,invite_code,invite_quota,invites,limits,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
 │   ├── middleware/{mod,auth,csrf,domain,security,locale}.rs
-│   └── routes/{mod,api,api_auth,api_urls,api_domains,api_tags,api_tokens,api_stats,api_admin,api_public,redirect,health,assets,dto,extract}.rs
-│       └── pages/{mod,auth,dashboard,urls,account,admin,home}.rs
-└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs,groups.rs,i18n.rs,captcha.rs}
+│   └── routes/{mod,api,api_auth,api_urls,api_domains,api_tags,api_tokens,api_stats,api_admin,api_invites,api_public,redirect,health,assets,dto,extract}.rs
+│       └── pages/{mod,auth,dashboard,urls,account,admin,home,invites}.rs
+└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,pages.rs,admin.rs,groups.rs,invites.rs,i18n.rs,captcha.rs}
 ```
 
 ### 9.2 Dockerfile 策略

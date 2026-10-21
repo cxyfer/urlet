@@ -20,6 +20,7 @@ service, no frontend build step.
 | 📊 Click analytics | Daily trends, referrer domains, device/browser/OS breakdown, recent clicks |
 | 🧩 Tags | Filter and group links by tag, with usage counts |
 | 🔑 API tokens | `Authorization: Bearer ur_...`, with optional expiry and revocation |
+| ✉️ Invite links | Every invite code has a registration link that prefills the code; the code and link stay viewable by the issuer and administrators |
 | 🌐 Multi-domain | Add extra domains in the admin panel; each domain has its own slug namespace and serves redirects only |
 | 👥 User groups | Per-group link, API-token and invite quotas (per day/week/month), feature toggles, default domains and domain allowlists; members can issue their own invite codes when the group allows it |
 | 🛠 Admin panel | User management, user groups, all site links, domains, invite codes, site settings, audit log |
@@ -99,7 +100,8 @@ urlet version | help
    administrator automatically.
 3. After that, generate invite codes under **Admin → Invites** and switch the registration
    mode to `invite` (invite code only) or `closed` (registration disabled) under
-   **Admin → Settings**.
+   **Admin → Settings**. Each code comes with a registration link you can send instead of the
+   code; the link opens the form with the code already filled in.
 
 ## Screenshots
 
@@ -177,7 +179,7 @@ urlet/
 cargo test                 # unit + integration tests (374)
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-bash scripts/smoke.sh      # end-to-end acceptance run against the real binary (108 checks)
+bash scripts/smoke.sh      # end-to-end acceptance run against the real binary (111 checks)
 bash scripts/demo.sh       # build a demo site and write screenshots to .tmp/demo/shots
 ```
 
@@ -208,7 +210,12 @@ Chinese translations of these documents live under `docs/zh-TW/`.
 
 ## Security
 
-- Argon2id password hashing; sessions, API tokens, and invite codes are stored as hashes only
+- Argon2id password hashing; sessions and API tokens are stored as hashes only. Invite codes keep
+  a SHA-256 hash for lookup plus a ChaCha20-Poly1305 copy sealed with a key derived from
+  `URLET_SECRET`. This keeps plaintext out of the database, but the hash and four-character prefix
+  still permit offline guessing of a ten-character code, and the auto-generated `secret.key` sits
+  beside the database; treat database and data-directory backups as sensitive. Changing the secret
+  hides the sealed copies (the codes still redeem if someone knows them)
 - Cookies: `HttpOnly`, `SameSite=Lax`, `Secure` when enforced
 - CSRF: state-changing requests authenticated by cookie are checked for same origin; form
   submissions are always checked

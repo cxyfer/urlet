@@ -64,6 +64,9 @@ An invite code may carry a user group. In `invite` mode a code is mandatory; in 
 optional, but when one is supplied it is validated and its group wins over the default group. The
 returned `user` object includes `group_id`.
 
+The web form accepts the same code as `/app/register?invite=CODE`; the link produced for an invite
+prefills the field. The JSON body is unchanged.
+
 `captcha_token` carries the token produced by the CAPTCHA widget on the web registration form.
 It is only checked when bot verification is enabled for registration; otherwise the field is
 ignored. See [Bot verification](#bot-verification).
@@ -444,13 +447,16 @@ is shared with administrator-issued codes; revoking a code does not free its slo
 
 ### `GET /api/v1/invites`
 
-`GET /api/v1/invites?page=&per_page=` → `200`: the caller's own codes (prefixes
-only, newest first) plus the effective quota.
+`GET /api/v1/invites?page=&per_page=` → `200`: the caller's own codes (newest
+first), including the displayable code and its registration link, plus the
+effective quota.
 
 ```json
 {
   "items": [
-    { "id": 4, "prefix": "RW6M", "note": "team", "group_id": 4, "max_uses": 2,
+    { "id": 4, "prefix": "RW6M", "code": "RW6MF6C6JG",
+      "link": "https://s.example.com/app/register?invite=RW6MF6C6JG",
+      "note": "team", "group_id": 4, "max_uses": 2,
       "used_count": 1, "remaining": 1, "expires_at": null, "status": "active",
       "usable": true, "created_at": "2026-03-18T10:00:00.000Z" }
   ],
@@ -460,11 +466,13 @@ only, newest first) plus the effective quota.
 }
 ```
 
-`per_page` defaults to 20 and is capped at 100. `quota.allowed` is `false` when
-the group does not enable member invites: creating a code then returns `403`,
-but codes issued before the toggle was turned off remain listed and revocable.
-`remaining` is `null` when `limit` is `0` (unlimited). Accounts whose group link
-is missing fall back to the default group.
+`code` and `link` are `null` for codes created before sealed storage or after
+`URLET_SECRET` changed; `prefix` is always present. `per_page` defaults to 20 and
+is capped at 100. `quota.allowed` is `false` when the group does not enable
+member invites: creating a code then returns `403`, but codes issued before the
+toggle was turned off remain listed and revocable. `remaining` is `null` when
+`limit` is `0` (unlimited). Accounts whose group link is missing fall back to the
+default group.
 
 Member issuance is throttled to 20 codes per hour per account (`429` when the
 burst is exhausted); the group's invite quota remains the primary limit. A group
@@ -475,13 +483,15 @@ with no finite quota is otherwise unlimited.
 `{ "note"?: "team", "max_uses"?: 2 }` → `201`:
 
 ```json
-{ "code": "RW6MF6C6JG", "invite": { "...": "..." }, "quota": { "...": "..." } }
+{ "code": "RW6MF6C6JG", "link": "https://s.example.com/app/register?invite=RW6MF6C6JG",
+  "invite": { "...": "..." }, "quota": { "...": "..." } }
 ```
 
-The plaintext code is returned exactly once. `max_uses` must be between 1 and 10
-for member codes. `403` when the group does not allow invites or the period quota
-is exhausted (`error.code = "forbidden"`), and `429` when the hourly burst limit
-is exhausted.
+The code and link are also returned by `GET /api/v1/invites`, so they are not
+lost when the response is dismissed. `max_uses` must be between 1 and 10 for
+member codes. `403` when the group does not allow invites or the period quota is
+exhausted (`error.code = "forbidden"`), and `429` when the hourly burst limit is
+exhausted.
 
 ### `DELETE /api/v1/invites/{id}`
 
@@ -518,8 +528,8 @@ default, which can differ from `default_domain` when the stored group default is
 | GET | `/admin/urls?q=&status=&user_id=&page=` | Every short link on the instance |
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |
-| GET | `/admin/invites` | Invite code list (prefixes only, plus `group_id` / `group_name`) |
-| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201`, **the plaintext invite code is returned once**; `403` when the group's per-period invite quota is exhausted |
+| GET | `/admin/invites` | Invite code list with `code`, `link`, `prefix`, `group_id` / `group_name`; `code` and `link` are `null` for legacy or secret-rotated rows |
+| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`; the code and registration link stay available from `GET`; `403` when the group's per-period invite quota is exhausted |
 | DELETE | `/admin/invites/{id}` | `204`, revoke |
 | GET | `/admin/settings` | Current settings |
 | PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", ... }` |

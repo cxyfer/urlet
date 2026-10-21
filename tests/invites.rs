@@ -428,6 +428,7 @@ async fn members_can_issue_codes_when_the_group_allows_it() {
 
     let listing = app.get_as("/api/v1/invites", &member_cookie).await;
     assert_eq!(listing.status, StatusCode::OK, "{}", listing.body);
+    assert_eq!(listing.header("cache-control").as_deref(), Some("no-store"));
     let listing = listing.json();
     assert_eq!(listing["quota"]["allowed"], true);
     assert_eq!(listing["quota"]["limit"], 2);
@@ -437,8 +438,16 @@ async fn members_can_issue_codes_when_the_group_allows_it() {
 
     let created = member_create(&app, &member_cookie, Some(2)).await;
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    assert_eq!(created.header("cache-control").as_deref(), Some("no-store"));
     let created = created.json();
     let code = created["code"].as_str().expect("code").to_string();
+    let link = created["link"].as_str().expect("link").to_string();
+    assert_eq!(
+        link,
+        format!("http://localhost:8080/app/register?invite={code}")
+    );
+    assert_eq!(created["invite"]["code"], code.as_str());
+    assert_eq!(created["invite"]["link"], link.as_str());
     assert_eq!(created["invite"]["max_uses"], 2);
     assert_eq!(created["invite"]["group_id"], group_id);
     assert_eq!(created["quota"]["used"], 1);
@@ -464,9 +473,13 @@ async fn members_can_issue_codes_when_the_group_allows_it() {
             .expect("redeemed group");
     assert_eq!(redeemed_group, Some(group_id));
 
-    let listing = app.get_as("/api/v1/invites", &member_cookie).await.json();
+    let listing = app.get_as("/api/v1/invites", &member_cookie).await;
+    assert_eq!(listing.header("cache-control").as_deref(), Some("no-store"));
+    let listing = listing.json();
     assert_eq!(listing["items"][0]["used_count"], 1);
     assert_eq!(listing["items"][0]["remaining"], 1);
+    assert_eq!(listing["items"][0]["code"], code.as_str());
+    assert_eq!(listing["items"][0]["link"], link.as_str());
 
     assert_eq!(
         member_create(&app, &member_cookie, Some(1)).await.status,
@@ -614,6 +627,7 @@ async fn the_member_invite_page_renders_and_revokes() {
 
     let page = app.get_as("/app/invites", &member_cookie).await;
     assert_eq!(page.status, StatusCode::OK);
+    assert_eq!(page.header("cache-control").as_deref(), Some("no-store"));
     assert!(page.body.contains("0 of 3 per week"), "{}", page.body);
     assert!(
         page.body.contains("action=\"/app/invites\""),
@@ -636,12 +650,16 @@ async fn the_member_invite_page_renders_and_revokes() {
         ))
         .await;
     assert_eq!(created.status, StatusCode::OK, "{}", created.body);
+    assert_eq!(created.header("cache-control").as_deref(), Some("no-store"));
     assert!(
         created.body.contains("id=\"new-invite\""),
         "{}",
         created.body
     );
     assert!(created.body.contains("1 of 3 per week"), "{}", created.body);
+
+    let listed = app.get_as("/app/invites", &member_cookie).await;
+    assert!(listed.body.contains("Copy link"), "{}", listed.body);
 
     let invite_id: i64 = sqlx::query_scalar("SELECT id FROM invite_codes WHERE note = 'team'")
         .fetch_one(&app.state.db)
@@ -665,6 +683,13 @@ async fn the_member_invite_page_renders_and_revokes() {
         .await
         .expect("status");
     assert_eq!(status, "revoked");
+
+    let after = app.get_as("/app/invites", &member_cookie).await;
+    assert!(
+        !after.body.contains("Copy link"),
+        "a revoked code must not offer a link: {}",
+        after.body
+    );
 }
 
 #[tokio::test]
@@ -798,6 +823,7 @@ async fn member_codes_are_paginated() {
         &urlet::db::invites::NewInvite {
             code_hash: "seeded-oldest-code",
             code_prefix: "OLD0",
+            code_sealed: None,
             note: Some("code 0"),
             group_id: Some(group_id),
             created_by: Some(member_id),

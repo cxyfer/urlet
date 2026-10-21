@@ -101,7 +101,7 @@ URLET_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-Forw
 | `URLET_BIND` | `0.0.0.0:8080` | Listen address |
 | `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite connection string |
 | `URLET_DATA_DIR` | Directory holding the database | Where the auto-generated secret is written |
-| `URLET_SECRET` | Auto-generated | HMAC secret (at least 16 characters, 32+ recommended; the generated one is 44 characters of base64); **changing it invalidates every session and unlock cookie** |
+| `URLET_SECRET` | Auto-generated | HMAC secret (at least 16 characters, 32+ recommended; the generated one is 44 characters of base64); **changing it invalidates every session and unlock cookie and makes existing invite codes unreadable, though they still redeem** |
 | `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` | — | Create or promote the administrator at startup |
 | `URLET_REGISTRATION` | Read from the settings table | Override the registration mode: `open` / `invite` / `closed` |
 | `URLET_SECURE_COOKIES` | Derived from `BASE_URL` | Force the `Secure` cookie flag. The compose files always pass a value through (default `false`), so in Docker set it to `true` explicitly when you terminate TLS yourself; the TLS overlay does that for you |
@@ -318,7 +318,9 @@ docker compose start urlet
 
 Do not forget `secret.key`: if you rely on the auto-generated secret, back it up (or switch to the
 `URLET_SECRET` environment variable), otherwise every session and unlock cookie is invalidated
-after a restore.
+after a restore and existing invite codes can no longer be displayed (they still redeem). A
+data-directory backup contains both the database and that key, and invite codes are low-entropy, so
+treat the whole backup as sensitive.
 
 ### Restore
 
@@ -371,6 +373,8 @@ upgrading.
   `deploy/Caddyfile` already sets `header_up X-Real-IP {remote_host}`.
 - `Host`, `X-Forwarded-For` and `X-Forwarded-Proto` must be forwarded; Caddy handles this
   automatically.
+- Invite links carry the code in `?invite=`; reverse-proxy access logs that record query strings
+  expose it. Restrict or redact those logs, or share the code instead.
 
 ## 9. Monitoring
 
