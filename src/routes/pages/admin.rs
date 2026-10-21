@@ -363,7 +363,7 @@ pub struct GroupRow {
     pub allow_tags: bool,
     pub allow_api_tokens: bool,
     pub allow_domain_selection: bool,
-    /// Stored policy value (`direct` / `splash` / `choice`), for the select.
+    /// Stored policy value (`direct` / `splash` / `choice`), for the radio group.
     pub redirect_mode_policy: String,
     /// Localised label of the policy, for the table.
     pub redirect_mode_policy_label: String,
@@ -758,7 +758,7 @@ pub struct GroupForm {
     pub allow_api_tokens: Option<String>,
     #[serde(default)]
     pub allow_domain_selection: Option<String>,
-    /// `direct`, `splash` or `choice`; missing keeps the create default.
+    /// `direct`, `splash` or `choice`; missing falls back to `choice`.
     #[serde(default)]
     pub redirect_mode_policy: Option<String>,
     #[serde(default)]
@@ -800,7 +800,7 @@ impl GroupForm {
         }
     }
 
-    fn into_draft(self) -> Result<GroupDraft, AppError> {
+    fn into_draft(self, existing: Option<&user_groups::UserGroup>) -> Result<GroupDraft, AppError> {
         let (allow_domain_selection, restrict_domains) = self.domain_policy()?;
         GroupDraft {
             name: self.name,
@@ -832,7 +832,9 @@ impl GroupForm {
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
             {
-                None => RedirectModePolicy::default(),
+                None => existing
+                    .map(|group| RedirectModePolicy::from_db(&group.redirect_mode_policy))
+                    .unwrap_or_default(),
                 Some(value) => RedirectModePolicy::parse(value).ok_or_else(|| {
                     AppError::validation(
                         "redirect_mode_policy",
@@ -1993,7 +1995,7 @@ pub async fn create_group(
         return Ok(redirect_err("/app/admin/groups", "invalid").into_response());
     };
 
-    let outcome = match payload.into_draft() {
+    let outcome = match payload.into_draft(None) {
         Ok(draft) => {
             context(&state, &client, &current.user)
                 .create_group(draft)
@@ -2024,7 +2026,15 @@ pub async fn update_group(
         return Ok(redirect_err("/app/admin/groups", "invalid").into_response());
     };
 
-    let outcome = match payload.into_draft() {
+    // The form is a full representation, but a scripted or cached post may omit
+    // the redirect-mode radios. Keep the stored policy in that case instead of
+    // silently widening the group to `choice`.
+    let existing = match user_groups::find_by_id(&state.db, id).await {
+        Ok(Some(group)) => group,
+        Ok(None) => return Ok(redirect_err("/app/admin/groups", "not_found").into_response()),
+        Err(err) => return Err(AppError::from(err)),
+    };
+    let outcome = match payload.into_draft(Some(&existing)) {
         Ok(draft) => {
             context(&state, &client, &current.user)
                 .update_group(id, draft)

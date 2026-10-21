@@ -567,7 +567,12 @@ impl UrlContext<'_> {
         if let Some(value) = input.redirect_type {
             changes.redirect_type = Some(validate_redirect_type(value)?);
         }
-        if let Some(raw) = input.redirect_mode.as_deref() {
+        if let Some(raw) = input
+            .redirect_mode
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
             let mode = RedirectMode::parse(raw).ok_or_else(|| {
                 AppError::validation(
                     "redirect_mode",

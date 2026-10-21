@@ -333,7 +333,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 - 有效、無密碼且 `redirect_mode = direct` → `30x` + `Location`（301/308 為
   `private, max-age=300`，302/307 為 `private, no-store`）
-- 有效、無密碼且 `redirect_mode = splash` → `200` 中轉頁（`private, no-store`）。頁面顯示自訂
+- 有效、無密碼且 `redirect_mode = splash` → `200` 中轉頁（`no-store`）。頁面顯示自訂
   文案、目的地主機與倒數，並以 `<meta http-equiv="refresh">` 自動前往，同時提供「立即前往」
   按鈕。點擊是在中轉頁送出時記錄，不是訪客離開時
 - 需要密碼 → `200` 密碼輸入頁（**不洩漏目標網址**）。解鎖成功後直接前往目的地：密碼頁是唯一

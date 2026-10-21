@@ -166,6 +166,19 @@ async fn splash_links_can_be_edited_and_switched_back_to_direct() {
     .await;
     let id = url["id"].as_i64().expect("id");
 
+    // An empty/blank mode is treated like an omitted field (the create path
+    // does the same), so it must not turn into a validation error.
+    let blank = app
+        .send(patch_json_as(
+            &format!("/api/v1/urls/{id}"),
+            json!({ "redirect_mode": "   ", "title": "Kept" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(blank.status, StatusCode::OK, "{}", blank.body);
+    assert_eq!(blank.json()["redirect_mode"], "splash");
+    assert_eq!(blank.json()["title"], "Kept");
+
     let patched = app
         .send(patch_json_as(
             &format!("/api/v1/urls/{id}"),
@@ -191,6 +204,160 @@ async fn splash_links_can_be_edited_and_switched_back_to_direct() {
         response.header("location").as_deref(),
         Some("https://example.com/back")
     );
+}
+
+#[tokio::test]
+async fn the_web_edit_form_can_clear_the_splash_copy() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let url = create_url(
+        &app,
+        &cookie,
+        json!({
+            "target_url": "https://example.com/clear",
+            "slug": "clear-copy",
+            "redirect_mode": "splash",
+            "splash_title": "Old heading",
+            "splash_message": "Old message"
+        }),
+    )
+    .await;
+    let id = url["id"].as_i64().expect("id");
+
+    let response = app
+        .send(post_form_as(
+            &format!("/app/urls/{id}"),
+            "target_url=https%3A%2F%2Fexample.com%2Fclear&redirect_mode=splash             &splash_delay_seconds=6&splash_title=&splash_message=",
+            &cookie,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some(format!("/app/urls/{id}?ok=updated").as_str())
+    );
+
+    let stored = app
+        .get_as(&format!("/api/v1/urls/{id}"), &cookie)
+        .await
+        .json();
+    assert_eq!(stored["splash_title"], Value::Null);
+    assert_eq!(stored["splash_message"], Value::Null);
+    assert_eq!(stored["splash_delay_seconds"], 6);
+
+    let page = app.get("/clear-copy").await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    assert!(page.body.contains("Redirecting in 6 seconds"));
+    assert!(!page.body.contains("Old heading"));
+    assert!(!page.body.contains("Old message"));
+}
+
+#[tokio::test]
+async fn an_unknown_stored_mode_falls_back_to_direct_and_the_form_preserves_it() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let url = create_url(
+        &app,
+        &cookie,
+        json!({
+            "target_url": "https://example.com/legacy-mode",
+            "slug": "legacy-mode",
+            "redirect_mode": "splash",
+            "splash_title": "Legacy heading"
+        }),
+    )
+    .await;
+    let id = url["id"].as_i64().expect("id");
+
+    // The CHECK constraint prevents this in normal operation; bypass it on one
+    // connection to model a database written by an older/future build.
+    let mut connection = app.state.db.acquire().await.expect("connection");
+    sqlx::query("PRAGMA ignore_check_constraints = ON")
+        .execute(&mut *connection)
+        .await
+        .expect("relax checks");
+    sqlx::query("UPDATE urls SET redirect_mode = 'legacy' WHERE id = ?")
+        .bind(id)
+        .execute(&mut *connection)
+        .await
+        .expect("legacy mode");
+    sqlx::query("PRAGMA ignore_check_constraints = OFF")
+        .execute(&mut *connection)
+        .await
+        .expect("restore checks");
+    drop(connection);
+
+    // The redirect path treats the unknown value as direct.
+    let response = app.get("/legacy-mode").await;
+    assert_eq!(
+        response.status,
+        StatusCode::FOUND,
+        "an unknown mode must fall back to direct: {}",
+        response.body
+    );
+
+    // The edit form exposes the raw value and does not preselect direct.
+    let page = app.get_as(&format!("/app/urls/{id}"), &cookie).await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    assert!(page.body.contains("Unrecognised mode"));
+    assert!(page.body.contains("(legacy)"));
+
+    // A browser submits no redirect_mode when the disabled placeholder is
+    // selected, so an unrelated edit keeps the stored value.
+    let saved = app
+        .send(post_form_as(
+            &format!("/app/urls/{id}"),
+            "target_url=https%3A%2F%2Fexample.com%2Flegacy-mode",
+            &cookie,
+        ))
+        .await;
+    assert_eq!(saved.status, StatusCode::SEE_OTHER, "{}", saved.body);
+    let stored: String = sqlx::query_scalar("SELECT redirect_mode FROM urls WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.state.db)
+        .await
+        .expect("stored mode");
+    assert_eq!(stored, "legacy");
+}
+
+#[tokio::test]
+async fn an_out_of_range_stored_delay_is_clamped_when_rendering() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let url = create_url(
+        &app,
+        &cookie,
+        json!({
+            "target_url": "https://example.com/clamped",
+            "slug": "clamped-delay",
+            "redirect_mode": "splash"
+        }),
+    )
+    .await;
+    let id = url["id"].as_i64().expect("id");
+
+    let mut connection = app.state.db.acquire().await.expect("connection");
+    sqlx::query("PRAGMA ignore_check_constraints = ON")
+        .execute(&mut *connection)
+        .await
+        .expect("relax checks");
+    sqlx::query("UPDATE urls SET splash_delay_seconds = 999 WHERE id = ?")
+        .bind(id)
+        .execute(&mut *connection)
+        .await
+        .expect("out-of-range delay");
+    sqlx::query("PRAGMA ignore_check_constraints = OFF")
+        .execute(&mut *connection)
+        .await
+        .expect("restore checks");
+    drop(connection);
+
+    let page = app.get("/clamped-delay").await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    assert!(page.body.contains("Redirecting in 60 seconds"));
+    assert!(page
+        .body
+        .contains("content=\"60;url=https://example.com/clamped\""));
 }
 
 #[tokio::test]
@@ -424,6 +591,20 @@ async fn a_direct_only_group_blocks_splash_creation_but_keeps_existing_links() {
         .await;
     assert_eq!(refused.status, StatusCode::FORBIDDEN, "{}", refused.body);
 
+    // A crafted browser form gets the same refusal and a localised flash code.
+    let refused_form = app
+        .send(post_form_as(
+            &format!("/app/urls/{legacy_id}"),
+            "target_url=https%3A%2F%2Fexample.com%2Flegacy&redirect_mode=splash",
+            &member_cookie,
+        ))
+        .await;
+    assert_eq!(refused_form.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        refused_form.header("location").as_deref(),
+        Some(format!("/app/urls/{legacy_id}?err=mode_denied").as_str())
+    );
+
     // The browser form hides the blocked option.
     let dashboard = app.get_as("/app", &member_cookie).await;
     assert_eq!(dashboard.status, StatusCode::OK, "{}", dashboard.body);
@@ -562,6 +743,14 @@ async fn the_web_form_creates_a_splash_link_and_the_group_form_sets_the_policy()
         .clone();
     assert_eq!(stored["redirect_mode_policy"], "splash");
 
+    // The redesigned admin form renders the policy as a radio group and marks
+    // the stored choice; the create form defaults to "choice".
+    let group_page = app.get_as("/app/admin/groups", &admin_cookie).await;
+    assert_eq!(group_page.status, StatusCode::OK, "{}", group_page.body);
+    assert!(group_page.body.contains("name=\"redirect_mode_policy\""));
+    assert!(group_page.body.contains("value=\"splash\" checked"));
+    assert!(group_page.body.contains("value=\"choice\" checked"));
+
     // The group policy endpoint is validated.
     let invalid = app
         .send(put_json_as(
@@ -585,4 +774,65 @@ async fn the_web_form_creates_a_splash_link_and_the_group_form_sets_the_policy()
     assign(&app, &admin_cookie, member_id, group_id).await;
     let me = app.get_as("/api/v1/auth/me", &member_cookie).await.json();
     assert_eq!(me["limits"]["redirect_mode_policy"], "splash");
+
+    // A partial/legacy form post that omits the radios keeps the stored policy...
+    let omitted = app
+        .send(post_form_as(
+            &format!("/app/admin/groups/{group_id}"),
+            "name=Form+policy&domain_policy=all",
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(omitted.status, StatusCode::SEE_OTHER, "{}", omitted.body);
+    let list = app
+        .get_as("/api/v1/admin/groups", &admin_cookie)
+        .await
+        .json();
+    let stored = list["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .find(|item| item["id"] == group_id)
+        .expect("group")
+        .clone();
+    assert_eq!(stored["redirect_mode_policy"], "splash");
+
+    // ...while an explicit choice still updates it.
+    let changed = app
+        .send(post_form_as(
+            &format!("/app/admin/groups/{group_id}"),
+            "name=Form+policy&domain_policy=all&redirect_mode_policy=direct",
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(changed.status, StatusCode::SEE_OTHER, "{}", changed.body);
+    let list = app
+        .get_as("/api/v1/admin/groups", &admin_cookie)
+        .await
+        .json();
+    let stored = list["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .find(|item| item["id"] == group_id)
+        .expect("group")
+        .clone();
+    assert_eq!(stored["redirect_mode_policy"], "direct");
+
+    // The group audit trail records both the new and the previous policy.
+    let audit = app
+        .get_as(
+            "/api/v1/admin/audit?action=admin.group_updated",
+            &admin_cookie,
+        )
+        .await
+        .json();
+    let entry = audit["items"]
+        .as_array()
+        .expect("audit items")
+        .iter()
+        .find(|item| item["metadata"]["previous_redirect_mode_policy"] == "splash")
+        .expect("policy change is audited")
+        .clone();
+    assert_eq!(entry["metadata"]["redirect_mode_policy"], "direct");
 }

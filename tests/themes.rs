@@ -961,7 +961,7 @@ async fn every_theme_renders_the_splash_page() {
                 "target_url": "https://example.com/themed",
                 "slug": "themed-splash",
                 "redirect_mode": "splash",
-                "splash_title": "Theme splash"
+                "splash_title": "Theme <b>splash</b>"
             }),
             &cookie,
         ))
@@ -982,7 +982,14 @@ async fn every_theme_renders_the_splash_page() {
         let both = format!("{cookie}; {theme_cookie}");
         let page = app.get_as("/themed-splash", &both).await;
         assert_eq!(page.status, StatusCode::OK, "{key}: {}", page.body);
-        assert!(page.body.contains("Theme splash"), "{key} lost the copy");
+        assert!(
+            page.body.contains("Theme &lt;b&gt;splash&lt;/b&gt;"),
+            "{key} lost or failed to escape the copy"
+        );
+        assert!(
+            !page.body.contains("<b>splash</b>"),
+            "{key} rendered the custom heading as HTML"
+        );
         assert!(
             page.body.contains(&format!("data-theme-key=\"{key}\"")),
             "{key} did not render its own shell"

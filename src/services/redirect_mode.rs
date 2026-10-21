@@ -285,4 +285,18 @@ mod tests {
         assert!(validate_message(&"x".repeat(MAX_MESSAGE_LEN + 1)).is_err());
         assert!(validate_message("bad\u{7}text").is_err());
     }
+
+    #[test]
+    fn every_mode_and_policy_label_exists_in_every_catalogue() {
+        for lang in crate::i18n::ALL {
+            for mode in RedirectMode::ALL {
+                let key = mode.label_key();
+                assert_ne!(lang.t(key), key, "{} is missing {key}", lang.code());
+            }
+            for policy in RedirectModePolicy::ALL {
+                let key = policy.label_key();
+                assert_ne!(lang.t(key), key, "{} is missing {key}", lang.code());
+            }
+        }
+    }
 }

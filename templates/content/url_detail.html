@@ -316,6 +316,9 @@
             <div class="field">
                 <label class="label" for="redirect_mode">{{ lang.t("dashboard.advanced.redirect_mode") }}</label>
                 <select class="select" id="redirect_mode" name="redirect_mode">
+                    {% if !mode_known %}
+                    <option value="" selected disabled>{{ lang.t("url_detail.settings.mode_unknown") }} ({{ url.redirect_mode }})</option>
+                    {% endif %}
                     {% if allow_direct_mode %}
                     <option value="direct" {% if url.redirect_mode == "direct" %}selected{% endif %}>{{ lang.t("dashboard.advanced.redirect_mode_direct") }}</option>
                     {% endif %}

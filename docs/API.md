@@ -362,7 +362,7 @@ When the database cannot be queried the response is `503` with `status` set to `
 
 - Valid, unprotected and `redirect_mode = direct` → `30x` + `Location` (301/308 send
   `private, max-age=300`; 302/307 send `private, no-store`)
-- Valid, unprotected and `redirect_mode = splash` → `200` splash page (`private, no-store`). It
+- Valid, unprotected and `redirect_mode = splash` → `200` splash page (`no-store`). It
   shows the custom copy, the destination host and a countdown, sends the visitor on with a
   `<meta http-equiv="refresh">` and also offers a "Continue now" link. The click is recorded when
   the splash page is served, not when the visitor leaves

@@ -61,6 +61,10 @@ pub struct UrlDetailPage {
     pub allow_direct_mode: bool,
     /// Whether the edit form may offer the splash page.
     pub allow_splash_mode: bool,
+    /// False when the stored mode is not `direct`/`splash`; the form then keeps
+    /// the raw value selected through a disabled placeholder instead of
+    /// silently rewriting it on the next save.
+    pub mode_known: bool,
     /// Localised "30 days ago" label of the chart axis.
     pub days_label: String,
     /// Localised "42 clicks in this window; grey segments are bots" legend.
@@ -396,6 +400,7 @@ pub async fn detail(
     let lang = i18n::current();
     let effective = crate::services::limits::effective(&state.db, &state.settings, &user).await?;
     let mode_policy = effective.redirect_mode_policy;
+    let mode_known = matches!(url.redirect_mode.as_str(), "direct" | "splash");
     let current_mode = crate::services::redirect_mode::RedirectMode::from_db(&url.redirect_mode);
     let daily_total: i64 = daily.iter().map(|point| point.clicks).sum();
     let page = UrlDetailPage {
@@ -433,6 +438,7 @@ pub async fn detail(
             || current_mode == crate::services::redirect_mode::RedirectMode::Direct,
         allow_splash_mode: mode_policy.allows(crate::services::redirect_mode::RedirectMode::Splash)
             || current_mode == crate::services::redirect_mode::RedirectMode::Splash,
+        mode_known,
         days_label: i18n::format(
             lang,
             "url_detail.chart.days_ago",
