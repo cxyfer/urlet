@@ -21,7 +21,7 @@
 | P10 User groups (v1.2) | ✅ Done | See `git log` (migration 0004, group API/UI, trilingual strings, docs) |
 | P11 Group domain policy (v1.2) | ✅ Done | See `git log` (migration 0005, default domain + allowlist, admin UI/API, tests) |
 | P12 Switchable themes (v1.4) | ✅ Done | See `git log` (migration 0010, theme registry, admin catalogue, six template sets, tests) |
-| P13 Uploadable themes (v1.4) | ✅ Done | See `git log` (migration 0011, CSS upload/edit/delete, hashed assets, persistent theme volume, tests) |
+| P13 Uploadable themes (v1.4) | ✅ Done | See `git log` (migration 0012, CSS upload/edit/delete, hashed assets, persistent theme volume, tests) |
 
 Acceptance data (v1.0): `cargo test` is all green with 187 tests, `cargo clippy --all-targets -- -D warnings`
 and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scripts/smoke.sh` pass.
@@ -247,7 +247,7 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 
 Uploads extend the theme catalogue without changing the compile-time template model.
 
-1. `migrations/0011_custom_themes.sql` + `0012_custom_theme_appearance.sql`: metadata table for
+1. `migrations/0012_custom_themes.sql` + `0013_custom_theme_appearance.sql`: metadata table for
    uploaded stylesheets, keyed by a generated `custom-…` key; a matching `themes` row carries
    enabled/default/order, and the appearance migration converts the old dark-only flag.
 2. `src/db/custom_themes.rs`: create/update/delete metadata and the catalogue row in one transaction.

@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- urlet schema, version 11
+-- urlet schema, version 12
 --
 -- Uploaded themes. A custom theme is a stylesheet the administrator uploads;
 -- it reuses the base templates and is served from the data directory, never

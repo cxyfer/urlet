@@ -21,7 +21,7 @@
 | P10 使用者群組 (v1.2) | ✅ 完成 | 見 `git log`（migration 0004、群組 API/UI、三語字串、文件） |
 | P11 群組網域策略 (v1.2) | ✅ 完成 | 見 `git log`（migration 0005、預設網域 + 允許清單、管理 UI/API、測試） |
 | P12 可切換主題 (v1.4) | ✅ 完成 | 見 `git log`（migration 0010、主題 registry、管理目錄、六套模板、測試） |
-| P13 可上傳主題 (v1.4) | ✅ 完成 | 見 `git log`（migration 0011、CSS 上傳/編輯/刪除、雜湊資產、持久化 theme volume、測試） |
+| P13 可上傳主題 (v1.4) | ✅ 完成 | 見 `git log`（migration 0012、CSS 上傳/編輯/刪除、雜湊資產、持久化 theme volume、測試） |
 
 驗收數據（v1.0）：`cargo test` 187 個測試全綠、`cargo clippy --all-targets -- -D warnings` 與
 `cargo fmt --check` 無警告、`scripts/smoke.sh` 81 項端對端檢查全數通過。
@@ -247,7 +247,7 @@
 
 上傳在不改變編譯期模板模型的前提下擴充主題目錄。
 
-1. `migrations/0011_custom_themes.sql` + `0012_custom_theme_appearance.sql`：上傳樣式表的中介
+1. `migrations/0012_custom_themes.sql` + `0013_custom_theme_appearance.sql`：上傳樣式表的中介
    資料表，以產生的 `custom-…` key 識別；對應的 `themes` 資料列負責啟用、預設與排序，外觀
    migration 會轉換舊的僅深色旗標。
 2. `src/db/custom_themes.rs`：以單一交易建立/更新/刪除中介資料與目錄資料列。

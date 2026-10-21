@@ -89,13 +89,13 @@ pub const MIGRATIONS: &[Migration] = &[
         kind: MigrationKind::Transactional,
     },
     Migration {
-        version: "0011_custom_themes",
-        sql: include_str!("../../migrations/0011_custom_themes.sql"),
+        version: "0012_custom_themes",
+        sql: include_str!("../../migrations/0012_custom_themes.sql"),
         kind: MigrationKind::Transactional,
     },
     Migration {
-        version: "0012_custom_theme_appearance",
-        sql: include_str!("../../migrations/0012_custom_theme_appearance.sql"),
+        version: "0013_custom_theme_appearance",
+        sql: include_str!("../../migrations/0013_custom_theme_appearance.sql"),
         kind: MigrationKind::Transactional,
     },
 ];
@@ -1201,9 +1201,9 @@ mod tests {
         let options = test_options(&path);
         let pool = test_pool(&options).await;
 
-        run_until(&pool, &options, "0011_custom_themes")
+        run_until(&pool, &options, "0012_custom_themes")
             .await
-            .expect("schema through version 11");
+            .expect("schema through version 12");
         let now = now_iso();
         for (key, dark) in [("legacy-dark", 1), ("legacy-auto", 0)] {
             sqlx::query(
@@ -1222,7 +1222,7 @@ mod tests {
             .expect("insert legacy row");
         }
 
-        run(&pool, &options).await.expect("upgrade to version 12");
+        run(&pool, &options).await.expect("upgrade to version 13");
         let dark: String =
             sqlx::query_scalar("SELECT appearance FROM custom_themes WHERE key = 'legacy-dark'")
                 .fetch_one(&pool)

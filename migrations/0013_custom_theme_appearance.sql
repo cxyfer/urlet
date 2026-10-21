@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- urlet schema, version 12
+-- urlet schema, version 13
 --
 -- Custom themes now choose an appearance instead of a single dark-only flag:
 --   auto  follow the operating system / saved preference
