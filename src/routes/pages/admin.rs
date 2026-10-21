@@ -323,8 +323,6 @@ pub struct GroupsPage {
     pub section: &'static str,
     pub chrome: Chrome,
     pub groups: Vec<GroupRow>,
-    /// Every active domain, for the default-domain select and the allowlist.
-    pub domains: Vec<crate::services::domains::DomainOption>,
     pub lang: Lang,
 }
 
@@ -440,18 +438,6 @@ impl GroupRow {
                 })
             })
             .collect();
-        let allowed_features = [
-            group.allow_invites,
-            group.allow_custom_slug,
-            group.allow_password,
-            group.allow_expiry,
-            group.allow_max_clicks,
-            group.allow_tags,
-            group.allow_api_tokens,
-        ]
-        .into_iter()
-        .filter(|allowed| *allowed)
-        .count() as i64;
         let invite_period = InvitePeriod::parse(&group.invite_period).unwrap_or_default();
         let invite_period_label = super::period_label(lang, invite_period);
         let redirect_mode_policy = RedirectModePolicy::from_db(&group.redirect_mode_policy);
@@ -518,10 +504,17 @@ impl GroupRow {
             disabled_domains,
             default_domain_disabled_id,
             default_domain_disabled_name,
-            features_label: i18n::format(
+            features_label: enabled_features_label(
                 lang,
-                "admin.groups.features_count",
-                &[("count", allowed_features.to_string())],
+                [
+                    group.allow_invites,
+                    group.allow_custom_slug,
+                    group.allow_password,
+                    group.allow_expiry,
+                    group.allow_max_clicks,
+                    group.allow_tags,
+                    group.allow_api_tokens,
+                ],
             ),
             created: time::humanize_lang(lang, &group.created_at),
         }
@@ -566,12 +559,130 @@ impl GroupRow {
             disabled_domains: Vec::new(),
             default_domain_disabled_id: None,
             default_domain_disabled_name: None,
-            features_label: i18n::format(
+            features_label: enabled_features_label(
                 lang,
-                "admin.groups.features_count",
-                &[("count", "6".to_string())],
+                [false, true, true, true, true, true, true],
             ),
             created: String::new(),
+        }
+    }
+
+    /// Overlay a submitted form on a group row so a rejected submission can be
+    /// rendered again with the administrator's values instead of discarding
+    /// them.
+    fn from_submission(settings: &Settings, lang: Lang, base: &GroupRow, form: &GroupForm) -> Self {
+        let invite_period = form
+            .invite_period
+            .as_deref()
+            .and_then(InvitePeriod::parse)
+            .or_else(|| InvitePeriod::parse(&base.invite_period))
+            .unwrap_or_default();
+        let redirect_mode_policy = form
+            .redirect_mode_policy
+            .as_deref()
+            .and_then(RedirectModePolicy::parse)
+            .unwrap_or_else(|| RedirectModePolicy::from_db(&base.redirect_mode_policy));
+
+        // The radio is the source of truth; fall back to the legacy checkbox
+        // names only when a scripted post omits it.
+        let (allow_domain_selection, restrict_domains) =
+            match form.domain_policy.as_deref().map(str::trim) {
+                Some("all") => (true, false),
+                Some("default") => (false, base.restrict_domains),
+                Some("list") => (true, true),
+                _ => (
+                    form.allow_domain_selection.is_some(),
+                    form.restrict_domains.is_some(),
+                ),
+            };
+
+        let default_domain_id = form
+            .default_domain_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .and_then(|value| value.parse::<i64>().ok());
+        let (default_domain_disabled_id, default_domain_disabled_name) = match default_domain_id {
+            Some(id) if base.default_domain_disabled_id == Some(id) => {
+                (Some(id), base.default_domain_disabled_name.clone())
+            }
+            _ => (None, None),
+        };
+
+        let mut allowed_domain_ids: Vec<i64> = form
+            .extra
+            .keys()
+            .filter_map(|key| {
+                key.strip_prefix("domain_")
+                    .and_then(|id| id.parse::<i64>().ok())
+            })
+            .collect();
+        allowed_domain_ids.sort_unstable();
+        allowed_domain_ids.dedup();
+        let disabled_domains = base
+            .disabled_domains
+            .iter()
+            .filter(|domain| form.extra.contains_key(&format!("domain_{}", domain.id)))
+            .cloned()
+            .collect();
+
+        Self {
+            id: base.id,
+            name: form.name.clone(),
+            description: form.description.clone().unwrap_or_default(),
+            max_urls_input: form.max_urls.clone().unwrap_or_default(),
+            max_urls_display: quota_preview(
+                form.max_urls.as_deref(),
+                settings.max_urls_per_user(),
+                lang,
+            ),
+            max_api_tokens_input: form.max_api_tokens.clone().unwrap_or_default(),
+            max_api_tokens_display: quota_preview(
+                form.max_api_tokens.as_deref(),
+                settings.max_api_tokens_per_user(),
+                lang,
+            ),
+            max_invites_input: form.max_invites.clone().unwrap_or_default(),
+            max_invites_display: quota_preview(
+                form.max_invites.as_deref(),
+                settings.max_invites_per_period(),
+                lang,
+            ),
+            invite_period: invite_period.as_str().to_string(),
+            invite_period_label: super::period_label(lang, invite_period),
+            invite_usage_display: base.invite_usage_display.clone(),
+            invite_quota_exhausted: base.invite_quota_exhausted,
+            members: base.members,
+            is_default: base.is_default || form.is_default.is_some(),
+            allow_invites: form.allow_invites.is_some(),
+            allow_custom_slug: form.allow_custom_slug.is_some(),
+            allow_password: form.allow_password.is_some(),
+            allow_expiry: form.allow_expiry.is_some(),
+            allow_max_clicks: form.allow_max_clicks.is_some(),
+            allow_tags: form.allow_tags.is_some(),
+            allow_api_tokens: form.allow_api_tokens.is_some(),
+            allow_domain_selection,
+            redirect_mode_policy: redirect_mode_policy.as_str().to_string(),
+            redirect_mode_policy_label: lang.t(redirect_mode_policy.label_key()).to_string(),
+            default_domain_id,
+            restrict_domains,
+            allowed_domain_ids,
+            disabled_domains,
+            default_domain_disabled_id,
+            default_domain_disabled_name,
+            features_label: enabled_features_label(
+                lang,
+                [
+                    form.allow_invites.is_some(),
+                    form.allow_custom_slug.is_some(),
+                    form.allow_password.is_some(),
+                    form.allow_expiry.is_some(),
+                    form.allow_max_clicks.is_some(),
+                    form.allow_tags.is_some(),
+                    form.allow_api_tokens.is_some(),
+                ],
+            ),
+            created: base.created.clone(),
         }
     }
 
@@ -624,6 +735,31 @@ fn invite_usage_label(lang: Lang, usage: InviteUsage) -> String {
         i18n::format(lang, "admin.invites.quota_option_exhausted", &values)
     } else {
         i18n::format(lang, "admin.invites.quota_option", &values)
+    }
+}
+
+/// "{count} of 7 enabled" from the capability flags, in one place so the
+/// blank row, the stored row and a rejected submission cannot drift apart.
+fn enabled_features_label(lang: Lang, allowed: [bool; 7]) -> String {
+    let count = allowed.into_iter().filter(|allowed| *allowed).count();
+    i18n::format(
+        lang,
+        "admin.groups.features_count",
+        &[("count", count.to_string())],
+    )
+}
+
+/// A quota as it will look after saving the submitted form. Empty inherits the
+/// site default, `0` is unlimited, and an unparsable value is echoed back so the
+/// administrator can correct it.
+fn quota_preview(raw: Option<&str>, site_default: i64, lang: Lang) -> String {
+    match raw.map(str::trim).filter(|value| !value.is_empty()) {
+        None => quota_display(None, site_default, lang),
+        Some(value) => match value.parse::<i64>() {
+            Ok(0) => lang.t("admin.groups.unlimited").to_string(),
+            Ok(number) => number.to_string(),
+            Err(_) => value.to_string(),
+        },
     }
 }
 
@@ -857,7 +993,7 @@ pub struct CreateInviteForm {
     pub expires_at: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct GroupForm {
     pub name: String,
     #[serde(default)]
@@ -2461,7 +2597,7 @@ pub async fn new_group_page(
     Query(query): Query<AdminQuery>,
 ) -> Result<Response, AppError> {
     let Some(current) = admin_user(current)? else {
-        return Ok(redirect_to_login(Some("/app/admin/groups")).into_response());
+        return Ok(redirect_to_login(Some("/app/admin/groups/new")).into_response());
     };
     render_group_form(
         &state,
@@ -2480,7 +2616,9 @@ pub async fn edit_group_page(
     Query(query): Query<AdminQuery>,
 ) -> Result<Response, AppError> {
     let Some(current) = admin_user(current)? else {
-        return Ok(redirect_to_login(Some("/app/admin/groups")).into_response());
+        return Ok(
+            redirect_to_login(Some(&format!("/app/admin/groups/{id}/edit"))).into_response(),
+        );
     };
     render_group_form(
         &state,
@@ -2499,11 +2637,12 @@ pub async fn create_group(
     form: std::result::Result<Form<GroupForm>, FormRejection>,
 ) -> Result<Response, AppError> {
     let Some(current) = admin_user(current)? else {
-        return Ok(redirect_to_login(Some("/app/admin/groups")).into_response());
+        return Ok(redirect_to_login(Some("/app/admin/groups/new")).into_response());
     };
     let Ok(Form(payload)) = form else {
-        return Ok(redirect_err("/app/admin/groups", "invalid").into_response());
+        return Ok(redirect_err("/app/admin/groups/new", "invalid").into_response());
     };
+    let submitted = payload.clone();
 
     let outcome = match payload.into_draft(None) {
         Ok(draft) => {
@@ -2513,12 +2652,21 @@ pub async fn create_group(
         }
         Err(err) => Err(err),
     };
-    Ok(match outcome {
-        Ok(_) => redirect_ok("/app/admin/groups", "group").into_response(),
+    match outcome {
+        Ok(_) => Ok(redirect_ok("/app/admin/groups", "group").into_response()),
         Err(err) => {
-            redirect_err("/app/admin/groups", super::urls::error_code(&err)).into_response()
+            let code = super::urls::error_code(&err);
+            render_group_form_inner(
+                &state,
+                &current.user,
+                flash_from_query(None, Some(code)),
+                None,
+                Some(&submitted),
+                StatusCode::UNPROCESSABLE_ENTITY,
+            )
+            .await
         }
-    })
+    }
 }
 
 /// `POST /app/admin/groups/{id}`
@@ -2529,12 +2677,14 @@ pub async fn update_group(
     Path(id): Path<i64>,
     form: std::result::Result<Form<GroupForm>, FormRejection>,
 ) -> Result<Response, AppError> {
+    let edit_path = format!("/app/admin/groups/{id}/edit");
     let Some(current) = admin_user(current)? else {
-        return Ok(redirect_to_login(Some("/app/admin/groups")).into_response());
+        return Ok(redirect_to_login(Some(&edit_path)).into_response());
     };
     let Ok(Form(payload)) = form else {
-        return Ok(redirect_err("/app/admin/groups", "invalid").into_response());
+        return Ok(redirect_err(&edit_path, "invalid").into_response());
     };
+    let submitted = payload.clone();
 
     // The form is a full representation, but a scripted or cached post may omit
     // the redirect-mode radios. Keep the stored policy in that case instead of
@@ -2552,12 +2702,21 @@ pub async fn update_group(
         }
         Err(err) => Err(err),
     };
-    Ok(match outcome {
-        Ok(_) => redirect_ok("/app/admin/groups", "group").into_response(),
+    match outcome {
+        Ok(_) => Ok(redirect_ok("/app/admin/groups", "group").into_response()),
         Err(err) => {
-            redirect_err("/app/admin/groups", super::urls::error_code(&err)).into_response()
+            let code = super::urls::error_code(&err);
+            render_group_form_inner(
+                &state,
+                &current.user,
+                flash_from_query(None, Some(code)),
+                Some(id),
+                Some(&submitted),
+                StatusCode::UNPROCESSABLE_ENTITY,
+            )
+            .await
         }
-    })
+    }
 }
 
 /// `POST /app/admin/groups/{id}/delete`
@@ -2568,11 +2727,12 @@ pub async fn delete_group(
     Path(id): Path<i64>,
     form: std::result::Result<Form<DeleteGroupForm>, FormRejection>,
 ) -> Result<Response, AppError> {
+    let edit_path = format!("/app/admin/groups/{id}/edit");
     let Some(current) = admin_user(current)? else {
-        return Ok(redirect_to_login(Some("/app/admin/groups")).into_response());
+        return Ok(redirect_to_login(Some(&edit_path)).into_response());
     };
     let Ok(Form(payload)) = form else {
-        return Ok(redirect_err("/app/admin/groups", "invalid").into_response());
+        return Ok(redirect_err(&edit_path, "invalid").into_response());
     };
 
     let target = match payload
@@ -2583,7 +2743,7 @@ pub async fn delete_group(
     {
         Some(raw) => match raw.parse::<i64>() {
             Ok(value) => Some(value),
-            Err(_) => return Ok(redirect_err("/app/admin/groups", "invalid").into_response()),
+            Err(_) => return Ok(redirect_err(&edit_path, "invalid").into_response()),
         },
         None => None,
     };
@@ -2594,9 +2754,7 @@ pub async fn delete_group(
             .await
         {
             Ok(()) => redirect_ok("/app/admin/groups", "group_deleted").into_response(),
-            Err(err) => {
-                redirect_err("/app/admin/groups", super::urls::error_code(&err)).into_response()
-            }
+            Err(err) => redirect_err(&edit_path, super::urls::error_code(&err)).into_response(),
         },
     )
 }
@@ -2622,6 +2780,18 @@ fn admin_user(
         Some(current) if current.is_admin() => Ok(Some(current)),
         Some(_) => Err(AppError::forbidden("administrator privileges are required")),
     }
+}
+
+/// Map an overview into the id/name/default triples used by the group selects.
+fn group_options(overview: &[GroupOverview]) -> Vec<GroupOption> {
+    overview
+        .iter()
+        .map(|row| GroupOption {
+            id: row.group.id,
+            name: row.group.name.clone(),
+            is_default: row.group.is_default,
+        })
+        .collect()
 }
 
 /// The admin page lists every group because the delete and assignment selects
@@ -2655,7 +2825,6 @@ async fn render_groups(
             site_name: state.settings.site_name(),
             chrome: Chrome::new(state, user, "admin", flash),
             groups: rows,
-            domains,
             lang,
         },
         StatusCode::OK,
@@ -2672,37 +2841,51 @@ async fn render_group_form(
     flash: Option<crate::routes::pages::Flash>,
     id: Option<i64>,
 ) -> Result<Response, AppError> {
+    render_group_form_inner(state, user, flash, id, None, StatusCode::OK).await
+}
+
+/// Render the form again after a rejected submission, keeping the values the
+/// administrator typed.
+async fn render_group_form_inner(
+    state: &AppState,
+    user: &User,
+    flash: Option<crate::routes::pages::Flash>,
+    id: Option<i64>,
+    submitted: Option<&GroupForm>,
+    status: StatusCode,
+) -> Result<Response, AppError> {
     let lang = i18n::current();
     let domains = state.domains.active_options();
     let active_domain_ids: Vec<i64> = domains.iter().map(|domain| domain.id).collect();
-    let overview = group_service::overview(&state.db).await?;
-    let groups: Vec<GroupOption> = overview
-        .iter()
-        .map(|row| GroupOption {
-            id: row.group.id,
-            name: row.group.name.clone(),
-            is_default: row.group.is_default,
-        })
-        .collect();
 
-    let group = match id {
+    // Creating a group has no existing row to load and no delete select to
+    // populate, so skip the group overview entirely on that path.
+    let (group, groups) = match id {
         Some(id) => {
+            let overview = group_service::overview(&state.db).await?;
+            let groups = group_options(&overview);
             let row = overview
                 .iter()
                 .find(|row| row.group.id == id)
                 .ok_or(AppError::NotFound)?;
             let stored = vec![row.group.clone()];
             let usage = usage_map(&state.db, &state.settings, &stored, time::now()).await?;
-            GroupRow::new(
+            let group = GroupRow::new(
                 &state.settings,
                 lang,
                 row,
                 &active_domain_ids,
                 &state.domains,
                 usage[&id],
-            )
+            );
+            (group, groups)
         }
-        None => GroupRow::blank(&state.settings, lang),
+        None => (GroupRow::blank(&state.settings, lang), Vec::new()),
+    };
+    let group = if let Some(form) = submitted {
+        GroupRow::from_submission(&state.settings, lang, &group, form)
+    } else {
+        group
     };
     let form_action = match id {
         Some(id) => format!("/app/admin/groups/{id}"),
@@ -2721,7 +2904,7 @@ async fn render_group_form(
             form_action,
             lang,
         },
-        StatusCode::OK,
+        status,
     )
 }
 

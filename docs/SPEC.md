@@ -287,7 +287,9 @@ target is still met.
 | `/app/account` | Account | Profile, change password, session list, API token management |
 | `/app/admin` | Admin panel | Users, user groups, all links, domains, invite codes, settings, audit log |
 | `/app/admin/domains` | Domain management | Add, activate, disable, set default and delete domains |
-| `/app/admin/groups` | User groups | Create/edit/delete groups, quotas, feature toggles, redirect-mode policy, default domain, domain allowlist and default marker |
+| `/app/admin/groups` | User groups | List groups with quotas, invite usage, policy and member counts; links to the create and edit forms |
+| `/app/admin/groups/new` | New group | Create form for quotas, feature toggles, domain policy, redirect-mode policy and default domain; the default marker can only move after the group exists |
+| `/app/admin/groups/{id}/edit` | Edit group | Same form as `/app/admin/groups/new`, prefilled with the stored values; delete and member reassignment live here |
 | `/app/lang/{code}` | Language switch | Sets the `urlet_lang` cookie and 302-redirects to `next` (or to `/app`) |
 | `/app/theme/{key}` | Theme switch | Requires a session and the switch permission; sets the `urlet_theme` cookie and redirects to a same-site `next` (or the `Referer`, or `/app`). `?preview=1` sets the administrator-only preview cookie, including for a disabled theme |
 | `/app/theme/default` | Site default | Clears the explicit and preview cookies and follows the administrator's default |

@@ -435,6 +435,21 @@ async fn every_theme_renders_every_page() {
         .as_i64()
         .expect("id");
 
+    let theme_group = app
+        .post_json_as(
+            "/api/v1/admin/groups",
+            json!({ "name": "Theme Edit Group" }),
+            &cookie,
+        )
+        .await;
+    assert_eq!(
+        theme_group.status,
+        StatusCode::CREATED,
+        "{}",
+        theme_group.body
+    );
+    let theme_group_id = theme_group.json()["id"].as_i64().expect("id");
+
     let pages = [
         "/",
         "/app",
@@ -445,6 +460,7 @@ async fn every_theme_renders_every_page() {
         "/app/admin/groups",
         "/app/admin/groups/new",
         "/app/admin/groups/{group}/edit",
+        "/app/admin/groups/{other}/edit",
         "/app/admin/urls",
         "/app/admin/invites",
         "/app/admin/domains",
@@ -465,7 +481,8 @@ async fn every_theme_renders_every_page() {
         for template in pages {
             let uri = template
                 .replace("{id}", &ordinary_id.to_string())
-                .replace("{group}", &default_group_id.to_string());
+                .replace("{group}", &default_group_id.to_string())
+                .replace("{other}", &theme_group_id.to_string());
             let response = app.send(get_as(&uri, &cookie_with_theme)).await;
             assert_eq!(
                 response.status,
@@ -485,6 +502,12 @@ async fn every_theme_renders_every_page() {
                 assert!(
                     response.body.contains("Your links"),
                     "{key} dashboard content is empty"
+                );
+            }
+            if template == "/app/admin/groups/{other}/edit" {
+                assert!(
+                    response.body.contains("name=\"reassign_to\""),
+                    "{key} did not render the delete form"
                 );
             }
         }

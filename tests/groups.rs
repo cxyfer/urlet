@@ -129,6 +129,72 @@ async fn groups_require_an_administrator() {
         .status,
         StatusCode::FORBIDDEN
     );
+
+    // The sign-in redirect keeps the requested form, not the list page.
+    let new_login = app.get("/app/admin/groups/new").await;
+    assert_eq!(new_login.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        new_login.header("location").as_deref(),
+        Some("/app/login?next=%2Fapp%2Fadmin%2Fgroups%2Fnew")
+    );
+    let edit_login = app.get(&format!("/app/admin/groups/{group_id}/edit")).await;
+    assert_eq!(edit_login.status, StatusCode::SEE_OTHER);
+    let edit_login_target = format!("/app/login?next=%2Fapp%2Fadmin%2Fgroups%2F{group_id}%2Fedit");
+    assert_eq!(
+        edit_login.header("location").as_deref(),
+        Some(edit_login_target.as_str())
+    );
+}
+
+#[tokio::test]
+async fn failed_group_forms_rerender_with_submitted_values() {
+    let app = TestApp::spawn().await;
+    let (admin_cookie, _) = admin(&app).await;
+
+    // A duplicate name is rejected on the create form itself, so the
+    // administrator keeps the values they typed instead of landing on the list.
+    let duplicate = app
+        .send(post_form_as(
+            "/app/admin/groups",
+            "name=Standard&description=Duplicate+attempt&max_urls=123&domain_policy=all",
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(
+        duplicate.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        duplicate.body
+    );
+    assert!(duplicate.body.contains("value=\"Standard\""));
+    assert!(duplicate.body.contains("value=\"Duplicate attempt\""));
+    assert!(duplicate.body.contains("value=\"123\""));
+    assert!(duplicate.body.contains("alert alert-error"));
+    assert!(duplicate.body.contains("action=\"/app/admin/groups\""));
+
+    // The same applies to a rejected edit.
+    let group = create_group(&app, &admin_cookie, json!({ "name": "Form Errors" }))
+        .await
+        .json();
+    let group_id = group["id"].as_i64().expect("id");
+    let invalid = app
+        .send(post_form_as(
+            &format!("/app/admin/groups/{group_id}"),
+            "name=Form+Errors&description=Still+here&domain_policy=everything",
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(
+        invalid.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        invalid.body
+    );
+    assert!(invalid.body.contains("value=\"Still here\""));
+    assert!(invalid.body.contains("alert alert-error"));
+    assert!(invalid
+        .body
+        .contains(&format!("action=\"/app/admin/groups/{group_id}\"")));
 }
 
 #[tokio::test]
@@ -1116,7 +1182,14 @@ async fn group_domain_policy_radio_drives_the_form() {
             &admin_cookie,
         ))
         .await;
-    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    assert_eq!(
+        response.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        response.body
+    );
+    assert!(response.body.contains("value=\"Bad Scope\""));
+    assert!(response.body.contains("alert alert-error"));
     let list = groups(&app, &admin_cookie).await;
     assert!(list["items"]
         .as_array()
@@ -1628,9 +1701,18 @@ async fn the_default_marker_can_move_and_only_then_can_the_old_one_go() {
 async fn group_create_and_edit_share_one_form() {
     let app = TestApp::spawn().await;
     let (admin_cookie, _) = admin(&app).await;
-    let group = create_group(&app, &admin_cookie, json!({ "name": "Shared Form" }))
-        .await
-        .json();
+    let group = create_group(
+        &app,
+        &admin_cookie,
+        json!({
+            "name": "Shared Form",
+            "allow_custom_slug": false,
+            "allow_tags": false,
+            "allow_invites": true
+        }),
+    )
+    .await
+    .json();
     let group_id = group["id"].as_i64().expect("id");
 
     let new_page = app.get_as("/app/admin/groups/new", &admin_cookie).await;
@@ -1653,6 +1735,45 @@ async fn group_create_and_edit_share_one_form() {
         assert!(edit_page.body.contains(needle), "edit form lacks {needle}");
     }
 
+    // The create form starts from the same defaults as the old inline form.
+    for enabled in [
+        "allow_custom_slug",
+        "allow_password",
+        "allow_expiry",
+        "allow_max_clicks",
+        "allow_tags",
+        "allow_api_tokens",
+    ] {
+        assert!(
+            new_page
+                .body
+                .contains(&format!("name=\"{enabled}\" value=\"on\" checked")),
+            "create form should enable {enabled}"
+        );
+    }
+    assert!(!new_page
+        .body
+        .contains("name=\"allow_invites\" value=\"on\" checked"));
+    assert!(new_page
+        .body
+        .contains("name=\"domain_policy\" value=\"all\" checked"));
+    assert!(new_page.body.contains("<option value=\"month\" selected>"));
+    assert!(new_page.body.contains("name=\"is_default\""));
+    assert!(!new_page
+        .body
+        .contains("name=\"is_default\" value=\"on\" checked"));
+
+    // The edit page reflects the stored capability flags, not the defaults.
+    assert!(!edit_page
+        .body
+        .contains("name=\"allow_custom_slug\" value=\"on\" checked"));
+    assert!(!edit_page
+        .body
+        .contains("name=\"allow_tags\" value=\"on\" checked"));
+    assert!(edit_page
+        .body
+        .contains("name=\"allow_invites\" value=\"on\" checked"));
+
     // The list page is a list: it links to the form instead of embedding it.
     let list_page = app.get_as("/app/admin/groups", &admin_cookie).await;
     assert_eq!(list_page.status, StatusCode::OK, "{}", list_page.body);
@@ -1666,6 +1787,62 @@ async fn group_create_and_edit_share_one_form() {
         .get_as("/app/admin/groups/999999/edit", &admin_cookie)
         .await;
     assert_eq!(missing.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn group_edit_page_owns_delete_and_reassignment() {
+    let app = TestApp::spawn().await;
+    let (admin_cookie, _) = admin(&app).await;
+    let default_id = default_group(&app, &admin_cookie).await["id"]
+        .as_i64()
+        .expect("id");
+    let group = create_group(&app, &admin_cookie, json!({ "name": "Delete From Form" }))
+        .await
+        .json();
+    let group_id = group["id"].as_i64().expect("id");
+
+    let default_edit = app
+        .get_as(
+            &format!("/app/admin/groups/{default_id}/edit"),
+            &admin_cookie,
+        )
+        .await;
+    assert_eq!(default_edit.status, StatusCode::OK, "{}", default_edit.body);
+    assert!(!default_edit.body.contains("name=\"reassign_to\""));
+    assert!(default_edit
+        .body
+        .contains("This is the default group; move the marker"));
+
+    let edit_page = app
+        .get_as(&format!("/app/admin/groups/{group_id}/edit"), &admin_cookie)
+        .await;
+    assert_eq!(edit_page.status, StatusCode::OK, "{}", edit_page.body);
+    assert!(edit_page.body.contains("name=\"reassign_to\""));
+    assert!(edit_page
+        .body
+        .contains(&format!("action=\"/app/admin/groups/{group_id}/delete\"")));
+    assert!(edit_page
+        .body
+        .contains(&format!("<option value=\"{default_id}\" selected>")));
+
+    let deleted = app
+        .send(post_form_as(
+            &format!("/app/admin/groups/{group_id}/delete"),
+            &format!("reassign_to={default_id}"),
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(deleted.status, StatusCode::SEE_OTHER, "{}", deleted.body);
+    assert_eq!(
+        deleted.header("location").as_deref(),
+        Some("/app/admin/groups?ok=group_deleted")
+    );
+    let list = groups(&app, &admin_cookie).await;
+    assert!(list["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .all(|item| item["name"] != "Delete From Form"));
 }
 
 #[tokio::test]

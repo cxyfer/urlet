@@ -737,3 +737,23 @@
 @media (prefers-reduced-motion: reduce) {
     .splash-meter > span { animation: none; }
 }
+
+/* Groups table: the shared markup has more columns than a phone can show.
+ * Hide the secondary columns on narrow screens so the name, quota and edit
+ * action stay visible; every theme receives the same behaviour here. */
+@media (max-width: 760px) {
+    table.table.groups-table { min-width: 0; }
+    .groups-table .col-token-quota,
+    .groups-table .col-invites,
+    .groups-table .col-redirect,
+    .groups-table .col-features,
+    .groups-table .col-created { display: none; }
+    .groups-table th,
+    .groups-table td { padding: .6rem .55rem; }
+    .groups-table .col-name { min-width: 9rem; }
+    .groups-table .col-actions { text-align: right; white-space: nowrap; }
+    .groups-table .col-actions .btn { padding: .28rem .5rem; }
+}
+@media (max-width: 480px) {
+    .groups-table .col-members { display: none; }
+}

@@ -12,24 +12,24 @@
 
 <div class="panel panel-flush mt">
     <div class="table-wrap">
-        <table class="table">
+        <table class="table groups-table">
             <thead>
                 <tr>
-                    <th>{{ lang.t("admin.groups.name") }}</th>
-                    <th class="num">{{ lang.t("admin.groups.members") }}</th>
-                    <th class="num">{{ lang.t("admin.groups.max_urls") }}</th>
-                    <th class="num">{{ lang.t("admin.groups.max_api_tokens") }}</th>
-                    <th>{{ lang.t("admin.groups.invites") }}</th>
-                    <th>{{ lang.t("admin.groups.redirect_mode.policy") }}</th>
-                    <th>{{ lang.t("admin.groups.features") }}</th>
-                    <th>{{ lang.t("common.created") }}</th>
-                    <th><span class="sr-only">{{ lang.t("common.actions") }}</span></th>
+                    <th class="col-name">{{ lang.t("admin.groups.name") }}</th>
+                    <th class="num col-members">{{ lang.t("admin.groups.members") }}</th>
+                    <th class="num col-link-quota">{{ lang.t("admin.groups.max_urls") }}</th>
+                    <th class="num col-token-quota">{{ lang.t("admin.groups.max_api_tokens") }}</th>
+                    <th class="col-invites">{{ lang.t("admin.groups.invites") }}</th>
+                    <th class="col-redirect">{{ lang.t("admin.groups.redirect_mode.policy") }}</th>
+                    <th class="col-features">{{ lang.t("admin.groups.features") }}</th>
+                    <th class="col-created">{{ lang.t("common.created") }}</th>
+                    <th class="col-actions"><span class="sr-only">{{ lang.t("common.actions") }}</span></th>
                 </tr>
             </thead>
             <tbody>
                 {% for group in groups %}
                 <tr>
-                    <td>
+                    <td class="col-name">
                         <div class="cell-stack">
                             <span>{{ group.name }}
                                 {% if group.is_default %}<span class="badge badge-accent">{{ lang.t("admin.groups.default") }}</span>{% endif %}
@@ -37,18 +37,19 @@
                             {% if group.description.len() > 0 %}<span class="small muted">{{ group.description }}</span>{% endif %}
                         </div>
                     </td>
-                    <td class="num">{{ group.members }}</td>
-                    <td class="num">{{ group.max_urls_display }}</td>
-                    <td class="num">{{ group.max_api_tokens_display }}</td>
-                    <td>
+                    <td class="num col-members">{{ group.members }}</td>
+                    <td class="num col-link-quota">{{ group.max_urls_display }}</td>
+                    <td class="num col-token-quota">{{ group.max_api_tokens_display }}</td>
+                    <td class="col-invites">
                         <span class="small {% if group.invite_quota_exhausted %}muted{% endif %}">{{ group.invite_usage_display }}</span>
                         {% if group.invite_quota_exhausted %}<span class="badge badge-muted">{{ lang.t("admin.groups.invites_used_up") }}</span>{% endif %}
                     </td>
-                    <td><span class="small">{{ group.redirect_mode_policy_label }}</span></td>
-                    <td><span class="small">{{ group.features_label }}</span></td>
-                    <td class="small">{{ group.created }}</td>
-                    <td>
-                        <a class="btn btn-sm" href="/app/admin/groups/{{ group.id }}/edit">{{ lang.t("common.edit") }}</a>
+                    <td class="col-redirect"><span class="small">{{ group.redirect_mode_policy_label }}</span></td>
+                    <td class="col-features"><span class="small">{{ group.features_label }}</span></td>
+                    <td class="small col-created">{{ group.created }}</td>
+                    <td class="col-actions">
+                        <a class="btn btn-sm" href="/app/admin/groups/{{ group.id }}/edit"
+                           aria-label="{{ lang.t("common.edit") }} {{ group.name }}">{{ lang.t("common.edit") }}</a>
                     </td>
                 </tr>
                 {% endfor %}
