@@ -30,6 +30,16 @@ pub fn validate(raw: &str) -> Result<String> {
             "the URL must not contain control characters",
         ));
     }
+    // Browsers treat `\` as `/` in http(s) URLs, so `https://evil.example\@bank.example`
+    // navigates to evil.example while an authority parser that only splits on
+    // `/ ? #` reads the host as bank.example. The splash page renders that host as
+    // a trust indicator, so a backslash is refused instead of being disambiguated.
+    if raw.contains('\\') {
+        return Err(AppError::validation(
+            "target_url",
+            "the URL must not contain backslashes",
+        ));
+    }
 
     let candidate = add_missing_scheme(raw);
     let (scheme, rest) = candidate.split_once("://").ok_or_else(|| {
@@ -102,17 +112,23 @@ fn add_missing_scheme(raw: &str) -> String {
 }
 
 /// Lowercase only the authority component; paths are case sensitive.
+///
+/// `\` ends the authority too: a browser reads `https://a.example\@b.example` as
+/// host `a.example` with the path `/@b.example`.
 fn lowercase_host(rest: &str) -> String {
-    match rest.find(['/', '?', '#']) {
+    match rest.find(['/', '\\', '?', '#']) {
         Some(index) => format!("{}{}", rest[..index].to_ascii_lowercase(), &rest[index..]),
         None => rest.to_ascii_lowercase(),
     }
 }
 
-/// Extract the host of a validated target (used for stats grouping).
+/// Extract the host of a validated target (used for stats grouping and for the
+/// destination shown on a splash page).
 pub fn host_of(target_url: &str) -> Option<String> {
     let rest = target_url.split_once("://")?.1;
-    let authority = rest.split(['/', '?', '#']).next()?;
+    // Split the way a browser does, so a stored row from before the validation
+    // rule still shows the host the visitor is actually sent to.
+    let authority = rest.split(['/', '\\', '?', '#']).next()?;
     let host = authority.rsplit('@').next()?;
     let host = host.split(':').next()?;
     if host.is_empty() {
@@ -189,11 +205,31 @@ mod tests {
     }
 
     #[test]
+    fn rejects_backslashes_that_hide_the_real_host() {
+        // A browser navigates to evil.example here, because `\` ends the
+        // authority just like `/`; the splash page must not be able to claim
+        // bank.example as the destination.
+        for target in [
+            "https://evil.example\\@bank.example",
+            "https://evil.example\\bank.example/x",
+            "https://bank.example/\\evil.example",
+        ] {
+            assert!(validate(target).is_err(), "{target} must be rejected");
+        }
+    }
+
+    #[test]
     fn extracts_hosts() {
         assert_eq!(
             host_of("https://Example.com:8443/a").as_deref(),
             Some("example.com")
         );
         assert_eq!(host_of("not-a-url"), None);
+        // Legacy rows stored before the backslash rule still display the host
+        // the browser will actually visit.
+        assert_eq!(
+            host_of("https://evil.example\\@bank.example").as_deref(),
+            Some("evil.example")
+        );
     }
 }
