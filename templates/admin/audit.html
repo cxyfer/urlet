@@ -2,59 +2,8 @@
 
 {% block title %}{{ lang.t("admin.audit.title") }} — {{ site_name }}{% endblock %}
 
+{% import "content/admin/audit.html" as content %}
 {% block content %}
 {% include "admin/tabs.html" %}
-
-<div class="page-head">
-    <div class="page-head-main">
-        <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ lang.t("nav.admin") }}</span>
-        <h1 class="page-title">{{ lang.t("admin.audit.heading") }}</h1>
-    </div>
-    <div class="page-head-side">
-        <span class="page-note">{{ count_label }}</span>
-    </div>
-</div>
-
-<form method="get" action="/app/admin/audit" class="filters filters-audit">
-    <input class="input" type="search" name="action" value="{{ action }}" placeholder="{{ lang.t("admin.audit.action_placeholder") }}">
-    <input class="input" type="search" name="target_type" value="{{ target_type }}" placeholder="{{ lang.t("admin.audit.target_placeholder") }}">
-    <button class="btn btn-sage" type="submit">{{ lang.t("common.filter") }}</button>
-    <a class="btn btn-ghost" href="/app/admin/audit">{{ lang.t("common.reset") }}</a>
-</form>
-
-<div class="panel panel-flush mt">
-    {% if entries.len() > 0 %}
-    <div class="table-wrap">
-        <table class="table">
-            <thead>
-                <tr><th>{{ lang.t("common.when") }}</th><th>{{ lang.t("admin.audit.action") }}</th><th>{{ lang.t("admin.audit.actor") }}</th><th>{{ lang.t("admin.audit.target") }}</th><th>{{ lang.t("admin.audit.details") }}</th></tr>
-            </thead>
-            <tbody>
-                {% for entry in entries %}
-                <tr>
-                    <td class="small nowrap">{{ entry.when }}</td>
-                    <td class="mono small">{{ entry.action }}</td>
-                    <td class="small">{{ entry.actor }}</td>
-                    <td class="small">{{ entry.target }}</td>
-                    <td class="small mono truncate" title="{{ entry.metadata }}">{{ entry.metadata }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    {% if total_pages > 1 %}
-    <div class="pagination">
-        <span class="muted small">{{ pagination_note }}</span>
-        {% for link in links %}
-        {% if link.current %}<span class="current">{{ link.label }}</span>
-        {% else %}<a class="btn btn-sm" href="{{ link.url }}">{{ link.label }}</a>{% endif %}
-        {% endfor %}
-    </div>
-    {% endif %}
-
-    {% else %}
-    <p class="empty">{{ lang.t("admin.audit.empty") }}</p>
-    {% endif %}
-</div>
+{% call content::content() %}
 {% endblock %}

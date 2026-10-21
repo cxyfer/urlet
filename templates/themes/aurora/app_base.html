@@ -1,0 +1,85 @@
+{% extends "themes/aurora/base.html" %}
+{% import "partials/theme_switcher.html" as theme_switcher %}
+
+{# Signed-in pages carry the switcher in the sidebar instead of the footer. #}
+{% block footer_lang %}{% endblock %}
+
+{% block body_class %}page-app{% endblock %}
+
+{% block body %}
+<aside class="sidebar">
+    <div class="side-top">
+        <a class="brand" href="/app">{{ chrome.site_name }}<span>.</span></a>
+    </div>
+
+    <nav class="side-nav">
+        <a class="nav-item{% if chrome.active == "dashboard" %} is-active{% endif %}" href="/app">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <path d="M10.6 13.4a3.6 3.6 0 0 0 5.1 0l2.6-2.6a3.6 3.6 0 0 0-5.1-5.1l-1.2 1.2"/>
+                <path d="M13.4 10.6a3.6 3.6 0 0 0-5.1 0l-2.6 2.6a3.6 3.6 0 0 0 5.1 5.1l1.2-1.2"/>
+            </svg>
+            <span class="nav-label">{{ lang.t("nav.links") }}</span>
+        </a>
+        <a class="nav-item{% if chrome.active == "account" %} is-active{% endif %}" href="/app/account">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <circle cx="12" cy="8.2" r="3.5"/>
+                <path d="M4.6 20a7.4 7.4 0 0 1 14.8 0"/>
+            </svg>
+            <span class="nav-label">{{ lang.t("nav.account") }}</span>
+        </a>
+        <a class="nav-item{% if chrome.active == "invites" %} is-active{% endif %}" href="/app/invites">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <path d="M4 7h16v10H4z"/><path d="m4 8 8 5 8-5"/>
+            </svg>
+            <span class="nav-label">{{ lang.t("nav.invites") }}</span>
+        </a>
+        {% if chrome.is_admin %}
+        <a class="nav-item{% if chrome.active == "admin" %} is-active{% endif %}" href="/app/admin">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <path d="M4 8h7M16 8h4M4 16h4M13 16h7"/>
+                <circle cx="13.5" cy="8" r="2.1"/>
+                <circle cx="10.5" cy="16" r="2.1"/>
+            </svg>
+            <span class="nav-label">{{ lang.t("nav.admin") }}</span>
+        </a>
+        {% endif %}
+    </nav>
+
+    <div class="side-foot">
+        <div class="side-user">
+            <span class="avatar" aria-hidden="true">{{ chrome.email.chars().next().unwrap_or('·') }}</span>
+            <span class="side-user-name">{{ chrome.email }}</span>
+        </div>
+        {% call theme_switcher::switcher(chrome.theme, lang) %}
+        {% include "partials/lang_switcher.html" %}
+        <form method="post" action="/app/logout" class="side-exit">
+            <button class="btn btn-ghost btn-sm" type="submit">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M15 4.5h2.5A1.5 1.5 0 0 1 19 6v12a1.5 1.5 0 0 1-1.5 1.5H15"/>
+                    <path d="M10.5 8 6.5 12l4 4M6.5 12h9"/>
+                </svg>
+                <span>{{ lang.t("nav.sign_out") }}</span>
+            </button>
+        </form>
+    </div>
+</aside>
+
+<main class="app-main">
+    <div class="app-inner">
+        {% match chrome.flash %}
+        {% when Some with (flash) %}
+        <div class="alert alert-{{ flash.kind }}" {% if flash.kind == "ok" %}data-auto-dismiss{% endif %}>
+            {{ flash.message }}
+        </div>
+        {% when None %}
+        {% endmatch %}
+
+        {% block content %}{% endblock %}
+    </div>
+</main>
+{% endblock %}

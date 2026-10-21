@@ -20,9 +20,9 @@ use crate::services::domain_policy;
 use crate::services::domains::DomainOption;
 use crate::services::{chart, limits, time};
 use crate::state::AppState;
+use crate::themed_page;
 
-#[derive(Debug, Template)]
-#[template(path = "dashboard.html")]
+#[derive(Debug)]
 pub struct DashboardPage {
     pub site_name: String,
     pub chrome: Chrome,
@@ -60,6 +60,15 @@ pub struct DashboardPage {
     pub pagination_note: String,
     pub lang: Lang,
 }
+
+themed_page!(dashboard_templates, DashboardView, DashboardPage,
+    Verdant => "dashboard.html",
+    Aurora => "themes/aurora/dashboard.html",
+    Paper => "themes/paper/dashboard.html",
+    Signal => "themes/signal/dashboard.html",
+    Gilded => "themes/gilded/dashboard.html",
+    Swiss => "themes/swiss/dashboard.html",
+);
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct DashboardQuery {
@@ -220,7 +229,8 @@ pub async fn dashboard(
             ],
         ),
         lang,
-    };
+    }
+    .themed();
 
     match page_render.render() {
         Ok(html) => Ok((StatusCode::OK, Html(html)).into_response()),

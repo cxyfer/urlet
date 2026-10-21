@@ -765,7 +765,11 @@ mod tests {
     /// `admin.settings.captcha_provider.*` comes from the bot protection branch:
     /// a provider name is a brand, so its original spelling is correct in every
     /// language. Do not widen this into a general "contains ASCII" rule.
-    const IDENTICAL_KEY_PREFIXES: &[&str] = &["admin.settings.captcha_provider."];
+    const IDENTICAL_KEY_PREFIXES: &[&str] = &[
+        "admin.settings.captcha_provider.",
+        // Theme names are product names, not prose.
+        "theme.name.",
+    ];
 
     /// Brand, product and protocol tokens that must survive translation
     /// verbatim, so a value containing one may legitimately equal the English

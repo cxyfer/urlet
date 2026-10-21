@@ -5,6 +5,7 @@ pub mod csrf;
 pub mod domain;
 pub mod locale;
 pub mod security;
+pub mod theme;
 
 use std::net::{IpAddr, SocketAddr};
 

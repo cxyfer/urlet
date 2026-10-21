@@ -1,0 +1,338 @@
+/* Shared chrome for the in-product theme picker.
+ *
+ * Deliberately theme-neutral: it relies on inherited colour and the CSS custom
+ * properties each theme defines, with plain fallbacks for the older designs.
+ * Keeping this out of every theme stylesheet means a new theme cannot forget
+ * the picker. */
+.theme-switcher {
+    position: relative;
+    display: inline-flex;
+    color: inherit;
+    font: inherit;
+}
+.theme-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    padding: .34rem .6rem;
+    border: 1px solid currentColor;
+    border-radius: var(--radius-pill, 999px);
+    background: var(--surface-2, transparent);
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    line-height: 1.2;
+    list-style: none;
+}
+.theme-trigger::-webkit-details-marker { display: none; }
+.theme-trigger:hover { border-color: var(--accent, currentColor); }
+.theme-caret { display: inline-flex; opacity: .7; }
+.theme-switcher[open] .theme-caret { transform: rotate(180deg); }
+.theme-swatch {
+    width: .62rem;
+    height: .62rem;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent, #8c8c8c), var(--accent-2, #c4c4c4));
+    box-shadow: 0 0 0 1px currentColor inset;
+}
+.theme-current { font-size: .82em; }
+.theme-menu {
+    position: absolute;
+    z-index: 40;
+    top: calc(100% + .4rem);
+    right: 0;
+    min-width: 11rem;
+    display: grid;
+    gap: .15rem;
+    padding: .35rem;
+    border: 1px solid var(--line, currentColor);
+    border-radius: var(--radius-sm, .55rem);
+    background: var(--surface, #fff);
+    box-shadow: 0 .6rem 1.6rem rgba(0, 0, 0, .18);
+}
+.theme-option {
+    display: block;
+    padding: .38rem .55rem;
+    border-radius: var(--radius-xs, .35rem);
+    color: inherit;
+    font-size: .86em;
+    text-decoration: none;
+    white-space: nowrap;
+}
+.theme-option:hover { background: var(--surface-2, rgba(127, 127, 127, .14)); }
+.theme-option.active { font-weight: 600; text-decoration: underline; text-underline-offset: .18em; }
+@media (max-width: 480px) {
+    .theme-current { max-width: 6.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .theme-menu { right: 0; left: auto; max-width: calc(100vw - 1.5rem); }
+}
+/* Long explanatory notes wrap instead of widening the page on phones. */
+:where(.page-note-wrap) { white-space: normal; max-width: 42rem; }
+
+/* Admin theme catalogue. Shared by every theme, so the management page stays
+ * usable even while previewing a design that predates the feature. */
+.theme-admin-grid {
+    display: grid;
+    gap: .9rem;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    margin-top: 1rem;
+}
+.theme-admin-card {
+    display: grid;
+    gap: .55rem;
+    padding: .9rem;
+    border: 1px solid var(--line, rgba(127, 127, 127, .35));
+    border-radius: var(--radius-sm, .6rem);
+    background: var(--surface, transparent);
+}
+.theme-admin-card.is-default {
+    border-color: var(--accent, currentColor);
+    box-shadow: inset 0 0 0 1px var(--accent, currentColor);
+}
+.theme-admin-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: .6rem;
+}
+.theme-admin-name { margin: 0; font-size: 1rem; }
+.theme-admin-key {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .7rem;
+    opacity: .65;
+}
+.theme-admin-swatch {
+    flex: 0 0 auto;
+    width: 2.1rem;
+    height: 2.1rem;
+    border-radius: 50%;
+    border: 1px solid var(--line, rgba(127, 127, 127, .4));
+    background: var(--surface-2, rgba(127, 127, 127, .12));
+}
+.theme-admin-swatch[data-theme-swatch="verdant"] { background: linear-gradient(135deg, #173b30, #a8c94a); }
+.theme-admin-swatch[data-theme-swatch="aurora"] { background: linear-gradient(135deg, #05070f, #2dd4bf, #8b5cf6); }
+.theme-admin-swatch[data-theme-swatch="paper"] { background: linear-gradient(135deg, #f3ecdd, #b08a3e); }
+.theme-admin-swatch[data-theme-swatch="signal"] { background: linear-gradient(135deg, #f4f0e6 45%, #e6392e 45%); }
+.theme-admin-swatch[data-theme-swatch="gilded"] { background: linear-gradient(135deg, #0e3b33, #d9b968); }
+.theme-admin-swatch[data-theme-swatch="swiss"] { background: linear-gradient(135deg, #f4f0e6 45%, #111 45%); }
+.theme-admin-meta { display: flex; flex-wrap: wrap; gap: .3rem; }
+.theme-admin-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .7rem;
+    margin-top: .2rem;
+}
+.theme-admin-controls .btn { margin-left: auto; }
+.field-narrow { max-width: 28rem; }
+
+/* ---------------------------------------------------------------------------
+ * Shared app-content fallback.
+ *
+ * The five ported designs predate the v1.2 dashboard, account, detail and admin
+ * pages. Their content markup is shared across themes so every feature keeps
+ * working; these zero-specificity rules fill in classes a design stylesheet
+ * never knew about. `:where()` deliberately loses to every theme rule, so the
+ * original design wins wherever it has an opinion. */
+:where(.page-head, .dash-head) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 1.2rem 0 1rem;
+}
+:where(.page-head-main) { display: grid; gap: .25rem; }
+:where(.page-head-side) { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+:where(.page-title) { margin: 0; font-size: clamp(1.35rem, 2.2vw, 2rem); line-height: 1.15; }
+:where(.kicker) {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    font: 600 .68rem/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    opacity: .75;
+}
+:where(.kicker-dot, .page-note .note-dot) {
+    width: .45rem;
+    height: .45rem;
+    border-radius: 50%;
+    background: var(--accent, currentColor);
+}
+:where(.page-note) { font-size: .82rem; opacity: .72; }
+:where(.panel, .page, .landing) { box-sizing: border-box; }
+:where(.panel) {
+    margin: 1rem 0;
+    padding: 1rem;
+    border: 1px solid var(--line, rgba(127, 127, 127, .32));
+    border-radius: var(--radius-sm, .65rem);
+    background: var(--surface, transparent);
+}
+:where(.panel-flush) { padding: 0; overflow: hidden; }
+:where(.panel-head, .table-toolbar) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .6rem;
+    margin: 0 0 .7rem;
+}
+:where(.panel-head h2, .panel-head h3, .table-toolbar h2) { margin: 0; font-size: 1.05rem; }
+:where(.panel-sub) {
+    font: .68rem/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: .1em;
+    opacity: .55;
+}
+:where(.vitals, .stat-grid, .stat-grid-lg) {
+    display: grid;
+    gap: .8rem;
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    margin: 1rem 0;
+}
+:where(.stat) {
+    display: grid;
+    gap: .35rem;
+    padding: .85rem;
+    border: 1px solid var(--line, rgba(127, 127, 127, .28));
+    border-radius: var(--radius-xs, .5rem);
+    background: var(--surface-2, transparent);
+}
+:where(.stat-top) { display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
+:where(.stat-label) { font-size: .76rem; opacity: .72; }
+:where(.stat-value) { font: 700 clamp(1.25rem, 2.4vw, 1.8rem)/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+:where(.stat-hint, .stat-foot) { font-size: .7rem; opacity: .6; }
+:where(.stat-dot) { width: .4rem; height: .4rem; border-radius: 50%; background: var(--accent, currentColor); }
+:where(.meter) { display: grid; gap: .25rem; min-width: 10rem; }
+:where(.meter-track) { height: .35rem; border-radius: 999px; background: var(--line, rgba(127, 127, 127, .3)); overflow: hidden; }
+:where(.meter-fill) { display: block; width: 62%; height: 100%; background: var(--accent, currentColor); }
+:where(.meter-label) { font-size: .72rem; opacity: .7; }
+:where(.form-grid) { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); }
+:where(.field) { display: grid; gap: .25rem; }
+:where(.label) { font-size: .78rem; font-weight: 600; }
+:where(.input, .select, textarea.input) {
+    width: 100%;
+    box-sizing: border-box;
+    padding: .5rem .6rem;
+    border: 1px solid var(--line, rgba(127, 127, 127, .45));
+    border-radius: var(--radius-xs, .4rem);
+    background: var(--surface, transparent);
+    color: inherit;
+    font: inherit;
+}
+:where(.hint) { font-size: .72rem; line-height: 1.45; opacity: .65; }
+:where(.form-actions) { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin-top: .9rem; }
+:where(.check-cluster) { display: flex; flex-wrap: wrap; gap: .5rem 1rem; margin: .6rem 0; }
+:where(.checkbox) { display: inline-flex; align-items: center; gap: .4rem; font-size: .82rem; }
+:where(.row) { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+:where(.row-tight) { gap: .3rem; }
+:where(.row-end) { justify-content: flex-end; }
+:where(.stack) { display: grid; gap: .6rem; }
+:where(.mt) { margin-top: 1rem; }
+:where(.muted) { opacity: .65; }
+:where(.small) { font-size: .78rem; }
+:where(.mono) { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+:where(.badge) {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    padding: .12rem .45rem;
+    border: 1px solid var(--line, rgba(127, 127, 127, .4));
+    border-radius: 999px;
+    font-size: .68rem;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+:where(.badge-accent) { border-color: var(--accent, currentColor); }
+:where(.badge-ok) { border-color: #2f7d4f; color: #2f7d4f; }
+:where(.badge-danger) { border-color: #a83a2c; color: #a83a2c; }
+:where(.badge-warn) { border-color: #8a5a12; color: #8a5a12; }
+:where(.table-wrap) { width: 100%; overflow-x: auto; }
+:where(.table) { width: 100%; border-collapse: collapse; font-size: .82rem; }
+:where(.table th, .table td) { padding: .5rem .55rem; border-bottom: 1px solid var(--line, rgba(127, 127, 127, .22)); text-align: left; vertical-align: top; }
+:where(.table th) { font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; opacity: .7; }
+:where(.table .num, .num) { text-align: right; font-variant-numeric: tabular-nums; }
+:where(.empty) { padding: 1rem; opacity: .65; }
+:where(.pagination) { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .35rem; padding: .7rem .9rem; }
+:where(.pagination .current) { font-weight: 700; }
+:where(.seg) { display: inline-flex; flex-wrap: wrap; gap: .25rem; }
+:where(.advanced) { margin-top: .9rem; border-top: 1px dashed var(--line, rgba(127, 127, 127, .3)); padding-top: .6rem; }
+:where(.advanced summary) { cursor: pointer; font-size: .82rem; font-weight: 600; }
+:where(.advanced-body, .drawer) { padding: .7rem 0; }
+:where(.drawer) { display: grid; gap: .55rem; }
+:where(.filters, .filters-users, .filters-invite) { display: flex; flex-wrap: wrap; align-items: end; gap: .55rem; }
+:where(.filters .field, .filters-users .field, .filters-invite .field) { min-width: 9rem; flex: 1 1 9rem; }
+:where(.copy-row, .slug-bar) { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
+:where(.slug-value) { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; }
+:where(.chart-panel) { padding: .4rem 0; }
+:where(.chart-axis) { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; font-size: .72rem; opacity: .65; }
+:where(.bar-list) { display: grid; gap: .5rem; }
+:where(.bar-row) { display: grid; gap: .18rem; }
+:where(.bar-label) { display: flex; justify-content: space-between; gap: .5rem; font-size: .76rem; }
+:where(.bar-track) { height: .3rem; border-radius: 999px; background: var(--line, rgba(127, 127, 127, .28)); overflow: hidden; }
+:where(.bar-fill) { display: block; height: 100%; background: var(--accent, currentColor); }
+:where(.detail-grid, .account-grid) { display: grid; gap: .9rem; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); margin: 1rem 0; }
+:where(.settings-layout) { display: grid; gap: 1rem; grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr); align-items: start; }
+:where(.settings-rail) { display: grid; gap: .5rem; position: sticky; top: 1rem; }
+:where(.rail-title, .rail-index) { font: .68rem/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .08em; opacity: .6; }
+:where(.alert) { margin: 1rem 0; padding: .7rem .9rem; border: 1px solid var(--line, rgba(127, 127, 127, .4)); border-radius: var(--radius-xs, .45rem); }
+:where(.alert-ok) { border-color: #2f7d4f; }
+:where(.alert-warn) { border-color: #8a5a12; }
+:where(.alert-info) { border-color: var(--accent, currentColor); }
+:where(.alert-danger) { border-color: #a83a2c; }
+@media (max-width: 760px) {
+    :where(.settings-layout) { grid-template-columns: minmax(0, 1fr); }
+    :where(.settings-rail) { position: static; }
+}
+
+/* Extra-domain short landing. It is a tiny page with no signed-in shell, so the
+ * older themes' stylesheets do not define these generic classes. */
+:where(.wrap) {
+    width: min(100% - 2rem, 72rem);
+    margin-inline: auto;
+}
+:where(.short-hero) {
+    display: grid;
+    place-items: center;
+    min-height: 70vh;
+    padding: 2rem 0;
+}
+:where(.short-hero .hero-copy) {
+    display: grid;
+    gap: .7rem;
+    max-width: 38rem;
+    text-align: center;
+}
+:where(.hero-chip) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .45rem;
+    font: .68rem/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    opacity: .75;
+}
+:where(.status-dot) {
+    width: .45rem;
+    height: .45rem;
+    border-radius: 50%;
+    background: var(--accent, currentColor);
+}
+:where(.short-hero h1) { margin: .2rem 0; font-size: clamp(2rem, 5vw, 3.4rem); }
+:where(.hero-dot) {
+    display: inline-block;
+    width: .25em;
+    height: .25em;
+    margin-left: .08em;
+    border-radius: 50%;
+    background: var(--accent, currentColor);
+}
+:where(.landing-tagline) { margin: 0; font-size: 1.05rem; opacity: .8; }
+:where(.landing-cta) { display: flex; justify-content: center; gap: .5rem; margin-top: .5rem; }
+
+/* Aurora places the picker in the sidebar footer, where a downward menu would
+ * be clipped by the scroll container and the viewport. Open it upward there. */
+.side-foot .theme-menu {
+    top: auto;
+    bottom: calc(100% + .4rem);
+}

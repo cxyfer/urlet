@@ -2,9 +2,9 @@
 
 # urlet — Lightweight Multi-User URL Shortener Specification
 
-> Version: 1.2
+> Version: 1.4
 > Status: Approved for implementation
-> Last updated: 2026-10-17
+> Last updated: 2026-10-21
 
 ---
 
@@ -20,7 +20,9 @@ frontend build step. The v1.1 line adds a trilingual interface (English / Tradit
 Simplified Chinese), optional bot protection, and a public landing page. The v1.2 line adds
 **user groups**: per-group link and API-token quotas plus feature toggles, so an instance can be
 operated with tiers (for example a free and a paid group) without changing the single-binary
-deployment model.
+deployment model. The v1.4 line adds **switchable themes**: the visual identity is a compiled-in
+template set plus stylesheet, administrators choose which designs are offered and who may switch,
+and users keep their choice in a cookie.
 
 ### 1.1 Core Design Principles (from the requester)
 
@@ -32,8 +34,8 @@ deployment model.
 | P4 | Docker Compose deployment | A single `docker-compose.yml` (app + named volume), with an optional Caddy TLS overlay |
 | P5 | As lightweight as possible | One binary, SQLite (no MySQL/Redis), SSR templates (no Node build), image < 40 MB |
 | P6 | Rust implementation | Rust 2021 + Axum 0.8 + Tokio + sqlx (SQLite) |
-| P7 | Well-designed schema | 16 tables, 31 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
-| P8 | Sensible extra features | Tags, click analytics, API tokens, invite codes, admin panel, audit log, daily rollups, trilingual UI, optional bot protection, quota/feature user groups |
+| P7 | Well-designed schema | 18 tables, 34 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
+| P8 | Sensible extra features | Tags, click analytics, API tokens, invite codes, admin panel, audit log, daily rollups, trilingual UI, optional bot protection, quota/feature user groups, switchable themes |
 
 ### 1.2 Relationship to the Earlier Prototypes (OURLS / OURLS2)
 
@@ -76,6 +78,9 @@ per-action permission matrix.
 | Feature toggle | A per-group boolean (`allow_*`) that decides whether a link feature may be used; existing data is never deleted when a toggle is turned off |
 | Default group | The single group with `is_default = 1`; new registrations and invite codes without a group land there. The marker can be moved but the group cannot be deleted |
 | Effective limits | The quotas and toggles actually applied to a user: group value when set, otherwise the site-wide default |
+| Theme | A compiled-in visual identity: a directory of Askama template overrides plus one embedded CSS asset. Themes are not uploaded or edited at runtime |
+| Default theme | The single enabled theme used when a visitor has no cookie, or the cookie points at a disabled/unknown theme |
+| Theme catalogue | The six themes compiled into this binary: Verdant, Aurora, Paper, Signal, Gilded and Swiss |
 
 ---
 
@@ -93,6 +98,7 @@ Browser / curl          │                                                 │
                         │  ├─ /api/v1/**        JSON API                  │
                         │  ├─ /app/**           SSR user + admin UI       │
                         │  ├─ /app/lang/{code}  language switch (302)     │
+                        │  ├─ /app/theme/{key}  theme switch (302)        │
                         │  ├─ /assets/**        embedded CSS/JS           │
                         │  └─ /health           health check              │
                         │                                                 │
@@ -247,6 +253,7 @@ target is still met.
 | FR-ADMIN-6 | System info | Version, database size, user/link/click totals, uptime |
 | FR-ADMIN-7 | Authorization | Every `/api/v1/admin/**` and `/app/admin/**` route requires `role = admin`, otherwise 403 |
 | FR-ADMIN-8 | Group management | Create, edit, set as default, configure domain policy and delete user groups from `/app/admin/groups` and `/api/v1/admin/groups` (FR-GROUP-1, FR-GROUP-9) |
+| FR-ADMIN-9 | Theme management | Enable/disable the compiled-in themes, choose the single default and decide who may switch, from `/app/admin/themes` and `/api/v1/admin/themes` (FR-THEME-2) |
 
 ### 4.9 JSON API (FR-API)
 
@@ -275,6 +282,10 @@ target is still met.
 | `/app/admin/domains` | Domain management | Add, activate, disable, set default and delete domains |
 | `/app/admin/groups` | User groups | Create/edit/delete groups, quotas, feature toggles, default domain, domain allowlist and default marker |
 | `/app/lang/{code}` | Language switch | Sets the `urlet_lang` cookie and 302-redirects to `next` (or to `/app`) |
+| `/app/theme/{key}` | Theme switch | Requires a session and the switch permission; sets the `urlet_theme` cookie and redirects to a same-site `next` (or the `Referer`, or `/app`). `?preview=1` sets the administrator-only preview cookie, including for a disabled theme |
+| `/app/theme/default` | Site default | Clears the explicit and preview cookies and follows the administrator's default |
+| `/app/theme/preview/stop` | Stop preview | Clears the administrator preview cookie |
+| `/app/admin/themes` | Theme management | Enable/disable themes, choose the default and the `theme_switching` policy |
 | `/{slug}` | Redirect / password page / 410 / 404 | Public |
 | Extra domain | Redirect-only | `/` shows a small landing page, `/{slug}` redirects, `/app` 308s to canonical, `/api` is 404 |
 
@@ -323,6 +334,20 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 | FR-GROUP-8 | Visibility | The account page shows the group name plus link usage `used / quota` and token usage `used / quota`; `GET /api/v1/auth/me` returns `group` and a `limits` object with the effective quotas, toggles, default domain and allowed domains so API clients can predict refusals |
 | FR-GROUP-9 | Domain policy | `user_groups.default_domain_id` is the group default (`NULL` = site default); new links without a domain use it, and a missing, disabled or deleted default falls back to the site default. `restrict_domains = 1` limits selection to `group_domains` rows plus the effective default; with restriction on and no rows only the default is available. `allow_domain_selection = false` also limits selection to the group default. Keeping an existing link on its current domain is always allowed; ungrouped users get the site default and every active domain. |
 
+### 4.14 Switchable Themes (FR-THEME)
+
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-THEME-1 | Catalogue | Six themes are compiled into the binary: `verdant` (the v1.2 default), `aurora`, `paper`, `signal`, `gilded` and `swiss`. Each owns a template directory under `templates/themes/<key>/` and an embedded CSS asset. Themes are code, not uploads: enabling or disabling one never writes or deletes a template |
+| FR-THEME-2 | Administration | `/app/admin/themes` and `GET/PUT /api/v1/admin/themes` list every theme, enable/disable it, choose the single default and set the `theme_switching` policy. At least one theme must stay enabled and the default must be enabled; violations return `422 validation_error`. The marker is protected by a partial unique index |
+| FR-THEME-3 | Selection | `GET /app/theme/{key}` requires a session, validates the key against the enabled set, sets the `urlet_theme` cookie (`Path=/`, `SameSite=Lax`, `HttpOnly`, one year, `Secure` when configured) and redirects to a same-site `next`, otherwise the `Referer` path, otherwise `/app`. Unknown or disabled keys return 404; anonymous callers are sent to the login screen with `next`. `?preview=1` sets the separate administrator preview cookie, which may name a disabled theme; `/app/theme/default` clears both cookies and `/app/theme/preview/stop` leaves preview mode |
+| FR-THEME-4 | Permission | `theme_switching` is `all` (default) or `admin`. The policy is enforced at render time: under `admin`, non-admin accounts and anonymous visitors render the default regardless of an existing cookie. Administrators always see the picker and can preview any compiled theme (including a disabled one) through the separate preview cookie. A direct switch request without permission returns 403. Disabling a theme does not delete data |
+| FR-THEME-5 | Default and fallback | Exactly one enabled theme is marked default. A visitor without a cookie, with an unknown key or with a key that has since been disabled renders the default. The picker lists enabled themes plus a **Site default** entry that clears the cookie, and administrators can preview a disabled theme without changing the default |
+| FR-THEME-6 | Templates | The base templates in `templates/` are the Verdant theme and the fallback. A theme directory may override any page; pages it does not override, and the shared v1.2 page content, remain available. Theme templates are selected at compile time through the `themed_page!` wrapper, never by a path from the request |
+| FR-THEME-7 | Assets | `/assets/themes/{key}` serves only the fixed compiled-in keys and `/assets/theme-ui.css` carries the shared picker and admin catalogue styles. No external font, image, script or CDN is introduced, so the `default-src 'self'` CSP and the no-build deployment stay intact |
+| FR-THEME-8 | Appearance | Verdant keeps the persisted light/dark control. The five earlier designs follow `prefers-color-scheme` and therefore keep the operating-system choice; Aurora is dark-only and hides the light/dark control |
+| FR-THEME-9 | Persistence | The choice is a cookie, not a per-user database column. A disabled theme is rejected on the next request, and the administrator can always change the default for visitors without a preference. No link, user or click data is touched by a theme change |
+
 ---
 
 ## 5. Non-Functional Requirements
@@ -333,7 +358,7 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 |----|-------------|
 | NFR-SEC-1 | Passwords: Argon2id; sessions/API tokens store only a SHA-256 hash and are looked up by indexed hash comparison. Invite codes keep the SHA-256 hash for lookup plus a ChaCha20-Poly1305 sealed copy under a key derived from `URLET_SECRET`. This keeps plaintext out of the database and lets the issuer and administrators display a code again, but it is not a confidentiality boundary: the hash and four-character prefix still permit offline guessing, and the auto-generated `secret.key` sits beside the database. Rotating the secret makes existing sealed copies unreadable (the codes still redeem). The unlock cookie signature is compared in constant time |
 | NFR-SEC-2 | Cookies: `HttpOnly`, `SameSite=Lax`, `Secure` (when `URLET_SECURE_COOKIES=true` or the base URL is https) |
-| NFR-SEC-3 | CSRF: state-changing requests check that `Origin`/`Referer` are same-origin; cookie-authenticated non-GET requests are always verified; Bearer token requests are exempt |
+| NFR-SEC-3 | CSRF: state-changing requests check that `Origin`/`Referer` are same-origin; cookie-authenticated non-GET requests are always verified; Bearer token requests are exempt. The cosmetic preference endpoints `/app/lang/{code}` and `/app/theme/*` are `GET`s that only write a display cookie and never data or permissions |
 | NFR-SEC-4 | Security headers: `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`, and `Strict-Transport-Security` over https |
 | NFR-SEC-5 | Open redirect protection: targets must be `http` / `https`; `javascript:`, `data:`, `file:` and similar schemes are rejected |
 | NFR-SEC-6 | Reserved words: `api`, `app`, `assets`, `health`, `static`, `favicon.ico`, and similar names cannot be used as slugs |
@@ -348,6 +373,7 @@ roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form e
 | NFR-SEC-14 | Password hashing runs in `spawn_blocking` with a semaphore limiting it to 4 concurrent Argon2 computations (about 19 MiB each) |
 | NFR-SEC-15 | Captcha verification fails closed: a form-encoded HTTPS POST with a 5-second timeout to the configured provider, sent through `ureq` 2 over rustls + webpki-roots (no OpenSSL); a timeout, a non-2xx status, or an unparsable body rejects the request. The secret key is never rendered back into the admin UI |
 | NFR-SEC-16 | The language cookie `urlet_lang` is intentionally not HttpOnly (client code reads it) and holds only a whitelisted language tag; the `next` parameter of the switch endpoint accepts only same-site relative paths to prevent open redirects |
+| NFR-SEC-17 | The theme cookie (`urlet_theme`) is HttpOnly, `SameSite=Lax`, one year and `Secure` when configured; the administrator-only preview cookie uses the same attributes with a one-hour lifetime. Their values are only ever compared with the fixed compiled-in theme keys; the preview cookie is honoured only for an administrator, the switch endpoint requires a session and the `theme_switching` permission, and its `next`/`Referer` target is reduced to a same-site path before the redirect |
 
 ### 5.2 Performance (NFR-PERF)
 
@@ -404,6 +430,7 @@ users ─┬─< sessions
        └─< audit_logs (actor)
 domains ─< urls
 settings (key-value)
+themes (standalone)
 login_attempts (auditing)
 ```
 
@@ -440,6 +467,8 @@ login_attempts (auditing)
 | `clicks` | id, url_id, clicked_at, ip_hash, visitor_hash, user_agent, referrer, referrer_host, country_code, device_type, browser, os, is_bot, is_unique, password_protected | Click details |
 | `url_daily_stats` | url_id, day, clicks, unique_clicks, bot_clicks (PK: url_id+day) | Daily rollups |
 | `audit_logs` | id, actor_user_id, actor_role, action, target_type, target_id, metadata, ip_hash, created_at | Auditing |
+| `themes` | id, key(UNIQUE), is_enabled, is_default, sort_order, created_at, updated_at | Administrator's choice among the compiled-in themes; one default enforced by a partial unique index |
+| `invite_issuance` | id, group_id, actor_id, invite_id, created_at | Per-group invite issuance ledger; counts quota usage even after a code is revoked |
 | `settings` | key(PK), value, updated_at, updated_by | Site settings |
 | `invite_codes` | id, code_hash(UNIQUE), code_prefix, code_sealed, note, group_id, created_by, max_uses, used_count, expires_at, status, created_at | Invite codes; `code_sealed` is the encrypted copy used to display a code again |
 | `invite_redemptions` | id, invite_id, user_id, redeemed_at, UNIQUE(invite_id,user_id) | Invite redemption records |
@@ -463,13 +492,16 @@ login_attempts (auditing)
 | `users(group_id)` | Group member listing and reassignment |
 | `invite_codes(group_id)` | Invite lookup per group |
 | `group_domains(domain_id)` | Domain deletion and allowlist checks |
+| `themes(is_default) WHERE is_default = 1` UNIQUE | At most one default theme |
 
 The v1.1 changes add settings **keys** only; because `settings` is a key-value table, v1.1 kept
 the schema at 14 tables and 27 indexes. v1.2 adds the `user_groups` and `group_domains`
 tables, the nullable `users.group_id` / `invite_codes.group_id` columns, the
 `user_groups.default_domain_id` / `restrict_domains` columns and four indexes, for **16 tables and
-31 indexes** (§6.1, §6.3, §6.4). v1.3 adds only the nullable `invite_codes.code_sealed` column, so
-the table and index counts are unchanged.
+31 indexes** (§6.1, §6.3, §6.4). The invite-ledger work then added `invite_issuance` and its index,
+taking the schema to **17 tables and 33 indexes**. v1.3 adds only the nullable
+`invite_codes.code_sealed` column, so the table and index counts stay at 17/33. v1.4 adds the
+`themes` table and its single-default index, for **18 tables and 34 indexes**.
 
 ### 6.5 Seed Data
 
@@ -485,6 +517,9 @@ the table and index counts are unchanged.
 - `user_groups` (v1.2): one row named `Standard` with `max_urls = NULL`, `max_api_tokens = NULL`,
   all seven toggles `1` (including `allow_domain_selection`), `default_domain_id = NULL`,
   `restrict_domains = 0` and `is_default = 1`; the migration assigns every existing user to it.
+- `themes` (v1.4): `verdant` is enabled and default; `aurora`, `paper`, `signal`, `gilded` and
+  `swiss` are enabled and not default, with sort orders 10–50. The migration is additive, so an
+  upgrade keeps the current look until an administrator changes the default.
 - `group_domains`: no rows are seeded; an existing or new group without restriction rows may use
   every active domain.
 - `domains`: at startup the canonical domain is inserted/updated from the host of `URLET_BASE_URL`
@@ -557,6 +592,8 @@ old token frees a slot immediately (FR-TOK-6).
 | POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, default_domain_id?, restrict_domains?, domain_ids?, is_default?}` → 201; domain_ids must exist and default_domain_id must be active; a duplicate name or a second default returns 409 |
 | PUT | `/api/v1/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` set to `null` inherit the site quota; `description: null` clears it; `default_domain_id: null` means the site default; `domain_ids: null` or `[]` clears the allowlist; `is_default: true` moves the marker in one transaction |
 | DELETE | `/api/v1/admin/groups/{id}?reassign_to={id}` | Move members to `reassign_to`, then delete → 204; 409 for the default group or a missing/invalid target |
+| GET | `/api/v1/admin/themes` | Theme catalogue: key, name, description, `enabled`, `default`, `dark_only`, `css_url`, plus the current `switching` policy |
+| PUT | `/api/v1/admin/themes` | `{enabled?: [keys], default?: key, switching?: "all"\|"admin"}`; omitted fields keep their value; at least one enabled theme and an enabled default are required |
 | GET | `/api/v1/admin/urls` | Site-wide link list |
 | PATCH | `/api/v1/admin/urls/{id}` | Force disable/enable/delete |
 | GET | `/api/v1/admin/invites` | Invite code list, including `code`, `link`, `prefix`, `group_id` / `group_name`; `code` and `link` are `null` for legacy or secret-rotated rows, and `link` is also `null` for revoked, exhausted or expired codes |
@@ -634,7 +671,7 @@ urlet/
 ├── docker-compose.tls.yml        # optional: Caddy automatic HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql
+├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama templates (base, app_base, landing.html + pages + admin/)
@@ -720,6 +757,10 @@ v1.1 additions (this batch):
 - [ ] `POST /api/v1/urls` is captcha-exempt only for API-token calls (a session-cookie call honours `on_create`), and the admin secret-key field is write-only
 - [ ] `GET /` returns 200 as a landing/navigation page for anonymous and signed-in visitors, and no longer redirects to `/app`
 - [ ] `cargo test` (the full suite), `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are clean, `scripts/smoke.sh` passes all end-to-end checks, and the container image builds and runs under musl (§3.3)
+
+v1.4 additions (this batch):
+
+- [x] `themes` (18 tables, 34 indexes): six compiled-in designs, administrator enable/default switches, a site-wide switch permission, a `urlet_theme` cookie, and per-theme template directories that keep every v1.2 page working
 
 v1.2 additions (this batch):
 

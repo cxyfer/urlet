@@ -1,0 +1,9 @@
+{% extends "themes/aurora/app_base.html" %}
+
+{% block title %}{{ lang.t("admin.settings.title") }} — {{ site_name }}{% endblock %}
+
+{% import "content/admin/settings.html" as content %}
+{% block content %}
+{% include "themes/aurora/admin/tabs.html" %}
+{% call content::content() %}
+{% endblock %}

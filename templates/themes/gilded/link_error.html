@@ -1,0 +1,23 @@
+{% extends "themes/gilded/base.html" %}
+
+{% block title %}{{ status_code }} — {{ title }}{% endblock %}
+
+{% block body %}
+<div class="link-page">
+    <div class="status-card">
+        <p class="status-code" aria-hidden="true">{{ status_code }}</p>
+        <div class="status-orn" aria-hidden="true">
+            <svg viewBox="0 0 260 34" fill="none" stroke="currentColor" stroke-width="1" focusable="false">
+                <path d="M0 17h100M160 17h100" opacity=".6"/>
+                <path d="M120 17l10-10 10 10-10 10z" fill="currentColor" stroke="none"/>
+                <path d="M106 17l4-4 4 4-4 4zM146 17l4-4 4 4-4 4z" fill="currentColor" stroke="none" opacity=".75"/>
+                <circle cx="60" cy="17" r="1.8"/>
+                <circle cx="200" cy="17" r="1.8"/>
+            </svg>
+        </div>
+        <h1>{{ title }}</h1>
+        <p class="status-message">{{ message }}</p>
+        <a class="btn btn-primary" href="/app">{{ lang.t("link.go_to") }} {{ site_name }}</a>
+    </div>
+</div>
+{% endblock %}

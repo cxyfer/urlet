@@ -27,9 +27,9 @@ use crate::services::ratelimit::limits;
 use crate::services::urls::{CreateInput, UpdateInput, UrlContext};
 use crate::services::{chart, time};
 use crate::state::AppState;
+use crate::themed_page;
 
-#[derive(Debug, Template)]
-#[template(path = "url_detail.html")]
+#[derive(Debug)]
 pub struct UrlDetailPage {
     pub site_name: String,
     pub chrome: Chrome,
@@ -60,6 +60,15 @@ pub struct UrlDetailPage {
     pub chart_legend: String,
     pub lang: Lang,
 }
+
+themed_page!(url_detail_templates, UrlDetailView, UrlDetailPage,
+    Verdant => "url_detail.html",
+    Aurora => "themes/aurora/url_detail.html",
+    Paper => "themes/paper/url_detail.html",
+    Signal => "themes/signal/url_detail.html",
+    Gilded => "themes/gilded/url_detail.html",
+    Swiss => "themes/swiss/url_detail.html",
+);
 
 /// One row of the recent click log.
 #[derive(Debug, Clone)]
@@ -401,7 +410,8 @@ pub async fn detail(
             &[("clicks", daily_total.to_string())],
         ),
         lang,
-    };
+    }
+    .themed();
 
     match page.render() {
         Ok(html) => Ok((StatusCode::OK, Html(html)).into_response()),

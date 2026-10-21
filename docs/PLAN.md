@@ -2,7 +2,7 @@
 
 # urlet — Phased Implementation Plan
 
-> Spec: `docs/SPEC.md` v1.2
+> Spec: `docs/SPEC.md` v1.4
 > Principle: at the end of every phase the code must **compile, test, and commit**; each phase gets one (or a few) local commits.
 
 ## Results (completed)
@@ -20,6 +20,7 @@
 | P8 Final verification | ✅ Done | See `git log` (release build, image strategy, wrap-up) |
 | P10 User groups (v1.2) | ✅ Done | See `git log` (migration 0004, group API/UI, trilingual strings, docs) |
 | P11 Group domain policy (v1.2) | ✅ Done | See `git log` (migration 0005, default domain + allowlist, admin UI/API, tests) |
+| P12 Switchable themes (v1.4) | ✅ Done | See `git log` (migration 0010, theme registry, admin catalogue, six template sets, tests) |
 
 Acceptance data (v1.0): `cargo test` is all green with 187 tests, `cargo clippy --all-targets -- -D warnings`
 and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scripts/smoke.sh` pass.
@@ -42,6 +43,7 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 | P9 | i18n, bot protection and navigation homepage | Three embedded locale catalogs, language negotiation and switching, optional Turnstile/reCAPTCHA on register, sign-in and create, landing page at `/` | Negotiation, cookie switching, captcha fail-closed (including sign-in) and the landing page covered by tests; `/` returns 200 | `📝 docs: ...` / `✨ feat(i18n): ...` |
 | P10 | User groups (v1.2) | `user_groups` with per-group link/token quotas and seven feature toggles (including domain selection), assignment through users and invite codes, admin page and API | 16 tables / 31 indexes, upgrade changes no behaviour, quotas/toggles enforced (admins included), deletion reassigns members, tests and smoke green | `✨ feat(groups): ...` |
 | P11 | Group domain policy (v1.2) | Per-group `default_domain_id`, `restrict_domains` and `group_domains` allowlist; group default/allowlist enforced on create/move, exposed through `/api/v1/auth/me` and `/api/v1/domains`, editable in the admin group form | 16 tables / 31 indexes, existing groups keep every active domain, empty restricted list allows only the default, disabled default falls back to the site default, tests and smoke green | `✨ feat(domains): ...` |
+| P12 | Switchable themes (v1.4) | Six compiled-in template/CSS themes, `themes` table and registry, admin enable/default/policy page and API, `urlet_theme` cookie, theme picker and shared fallback content | 18 tables / 34 indexes, every theme renders every page, permission and fallback covered, fmt/clippy/test/smoke green | `✨ feat(themes): ...` |
 
 ---
 
@@ -221,6 +223,23 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 5. Tests: migration from v4, empty allowlist, explicit allowlist, disabled default fallback, selection off, partial updates, HTML form, API/UI and smoke.
 
 **Acceptance**: an existing group keeps every active domain; a restricted group can only create/move to its allowlist plus its default; an empty restricted list allows only the default; disabling/deleting the group default falls back to the site default; `cargo test`, clippy/fmt and smoke are clean.
+
+## P12 — Switchable Themes (v1.4)
+
+**Tasks**
+
+1. `migrations/0010_themes.sql`: `themes` table, partial unique default index, the six seed rows and the `theme_switching=all` setting.
+2. `src/db/themes.rs` + `src/services/theme.rs`: theme keys, registry cache, default/fallback resolution, admin list, switching permission and transactional selection updates.
+3. `src/routes/pages/themed.rs`: compile-time `themed_page!` wrapper so each page selects one of six Askama templates without trusting a request path; page contexts opt in with `.themed()`.
+4. Middleware and assets: `urlet_theme` cookie resolution, `GET /app/theme/{key}`, `/assets/themes/{key}`, `/assets/theme-ui.css`, and the shared picker macro.
+5. Admin: `/app/admin/themes` page, `GET/PUT /api/v1/admin/themes`, audit action, validation (at least one enabled, default enabled), and cache reload.
+6. Themes: import the five closed design proposals (Aurora, Paper, Signal, Gilded, Swiss) as template directories and CSS assets; share v1.2 app-page content through macros so quotas, domains, groups, invites and settings keep working in every theme.
+7. Tests: registry defaults, admin CRUD/policy, switch permission, disabled/unknown fallback, asset routes, and a full render loop over every theme and page.
+8. Docs: SPEC, PLAN, API, README and the `zh-TW` mirrors; `.env.example` needs no new variable because themes are database-only.
+
+**Acceptance**: six themes are selectable, the default applies without a cookie, disabled themes fall back, administrators can preview any compiled theme, including a disabled one, `all`/`admin` switching is enforced, every page renders under every theme, and `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and `scripts/smoke.sh` are clean.
+
+---
 
 ## Risks and Mitigations
 

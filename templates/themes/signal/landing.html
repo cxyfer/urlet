@@ -1,0 +1,271 @@
+{% extends "themes/signal/base.html" %}
+{% import "partials/theme_switcher.html" as theme_switcher %}
+
+{# The landing page carries the switcher in the top bar, like the signed-in pages. #}
+{% block footer_lang %}{% endblock %}
+
+{% block title %}{{ site_name }} — {{ lang.t("landing.meta.title") }}{% endblock %}
+
+{% block head %}
+<meta name="description" content="{{ lang.t("landing.meta.description") }}">
+{% endblock %}
+
+{% block body %}
+<header class="topbar topbar-landing">
+    <div class="topbar-inner">
+        {% if signed_in %}
+        <a class="brand" href="/app">{{ site_name }}<span>.</span></a>
+        {% else %}
+        <a class="brand" href="/">{{ site_name }}<span>.</span></a>
+        {% endif %}
+        <nav class="nav">
+            {% call theme_switcher::switcher(theme, lang) %}
+            {% include "partials/lang_switcher.html" %}
+            {% if signed_in %}
+            <a href="/app">{{ lang.t("landing.nav.dashboard") }}</a>
+            <span class="who">{{ email }}</span>
+            <form method="post" action="/app/logout">
+                <button class="btn btn-bar btn-sm" type="submit">{{ lang.t("nav.sign_out") }}</button>
+            </form>
+            {% endif %}
+        </nav>
+        {% if !signed_in %}
+        {# Kept outside `.nav` so the primary button keeps its own colours. #}
+        <div class="topbar-actions">
+            <a class="nav-signin" href="/app/login">{{ lang.t("landing.nav.sign_in") }}</a>
+            <a class="btn btn-primary btn-sm" href="/app/register">{{ lang.t("landing.nav.create_account") }}</a>
+        </div>
+        {% endif %}
+    </div>
+</header>
+
+<div class="ticker" aria-hidden="true">
+    <div class="ticker-track">
+        <div class="ticker-group">
+            <span class="ticker-item">{{ site_name }}</span><span class="ticker-mark"></span>
+            <span class="ticker-item">+01</span><span class="ticker-mark"></span>
+            <span class="ticker-item">///</span><span class="ticker-mark"></span>
+            <span class="ticker-item">86.4%</span><span class="ticker-mark"></span>
+            <span class="ticker-item">+128</span><span class="ticker-mark"></span>
+            <span class="ticker-item">01 / 06</span><span class="ticker-mark"></span>
+        </div>
+        <div class="ticker-group">
+            <span class="ticker-item">{{ site_name }}</span><span class="ticker-mark"></span>
+            <span class="ticker-item">+01</span><span class="ticker-mark"></span>
+            <span class="ticker-item">///</span><span class="ticker-mark"></span>
+            <span class="ticker-item">86.4%</span><span class="ticker-mark"></span>
+            <span class="ticker-item">+128</span><span class="ticker-mark"></span>
+            <span class="ticker-item">01 / 06</span><span class="ticker-mark"></span>
+        </div>
+    </div>
+</div>
+
+<main class="landing-main">
+    <section class="hero">
+        <div class="hero-copy">
+            <div class="hero-index" aria-hidden="true">
+                <span class="h-chip">01</span>
+                <span class="h-rule"></span>
+                <span>///</span>
+            </div>
+            <div class="hero-title">
+                <h1>{{ site_name }}</h1>
+                <span class="hero-title-mark" aria-hidden="true">*</span>
+            </div>
+            <p class="hero-tagline">{{ lang.t("landing.tagline") }}</p>
+            <p class="hero-sub">{{ lang.t("landing.subtitle") }}</p>
+            <div class="hero-actions">
+                {% if signed_in %}
+                <a class="btn btn-primary btn-lg" href="/app">{{ lang.t("landing.cta.dashboard") }}</a>
+                {% else %}
+                <a class="btn btn-primary btn-lg" href="/app/register">{{ lang.t("landing.cta.create_account") }}</a>
+                <a class="btn btn-lg" href="/app/login">{{ lang.t("landing.cta.sign_in") }}</a>
+                {% endif %}
+            </div>
+            <div class="hero-spec" aria-hidden="true">
+                <span>01</span><span class="spec-tick"></span>
+                <span>02</span><span class="spec-tick"></span>
+                <span>03</span><span class="spec-tick"></span>
+                <span>///</span>
+            </div>
+        </div>
+
+        <aside class="hero-deck" aria-hidden="true">
+            <div class="deck-bar">
+                <span class="deck-dots"><i></i><i></i><i></i></span>
+                <span>/// 042</span>
+            </div>
+            <div class="deck-body">
+                <div class="deck-graph">
+                    <div class="deck-bars">
+                        <span style="--h: 34%"></span>
+                        <span style="--h: 52%"></span>
+                        <span style="--h: 41%"></span>
+                        <span style="--h: 68%"></span>
+                        <span style="--h: 49%"></span>
+                        <span style="--h: 76%"></span>
+                        <span style="--h: 58%"></span>
+                        <span style="--h: 88%"></span>
+                        <span style="--h: 63%"></span>
+                        <span style="--h: 94%"></span>
+                        <span style="--h: 72%"></span>
+                        <span style="--h: 84%"></span>
+                    </div>
+                    <svg class="deck-spark" viewBox="0 0 120 40" fill="none">
+                        <polyline points="0,34 12,30 24,31 36,22 48,25 60,16 72,19 84,10 96,13 108,6 120,9"></polyline>
+                    </svg>
+                    <div class="deck-axis"><span>01</span><span>07</span><span>14</span></div>
+                </div>
+                <div class="deck-grid">
+                    <div class="deck-cell">
+                        <span class="deck-num">042</span>
+                        <span class="deck-unit">/H</span>
+                    </div>
+                    <div class="deck-cell deck-cell-acid">
+                        <span class="deck-num">86.4</span>
+                        <span class="deck-unit">%</span>
+                    </div>
+                    <div class="deck-cell deck-cell-blue">
+                        <span class="deck-num">+128</span>
+                    </div>
+                    <div class="deck-cell">
+                        <span class="deck-num">3.2</span>
+                        <span class="deck-unit">MS</span>
+                    </div>
+                </div>
+                <div class="deck-controls">
+                    <div class="deck-switches">
+                        <span class="deck-switch on"></span>
+                        <span class="deck-switch"></span>
+                        <span class="deck-switch on"></span>
+                    </div>
+                    <div class="deck-squares"><i></i><i></i><i></i><i></i></div>
+                    <span class="deck-ruler"></span>
+                </div>
+            </div>
+        </aside>
+    </section>
+
+    <div class="rail-divider" aria-hidden="true"></div>
+
+    <section class="features" aria-labelledby="landing-highlights">
+        <div class="section-head">
+            <div class="section-index" aria-hidden="true">02</div>
+            <div class="section-copy">
+                <h2 id="landing-highlights">{{ lang.t("landing.features.heading") }}</h2>
+                <p>{{ lang.t("landing.features.subtitle") }}</p>
+            </div>
+            <div class="section-rule" aria-hidden="true"></div>
+        </div>
+
+        <div class="landing-grid">
+            <article class="landing-feature feature-1">
+                <span class="feature-strip" aria-hidden="true"></span>
+                <div class="feature-top">
+                    <span class="feature-index" aria-hidden="true">01</span>
+                    <span class="feature-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square">
+                            <circle cx="9" cy="8" r="3"></circle>
+                            <path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"></path>
+                            <path d="M16 5h5"></path>
+                            <path d="M18.5 2.5v5"></path>
+                        </svg>
+                    </span>
+                </div>
+                <h3>{{ lang.t("landing.feature.accounts.title") }}</h3>
+                <p>{{ lang.t("landing.feature.accounts.body") }}</p>
+                <span class="feature-foot" aria-hidden="true"><span class="feature-foot-bar"></span><span>///</span></span>
+            </article>
+
+            <article class="landing-feature feature-2">
+                <span class="feature-strip" aria-hidden="true"></span>
+                <div class="feature-top">
+                    <span class="feature-index" aria-hidden="true">02</span>
+                    <span class="feature-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square">
+                            <path d="M10 13a5 5 0 0 0 7.1 0l1.9-1.9a5 5 0 0 0-7.1-7.1L11 4.9"></path>
+                            <path d="M14 11a5 5 0 0 0-7.1 0L5 12.9a5 5 0 0 0 7.1 7.1l.9-.9"></path>
+                        </svg>
+                    </span>
+                </div>
+                <h3>{{ lang.t("landing.feature.links.title") }}</h3>
+                <p>{{ lang.t("landing.feature.links.body") }}</p>
+                <span class="feature-foot" aria-hidden="true"><span class="feature-foot-bar"></span><span>///</span></span>
+            </article>
+
+            <article class="landing-feature feature-3">
+                <span class="feature-strip" aria-hidden="true"></span>
+                <div class="feature-top">
+                    <span class="feature-index" aria-hidden="true">03</span>
+                    <span class="feature-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square">
+                            <rect x="4" y="10" width="16" height="11"></rect>
+                            <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+                            <path d="M12 14v3"></path>
+                        </svg>
+                    </span>
+                </div>
+                <h3>{{ lang.t("landing.feature.protection.title") }}</h3>
+                <p>{{ lang.t("landing.feature.protection.body") }}</p>
+                <span class="feature-foot" aria-hidden="true"><span class="feature-foot-bar"></span><span>///</span></span>
+            </article>
+
+            <article class="landing-feature feature-4">
+                <span class="feature-strip" aria-hidden="true"></span>
+                <div class="feature-top">
+                    <span class="feature-index" aria-hidden="true">04</span>
+                    <span class="feature-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square">
+                            <path d="M3 21h18"></path>
+                            <path d="M6 21V12"></path>
+                            <path d="M11 21V5"></path>
+                            <path d="M16 21v-6"></path>
+                            <path d="M21 21V9"></path>
+                        </svg>
+                    </span>
+                </div>
+                <h3>{{ lang.t("landing.feature.analytics.title") }}</h3>
+                <p>{{ lang.t("landing.feature.analytics.body") }}</p>
+                <span class="feature-foot" aria-hidden="true"><span class="feature-foot-bar"></span><span>///</span></span>
+            </article>
+
+            <article class="landing-feature feature-5">
+                <span class="feature-strip" aria-hidden="true"></span>
+                <div class="feature-top">
+                    <span class="feature-index" aria-hidden="true">05</span>
+                    <span class="feature-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square">
+                            <path d="M4 7h8"></path>
+                            <circle cx="15" cy="7" r="3"></circle>
+                            <path d="M18 7h2"></path>
+                            <path d="M4 17h3"></path>
+                            <circle cx="10" cy="17" r="3"></circle>
+                            <path d="M13 17h7"></path>
+                        </svg>
+                    </span>
+                </div>
+                <h3>{{ lang.t("landing.feature.operations.title") }}</h3>
+                <p>{{ lang.t("landing.feature.operations.body") }}</p>
+                <span class="feature-foot" aria-hidden="true"><span class="feature-foot-bar"></span><span>///</span></span>
+            </article>
+
+            <article class="landing-feature feature-6">
+                <span class="feature-strip" aria-hidden="true"></span>
+                <div class="feature-top">
+                    <span class="feature-index" aria-hidden="true">06</span>
+                    <span class="feature-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square">
+                            <circle cx="12" cy="12" r="9"></circle>
+                            <path d="M3 12h18"></path>
+                            <path d="M12 3c4 4 4 14 0 18c-4-4-4-14 0-18z"></path>
+                        </svg>
+                    </span>
+                </div>
+                <h3>{{ lang.t("landing.feature.platform.title") }}</h3>
+                <p>{{ lang.t("landing.feature.platform.body") }}</p>
+                <span class="feature-foot" aria-hidden="true"><span class="feature-foot-bar"></span><span>///</span></span>
+            </article>
+        </div>
+    </section>
+</main>
+{% endblock %}

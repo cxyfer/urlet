@@ -1,0 +1,251 @@
+{% macro content() %}
+<div class="page-head">
+    <div class="page-head-main">
+        <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ lang.t("nav.admin") }}</span>
+        <h1 class="page-title">{{ lang.t("admin.groups.heading") }}</h1>
+    </div>
+    <div class="page-head-side">
+        <span class="page-note">{{ lang.t("admin.groups.intro") }}</span>
+    </div>
+</div>
+
+<div class="panel mt">
+    <div class="panel-head">
+        <h2>{{ lang.t("admin.groups.new") }}</h2>
+        <span class="panel-sub" aria-hidden="true">GRP / 01</span>
+    </div>
+    <form method="post" action="/app/admin/groups">
+        <div class="form-grid">
+            <div class="field">
+                <label class="label" for="name">{{ lang.t("admin.groups.name") }}</label>
+                <input class="input" type="text" id="name" name="name" maxlength="40" required
+                       placeholder="{{ lang.t("admin.groups.name_placeholder") }}">
+            </div>
+            <div class="field">
+                <label class="label" for="description">{{ lang.t("admin.groups.description") }}</label>
+                <input class="input" type="text" id="description" name="description" maxlength="200">
+            </div>
+            <div class="field">
+                <label class="label" for="max_urls">{{ lang.t("admin.groups.max_urls") }}</label>
+                <input class="input" type="number" id="max_urls" name="max_urls" min="0" max="1000000" step="1"
+                       placeholder="{{ lang.t("admin.groups.quota_placeholder") }}">
+                <span class="hint">{{ lang.t("admin.groups.quota_hint") }}</span>
+            </div>
+            <div class="field">
+                <label class="label" for="max_api_tokens">{{ lang.t("admin.groups.max_api_tokens") }}</label>
+                <input class="input" type="number" id="max_api_tokens" name="max_api_tokens" min="0" max="1000000" step="1"
+                       placeholder="{{ lang.t("admin.groups.quota_placeholder") }}">
+                <span class="hint">{{ lang.t("admin.groups.quota_hint") }}</span>
+            </div>
+            <div class="field">
+                <label class="label" for="max_invites">{{ lang.t("admin.groups.max_invites") }}</label>
+                <input class="input" type="number" id="max_invites" name="max_invites" min="0" max="1000000" step="1"
+                       placeholder="{{ lang.t("admin.groups.quota_placeholder") }}">
+                <span class="hint">{{ lang.t("admin.groups.max_invites_hint") }}</span>
+            </div>
+            <div class="field">
+                <label class="label" for="invite_period">{{ lang.t("admin.groups.invite_period") }}</label>
+                <select class="select" id="invite_period" name="invite_period">
+                    <option value="day">{{ lang.t("admin.groups.period.day") }}</option>
+                    <option value="week">{{ lang.t("admin.groups.period.week") }}</option>
+                    <option value="month" selected>{{ lang.t("admin.groups.period.month") }}</option>
+                </select>
+                <span class="hint">{{ lang.t("admin.groups.invite_period_hint") }}</span>
+            </div>
+        </div>
+
+        <div class="check-cluster">
+            <label class="checkbox"><input type="checkbox" name="allow_invites" value="on"> {{ lang.t("admin.groups.feature.invites") }}</label>
+            <label class="checkbox"><input type="checkbox" name="allow_custom_slug" value="on" checked> {{ lang.t("admin.groups.feature.custom_slug") }}</label>
+            <label class="checkbox"><input type="checkbox" name="allow_password" value="on" checked> {{ lang.t("admin.groups.feature.password") }}</label>
+            <label class="checkbox"><input type="checkbox" name="allow_expiry" value="on" checked> {{ lang.t("admin.groups.feature.expiry") }}</label>
+            <label class="checkbox"><input type="checkbox" name="allow_max_clicks" value="on" checked> {{ lang.t("admin.groups.feature.max_clicks") }}</label>
+            <label class="checkbox"><input type="checkbox" name="allow_tags" value="on" checked> {{ lang.t("admin.groups.feature.tags") }}</label>
+            <label class="checkbox"><input type="checkbox" name="allow_api_tokens" value="on" checked> {{ lang.t("admin.groups.feature.api_tokens") }}</label>
+            <label class="checkbox"><input type="checkbox" name="allow_domain_selection" value="on" checked> {{ lang.t("admin.groups.feature.domain_selection") }}</label>
+        </div>
+        <p class="hint">{{ lang.t("admin.groups.feature_hint") }}</p>
+
+        <div class="form-grid">
+            <div class="field">
+                <label class="label" for="default_domain_id">{{ lang.t("admin.groups.default_domain") }}</label>
+                <select class="select" id="default_domain_id" name="default_domain_id">
+                    <option value="">{{ lang.t("admin.groups.site_default_domain") }}</option>
+                    {% for domain in domains %}
+                    <option value="{{ domain.id }}">{{ domain.hostname }}</option>
+                    {% endfor %}
+                </select>
+                <span class="hint">{{ lang.t("admin.groups.default_domain_hint") }}</span>
+            </div>
+        </div>
+        <label class="checkbox"><input type="checkbox" name="restrict_domains" value="on"> {{ lang.t("admin.groups.restrict_domains") }}</label>
+        <span class="hint">{{ lang.t("admin.groups.restrict_domains_hint") }}</span>
+        <div class="stack">
+            <span class="label">{{ lang.t("admin.groups.allowed_domains") }}</span>
+            {% for domain in domains %}
+            <label class="checkbox"><input type="checkbox" name="domain_{{ domain.id }}" value="on"> {{ domain.hostname }}</label>
+            {% endfor %}
+            <span class="hint">{{ lang.t("admin.groups.allowed_domains_hint") }}</span>
+        </div>
+
+        <div class="form-actions">
+            <button class="btn btn-primary" type="submit">{{ lang.t("admin.groups.create") }}</button>
+        </div>
+    </form>
+</div>
+
+<div class="panel panel-flush">
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>{{ lang.t("admin.groups.name") }}</th>
+                    <th class="num">{{ lang.t("admin.groups.max_urls") }}</th>
+                    <th class="num">{{ lang.t("admin.groups.max_api_tokens") }}</th>
+                    <th>{{ lang.t("admin.groups.invites") }}</th>
+                    <th class="num">{{ lang.t("admin.groups.members") }}</th>
+                    <th>{{ lang.t("admin.groups.features") }}</th>
+                    <th>{{ lang.t("common.created") }}</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for group in groups %}
+                <tr>
+                    <td>
+                        <div class="cell-stack">
+                            <span>{{ group.name }}
+                                {% if group.is_default %}<span class="badge badge-accent">{{ lang.t("admin.groups.default") }}</span>{% endif %}
+                            </span>
+                            {% if group.description.len() > 0 %}<span class="small muted">{{ group.description }}</span>{% endif %}
+                        </div>
+                    </td>
+                    <td class="num">{{ group.max_urls_display }}</td>
+                    <td class="num">{{ group.max_api_tokens_display }}</td>
+                    <td>
+                        <span class="small {% if group.invite_quota_exhausted %}muted{% endif %}">{{ group.invite_usage_display }}</span>
+                        {% if group.invite_quota_exhausted %}<span class="badge badge-muted">{{ lang.t("admin.groups.invites_used_up") }}</span>{% endif %}
+                    </td>
+                    <td class="num">{{ group.members }}</td>
+                    <td>
+                        <span class="small">{{ group.features_label }}</span>
+                    </td>
+                    <td class="small">{{ group.created }}</td>
+                    <td>
+                        <details>
+                            <summary class="small">{{ lang.t("admin.groups.manage") }}</summary>
+                            <div class="drawer stack">
+                                <form method="post" action="/app/admin/groups/{{ group.id }}" class="stack">
+                                    <div class="field">
+                                        <label class="label">{{ lang.t("admin.groups.name") }}</label>
+                                        <input class="input" type="text" name="name" value="{{ group.name }}" maxlength="40" required>
+                                    </div>
+                                    <div class="field">
+                                        <label class="label">{{ lang.t("admin.groups.description") }}</label>
+                                        <input class="input" type="text" name="description" value="{{ group.description }}" maxlength="200">
+                                    </div>
+                                    <div class="field">
+                                        <label class="label">{{ lang.t("admin.groups.max_urls") }}</label>
+                                        <input class="input" type="number" name="max_urls" min="0" max="1000000" step="1" value="{{ group.max_urls_input }}"
+                                               placeholder="{{ lang.t("admin.groups.quota_placeholder") }}">
+                                        <span class="hint">{{ group.max_urls_display }}</span>
+                                    </div>
+                                    <div class="field">
+                                        <label class="label">{{ lang.t("admin.groups.max_api_tokens") }}</label>
+                                        <input class="input" type="number" name="max_api_tokens" min="0" max="1000000" step="1" value="{{ group.max_api_tokens_input }}"
+                                               placeholder="{{ lang.t("admin.groups.quota_placeholder") }}">
+                                        <span class="hint">{{ group.max_api_tokens_display }}</span>
+                                    </div>
+                                    <div class="field">
+                                        <label class="label">{{ lang.t("admin.groups.max_invites") }}</label>
+                                        <input class="input" type="number" name="max_invites" min="0" max="1000000" step="1" value="{{ group.max_invites_input }}"
+                                               placeholder="{{ lang.t("admin.groups.quota_placeholder") }}">
+                                        <span class="hint">{{ group.max_invites_display }}</span>
+                                    </div>
+                                    <div class="field">
+                                        <label class="label">{{ lang.t("admin.groups.invite_period") }}</label>
+                                        <select class="select" name="invite_period">
+                                            <option value="day" {% if group.invite_period == "day" %}selected{% endif %}>{{ lang.t("admin.groups.period.day") }}</option>
+                                            <option value="week" {% if group.invite_period == "week" %}selected{% endif %}>{{ lang.t("admin.groups.period.week") }}</option>
+                                            <option value="month" {% if group.invite_period == "month" %}selected{% endif %}>{{ lang.t("admin.groups.period.month") }}</option>
+                                        </select>
+                                        <span class="hint">{{ group.invite_usage_display }}</span>
+                                    </div>
+
+                                    <div class="stack">
+                                        <label class="checkbox"><input type="checkbox" name="allow_invites" value="on" {% if group.allow_invites %}checked{% endif %}> {{ lang.t("admin.groups.feature.invites") }}</label>
+                                        <label class="checkbox"><input type="checkbox" name="allow_custom_slug" value="on" {% if group.allow_custom_slug %}checked{% endif %}> {{ lang.t("admin.groups.feature.custom_slug") }}</label>
+                                        <label class="checkbox"><input type="checkbox" name="allow_password" value="on" {% if group.allow_password %}checked{% endif %}> {{ lang.t("admin.groups.feature.password") }}</label>
+                                        <label class="checkbox"><input type="checkbox" name="allow_expiry" value="on" {% if group.allow_expiry %}checked{% endif %}> {{ lang.t("admin.groups.feature.expiry") }}</label>
+                                        <label class="checkbox"><input type="checkbox" name="allow_max_clicks" value="on" {% if group.allow_max_clicks %}checked{% endif %}> {{ lang.t("admin.groups.feature.max_clicks") }}</label>
+                                        <label class="checkbox"><input type="checkbox" name="allow_tags" value="on" {% if group.allow_tags %}checked{% endif %}> {{ lang.t("admin.groups.feature.tags") }}</label>
+                                        <label class="checkbox"><input type="checkbox" name="allow_api_tokens" value="on" {% if group.allow_api_tokens %}checked{% endif %}> {{ lang.t("admin.groups.feature.api_tokens") }}</label>
+                                        <label class="checkbox"><input type="checkbox" name="allow_domain_selection" value="on" {% if group.allow_domain_selection %}checked{% endif %}> {{ lang.t("admin.groups.feature.domain_selection") }}</label>
+                                    </div>
+
+                                    <div class="field">
+                                        <label class="label">{{ lang.t("admin.groups.default_domain") }}</label>
+                                        <select class="select" name="default_domain_id">
+                                            <option value="">{{ lang.t("admin.groups.site_default_domain") }}</option>
+                                            {% if group.has_disabled_default_domain() %}
+                                            <option value="{{ group.disabled_default_domain_id() }}" selected>{{ group.disabled_default_domain_name() }} ({{ lang.t("admin.groups.disabled_domain") }})</option>
+                                            {% endif %}
+                                            {% for domain in domains %}
+                                            <option value="{{ domain.id }}" {% if group.uses_default_domain(domain.id) %}selected{% endif %}>{{ domain.hostname }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <span class="hint">{{ lang.t("admin.groups.default_domain_hint") }}</span>
+                                    </div>
+                                    <label class="checkbox"><input type="checkbox" name="restrict_domains" value="on" {% if group.restrict_domains %}checked{% endif %}> {{ lang.t("admin.groups.restrict_domains") }}</label>
+                                    <span class="hint">{{ lang.t("admin.groups.restrict_domains_hint") }}</span>
+                                    <div class="stack">
+                                        <span class="label">{{ lang.t("admin.groups.allowed_domains") }}</span>
+                                        {% for domain in domains %}
+                                        <label class="checkbox"><input type="checkbox" name="domain_{{ domain.id }}" value="on" {% if group.allows_domain(domain.id) %}checked{% endif %}> {{ domain.hostname }}</label>
+                                        {% endfor %}
+                                        {% for domain in group.disabled_domains %}
+                                        <label class="checkbox"><input type="checkbox" name="domain_{{ domain.id }}" value="on" checked> {{ domain.hostname }} ({{ lang.t("admin.groups.disabled_domain") }})</label>
+                                        {% endfor %}
+                                        <span class="hint">{{ lang.t("admin.groups.allowed_domains_hint") }}</span>
+                                    </div>
+
+                                    <label class="checkbox">
+                                        <input type="checkbox" name="is_default" value="on"
+                                               {% if group.is_default %}checked disabled{% endif %}>
+                                        {{ lang.t("admin.groups.make_default") }}
+                                    </label>
+                                    <span class="hint">{{ lang.t("admin.groups.default_hint") }}</span>
+
+                                    <button class="btn btn-sm btn-primary" type="submit">{{ lang.t("common.save") }}</button>
+                                </form>
+
+                                {% if !group.is_default %}
+                                <form method="post" action="/app/admin/groups/{{ group.id }}/delete" class="stack">
+                                    <div class="field">
+                                        <label class="label">{{ lang.t("admin.groups.reassign_to") }}</label>
+                                        <select class="select" name="reassign_to" required>
+                                            {% for other in groups %}
+                                            {% if other.id != group.id %}
+                                            <option value="{{ other.id }}" {% if other.is_default %}selected{% endif %}>{{ other.name }}</option>
+                                            {% endif %}
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <button class="btn btn-sm btn-danger" type="submit"
+                                            data-confirm="{{ lang.t("admin.groups.delete_confirm") }}">
+                                        {{ lang.t("admin.groups.delete") }}
+                                    </button>
+                                </form>
+                                {% else %}
+                                <p class="hint">{{ lang.t("admin.groups.default_locked") }}</p>
+                                {% endif %}
+                            </div>
+                        </details>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endmacro %}

@@ -10,6 +10,7 @@ use crate::services::click::ClickRecorder;
 use crate::services::domains::DomainRegistry;
 use crate::services::ratelimit::RateLimiter;
 use crate::services::settings::Settings;
+use crate::services::theme::ThemeRegistry;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -17,6 +18,8 @@ pub struct AppState {
     pub db: SqlitePool,
     pub settings: Arc<Settings>,
     pub domains: Arc<DomainRegistry>,
+    /// Administrator's theme choices, cached for the request path.
+    pub themes: Arc<ThemeRegistry>,
     pub limiter: Arc<RateLimiter>,
     pub clicks: ClickRecorder,
     pub started_at: OffsetDateTime,
@@ -27,6 +30,7 @@ impl AppState {
         let config = Arc::new(config);
         let settings = Arc::new(settings);
         let domains = Arc::new(DomainRegistry::new(&config.base_host));
+        let themes = Arc::new(ThemeRegistry::new());
         let clicks = ClickRecorder::start(
             db.clone(),
             config.clone(),
@@ -39,6 +43,7 @@ impl AppState {
             db,
             settings,
             domains,
+            themes,
             limiter: Arc::new(RateLimiter::new()),
             clicks,
             started_at: OffsetDateTime::now_utc(),

@@ -15,29 +15,49 @@ use crate::routes::extract::Flexible;
 use crate::services::click::ClickInput;
 use crate::services::cookies;
 use crate::services::ratelimit::limits;
+use crate::services::theme::{self, ThemeView};
 use crate::services::{password, unlock};
 use crate::state::AppState;
+use crate::themed_page;
 
 /// Password prompt for a protected link.
-#[derive(Debug, Template)]
-#[template(path = "link_password.html")]
+#[derive(Debug)]
 pub struct PasswordPage {
     pub site_name: String,
     pub slug: String,
     pub error: Option<String>,
     pub lang: i18n::Lang,
+    pub theme: ThemeView,
 }
 
+themed_page!(link_password_templates, PasswordPageView, PasswordPage,
+    Verdant => "link_password.html",
+    Aurora => "themes/aurora/link_password.html",
+    Paper => "themes/paper/link_password.html",
+    Signal => "themes/signal/link_password.html",
+    Gilded => "themes/gilded/link_password.html",
+    Swiss => "themes/swiss/link_password.html",
+);
+
 /// 404/410 page for a link that cannot be followed.
-#[derive(Debug, Template)]
-#[template(path = "link_error.html")]
+#[derive(Debug)]
 pub struct LinkErrorPage {
     pub site_name: String,
     pub status_code: u16,
     pub title: String,
     pub message: String,
     pub lang: i18n::Lang,
+    pub theme: ThemeView,
 }
+
+themed_page!(link_error_templates, LinkErrorPageView, LinkErrorPage,
+    Verdant => "link_error.html",
+    Aurora => "themes/aurora/link_error.html",
+    Paper => "themes/paper/link_error.html",
+    Signal => "themes/signal/link_error.html",
+    Gilded => "themes/gilded/link_error.html",
+    Swiss => "themes/swiss/link_error.html",
+);
 
 #[derive(Debug, Deserialize)]
 pub struct UnlockPayload {
@@ -270,7 +290,9 @@ fn password_page(
         slug: slug.to_string(),
         error: error.map(str::to_string),
         lang: i18n::current(),
-    };
+        theme: theme::for_anonymous(),
+    }
+    .themed();
     render(page, status)
 }
 
@@ -282,7 +304,9 @@ fn not_found_page(state: &AppState) -> Response {
         title: lang.t("link.not_found.title").to_string(),
         message: lang.t("link.not_found.message").to_string(),
         lang,
-    };
+        theme: theme::for_anonymous(),
+    }
+    .themed();
     render(page, StatusCode::NOT_FOUND)
 }
 
@@ -295,7 +319,9 @@ fn gone_page(state: &AppState, title_key: &str, message_key: &str) -> Response {
         title: lang.t(title_key).to_string(),
         message: lang.t(message_key).to_string(),
         lang,
-    };
+        theme: theme::for_anonymous(),
+    }
+    .themed();
     render(page, StatusCode::GONE)
 }
 

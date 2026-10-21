@@ -15,11 +15,12 @@ use crate::error::AppError;
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::MaybeUser;
 use crate::middleware::domain::HostContext;
+use crate::services::theme::ThemeView;
 use crate::state::AppState;
+use crate::themed_page;
 
 /// `templates/landing.html`
-#[derive(Debug, Template)]
-#[template(path = "landing.html")]
+#[derive(Debug)]
 pub struct LandingPage {
     pub site_name: String,
     pub lang: Lang,
@@ -27,16 +28,35 @@ pub struct LandingPage {
     pub signed_in: bool,
     /// Label of the signed-in account; empty for anonymous visitors.
     pub email: String,
+    pub theme: ThemeView,
 }
 
+themed_page!(landing_templates, LandingView, LandingPage,
+    Verdant => "landing.html",
+    Aurora => "themes/aurora/landing.html",
+    Paper => "themes/paper/landing.html",
+    Signal => "themes/signal/landing.html",
+    Gilded => "themes/gilded/landing.html",
+    Swiss => "themes/swiss/landing.html",
+);
+
 /// `templates/short_landing.html`
-#[derive(Debug, Template)]
-#[template(path = "short_landing.html")]
+#[derive(Debug)]
 pub struct ShortLandingPage {
     pub site_name: String,
     pub canonical_url: String,
     pub lang: Lang,
+    pub theme: ThemeView,
 }
+
+themed_page!(short_landing_templates, ShortLandingView, ShortLandingPage,
+    Verdant => "short_landing.html",
+    Aurora => "themes/aurora/short_landing.html",
+    Paper => "themes/paper/short_landing.html",
+    Signal => "themes/signal/short_landing.html",
+    Gilded => "themes/gilded/short_landing.html",
+    Swiss => "themes/swiss/short_landing.html",
+);
 
 /// `GET /` — the public landing page.
 ///
@@ -53,7 +73,9 @@ pub async fn home(
             site_name: state.settings.site_name(),
             canonical_url: state.config.base_url.clone(),
             lang: i18n::current(),
-        };
+            theme: crate::services::theme::for_anonymous(),
+        }
+        .themed();
         let mut response = render(page)?;
         response
             .headers_mut()
@@ -64,9 +86,13 @@ pub async fn home(
         return Ok(response);
     }
 
-    let (signed_in, email) = match current {
+    let (signed_in, email) = match &current {
         Some(current) => (true, current.user.label().to_string()),
         None => (false, String::new()),
+    };
+    let theme = match &current {
+        Some(current) => crate::services::theme::for_user(&state.settings, &current.user),
+        None => crate::services::theme::for_anonymous(),
     };
 
     let page = LandingPage {
@@ -74,7 +100,9 @@ pub async fn home(
         lang: i18n::current(),
         signed_in,
         email,
-    };
+        theme,
+    }
+    .themed();
     render(page)
 }
 
