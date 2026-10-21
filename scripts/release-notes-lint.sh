@@ -11,7 +11,8 @@
 #
 # The check is structural: a non-empty line that continues the previous
 # paragraph, bullet or blockquote is an error. Fenced code, HTML comments,
-# headings, tables, rules and raw HTML are ignored.
+# headings, tables (with or without the outer pipes), rules and raw HTML are
+# ignored.
 #
 set -euo pipefail
 
@@ -29,11 +30,13 @@ function fail(previous, current) {
     printf "%s:%d: hard-wrapped prose (line %d continues here)\n", file, current, previous
     failed = 1
 }
-BEGIN { fence = 0; comment = 0; prev = 0; failed = 0 }
+BEGIN { fence = 0; comment = 0; table = 0; prev = 0; failed = 0 }
 {
     line = $0
+    previous = last
+    last = line
 
-    if (line ~ /^[[:space:]]*(```|~~~)/) { fence = !fence; prev = 0; next }
+    if (line ~ /^[[:space:]]*(```|~~~)/) { fence = !fence; table = 0; prev = 0; next }
     if (fence) next
 
     if (comment) {
@@ -47,9 +50,23 @@ BEGIN { fence = 0; comment = 0; prev = 0; failed = 0 }
         next
     }
 
-    if (line ~ /^[[:space:]]*$/) { prev = 0; next }
+    if (line ~ /^[[:space:]]*$/) { table = 0; prev = 0; next }
 
-    # Headings, rules, tables and raw HTML open a block of their own.
+    # Continue a GFM table; its rows may omit the outer pipes.
+    if (table) {
+        if (line ~ /\|/ && line !~ /^[[:space:]]*(#|>|<)/) { prev = 0; next }
+        table = 0
+    }
+
+    # A GFM delimiter row can omit the outer pipes (`--- | ---`). The header
+    # row above it (`Header | Header`) looks like prose, so pair them here.
+    if (line ~ /^[[:space:]|:-]+$/ && line ~ /-/ && line ~ /\|/ && previous ~ /\|/) {
+        table = 1
+        prev = 0
+        next
+    }
+
+    # Headings, rules, table rows and raw HTML open a block of their own.
     if (line ~ /^[[:space:]]*(#|[-*_][-*_][-*_][-*_]*[[:space:]]*$|[|]|<)/) { prev = 0; next }
 
     if (line ~ /^[[:space:]]*>/) {
