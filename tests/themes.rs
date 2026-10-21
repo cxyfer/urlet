@@ -250,6 +250,25 @@ async fn theme_assets_are_embedded_and_unknown_keys_are_404() {
 }
 
 #[tokio::test]
+async fn the_theme_picker_menu_paints_its_own_text_and_background() {
+    let app = TestApp::spawn().await;
+    let response = app.get("/assets/theme-ui.css").await;
+    assert_eq!(response.status, StatusCode::OK);
+    let rule = response
+        .body
+        .split(".theme-menu {")
+        .nth(1)
+        .and_then(|rest| rest.split('}').next())
+        .expect("the shared picker CSS must define .theme-menu");
+    // The menu floats over content and must not inherit the colour of the bar
+    // that opened it: on inverted bars (Swiss, Signal, Gilded) that colour is
+    // the same as the menu surface, so both sides of the pair are explicit.
+    assert!(rule.contains("background:"), "{rule}");
+    assert!(rule.contains("color:"), "{rule}");
+    assert!(!rule.contains("color: inherit"), "{rule}");
+}
+
+#[tokio::test]
 async fn the_theme_picker_is_hidden_without_permission() {
     let app = TestApp::spawn().await;
     let cookie = admin(&app).await;
