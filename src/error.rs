@@ -9,6 +9,8 @@ use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use serde::Serialize;
 
+use crate::themed_page;
+
 pub type Result<T> = std::result::Result<T, AppError>;
 
 /// Errors that can be returned from any handler.
@@ -154,15 +156,24 @@ impl AppError {
     }
 }
 
-#[derive(Template)]
-#[template(path = "error.html")]
+#[derive(Debug)]
 pub struct ErrorTemplate {
     pub status_code: u16,
     pub title: String,
     pub message: String,
     pub site_name: String,
     pub lang: crate::i18n::Lang,
+    pub theme: crate::services::theme::ThemeView,
 }
+
+themed_page!(error_templates, ErrorView, ErrorTemplate,
+    Verdant => "error.html",
+    Aurora => "themes/aurora/error.html",
+    Paper => "themes/paper/error.html",
+    Signal => "themes/signal/error.html",
+    Gilded => "themes/gilded/error.html",
+    Swiss => "themes/swiss/error.html",
+);
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
@@ -178,7 +189,9 @@ impl IntoResponse for AppError {
                 message: crate::i18n::message(lang, &self.message()),
                 site_name: "urlet".to_string(),
                 lang,
-            };
+                theme: crate::services::theme::current(),
+            }
+            .themed();
             match template.render() {
                 Ok(html) => (status, Html(html)).into_response(),
                 Err(err) => {

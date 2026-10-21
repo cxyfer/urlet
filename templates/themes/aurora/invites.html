@@ -1,0 +1,8 @@
+{% extends "themes/aurora/app_base.html" %}
+
+{% block title %}{{ lang.t("invites.title") }} — {{ site_name }}{% endblock %}
+
+{% import "content/invites.html" as content %}
+{% block content %}
+{% call content::content() %}
+{% endblock %}

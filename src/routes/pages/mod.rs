@@ -11,20 +11,23 @@ pub mod auth;
 pub mod dashboard;
 pub mod home;
 pub mod invites;
+pub mod themed;
 pub mod urls;
 
 use axum::extract::{Path, Query, State};
-use axum::http::{header, HeaderValue, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::Router;
 use serde::Deserialize;
 
 use crate::db::users::User;
+use crate::error::AppError;
 use crate::i18n::{self, Lang};
-use crate::middleware::auth::ClientInfo;
+use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::services::captcha::{CaptchaFlow, CaptchaGuard, CaptchaWidget};
 use crate::services::invite_quota::InvitePeriod;
+use crate::services::theme::{self, ThemeKey, ThemeView};
 use crate::state::AppState;
 
 /// A banner shown at the top of a page.
@@ -43,6 +46,7 @@ pub struct Chrome {
     pub is_admin: bool,
     pub active: &'static str,
     pub flash: Option<Flash>,
+    pub theme: ThemeView,
 }
 
 impl Chrome {
@@ -54,6 +58,7 @@ impl Chrome {
             is_admin: user.is_admin(),
             active,
             flash,
+            theme: crate::services::theme::for_user(&state.settings, user),
         }
     }
 }
@@ -131,6 +136,7 @@ pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
             "password_rules" => "flash.err.password_rules",
             "tags" => "flash.err.tags",
             "captcha" => "flash.err.captcha",
+            "theme" => "flash.err.theme",
             "domain" => "flash.err.domain",
             "domain_invalid" => "flash.err.domain_invalid",
             "domain_conflict" => "flash.err.domain_conflict",
@@ -451,12 +457,169 @@ pub fn router() -> Router<AppState> {
         .route("/admin/groups/{id}", post(admin::update_group))
         .route("/admin/groups/{id}/delete", post(admin::delete_group))
         .route(
+            "/admin/themes",
+            get(admin::themes_page).post(admin::update_themes),
+        )
+        .route(
             "/admin/settings",
             get(admin::settings_page).post(admin::update_settings),
         )
         .route("/admin/audit", get(admin::audit_page))
         // language switcher
         .route("/lang/{code}", get(lang_switch))
+        // theme picker
+        .route("/theme/default", get(theme_default))
+        .route("/theme/preview/stop", get(theme_preview_stop))
+        .route("/theme/{key}", get(theme_switch))
+}
+
+/// Query string of `GET /app/theme/{key}`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ThemeQuery {
+    #[serde(default)]
+    pub next: Option<String>,
+    /// `1`/`true` requests the administrator-only preview cookie.
+    #[serde(default)]
+    pub preview: Option<String>,
+}
+
+fn wants_preview(value: Option<&str>) -> bool {
+    matches!(value.map(str::trim), Some("1" | "true" | "yes" | "on"))
+}
+
+/// `GET /app/theme/{key}` — remember the choice in a cookie and go back.
+///
+/// Only a signed-in account may switch, and only when the site policy allows
+/// it. The choice lives in a cookie so it applies before authentication too;
+/// the server validates the key against the enabled themes on every request,
+/// so a stale or hand-written value cannot load a disabled theme.
+///
+/// An administrator can pass `?preview=1` to set the separate preview cookie,
+/// which may name a disabled theme. The theme middleware only honours that
+/// cookie for administrators.
+pub async fn theme_switch(
+    State(state): State<AppState>,
+    MaybeUser(current): MaybeUser,
+    Path(key): Path<String>,
+    Query(query): Query<ThemeQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let target = theme_target(&headers, &state.config.base_url, query.next.as_deref());
+    let Some(current) = current else {
+        return redirect_to_login(Some(&target)).into_response();
+    };
+    if !theme::can_switch(&state.settings, &current.user) {
+        return AppError::forbidden("theme switching is disabled for this account").into_response();
+    }
+    let Some(theme_key) = ThemeKey::parse(&key) else {
+        return AppError::not_found().into_response();
+    };
+
+    let mut cookies = Vec::new();
+    if wants_preview(query.preview.as_deref()) {
+        if !current.is_admin() {
+            return AppError::forbidden("theme preview is administrator only").into_response();
+        }
+        cookies.push(crate::services::cookies::build(
+            crate::services::theme::PREVIEW_COOKIE_NAME,
+            theme_key.key(),
+            crate::services::theme::PREVIEW_COOKIE_MAX_AGE,
+            state.config.secure_cookies,
+        ));
+    } else {
+        if !state.themes.is_enabled(theme_key) {
+            return AppError::not_found().into_response();
+        }
+        cookies.push(crate::services::cookies::build(
+            crate::services::theme::COOKIE_NAME,
+            theme_key.key(),
+            crate::services::theme::COOKIE_MAX_AGE,
+            state.config.secure_cookies,
+        ));
+        // A normal picker click leaves preview mode.
+        cookies.push(crate::services::cookies::clear(
+            crate::services::theme::PREVIEW_COOKIE_NAME,
+            state.config.secure_cookies,
+        ));
+    }
+    theme_redirect(&target, &cookies)
+}
+
+/// `GET /app/theme/default` — clear the explicit choice and follow the site
+/// default again.
+pub async fn theme_default(
+    State(state): State<AppState>,
+    MaybeUser(current): MaybeUser,
+    Query(query): Query<ThemeQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let target = theme_target(&headers, &state.config.base_url, query.next.as_deref());
+    let Some(current) = current else {
+        return redirect_to_login(Some(&target)).into_response();
+    };
+    if !theme::can_switch(&state.settings, &current.user) {
+        return AppError::forbidden("theme switching is disabled for this account").into_response();
+    }
+    let cookies = vec![
+        crate::services::cookies::clear(
+            crate::services::theme::COOKIE_NAME,
+            state.config.secure_cookies,
+        ),
+        crate::services::cookies::clear(
+            crate::services::theme::PREVIEW_COOKIE_NAME,
+            state.config.secure_cookies,
+        ),
+    ];
+    theme_redirect(&target, &cookies)
+}
+
+/// `GET /app/theme/preview/stop` — leave administrator preview mode.
+pub async fn theme_preview_stop(
+    State(state): State<AppState>,
+    MaybeUser(current): MaybeUser,
+    Query(query): Query<ThemeQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let target = theme_target(&headers, &state.config.base_url, query.next.as_deref());
+    if current.is_none() {
+        return redirect_to_login(Some(&target)).into_response();
+    }
+    let cookies = vec![crate::services::cookies::clear(
+        crate::services::theme::PREVIEW_COOKIE_NAME,
+        state.config.secure_cookies,
+    )];
+    theme_redirect(&target, &cookies)
+}
+
+fn theme_target(headers: &HeaderMap, base_url: &str, next: Option<&str>) -> String {
+    safe_next(next)
+        .or_else(|| referrer_path(headers, base_url))
+        .unwrap_or_else(|| "/app".to_string())
+}
+
+fn theme_redirect(target: &str, cookies: &[String]) -> Response {
+    let mut response = StatusCode::FOUND.into_response();
+    let location = HeaderValue::from_str(&encode_location(target))
+        .unwrap_or_else(|_| HeaderValue::from_static("/app"));
+    response.headers_mut().insert(header::LOCATION, location);
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    for cookie in cookies {
+        if let Ok(value) = HeaderValue::from_str(cookie) {
+            response.headers_mut().append(header::SET_COOKIE, value);
+        }
+    }
+    response
+}
+
+/// Same-site path of a `Referer`, so a picker click can stay on the page the
+/// visitor was reading without putting the path in every link.
+fn referrer_path(headers: &HeaderMap, base_url: &str) -> Option<String> {
+    let raw = headers.get(header::REFERER)?.to_str().ok()?;
+    let base = base_url.trim_end_matches('/');
+    let path = raw.strip_prefix(base).unwrap_or(raw);
+    safe_next(Some(path))
 }
 
 /// Query string of `GET /app/lang/{code}`.
@@ -504,6 +667,34 @@ pub async fn lang_switch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn theme_switch_referrer_stays_on_site() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::REFERER,
+            HeaderValue::from_static("http://localhost:8080/app/urls/7?days=30"),
+        );
+        assert_eq!(
+            referrer_path(&headers, "http://localhost:8080").as_deref(),
+            Some("/app/urls/7?days=30")
+        );
+
+        headers.insert(
+            header::REFERER,
+            HeaderValue::from_static("https://evil.example/app"),
+        );
+        assert_eq!(referrer_path(&headers, "http://localhost:8080"), None);
+
+        headers.insert(
+            header::REFERER,
+            HeaderValue::from_static("http://localhost:8080.evil.example/app"),
+        );
+        assert_eq!(referrer_path(&headers, "http://localhost:8080"), None);
+
+        headers.remove(header::REFERER);
+        assert_eq!(referrer_path(&headers, "http://localhost:8080"), None);
+    }
 
     #[test]
     fn only_relative_next_targets_are_allowed() {

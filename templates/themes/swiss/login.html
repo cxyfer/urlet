@@ -1,0 +1,79 @@
+{% extends "themes/swiss/base.html" %}
+
+{% block footer_lang %}{% endblock %}
+
+{% block title %}{{ lang.t("auth.login.title") }} — {{ site_name }}{% endblock %}
+
+{% block body %}
+<header class="masthead">
+    <div class="masthead-inner">
+        <a class="brand" href="/">{{ site_name }}<span>.</span></a>
+        <nav class="nav">
+            {% include "partials/lang_switcher.html" %}
+        </nav>
+    </div>
+</header>
+
+<main class="wrap auth">
+    <div class="g12">
+        <div class="auth-title span-7">
+            <p class="auth-issue">
+                <span aria-hidden="true">01 / 02</span>
+                <span class="line" aria-hidden="true"></span>
+                <span>{{ lang.t("auth.login.title") }}</span>
+            </p>
+            <h1>{{ site_name }}<span class="dot" aria-hidden="true">.</span></h1>
+            <div class="auth-rule" aria-hidden="true"></div>
+            <p class="auth-sub">{{ lang.t("auth.login.subtitle") }}</p>
+
+            <div class="auth-facts" aria-hidden="true">
+                <div class="faq"><span class="n">01</span><span class="v">///// — — — —</span></div>
+                <div class="faq"><span class="n">02</span><span class="v">+ 0.000 / 1.000</span></div>
+                <div class="faq"><span class="n">03</span><span class="v">12 × 24 / 1280</span></div>
+            </div>
+        </div>
+
+        <div class="span-5">
+            <div class="auth-sheet">
+                {% match notice %}
+                {% when Some with (message) %}
+                <div class="alert alert-ok">
+                    <span class="alert-glyph" aria-hidden="true">+</span>
+                    <span>{{ message }}</span>
+                </div>
+                {% when None %}
+                {% endmatch %}
+
+                {% match error %}
+                {% when Some with (message) %}
+                <div class="alert alert-error">
+                    <span class="alert-glyph" aria-hidden="true">!</span>
+                    <span>{{ message }}</span>
+                </div>
+                {% when None %}
+                {% endmatch %}
+
+                <form method="post" action="/app/login">
+                    <input type="hidden" name="next" value="{{ next }}">
+                    <div class="field">
+                        <label class="label" for="email">{{ lang.t("common.email") }}</label>
+                        <input class="input" type="email" id="email" name="email" value="{{ email }}"
+                               autocomplete="username" required autofocus>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="password">{{ lang.t("common.password") }}</label>
+                        <input class="input" type="password" id="password" name="password"
+                               autocomplete="current-password" required>
+                    </div>
+                    {% include "partials/captcha.html" %}
+                    <button class="btn btn-primary btn-block" type="submit">{{ lang.t("auth.login.submit") }}</button>
+                </form>
+
+                <p class="auth-alt">
+                    {{ lang.t("auth.login.no_account") }} <a href="/app/register">{{ lang.t("auth.login.create_one") }}</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</main>
+{% endblock %}

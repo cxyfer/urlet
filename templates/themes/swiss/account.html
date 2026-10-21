@@ -1,0 +1,8 @@
+{% extends "themes/swiss/app_base.html" %}
+
+{% block title %}{{ lang.t("account.heading") }} — {{ chrome.site_name }}{% endblock %}
+
+{% import "content/account.html" as content %}
+{% block content %}
+{% call content::content() %}
+{% endblock %}

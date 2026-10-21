@@ -34,6 +34,6 @@
 
 {% block footer_tools %}
 <div class="footer-tools">
-    {% include "partials/theme_toggle.html" %}
+    {% if !self.theme_is_dark_only() %}{% include "partials/theme_toggle.html" %}{% endif %}
 </div>
 {% endblock %}

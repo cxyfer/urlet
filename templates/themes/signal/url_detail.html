@@ -1,0 +1,8 @@
+{% extends "themes/signal/app_base.html" %}
+
+{% block title %}{{ url.slug }} — {{ chrome.site_name }}{% endblock %}
+
+{% import "content/url_detail.html" as content %}
+{% block content %}
+{% call content::content() %}
+{% endblock %}

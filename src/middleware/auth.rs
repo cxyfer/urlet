@@ -45,6 +45,14 @@ impl CurrentUser {
 #[derive(Debug, Clone)]
 pub struct MaybeUser(pub Option<CurrentUser>);
 
+/// Authentication resolved by the theme middleware before the handler runs.
+///
+/// The extension lets the regular extractors reuse the lookup instead of
+/// querying the database a second time. API and asset routes skip the theme
+/// middleware and therefore fall back to the extractor's own lookup.
+#[derive(Debug, Clone)]
+pub struct Authenticated(pub Option<CurrentUser>);
+
 /// Client metadata useful for rate limiting, audit trails and analytics.
 #[derive(Debug, Clone, Default)]
 pub struct ClientInfo {
@@ -141,15 +149,21 @@ impl FromRequestParts<AppState> for CurrentUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        authenticate(parts, state).await.ok_or_else(|| {
-            let error = if bearer_token(parts).is_some() {
-                AppError::unauthorized("invalid or expired API token")
-            } else {
-                AppError::unauthorized("sign in to continue")
-            };
-            ApiError(error)
-        })
+        let authenticated = match parts.extensions.get::<Authenticated>() {
+            Some(authenticated) => authenticated.0.clone(),
+            None => authenticate(parts, state).await,
+        };
+        authenticated.ok_or_else(|| missing_auth(parts))
     }
+}
+
+fn missing_auth(parts: &Parts) -> ApiError {
+    let error = if bearer_token(parts).is_some() {
+        AppError::unauthorized("invalid or expired API token")
+    } else {
+        AppError::unauthorized("sign in to continue")
+    };
+    ApiError(error)
 }
 
 impl FromRequestParts<AppState> for MaybeUser {
@@ -159,6 +173,9 @@ impl FromRequestParts<AppState> for MaybeUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
+        if let Some(authenticated) = parts.extensions.get::<Authenticated>() {
+            return Ok(MaybeUser(authenticated.0.clone()));
+        }
         Ok(MaybeUser(authenticate(parts, state).await))
     }
 }

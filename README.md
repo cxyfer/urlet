@@ -23,7 +23,8 @@ service, no frontend build step.
 | ✉️ Invite links | Every invite code has a registration link that prefills the code; the code and link stay viewable by the issuer and administrators |
 | 🌐 Multi-domain | Add extra domains in the admin panel; each domain has its own slug namespace and serves redirects only |
 | 👥 User groups | Per-group link, API-token and invite quotas (per day/week/month), feature toggles, default domains and domain allowlists; members can issue their own invite codes when the group allows it |
-| 🛠 Admin panel | User management, user groups, all site links, domains, invite codes, site settings, audit log |
+| 🎨 Themes | Six compiled-in designs (Verdant, Aurora, Paper, Signal, Gilded, Swiss); administrators choose which are offered, the default and whether members may switch |
+| 🛠 Admin panel | User management, user groups, all site links, domains, invite codes, themes, site settings, audit log |
 | 🌐 Localized UI | English, Traditional Chinese, and Simplified Chinese; the first visit follows the browser's `Accept-Language` header and falls back to English |
 | 🤖 Bot protection | Cloudflare Turnstile or Google reCAPTCHA v2, enabled through environment variables or the admin panel; applies to the registration, sign-in and link creation forms |
 | 🐳 Deployment | Single container plus a named volume; published multi-arch images on GHCR; optional Caddy overlay for automatic HTTPS |
@@ -170,7 +171,7 @@ urlet/
 │   ├── services/               # business logic: auth, urls, slug, click, admin...
 │   ├── config.rs  error.rs  state.rs  server.rs
 │   └── main.rs                 # CLI entry point
-└── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}
+└── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,THEMES.md}
 ```
 
 ## Development
@@ -202,6 +203,7 @@ off unless it is the newest stable release).
 
 - [`docs/SPEC.md`](docs/SPEC.md) — specification: requirements, data model, API, non-functional requirements
 - [`docs/PLAN.md`](docs/PLAN.md) — phased implementation plan and acceptance criteria
+- [`docs/THEMES.md`](docs/THEMES.md) — theme catalogue, administrator workflow and how to add a theme
 - [`docs/API.md`](docs/API.md) — JSON API reference
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — deployment, configuration, backup, upgrades, troubleshooting
 - [`RELEASING.md`](RELEASING.md) — release rules: versioning, tag/image rules, checklist, rollback

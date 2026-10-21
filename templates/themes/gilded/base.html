@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="{{ lang.html_lang() }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ site_name }}{% endblock %}</title>
+    <link rel="stylesheet" href="{{ self.theme_css_url() }}">
+    <link rel="stylesheet" href="/assets/theme-ui.css">
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+    {% block head %}{% endblock %}
+</head>
+<body data-theme-key="{{ self.theme_key() }}">
+{% block topbar %}{% endblock %}
+{% block body %}
+<main class="wrap">
+    {% block content %}{% endblock %}
+</main>
+{% endblock %}
+{% block footer %}
+<footer class="site">
+    <span><span class="footer-brand">{{ site_name }}</span> — {{ lang.t("footer.tagline") }}</span>
+    {% block footer_lang %}{% include "partials/lang_switcher.html" %}{% endblock %}
+</footer>
+{% endblock %}
+<script src="/assets/app.js" defer></script>
+</body>
+</html>

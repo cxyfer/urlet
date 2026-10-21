@@ -80,6 +80,10 @@ pub fn router() -> Router<AppState> {
             put(api_admin::update_group).delete(api_admin::delete_group),
         )
         .route(
+            "/admin/themes",
+            get(api_admin::get_themes).put(api_admin::put_themes),
+        )
+        .route(
             "/admin/settings",
             get(api_admin::get_settings).put(api_admin::put_settings),
         )

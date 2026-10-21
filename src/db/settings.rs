@@ -28,6 +28,9 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("captcha_on_register", "false"),
     ("captcha_on_login", "false"),
     ("captcha_on_create", "false"),
+    // Who may change their own theme: everyone ("all") or administrators only
+    // ("admin"). Administrators can always preview any enabled theme.
+    ("theme_switching", "all"),
 ];
 
 /// Load all settings.

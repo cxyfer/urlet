@@ -1,0 +1,109 @@
+{% extends "themes/signal/app_base.html" %}
+
+{% block title %}{{ lang.t("admin.urls.title") }} — {{ site_name }}{% endblock %}
+
+{% block content %}
+{% include "themes/signal/admin/tabs.html" %}
+
+<div class="page-head admin-head">
+    <div class="page-head-main">
+        <div class="page-kicker" aria-hidden="true">
+            <span class="k-index">03</span>
+            <span class="k-rule"></span>
+            <span>/// URL</span>
+        </div>
+        <h1>{{ lang.t("admin.urls.heading") }}</h1>
+    </div>
+    <div class="page-head-side">
+        <span class="page-chip page-chip-block">{{ count_label }}</span>
+    </div>
+</div>
+
+<section class="panel">
+    <div class="panel-bar">
+        <h2>{{ lang.t("admin.tabs.links") }}</h2>
+        <span class="bar-tag" aria-hidden="true">///</span>
+    </div>
+
+    <form method="get" action="/app/admin/urls" class="toolbar">
+        <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ lang.t("dashboard.search.placeholder") }}"
+               aria-label="{{ lang.t("dashboard.search.placeholder") }}">
+        <input class="input" type="number" name="user_id" value="{{ user_id }}" placeholder="{{ lang.t("admin.urls.owner_id_placeholder") }}"
+               aria-label="{{ lang.t("admin.urls.owner") }}">
+        <select class="select" name="status" aria-label="{{ lang.t("common.status") }}">
+            <option value="">{{ lang.t("common.any_status") }}</option>
+            <option value="active" {% if status == "active" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
+            <option value="disabled" {% if status == "disabled" %}selected{% endif %}>{{ lang.t("common.disabled") }}</option>
+        </select>
+        <button class="btn" type="submit">{{ lang.t("common.filter") }}</button>
+        <a class="btn btn-ghost" href="/app/admin/urls">{{ lang.t("common.reset") }}</a>
+    </form>
+
+    {% if urls.len() > 0 %}
+    <div class="table-wrap" tabindex="0" role="region" aria-label="{{ lang.t("admin.urls.heading") }}">
+        <table class="table table-wide">
+            <thead>
+                <tr>
+                    <th scope="col">{{ lang.t("common.slug") }}</th>
+                    <th scope="col">{{ lang.t("admin.urls.owner") }}</th>
+                    <th scope="col">{{ lang.t("common.destination") }}</th>
+                    <th scope="col" class="num">{{ lang.t("common.clicks") }}</th>
+                    <th scope="col">{{ lang.t("common.state") }}</th>
+                    <th scope="col">{{ lang.t("common.expiry") }}</th>
+                    <th scope="col">{{ lang.t("common.actions") }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in urls %}
+                <tr>
+                    <td class="mono">{{ row.url.slug }}</td>
+                    <td class="small">
+                        <a href="/app/admin/urls?user_id={{ row.owner_id }}">{{ row.owner }}</a>
+                    </td>
+                    <td class="truncate cell-dest" title="{{ row.url.target_url }}">{{ row.url.target_display }}</td>
+                    <td class="num">{{ row.url.click_count }}</td>
+                    <td><span class="badge {{ row.url.state_class }}">{{ row.url.state_label }}</span></td>
+                    <td class="small">
+                        {% match row.url.expires_human %}
+                        {% when Some with (human) %}{{ human }}
+                        {% when None %}<span class="muted">{{ lang.t("common.never") }}</span>{% endmatch %}
+                    </td>
+                    <td class="cell-actions">
+                        <div class="row">
+                            <form method="post" action="/app/admin/urls/{{ row.url.id }}">
+                                <input type="hidden" name="status"
+                                       value="{% if row.url.state == "disabled" %}active{% else %}disabled{% endif %}">
+                                <button class="btn btn-sm" type="submit">
+                                    {% if row.url.state == "disabled" %}{{ lang.t("admin.urls.enable") }}{% else %}{{ lang.t("admin.urls.disable") }}{% endif %}
+                                </button>
+                            </form>
+                            <form method="post" action="/app/admin/urls/{{ row.url.id }}/delete">
+                                <button class="btn btn-sm btn-danger" type="submit"
+                                        data-confirm="{{ lang.t("admin.urls.delete_confirm") }}">{{ lang.t("common.delete") }}</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        <span class="muted small">{{ pagination_note }}</span>
+        {% for link in links %}
+        {% if link.current %}<span class="current">{{ link.label }}</span>
+        {% else %}<a class="btn btn-sm" href="{{ link.url }}">{{ link.label }}</a>{% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="empty">
+        <span class="empty-glyph" aria-hidden="true">∅</span>
+        <p>{{ lang.t("admin.urls.empty") }}</p>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

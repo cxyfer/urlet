@@ -30,6 +30,7 @@ async fn non_admins_are_rejected() {
         "/api/v1/admin/users",
         "/api/v1/admin/urls",
         "/api/v1/admin/invites",
+        "/api/v1/admin/themes",
         "/api/v1/admin/settings",
         "/api/v1/admin/audit",
         "/api/v1/admin/stats",
@@ -69,6 +70,7 @@ async fn admin_pages_render_for_administrators() {
         ("/app/admin/groups", "User groups"),
         ("/app/admin/urls", "All links"),
         ("/app/admin/invites", "Invite codes"),
+        ("/app/admin/themes", "Theme catalogue"),
         ("/app/admin/settings", "Instance settings"),
         ("/app/admin/audit", "Audit log"),
     ] {

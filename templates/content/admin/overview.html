@@ -1,0 +1,95 @@
+{% macro content() %}
+<div class="page-head">
+    <div class="page-head-main">
+        <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ lang.t("nav.admin") }}</span>
+        <h1 class="page-title">{{ lang.t("admin.overview.heading") }}</h1>
+    </div>
+    <div class="page-head-side">
+        <span class="page-note"><span class="note-dot" aria-hidden="true"></span>v{{ stats.version }} · {{ lang.t("admin.overview.up") }} {{ stats.uptime }}</span>
+    </div>
+</div>
+
+<div class="culture">
+    <div class="stat stat-vital tone-sap">
+        <div class="stat-top">
+            <span class="stat-label">{{ lang.t("admin.overview.stat.total_clicks") }}</span>
+            <span class="stat-tag" aria-hidden="true">Σ / 01</span>
+        </div>
+        <div class="stat-value">{{ stats.total_clicks }}</div>
+        <div class="stat-foot">
+            <svg class="sparkline" viewBox="0 0 120 36" aria-hidden="true" fill="none">
+                <path class="spark-area" d="M2 30C14 29 18 23 28 22s14 4 24-1 14-10 24-11 16 2 24-4 12-3 18-4v34H2z"></path>
+                <path class="spark-line" d="M2 30C14 29 18 23 28 22s14 4 24-1 14-10 24-11 16 2 24-4 12-3 18-4"></path>
+                <circle class="spark-dot" cx="116" cy="2" r="2.2"></circle>
+            </svg>
+            <span class="stat-hint" aria-hidden="true">CULTURE · 01</span>
+        </div>
+    </div>
+
+    <div class="stat">
+        <div class="stat-top">
+            <span class="stat-label">{{ lang.t("admin.overview.stat.users") }}</span>
+            <span class="stat-dot" aria-hidden="true"></span>
+        </div>
+        <div class="stat-value">{{ stats.users }}</div>
+    </div>
+    <div class="stat">
+        <div class="stat-top">
+            <span class="stat-label">{{ lang.t("admin.overview.stat.admins") }}</span>
+            <span class="stat-dot" aria-hidden="true"></span>
+        </div>
+        <div class="stat-value">{{ stats.admins }}</div>
+    </div>
+    <div class="stat">
+        <div class="stat-top">
+            <span class="stat-label">{{ lang.t("admin.overview.stat.links") }}</span>
+            <span class="stat-dot" aria-hidden="true"></span>
+        </div>
+        <div class="stat-value">{{ stats.links }}</div>
+    </div>
+    <div class="stat">
+        <div class="stat-top">
+            <span class="stat-label">{{ lang.t("admin.overview.stat.expired_links") }}</span>
+            <span class="stat-dot" aria-hidden="true"></span>
+        </div>
+        <div class="stat-value">{{ stats.expired_links }}</div>
+    </div>
+    <div class="stat tone-water">
+        <div class="stat-top">
+            <span class="stat-label">{{ lang.t("admin.overview.stat.unique_visitors") }}</span>
+            <span class="stat-dot" aria-hidden="true"></span>
+        </div>
+        <div class="stat-value">{{ stats.unique_clicks }}</div>
+    </div>
+    <div class="stat tone-clay">
+        <div class="stat-top">
+            <span class="stat-label">{{ lang.t("admin.overview.stat.bot_clicks") }}</span>
+            <span class="stat-dot" aria-hidden="true"></span>
+        </div>
+        <div class="stat-value">{{ stats.bot_clicks }}</div>
+    </div>
+    <div class="stat">
+        <div class="stat-top">
+            <span class="stat-label">{{ lang.t("admin.overview.stat.active_invites") }}</span>
+            <span class="stat-dot" aria-hidden="true"></span>
+        </div>
+        <div class="stat-value">{{ stats.active_invites }}</div>
+    </div>
+</div>
+
+<div class="panel mt">
+    <div class="panel-head">
+        <h2>{{ lang.t("admin.overview.instance") }}</h2>
+        <span class="panel-sub" aria-hidden="true">SPECIMEN / 01</span>
+    </div>
+    <dl class="meta">
+        <dt>{{ lang.t("admin.overview.registration") }}</dt><dd>{{ stats.registration_mode }}</dd>
+        <dt>{{ lang.t("admin.overview.database_size") }}</dt><dd>{{ stats.database_size }}</dd>
+        <dt>{{ lang.t("admin.overview.uptime") }}</dt><dd>{{ stats.uptime }}</dd>
+        <dt>{{ lang.t("admin.overview.version") }}</dt><dd>{{ stats.version }}</dd>
+    </dl>
+    <p class="retention-note">
+        {{ lang.t("admin.overview.retention_hint")|safe }}
+    </p>
+</div>
+{% endmacro %}

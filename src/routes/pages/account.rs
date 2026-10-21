@@ -21,9 +21,9 @@ use crate::services::auth::AuthContext;
 use crate::services::ratelimit::limits;
 use crate::services::{limits as effective_limits, time, tokens};
 use crate::state::AppState;
+use crate::themed_page;
 
-#[derive(Debug, Template)]
-#[template(path = "account.html")]
+#[derive(Debug)]
 pub struct AccountPage {
     pub site_name: String,
     pub chrome: Chrome,
@@ -41,6 +41,15 @@ pub struct AccountPage {
     pub max_name_len: usize,
     pub lang: Lang,
 }
+
+themed_page!(account_templates, AccountView, AccountPage,
+    Verdant => "account.html",
+    Aurora => "themes/aurora/account.html",
+    Paper => "themes/paper/account.html",
+    Signal => "themes/signal/account.html",
+    Gilded => "themes/gilded/account.html",
+    Swiss => "themes/swiss/account.html",
+);
 
 /// One row of the session table.
 #[derive(Debug, Clone)]
@@ -407,7 +416,8 @@ async fn render_account(
         new_token,
         max_name_len: tokens::MAX_NAME_LEN,
         lang,
-    };
+    }
+    .themed();
 
     match page.render() {
         Ok(html) => Ok((StatusCode::OK, Html(html)).into_response()),

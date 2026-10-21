@@ -1,0 +1,80 @@
+{% macro content() %}
+<div class="page-head">
+    <div class="page-head-main">
+        <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ lang.t("nav.admin") }}</span>
+        <h1 class="page-title">{{ lang.t("admin.themes.heading") }}</h1>
+    </div>
+    <div class="page-head-side">
+        <span class="hint">{{ lang.t("admin.themes.intro") }}</span>
+    </div>
+</div>
+
+{% if chrome.theme.preview %}
+<div class="alert alert-info">
+    <div>
+        {{ lang.t("admin.themes.previewing") }} <strong>{{ chrome.theme.name }}</strong>.
+        <a href="/app/theme/preview/stop?next=/app/admin/themes">{{ lang.t("admin.themes.stop_preview") }}</a>
+    </div>
+</div>
+{% endif %}
+
+<form method="post" action="/app/admin/themes" class="stack">
+    <section class="panel">
+        <div class="panel-head">
+            <h2>{{ lang.t("admin.themes.permission") }}</h2>
+            <span class="panel-sub" aria-hidden="true">THM / 01</span>
+        </div>
+        <div class="field field-narrow">
+            <label class="label" for="theme_switching">{{ lang.t("admin.themes.switching") }}</label>
+            <select class="select" id="theme_switching" name="theme_switching">
+                <option value="all" {% if switching == "all" %}selected{% endif %}>{{ lang.t("admin.themes.switching.all") }}</option>
+                <option value="admin" {% if switching == "admin" %}selected{% endif %}>{{ lang.t("admin.themes.switching.admin") }}</option>
+            </select>
+            <span class="hint">{{ lang.t("admin.themes.switching_hint") }}</span>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-head">
+            <h2>{{ lang.t("admin.themes.catalog") }}</h2>
+            <span class="panel-sub" aria-hidden="true">{{ themes.len() }} / 06</span>
+        </div>
+        <p class="hint">{{ lang.t("admin.themes.catalog_hint") }}</p>
+
+        <div class="theme-admin-grid">
+            {% for theme in themes %}
+            <article class="theme-admin-card{% if theme.is_default %} is-default{% endif %}">
+                <div class="theme-admin-head">
+                    <div>
+                        <h3 class="theme-admin-name">{{ theme.name }}</h3>
+                        <span class="theme-admin-key">{{ theme.key }}</span>
+                    </div>
+                    <span class="theme-admin-swatch" data-theme-swatch="{{ theme.key }}" aria-hidden="true"></span>
+                </div>
+                <p class="hint">{{ theme.description }}</p>
+                <div class="theme-admin-meta">
+                    {% if theme.is_default %}<span class="badge badge-accent">{{ lang.t("admin.themes.default_badge") }}</span>{% endif %}
+                    {% if theme.is_dark_only %}<span class="badge badge-muted">{{ lang.t("admin.themes.dark_only") }}</span>{% endif %}
+                    {% if !theme.is_enabled %}<span class="badge badge-muted">{{ lang.t("admin.themes.disabled_badge") }}</span>{% endif %}
+                </div>
+                <div class="theme-admin-controls">
+                    <label class="checkbox">
+                        <input type="checkbox" name="enabled_{{ theme.key }}" value="on" aria-label="{{ lang.t("admin.themes.enabled") }} — {{ theme.name }}"{% if theme.is_enabled %} checked{% endif %}>
+                        {{ lang.t("admin.themes.enabled") }}
+                    </label>
+                    <label class="checkbox">
+                        <input type="radio" name="default_theme" value="{{ theme.key }}" aria-label="{{ lang.t("admin.themes.make_default") }} — {{ theme.name }}"{% if theme.is_default %} checked{% endif %}>
+                        {{ lang.t("admin.themes.make_default") }}
+                    </label>
+                    <a class="btn btn-sm btn-ghost" href="/app/theme/{{ theme.key }}?preview=1&next=/app/admin/themes">{{ lang.t("admin.themes.preview") }}</a>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+
+        <div class="form-actions">
+            <button class="btn btn-primary" type="submit">{{ lang.t("admin.themes.save") }}</button>
+        </div>
+    </section>
+</form>
+{% endmacro %}

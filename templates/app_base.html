@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "partials/theme_switcher.html" as theme_switcher %}
 
 {# Signed-in pages carry the theme and language controls in the top bar instead
    of the footer. #}
@@ -19,7 +20,8 @@
             </span>
             <span class="nav-sep" aria-hidden="true"></span>
             <span class="nav-tools">
-                {% include "partials/theme_toggle.html" %}
+                {% if !self.theme_is_dark_only() %}{% include "partials/theme_toggle.html" %}{% endif %}
+                {% call theme_switcher::switcher(chrome.theme, lang) %}
                 {% include "partials/lang_switcher.html" %}
             </span>
             <span class="user-chip">

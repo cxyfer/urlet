@@ -26,9 +26,9 @@ use crate::services::invites::{self as invite_service, Issuer, MAX_MEMBER_USES};
 use crate::services::ratelimit::limits;
 use crate::services::time;
 use crate::state::AppState;
+use crate::themed_page;
 
-#[derive(Debug, Template)]
-#[template(path = "invites.html")]
+#[derive(Debug)]
 pub struct InvitesPage {
     pub site_name: String,
     pub chrome: Chrome,
@@ -55,6 +55,15 @@ pub struct InvitesPage {
     /// Localised "Page 1 of 3".
     pub page_note: String,
 }
+
+themed_page!(invites_templates, InvitesView, InvitesPage,
+    Verdant => "invites.html",
+    Aurora => "themes/aurora/invites.html",
+    Paper => "themes/paper/invites.html",
+    Signal => "themes/signal/invites.html",
+    Gilded => "themes/gilded/invites.html",
+    Swiss => "themes/swiss/invites.html",
+);
 
 #[derive(Debug, Clone)]
 pub struct InviteRow {
@@ -313,6 +322,7 @@ async fn render(
             ],
         ),
     }
+    .themed()
     .render()
     .map_err(|err| AppError::internal(format!("template error: {err}")))?;
     Ok(no_store((StatusCode::OK, Html(html)).into_response()))

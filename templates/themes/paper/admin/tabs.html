@@ -1,0 +1,12 @@
+{# The admin section index: every admin page carries the same typographic tab bar. #}
+<div class="tabs">
+    <a href="/app/admin" {% if section == "overview" %}class="active" aria-current="page"{% endif %}>{{ lang.t("admin.tabs.overview") }}</a>
+    <a href="/app/admin/users" {% if section == "users" %}class="active" aria-current="page"{% endif %}>{{ lang.t("admin.tabs.users") }}</a>
+    <a href="/app/admin/groups" {% if section == "groups" %}class="active" aria-current="page"{% endif %}>{{ lang.t("admin.tabs.groups") }}</a>
+    <a href="/app/admin/urls" {% if section == "urls" %}class="active" aria-current="page"{% endif %}>{{ lang.t("admin.tabs.links") }}</a>
+    <a href="/app/admin/invites" {% if section == "invites" %}class="active" aria-current="page"{% endif %}>{{ lang.t("admin.tabs.invites") }}</a>
+    <a href="/app/admin/domains" {% if section == "domains" %}class="active" aria-current="page"{% endif %}>{{ lang.t("admin.tabs.domains") }}</a>
+    <a href="/app/admin/themes" {% if section == "themes" %}class="active" aria-current="page"{% endif %}>{{ lang.t("admin.tabs.themes") }}</a>
+    <a href="/app/admin/settings" {% if section == "settings" %}class="active" aria-current="page"{% endif %}>{{ lang.t("admin.tabs.settings") }}</a>
+    <a href="/app/admin/audit" {% if section == "audit" %}class="active" aria-current="page"{% endif %}>{{ lang.t("admin.tabs.audit") }}</a>
+</div>

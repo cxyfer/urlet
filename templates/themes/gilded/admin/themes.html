@@ -1,0 +1,9 @@
+{% extends "themes/gilded/app_base.html" %}
+
+{% block title %}{{ lang.t("admin.themes.title") }} — {{ site_name }}{% endblock %}
+
+{% import "content/admin/themes.html" as content %}
+{% block content %}
+{% include "themes/gilded/admin/tabs.html" %}
+{% call content::content() %}
+{% endblock %}

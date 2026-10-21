@@ -1,0 +1,9 @@
+{% extends "themes/signal/app_base.html" %}
+
+{% block title %}{{ lang.t("admin.settings.title") }} — {{ site_name }}{% endblock %}
+
+{% import "content/admin/settings.html" as content %}
+{% block content %}
+{% include "themes/signal/admin/tabs.html" %}
+{% call content::content() %}
+{% endblock %}
