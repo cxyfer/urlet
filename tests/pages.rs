@@ -127,6 +127,7 @@ async fn registration_page_honours_the_registration_mode() {
     let app = TestApp::spawn().await;
     let open = app.get("/app/register").await;
     assert_eq!(open.status, StatusCode::OK);
+    assert_eq!(open.header("cache-control").as_deref(), Some("no-store"));
     assert!(open.body.contains("Create account"));
     // Open registration still offers the invite field, but only as optional:
     // a code can pin the new account to a group.

@@ -244,7 +244,7 @@ pub async fn register_page(
         _ => None,
     };
 
-    Ok(render(RegisterPage {
+    Ok(no_store(render(RegisterPage {
         site_name: state.settings.site_name(),
         error,
         mode: mode.as_str(),
@@ -256,7 +256,7 @@ pub async fn register_page(
         invite_code: invite_from_query(query.invite.as_deref()),
         captcha: captcha_widget(&state, CaptchaFlow::Register),
         lang,
-    }))
+    })))
 }
 
 /// `POST /app/register`
@@ -351,7 +351,7 @@ pub async fn register_submit(
                 AppError::RateLimited { .. } => "rate_limited",
                 AppError::Validation { message, .. } => {
                     let lang = i18n::current();
-                    return Ok(render(RegisterPage {
+                    return Ok(no_store(render(RegisterPage {
                         site_name: state.settings.site_name(),
                         // Validation text comes from the service layer in
                         // English; map the known messages onto the catalogue.
@@ -365,7 +365,7 @@ pub async fn register_submit(
                         invite_code: payload.invite_code.unwrap_or_default(),
                         captcha: captcha_widget(&state, CaptchaFlow::Register),
                         lang,
-                    }));
+                    })));
                 }
                 _ => "invalid",
             };
@@ -431,6 +431,15 @@ pub async fn logout(
         .unwrap_or_else(|_| HeaderValue::from_static("")),
     );
     Ok(response)
+}
+
+/// A registration page may carry an invite code in its query string, so it must
+/// not end up in a shared cache.
+fn no_store(mut response: Response) -> Response {
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
 }
 
 fn render<T: Template>(template: T) -> Response {
