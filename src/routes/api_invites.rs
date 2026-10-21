@@ -113,10 +113,23 @@ pub struct CreateMemberInvitePayload {
 pub struct CreatedMemberInvite {
     /// Plaintext code, also available from the list endpoint afterwards.
     pub code: String,
-    /// Registration link that prefills `code`.
-    pub link: String,
+    /// Registration link that prefills `code`, or `null` when the new code is
+    /// already unusable.
+    pub link: Option<String>,
     pub invite: MemberInviteDto,
     pub quota: MemberQuotaDto,
+}
+
+impl CreatedMemberInvite {
+    fn new(code: String, invite: MemberInviteDto, quota: MemberQuotaDto) -> Self {
+        let link = invite.link.clone();
+        Self {
+            code,
+            link,
+            invite,
+            quota,
+        }
+    }
 }
 
 async fn quota_for(
@@ -194,19 +207,14 @@ pub async fn create(
     .create_for_member(payload.note.as_deref(), payload.max_uses)
     .await?;
 
-    let code = created.plain_code;
-    let link = invites::registration_link(&state.config.base_url, &code);
-    let body = CreatedMemberInvite {
-        code: code.clone(),
-        link,
-        invite: MemberInviteDto::new(
-            &created.invite,
-            &time::now_iso(),
-            Some(code),
-            &state.config.base_url,
-        ),
-        quota: quota_for(&state, &user).await?,
-    };
+    let invite = MemberInviteDto::new(
+        &created.invite,
+        &time::now_iso(),
+        Some(created.plain_code.clone()),
+        &state.config.base_url,
+    );
+    let quota = quota_for(&state, &user).await?;
+    let body = CreatedMemberInvite::new(created.plain_code, invite, quota);
     Ok(crate::routes::no_store(
         (StatusCode::CREATED, Json(body)).into_response(),
     ))

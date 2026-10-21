@@ -543,7 +543,7 @@ v1.3 僅新增可空的 `invite_codes.code_sealed` 欄位，表與索引數量�
 | GET | `/api/v1/admin/urls` | 全站網址列表 |
 | PATCH | `/api/v1/admin/urls/{id}` | 強制停用/啟用/刪除 |
 | GET | `/api/v1/admin/invites` | 邀請碼列表，含 `code`、`link`、`prefix`、`group_id` / `group_name`；舊版或密鑰更換後的列為 `null`；已撤銷、次數用盡或到期的邀請碼 `link` 也為 `null` |
-| POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?, group_id?}` → 201 `{code: "K7M2QPX4RT", link: "https://host/app/register?invite=K7M2QPX4RT", invite}`；同一組 code 與 link 之後仍可由 `GET` 取得 |
+| POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?, group_id?}` → 201 `{code: "K7M2QPX4RT", link: "https://host/app/register?invite=K7M2QPX4RT", invite}`；`link` 與 `invite.link` 一致，若建立後已不可用則為 `null`；同一組 code 與 link 之後仍可由 `GET` 取得 |
 | DELETE | `/api/v1/admin/invites/{id}` | 撤銷 → 204 |
 | GET | `/api/v1/admin/settings` | 全站設定 |
 | PUT | `/api/v1/admin/settings` | 更新設定（白名單鍵，含 `max_api_tokens_per_user`） |

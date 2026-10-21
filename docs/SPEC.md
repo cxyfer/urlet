@@ -560,7 +560,7 @@ old token frees a slot immediately (FR-TOK-6).
 | GET | `/api/v1/admin/urls` | Site-wide link list |
 | PATCH | `/api/v1/admin/urls/{id}` | Force disable/enable/delete |
 | GET | `/api/v1/admin/invites` | Invite code list, including `code`, `link`, `prefix`, `group_id` / `group_name`; `code` and `link` are `null` for legacy or secret-rotated rows, and `link` is also `null` for revoked, exhausted or expired codes |
-| POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?, group_id?}` → 201 `{code: "K7M2QPX4RT", link: "https://host/app/register?invite=K7M2QPX4RT", invite}`; the same code and link stay available from `GET` |
+| POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?, group_id?}` → 201 `{code: "K7M2QPX4RT", link: "https://host/app/register?invite=K7M2QPX4RT", invite}`; `link` mirrors `invite.link` and is `null` if the code is already unusable; the same code and link stay available from `GET` |
 | DELETE | `/api/v1/admin/invites/{id}` | Revoke → 204 |
 | GET | `/api/v1/admin/settings` | Site settings |
 | PUT | `/api/v1/admin/settings` | Update settings (whitelisted keys, including `max_api_tokens_per_user`) |

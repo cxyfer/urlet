@@ -450,7 +450,8 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
   "invite": { "...": "..." }, "quota": { "...": "..." } }
 ```
 
-邀請碼與連結也會由 `GET /api/v1/invites` 回傳，不會因關閉回應而遺失。成員發碼的
+邀請碼與連結也會由 `GET /api/v1/invites` 回傳，不會因關閉回應而遺失。頂層 `link` 與
+`invite.link` 一致；若建立後的邀請碼已不可用，兩者都會是 `null`。成員發碼的
 `max_uses` 必須介於 1–10。群組未開放或本週期配額用盡時回 `403`
 （`error.code = "forbidden"`）；每小時爆量上限用盡時回 `429`。
 
@@ -490,7 +491,7 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
 | DELETE | `/admin/urls/{id}` | `204` |
 | GET | `/admin/invites` | 邀請碼列表，含 `code`、`link`、`prefix`、`group_id` / `group_name`；舊版或密鑰更換後的列為 `null`；已撤銷、次數用盡或到期的邀請碼 `link` 也為 `null` |
-| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`；同一組 code 與 link 之後仍可由 `GET` 取得；群組的週期配額用盡時回 `403` |
+| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`；`link` 與 `invite.link` 一致，若建立後已不可用則為 `null`；同一組 code 與 link 之後仍可由 `GET` 取得；群組的週期配額用盡時回 `403` |
 | DELETE | `/admin/invites/{id}` | `204`，撤銷 |
 | GET | `/admin/settings` | 目前設定 |
 | PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", ... }` |

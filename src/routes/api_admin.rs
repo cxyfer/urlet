@@ -512,9 +512,17 @@ pub struct InviteList {
 pub struct CreatedInviteResponse {
     /// Plain invite code, also available from the list endpoint afterwards.
     pub code: String,
-    /// Registration link that prefills `code`.
-    pub link: String,
+    /// Registration link that prefills `code`, or `null` when the new code is
+    /// already unusable (for example, an expiry that elapses immediately).
+    pub link: Option<String>,
     pub invite: InviteDto,
+}
+
+impl CreatedInviteResponse {
+    fn new(code: String, invite: InviteDto) -> Self {
+        let link = invite.link.clone();
+        Self { code, link, invite }
+    }
 }
 
 /// `GET /api/v1/admin/domains`
@@ -872,14 +880,14 @@ pub async fn create_invite(
         Some(group_id) => group_service::name_map(&state.db).await?.remove(&group_id),
         None => None,
     };
-    let code = created.plain_code;
-    let link = crate::services::invites::registration_link(&state.config.base_url, &code);
-    let body = CreatedInviteResponse {
-        code: code.clone(),
-        link,
-        invite: InviteDto::new(&created.invite, &now, Some(code), &state.config.base_url)
-            .with_group_name(group_name),
-    };
+    let invite = InviteDto::new(
+        &created.invite,
+        &now,
+        Some(created.plain_code.clone()),
+        &state.config.base_url,
+    )
+    .with_group_name(group_name);
+    let body = CreatedInviteResponse::new(created.plain_code, invite);
     Ok(crate::routes::no_store(
         (StatusCode::CREATED, Json(body)).into_response(),
     ))
@@ -1156,6 +1164,11 @@ mod tests {
         );
         assert!(!dto.usable);
         assert!(dto.link.is_none(), "an expired code has no usable link");
+        let response = CreatedInviteResponse::new("K7M2QPX4RT".into(), dto);
+        assert!(
+            response.link.is_none(),
+            "the top-level link must match the DTO's null link"
+        );
 
         let mut revoked = fresh;
         revoked.status = "revoked".into();
