@@ -250,6 +250,33 @@ async fn theme_assets_are_embedded_and_unknown_keys_are_404() {
 }
 
 #[tokio::test]
+async fn embedded_asset_urls_are_versioned() {
+    let app = TestApp::spawn().await;
+    let version = urlet::VERSION;
+
+    // The default theme carries the build version on every CSS/JS URL, so a
+    // browser cannot keep a previous release's stylesheet for an hour.
+    let page = app.get("/").await;
+    for asset in [
+        "/assets/theme.js",
+        "/assets/app.css",
+        "/assets/app.js",
+        "/assets/theme-ui.css",
+    ] {
+        let expected = format!("{asset}?v={version}");
+        assert!(page.body.contains(&expected), "missing {expected}");
+    }
+
+    // Non-default themes version their own stylesheet URL too.
+    let cookie = admin(&app).await;
+    let themed = app
+        .get_as("/app", &format!("{cookie}; urlet_theme=aurora"))
+        .await;
+    let expected = format!("/assets/themes/aurora?v={version}");
+    assert!(themed.body.contains(&expected), "missing {expected}");
+}
+
+#[tokio::test]
 async fn the_theme_picker_menu_paints_its_own_text_and_background() {
     let app = TestApp::spawn().await;
     let response = app.get("/assets/theme-ui.css").await;
