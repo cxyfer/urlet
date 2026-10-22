@@ -138,6 +138,8 @@ pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
             "expiry" => "flash.err.expiry",
             "slug" => "flash.err.slug",
             "target" => "flash.err.target",
+            "guest_allowlist" => "flash.err.guest_allowlist",
+            "guest_allowlist_rules" => "flash.err.guest_allowlist_rules",
             "password_rules" => "flash.err.password_rules",
             "tags" => "flash.err.tags",
             "captcha" => "flash.err.captcha",

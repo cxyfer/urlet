@@ -335,7 +335,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 送出成功為 `303` 轉往 `/?shortened=<slug>&domain=<hostname>`。失敗則為 `303` 轉往
 `/?err=<code>`，其中 `<code>` 為 `denied`（低於存取層級，或填了被停用的欄位）、
-`rate_limited`、`captcha`、`quota`（訪客帳號的 `public_max_urls` 額度已滿）、
+`guest_allowlist`（匿名目標未命中白名單）、`rate_limited`、`captcha`、`quota`（訪客帳號的 `public_max_urls` 額度已滿）、
 `conflict`、`slug`、`target`、`expiry`、`tags`、`password_rules`、`domain`、`mode_denied` 或
 `invalid`。非數值的 `max_clicks` 或 `splash_delay_seconds` 會回報為 `invalid`，而不是默默丟棄。
 
@@ -346,9 +346,11 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 與表單相同的操作，以 JSON 提供給指令稿使用。當 `public_create_access` 為 `guest` 時不需要任何
 憑證；也可改帶 Session cookie 或 Bearer Token，此時連結由該帳號擁有。
 
+匿名請求還必須命中已啟用的訪客目標白名單，下方範例已包含在內建規則中。登入 Session 與 Bearer Token 維持原有帳號權限。
+
 ```json
 {
-  "target_url": "https://example.com/launch",
+  "target_url": "https://github.com/cxyfer/urlet",
   "slug": "launch",
   "title": "Launch day",
   "captcha_token": "0.abc..."
@@ -362,14 +364,14 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
   "domain": "s.example.com",
   "slug": "launch",
   "short_url": "https://s.example.com/launch",
-  "target_url": "https://example.com/launch",
+  "target_url": "https://github.com/cxyfer/urlet",
   "created_at": "2026-10-22T12:00:00.000Z"
 }
 ```
 
 刻意不回傳連結 id：呼叫者沒有帳號可以管理該連結。
 
-- `403` `forbidden` —— 呼叫者低於存取層級，或送出了管理員停用的欄位
+- `403` `forbidden` —— 呼叫者低於存取層級、送出了管理員停用的欄位，或匿名目標未命中已啟用的訪客白名單
 - `400` `captcha_failed` —— 防機器人驗證失敗（fail closed）
 - `429` `rate_limited` —— 每來源位址或全體訪客的額度用盡（`Retry-After`）
 - `409` `conflict` —— 要求的 slug 已被使用
@@ -621,6 +623,30 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 `max_urls_per_user` 分開），以及欄位開關 `public_allow_slug`、`public_allow_title`（兩者預設 `true`），
 再加上 `public_allow_tags`、`public_allow_password`、`public_allow_expiry`、
 `public_allow_max_clicks`、`public_allow_redirect` 與 `public_allow_domain`（皆預設 `false`）。
+
+訪客目標政策新增兩項字串設定：
+
+| Key | 預設值 | 意義 |
+|-----|--------|------|
+| `guest_allowlist_enabled` | `"true"` | 僅限制匿名建立；`"false"` 明確關閉此政策 |
+| `guest_allowlist` | 內建知名網站規則 | 每行一個 ASCII 主機名稱，可在開頭加上 `*.` 及區分大小寫的 ASCII 路徑，例如 `*.example.com/articles/` |
+
+透過 `PUT /api/v1/admin/settings` 編輯任一項。主機名稱轉為小寫，移除空行與重複項目。萬用字元僅接受開頭的 `*.`；不接受協定、連接埠、帳密、其他萬用字元、查詢、片段、編碼規則路徑或點路徑。只有主機名稱時允許所有路徑；`/articles` 允許該路徑與子路徑，`/articles/` 則要求尾端斜線。查詢及片段不參與比對。限定路徑的規則拒絕目標中的編碼分隔符與巢狀編碼。僅允許 HTTP／HTTPS 及各自的標準連接埠。未加 `*.` 時主機名稱必須完全相符。`*.example.com` 依 DNS 標籤邊界涵蓋 `a.example.com` 與 `a.b.example.com`，但不包含 `example.com`、`evilexample.com` 或 `example.com.evil.test`；若要包含根網域，須另外列出 `example.com`。上限為 200 條規則與 16 KiB；無效更新回傳 `422`，整批設定維持原值。
+
+啟用且清單為空時拒絕全部匿名目標；關閉政策會保留清單。更新立即生效且重啟保留，升級僅補齊缺少的 key。既有訪客連結仍可轉址。管理表單提供相同控制項，舊版表單省略新欄位時保留設定。訪客可在首頁查看目前允許的目標；表單遭拒時使用 `?err=guest_allowlist`。
+
+內建清單包含 24 個常見服務、43 條主機規則。這些項目允許所列主機的所有路徑；管理員仍可在自訂規則中加上路徑限制。需要時分別列出根網域與子網域，預設範圍如下：
+
+| 類別 | 服務與允許的主機 |
+|------|------------------|
+| 知識與開發 | Wikipedia（`wikipedia.org`、`*.wikipedia.org`）、GitHub（`github.com`）、GitLab（`gitlab.com`）、Stack Overflow（`stackoverflow.com`、`*.stackoverflow.com`）、Stack Exchange（`stackexchange.com`、`*.stackexchange.com`）、MDN（`developer.mozilla.org`）、Python 文件（`docs.python.org`）、Rust 文件（`doc.rust-lang.org`） |
+| 台灣討論區 | PTT（`ptt.cc`、`www.ptt.cc`）、Dcard（`dcard.tw`、`www.dcard.tw`）、巴哈姆特（`gamer.com.tw`、`*.gamer.com.tw`） |
+| 影音與音樂 | YouTube（`*.youtube.com`、`youtube.com`）、Bilibili（`bilibili.com`、`*.bilibili.com`）、Twitch（`twitch.tv`、`*.twitch.tv`）、Spotify（`spotify.com`、`*.spotify.com`） |
+| 社群 | Reddit（`reddit.com`、`*.reddit.com`）、Instagram（`instagram.com`、`www.instagram.com`）、Facebook（`facebook.com`、`*.facebook.com`）、X（`x.com`、`www.x.com`） |
+| 新聞 | 中央社（`cna.com.tw`、`www.cna.com.tw`）、BBC（`bbc.com`、`www.bbc.com`、`bbc.co.uk`、`www.bbc.co.uk`）、Reuters（`reuters.com`、`www.reuters.com`） |
+| 產品支援 | Apple（`support.apple.com`）、Microsoft（`support.microsoft.com`） |
+
+未內建 `*.github.io`、`*.gitlab.io`、`sites.google.com` 等公開網站代管網域。GitHub 與 GitLab 官方文件說明使用者可在 Pages 網域發布自己的網站，因此允許主站不代表連同這些獨立的代管網域一起允許，參見官方 [GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages) 與 [GitLab Pages](https://docs.gitlab.com/user/project/pages/) 文件。這是初始政策，不是安全認證：知名網站仍可能包含使用者內容或轉址。沒有可信度 API、目標內容抓取或轉址鏈檢查。
 
 ---
 

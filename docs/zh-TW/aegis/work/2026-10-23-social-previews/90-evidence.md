@@ -21,3 +21,9 @@
 新增 preview_image_policy=none/url/upload/both 後，在專用 worktree 重新檢查通過：格式、Clippy warnings denied、562 個 Cargo 測試（0 失敗、2 個既有略過）、建置、177 個 smoke、42 個群組／網域檢查。17 個預覽整合測試全數通過。本次後續未修改既有 checksum-protected migration；啟動時僅補入缺少的新設定。
 
 瀏覽器證據：管理員表單成功儲存 none，擁有者編輯器在四模式只提供允許的來源，啟用來源欄位的顯示／disabled 狀態正確，390px 繁中畫面無水平溢出。截圖與檢查結果位於 /tmp/urlet-preview-policy-ui。獨立 HTTP／SQLite harness 驗證四政策下的 API／表單寫入、OG metadata、圖片狀態／no-store、DTO，以及切換後儲存圖片資料不變。沒有剩餘可採取審核問題。既有軟刪除討論 PRRT_kwDOVLtob86vW_AP 已以 a244478 證據回覆並 resolve；實際第三方 SNS 快取／呈現與 MSRV 仍未驗證。
+
+## 訪客 allowlist 整合驗證
+
+將 master b36a1e3（訪客目標網址 allowlist，PR #34）整合至功能分支。僅三份語系 JSON 尾端新增 key 發生衝突；獨立審核比對每份目錄的 877 個 key 與雙方版本，確認完整聯集、無重複 key 或覆寫值。設定／表單同時保留兩項獨立政策；訪客 allowlist 的授權不影響已登入的預覽編輯及預覽輸出。獨立審核未發現可採取問題，未另跑 Cargo。
+
+整合後重新驗證通過：cargo fmt --check、Clippy warnings denied、577 個 Cargo 測試（0 失敗、2 個既有略過）、建置、192 個實際 binary smoke 檢查及 42 個群組／網域檢查。預覽測試仍為 17 個。輸出位於 /tmp/urlet-preview-b36-integration.log；必要檢查使用專用 worktree 及其獨立 target 目錄。
