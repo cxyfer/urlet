@@ -1122,8 +1122,8 @@ impl GroupForm {
             restrict_domains,
             allowed_domain_ids: Some(
                 self.extra
-                    .iter()
-                    .filter_map(|(key, _)| {
+                    .keys()
+                    .filter_map(|key| {
                         key.strip_prefix("domain_")
                             .and_then(|id| id.parse::<i64>().ok())
                     })
