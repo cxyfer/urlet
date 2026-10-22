@@ -60,6 +60,14 @@ macro_rules! themed_page {
 
                 #[allow(dead_code)]
                 impl $variant {
+                    /// The request theme, for templates that render the picker
+                    /// from shared chrome (`base.html`'s footer) rather than
+                    /// from a page field. The middleware installed it, so it
+                    /// already carries this request's switch permission.
+                    pub fn theme_view(&self) -> $crate::services::theme::ThemeView {
+                        $crate::services::theme::current()
+                    }
+
                     /// Stylesheet of the request theme.
                     pub fn theme_css_url(&self) -> String {
                         $crate::services::theme::current_css_url()

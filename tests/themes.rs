@@ -346,6 +346,89 @@ async fn the_theme_picker_is_hidden_without_permission() {
 }
 
 #[tokio::test]
+async fn a_visitor_can_pick_a_theme_while_the_policy_is_all() {
+    let app = TestApp::spawn().await;
+
+    // The landing page offers the picker to a visitor without a session, and the
+    // sign-in page repeats it in the shared footer.
+    let landing = app.get("/").await;
+    assert_eq!(landing.status, StatusCode::OK);
+    // The shared chrome imports the picker macro; the document must still start
+    // with the doctype rather than a stray newline.
+    assert!(landing.body.starts_with("<!DOCTYPE html>"));
+    assert!(landing.body.contains("data-theme-switcher"));
+    assert!(landing.body.contains("href=\"/app/theme/paper\""));
+    assert!(landing.body.contains("/assets/app.css"));
+    let login = app.get("/app/login").await;
+    assert!(login.body.contains("data-theme-switcher"));
+
+    // Picking a theme writes the cookie and returns to the landing page. With no
+    // `next` and no `Referer`, `/app` would only bounce the visitor to the
+    // sign-in screen, so the visitor fallback is `/`.
+    let switched = app.get("/app/theme/paper").await;
+    assert_eq!(switched.status, StatusCode::FOUND);
+    assert_eq!(switched.header("location").as_deref(), Some("/"));
+    let theme_cookie = switched.cookie_named("urlet_theme").expect("theme cookie");
+    assert!(theme_cookie.contains("urlet_theme=paper"));
+
+    // The next request renders the visitor's choice, not the site default.
+    let themed = app.get_as("/", &theme_cookie).await;
+    assert!(themed.body.contains("/assets/themes/paper"));
+    assert!(themed.body.contains("data-theme-key=\"paper\""));
+    assert!(themed.body.contains("data-theme-switcher"));
+
+    // The site-default entry clears the explicit choice again.
+    let cleared = app.get_as("/app/theme/default", &theme_cookie).await;
+    assert_eq!(cleared.status, StatusCode::FOUND);
+    let cleared_cookie = cleared.cookie_named("urlet_theme").expect("clear cookie");
+    assert_eq!(cleared_cookie, "urlet_theme=");
+
+    // The redirect surface stays minimal: a link page never offers the picker,
+    // even to a visitor who may switch on the landing page.
+    let missing = app.get("/definitely-not-a-slug").await;
+    assert!(!missing.body.contains("data-theme-switcher"));
+}
+
+#[tokio::test]
+async fn a_visitor_keeps_the_default_while_the_policy_is_admin() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+    app.send(put_json_as(
+        "/api/v1/admin/themes",
+        json!({ "switching": "admin" }),
+        &cookie,
+    ))
+    .await;
+
+    // No picker, and a cookie from a previous `all` policy is ignored at render
+    // time rather than only hidden in the UI.
+    let landing = app.get_as("/", "urlet_theme=paper").await;
+    assert_eq!(landing.status, StatusCode::OK);
+    assert!(!landing.body.contains("data-theme-switcher"));
+    assert!(landing.body.contains("/assets/app.css"));
+    let login = app.get_as("/app/login", "urlet_theme=paper").await;
+    assert!(!login.body.contains("data-theme-switcher"));
+
+    // A direct switch is refused instead of being silently accepted: the visitor
+    // is sent to sign in with a way back to the page they were reading.
+    let refused = app.get_as("/app/theme/paper", "urlet_theme=paper").await;
+    assert_eq!(refused.status, StatusCode::SEE_OTHER);
+    let location = refused.header("location").expect("location");
+    assert!(location.starts_with("/app/login?next="), "{location}");
+    assert!(refused.cookie_named("urlet_theme").is_none());
+
+    // Administrators keep the picker and can still switch.
+    let admin_page = app.get_as("/app", &cookie).await;
+    assert!(admin_page.body.contains("data-theme-switcher"));
+    let admin_switch = app.get_as("/app/theme/paper", &cookie).await;
+    assert_eq!(admin_switch.status, StatusCode::FOUND);
+    assert!(admin_switch
+        .cookie_named("urlet_theme")
+        .expect("theme cookie")
+        .contains("urlet_theme=paper"));
+}
+
+#[tokio::test]
 async fn the_theme_form_updates_the_catalogue() {
     let app = TestApp::spawn().await;
     let cookie = admin(&app).await;

@@ -732,7 +732,7 @@
   "admin.themes.switching": "Who can change their theme",
   "admin.themes.switching.all": "Everyone",
   "admin.themes.switching.admin": "Administrators only",
-  "admin.themes.switching_hint": "Administrators can always preview any compiled theme, including one that is not enabled.",
+  "admin.themes.switching_hint": "Everyone includes visitors who are not signed in. Administrators can always preview any compiled theme, including one that is not enabled.",
   "admin.themes.catalog": "Theme catalogue",
   "admin.themes.catalog_hint": "Disabling a theme does not delete anything; visitors using it fall back to the default. The default must stay enabled. Uploads are listed with a Custom badge.",
   "admin.themes.default_badge": "Default",

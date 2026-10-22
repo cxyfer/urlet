@@ -44,7 +44,9 @@ pub async fn theme(State(state): State<AppState>, request: Request, next: Next) 
 
     // The redirect surface only needs the cookie. Under `admin` it deliberately
     // ignores the cookie, matching the anonymous default, but it never resolves
-    // a session: the redirect hot path must stay a single indexed lookup.
+    // a session: the redirect hot path must stay a single indexed lookup. It also
+    // never offers the picker, even under `all`: a link page is about the link,
+    // and the visitor can switch from the landing page it points back to.
     if !needs_account(path) {
         let requested = if switching == ThemeSwitching::AdminOnly {
             None
@@ -93,10 +95,12 @@ pub async fn theme(State(state): State<AppState>, request: Request, next: Next) 
             cookies::get(request.headers(), COOKIE_NAME)
         };
         let mut view = state.themes.view(lang, requested.as_deref());
-        view.can_switch = current
-            .as_ref()
-            .map(|current| theme::can_switch(&state.settings, &current.user))
-            .unwrap_or(false);
+        // No session: the site-wide policy decides on its own. `all` is
+        // literally everyone, so a visitor gets the same picker as a member.
+        view.can_switch = match current.as_ref() {
+            Some(current) => theme::can_switch(&state.settings, &current.user),
+            None => theme::anonymous_can_switch(&state.settings),
+        };
         view
     };
 

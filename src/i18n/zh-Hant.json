@@ -732,7 +732,7 @@
   "admin.themes.switching": "誰可以變更自己的主題",
   "admin.themes.switching.all": "所有使用者",
   "admin.themes.switching.admin": "僅管理員",
-  "admin.themes.switching_hint": "管理員永遠可以預覽任何已編譯的主題，包含尚未啟用的主題。",
+  "admin.themes.switching_hint": "「所有使用者」包含未登入的訪客。管理員永遠可以預覽任何已編譯的主題，包含尚未啟用的主題。",
   "admin.themes.catalog": "主題目錄",
   "admin.themes.catalog_hint": "停用主題不會刪除任何資料；正在使用該主題的訪客會回到預設主題。預設主題必須保持啟用。自訂上傳會標示「自訂」。",
   "admin.themes.default_badge": "預設",
