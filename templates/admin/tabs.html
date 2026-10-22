@@ -2,7 +2,7 @@
     <div class="console-head">
         <span class="status-dot" aria-hidden="true"></span>
         <span class="console-label">{{ lang.t("nav.admin") }}</span>
-        <span class="console-meta" aria-hidden="true">SYS · 01 / 09</span>
+        <span class="console-meta" aria-hidden="true">SYS · {{ self.tab_index() }} / {{ self.tab_count() }}</span>
     </div>
     <div class="tabs">
         <div class="tabs-scroll">

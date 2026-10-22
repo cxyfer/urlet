@@ -18,6 +18,8 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("invite_period", "month"),
     ("default_redirect_type", "302"),
     ("analytics_enabled", "true"),
+    ("url_cleaning_enabled", "false"),
+    ("url_cleaning_rules", ""),
     ("click_retention_days", "0"),
     // Bot protection. Disabled until a provider, a site key and a secret key are
     // all set; see `services::captcha`.

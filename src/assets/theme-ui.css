@@ -11,6 +11,11 @@
  * whose bar is inverted against the page (Swiss) or whose page has no
  * `--surface` alias (Aurora, Paper), producing text on the same colour as the
  * menu. */
+:where(.cleanup-rules) {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .theme-switcher {
     position: relative;
     display: inline-flex;

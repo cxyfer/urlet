@@ -5,16 +5,17 @@
         <h1 class="page-title">{{ lang.t("admin.settings.heading") }}</h1>
     </div>
     <div class="page-head-side">
-        <span class="page-note" aria-hidden="true">CFG · 01 / 03</span>
+        <span class="page-note" aria-hidden="true">CFG · 01 / 04</span>
     </div>
 </div>
 
 <div class="settings-layout">
     <aside class="settings-rail">
-        <span class="rail-title" aria-hidden="true">01 / 03</span>
+        <span class="rail-title" aria-hidden="true">01 / 04</span>
         <a href="#settings-general"><span class="rail-index" aria-hidden="true">01</span>{{ lang.t("admin.settings.heading") }}</a>
         <a href="#settings-protection"><span class="rail-index" aria-hidden="true">02</span>{{ lang.t("admin.settings.bot_protection") }}</a>
         <a href="#settings-public"><span class="rail-index" aria-hidden="true">03</span>{{ lang.t("admin.settings.public_shortener") }}</a>
+        <a href="#settings-cleaning"><span class="rail-index" aria-hidden="true">04</span>{{ lang.t("admin.settings.url_cleaning") }}</a>
     </aside>
 
     <form method="post" action="/app/admin/settings" class="settings-form">
@@ -255,6 +256,37 @@
                     {{ lang.t("admin.settings.public_allow_domain") }}
                 </label>
             </div>
+        </section>
+
+        <section class="panel settings-block" id="settings-cleaning">
+            <span class="kicker" aria-hidden="true"><span class="kicker-dot"></span>04</span>
+            <h2>{{ lang.t("admin.settings.url_cleaning") }}</h2>
+            <div class="rule-lime" aria-hidden="true"></div>
+            <p class="hint mt">{{ lang.t("admin.settings.url_cleaning_hint") }}</p>
+            <div class="check-cluster">
+                <label class="checkbox">
+                    <input type="checkbox" name="url_cleaning_enabled" value="on"
+                           {% if values.url_cleaning_enabled %}checked{% endif %}>
+                    {{ lang.t("admin.settings.url_cleaning_enabled") }}
+                </label>
+            </div>
+            <div class="field mt">
+                <label class="label" for="url_cleaning_rules">{{ lang.t("admin.settings.url_cleaning_rules") }}</label>
+                <textarea class="textarea" id="url_cleaning_rules" name="url_cleaning_rules"
+                          rows="8" maxlength="8192" spellcheck="false" autocapitalize="off"
+                          aria-describedby="url-cleaning-format url-cleaning-limits url-cleaning-warning{% if values.url_cleaning_error %} url-cleaning-error{% endif %}"
+                          {% if values.url_cleaning_error %}aria-invalid="true"{% endif %}>{{ values.url_cleaning_rules }}</textarea>
+                <span class="hint" id="url-cleaning-format">{{ lang.t("admin.settings.url_cleaning_format") }}</span>
+                <span class="hint" id="url-cleaning-limits">{{ lang.t("admin.settings.url_cleaning_limits") }}</span>
+                <span class="hint" id="url-cleaning-warning">{{ lang.t("admin.settings.url_cleaning_warning") }}</span>
+                {% if values.url_cleaning_error %}
+                <p class="alert alert-error" id="url-cleaning-error" role="alert">{{ lang.t("admin.settings.url_cleaning_error") }}</p>
+                {% endif %}
+            </div>
+            <details class="mt">
+                <summary>{{ lang.t("admin.settings.url_cleaning_builtins") }}</summary>
+                <pre class="cleanup-rules mt">{{ values.url_cleaning_builtins }}</pre>
+            </details>
         </section>
 
         <div class="form-actions">

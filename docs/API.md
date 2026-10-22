@@ -705,6 +705,27 @@ Public website hosting domains such as `*.github.io`, `*.gitlab.io` and `sites.g
 
 ---
 
+### Tracking parameter cleanup
+
+Administrators can enable cleanup under **Admin → Settings** or with `PUT /api/v1/admin/settings`:
+
+```json
+{
+  "url_cleaning_enabled": "true",
+  "url_cleaning_rules": "example.com utm_* ref\nexample.org campaign_id"
+}
+```
+
+Both settings are returned by `GET /api/v1/admin/settings`; defaults are `"false"` and `""`. Setting values are strings, as with all other settings. Only administrators may read or change them. Invalid settings return `422`; a rejected batch changes neither the database nor the settings cache.
+
+Each rule is `hostname parameter [parameter ...]`, one per line. It matches the named host and its subdomains, ignoring ASCII case in hostnames and decoded parameter names. A final `*` on a nonempty parameter name matches a prefix. Blank lines and whole-line `#` comments are ignored. Limits: 8192 bytes total, 100 rules, 32 parameters per rule and 64 bytes per parameter (including `*`). Domains must be ASCII hostnames with at least two nonempty labels, at most 253 bytes total and 63 bytes per label; labels use letters, digits or hyphens and cannot start/end with a hyphen. Schemes, ports, paths, userinfo and wildcard domains are rejected. Parameters use letters, digits, `_`, `-` or `.`, optionally followed by one final `*`; bare `*` and regex are rejected.
+
+Built-in rules cover Facebook (`facebook.com`), Instagram, Threads (`threads.net`, `threads.com`), X/Twitter, YouTube (`youtube.com`, `youtu.be`), TikTok and Bilibili, including subdomains. They remove `utm_*` plus explicit platform tracking parameters, including `fbclid`, `igsh`, YouTube's `si` and Bilibili's `spm_id_from`; video IDs, playlists and playback times are kept. The complete list is visible in the administrator settings page. Custom rules add to built-ins; an empty custom setting keeps only built-ins. Unknown domains remain untouched unless a custom rule matches them. Custom rules can change meaningful content if they remove required parameters.
+
+Cleanup applies **only when creating links**, through `POST /api/v1/urls`, `POST /api/v1/public/urls`, the dashboard and the public form. For example, `https://youtu.be/ABC?si=tracking&t=90` is stored and returned as `https://youtu.be/ABC?t=90`. The original target must pass validation before cleanup. Kept query components retain their original encoding, values and order; fragments remain intact. Share shortlinks are not expanded and targets are never fetched. Existing links, target edits and redirects are unchanged. Disabling cleanup preserves custom rules for later use.
+
+---
+
 ## Audit action codes
 
 | Action | Meaning |

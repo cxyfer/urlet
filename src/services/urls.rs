@@ -257,7 +257,9 @@ impl UrlContext<'_> {
             return Err(AppError::forbidden(blocked::CREATE_DISABLED));
         }
 
-        let target = target_url::validate(&input.target_url)?;
+        let target = self
+            .settings
+            .clean_target(target_url::validate(&input.target_url)?)?;
         let limits = limits::effective(self.pool, self.settings, self.actor).await?;
 
         // A group toggle blocks the *use* of a feature; it never touches links

@@ -809,6 +809,10 @@ pub struct SettingsValues {
     pub invite_period: String,
     pub default_redirect_type: i64,
     pub analytics_enabled: bool,
+    pub url_cleaning_enabled: bool,
+    pub url_cleaning_rules: String,
+    pub url_cleaning_error: bool,
+    pub url_cleaning_builtins: &'static str,
     pub click_retention_days: i64,
     pub captcha_provider: String,
     pub captcha_site_key: String,
@@ -1231,6 +1235,10 @@ pub struct SettingsForm {
     pub default_redirect_type: String,
     #[serde(default)]
     pub analytics_enabled: Option<String>,
+    #[serde(default)]
+    pub url_cleaning_enabled: Option<String>,
+    #[serde(default)]
+    pub url_cleaning_rules: Option<String>,
     pub click_retention_days: String,
     // Bot protection. All optional so a form from an older page, or a partial
     // submission, never fails to deserialize.
@@ -2476,6 +2484,27 @@ pub async fn update_settings(
         return Ok(redirect_err("/app/admin/settings", "invalid").into_response());
     };
 
+    // 規則錯誤時保留輸入，讓管理員可以直接修正；所有設定維持原值。
+    if let Some(rules) = payload.url_cleaning_rules.as_deref() {
+        if crate::services::url_cleaning::parse_rules(rules).is_err() {
+            let mut values = settings_values(&state.settings);
+            values.url_cleaning_enabled = payload.url_cleaning_enabled.is_some();
+            values.url_cleaning_rules = rules.to_string();
+            values.url_cleaning_error = true;
+            values.captcha_state = captcha_state(&state.settings, i18n::current());
+            return render(
+                SettingsPage {
+                    section: "settings",
+                    site_name: state.settings.site_name(),
+                    chrome: Chrome::new(&state, &current.user, "admin", None),
+                    values,
+                    lang: i18n::current(),
+                },
+                StatusCode::UNPROCESSABLE_ENTITY,
+            );
+        }
+    }
+
     let mut values = vec![
         ("site_name".to_string(), payload.site_name),
         ("registration_mode".to_string(), payload.registration_mode),
@@ -2505,6 +2534,14 @@ pub async fn update_settings(
 
     if let Some(value) = payload.max_api_tokens_per_user {
         values.push(("max_api_tokens_per_user".to_string(), value));
+    }
+    // 文字框存在時才更新這組設定，舊版頁面送出不會重設新開關。
+    if let Some(rules) = payload.url_cleaning_rules {
+        values.push(("url_cleaning_rules".to_string(), rules));
+        values.push((
+            "url_cleaning_enabled".to_string(),
+            payload.url_cleaning_enabled.is_some().to_string(),
+        ));
     }
     if let Some(value) = payload.max_invites_per_period {
         values.push(("max_invites_per_period".to_string(), value));
@@ -3343,6 +3380,10 @@ pub fn settings_values(settings: &Settings) -> SettingsValues {
         invite_period: settings.invite_period().as_str().to_string(),
         default_redirect_type: settings.default_redirect_type(),
         analytics_enabled: settings.analytics_enabled(),
+        url_cleaning_enabled: settings.url_cleaning_enabled(),
+        url_cleaning_rules: settings.url_cleaning_rules(),
+        url_cleaning_error: false,
+        url_cleaning_builtins: crate::services::url_cleaning::BUILTIN_RULES,
         click_retention_days: settings.click_retention_days(),
         captcha_provider: settings.captcha_provider().as_str().to_string(),
         captcha_site_key: settings.captcha_site_key(),
@@ -3370,6 +3411,76 @@ pub fn settings_values(settings: &Settings) -> SettingsValues {
         public_allow_domain: settings.public_fields().domain,
     }
 }
+
+/// The admin rail, in display order: `section` key and two-digit position.
+///
+/// Every theme's tab bar and page header derives its "01 / 09" marker from
+/// this one list, so adding or reordering a tab cannot leave a stale number
+/// behind in a template.
+const ADMIN_TABS: [(&str, &str); 9] = [
+    ("overview", "01"),
+    ("users", "02"),
+    ("groups", "03"),
+    ("urls", "04"),
+    ("invites", "05"),
+    ("domains", "06"),
+    ("themes", "07"),
+    ("settings", "08"),
+    ("audit", "09"),
+];
+
+/// Number of tabs, derived from the rail so it cannot drift from the list.
+const ADMIN_TAB_COUNT: usize = ADMIN_TABS.len();
+
+fn admin_tab_number(section: &str) -> &'static str {
+    ADMIN_TABS
+        .iter()
+        .find(|(key, _)| *key == section)
+        .map(|(_, number)| *number)
+        // A visible sentinel rather than a plausible number: the integration
+        // test renders every admin page, so an unknown `section` cannot ship
+        // unnoticed.
+        .unwrap_or("??")
+}
+
+/// Expose the position to templates through the page context. The
+/// `themed_page!` wrappers dereference to these types, so an included tab
+/// template can call `self.tab_index()` like any other page field.
+macro_rules! admin_tab_position {
+    ($($page:ty),+ $(,)?) => {
+        $(
+            impl $page {
+                pub fn tab_index(&self) -> &'static str {
+                    admin_tab_number(self.section)
+                }
+
+                /// Position of any tab, for a rail that prints the whole
+                /// list instead of only the active entry.
+                pub fn tab_number_for(&self, section: &str) -> &'static str {
+                    admin_tab_number(section)
+                }
+
+                pub fn tab_count(&self) -> String {
+                    format!("{:02}", ADMIN_TAB_COUNT)
+                }
+            }
+        )+
+    };
+}
+
+admin_tab_position!(
+    OverviewPage,
+    UsersPage,
+    AdminUrlsPage,
+    DomainsPage,
+    InvitesPage,
+    GroupsPage,
+    GroupFormPage,
+    SettingsPage,
+    ThemesPage,
+    CustomThemeFormPage,
+    AuditPage,
+);
 
 fn render<T: ThemedContext>(template: T, status: StatusCode) -> Result<Response, AppError> {
     match template.themed().render() {
@@ -3409,6 +3520,18 @@ fn human_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn admin_tabs_are_numbered_in_display_order() {
+        assert_eq!(ADMIN_TABS.len(), 9);
+        for (position, (section, number)) in ADMIN_TABS.iter().enumerate() {
+            assert_eq!(format!("{:02}", position + 1), *number, "{section}");
+            assert_eq!(admin_tab_number(section), *number);
+        }
+        assert_eq!(ADMIN_TAB_COUNT, 9);
+        assert_eq!(format!("{:02}", ADMIN_TAB_COUNT), "09");
+        assert_eq!(admin_tab_number("not-a-section"), "??");
+    }
 
     #[test]
     fn shows_an_inherited_unlimited_quota_as_unlimited() {

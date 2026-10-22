@@ -649,6 +649,27 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 
 ---
 
+### 追蹤參數清理
+
+管理員可在 **管理 → 設定** 啟用，或使用 `PUT /api/v1/admin/settings`：
+
+```json
+{
+  "url_cleaning_enabled": "true",
+  "url_cleaning_rules": "example.com utm_* ref\nexample.org campaign_id"
+}
+```
+
+`GET /api/v1/admin/settings` 會回傳這兩個設定，預設為 `"false"` 及 `""`；與其他設定相同，值皆為字串。僅管理員可讀取或修改。非法設定回傳 `422`，整個批次都不會改變資料庫或設定快取。
+
+每行一條 `網域 參數 [參數 ...]`，比對該網域及其子網域，網域及解碼後的參數名稱忽略 ASCII 大小寫。非空參數名稱尾端的 `*` 表示前綴比對。空白行及以 `#` 開頭的整行註解會略過。上限為 8192 bytes、100 條規則，每條 32 個參數、每個參數 64 bytes（含 `*`）。網域須為 ASCII hostname，至少兩個非空分段，總長最多 253 bytes、每段最多 63 bytes；分段限英文字母、數字或連字號，不得以連字號開頭或結尾。拒絕 scheme、port、路徑、帳密及萬用網域。參數限英文字母、數字、`_`、`-` 或 `.`，尾端可加一個 `*`；拒絕單獨 `*` 及正規表示式。
+
+內建規則涵蓋 Facebook（`facebook.com`）、Instagram、Threads（`threads.net`、`threads.com`）、X/Twitter、YouTube（`youtube.com`、`youtu.be`）、TikTok、Bilibili 及其子網域；移除 `utm_*` 與明確的平台追蹤參數，例如 `fbclid`、`igsh`、YouTube 的 `si`、Bilibili 的 `spm_id_from`，保留影片 ID、播放清單及播放時間。管理設定頁可查看完整清單。自訂規則與內建規則合併，留空則只使用內建規則。未知網域除非符合自訂規則，否則保持原樣。自訂規則若移除必要參數，仍可能改變目的內容。
+
+清理**僅套用於建立連結**，包含 `POST /api/v1/urls`、`POST /api/v1/public/urls`、後台及公開表單。例如 `https://youtu.be/ABC?si=tracking&t=90` 儲存及回傳為 `https://youtu.be/ABC?t=90`。原始目標須先通過驗證；保留的 query 元件維持原始編碼、值與順序，fragment 保持完整。不展開分享短鏈，也不讀取目標內容。既有連結、目標網址編輯及重新導向維持原樣。停用功能仍保留自訂規則，供日後使用。
+
+---
+
 ## 稽核動作代碼
 
 | 動作 | 說明 |

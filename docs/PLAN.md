@@ -2,7 +2,7 @@
 
 # urlet — Phased Implementation Plan
 
-> Spec: `docs/SPEC.md` v1.6
+> Spec: `docs/SPEC.md` v1.7
 > Principle: at the end of every phase the code must **compile, test, and commit**; each phase gets one (or a few) local commits.
 
 ## Results (completed)
@@ -297,7 +297,25 @@ until an administrator opens it.
 
 ---
 
-## P16 — Editable Guest Destination Allowlist
+## P16 — Tracking parameter cleanup
+
+Approved scope (2026-10-23): optional cleanup on **creation only**, disabled by default. Cover Facebook, Instagram, Threads, X/Twitter, YouTube, TikTok and Bilibili, plus administrator-defined domain/parameter rules. Existing links and target edits retain their behavior. This implements the approved feature request; configuration alone cannot filter submitted targets.
+
+**Owners and boundaries:** `src/services/url_cleaning.rs` owns bounded rule validation and pure query filtering; `UrlContext::create` remains the single owner of creation for authenticated/public API and browser forms. Reuse the settings table/cache, atomic settings updates, admin authorization/audit and shared themed settings template. No new dependencies, tables, network calls, redirect-time cleanup or URL expansion. `SPEC.md` is the behavior baseline; `API.md` documents the settings contract.
+
+**TDD Route:** off / skipped (local Aegis configuration; no strict TDD request). Add behavior-focused regression tests after implementation. The clean worktree baseline has 530 passing tests, 0 failures and 2 ignored tests.
+
+1. Add a pure cleaner with conservative built-in rules maintained in `src/rules/url-cleaning.txt`, embedded with `include_str!` and shared by the cleaner and administrator UI. Use the same format as custom rules; validate the list with the existing parser and behavior tests. Each custom line is `domain parameter [parameter ...]`, with domain and subdomain matching and optional trailing `*` parameter prefixes; names match ASCII case-insensitively. Limit custom input to 8192 bytes, 100 rules, 32 parameters per rule, and 64 bytes per parameter. Reject schemes, paths, ports, wildcard domains and invalid patterns. Preserve kept query components byte-for-byte, their order, repeated keys, path and fragment; decode parameter names only for matching.
+2. Add `url_cleaning_enabled=false` and `url_cleaning_rules=` through existing defaults, editable keys and validation. Read both settings under one cache lock when creating a link. Validate the original target before cleanup. Invalid setting batches must leave stored values/cache unchanged. Startup defaults seed absent keys without a migration or overwriting existing settings.
+3. Extend the shared settings page with an enable switch, custom-rule textarea, built-in rule disclosure, limits and examples in all three locales. Keep invalid submitted cleanup rules visible with a localized error and no writes. The same controls must render across all six themes; clearing rules and disabling cleanup must work.
+4. Cover built-in providers, unknown/spoofed hosts, credentials/ports/subdomains, percent-encoded parameter names, duplicate/blank values, preserved encoding/fragments, rule validation and idempotence. Exercise admin-only settings, persistence after reload, atomic rejection, authenticated/public APIs, both browser creation forms, returned/stored targets and actual redirect location. Verify existing links and edits stay unchanged.
+5. Update English and Traditional Chinese SPEC/API/PLAN. Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `bash scripts/smoke.sh`, `bash scripts/merge-check.sh`, using an isolated worktree target directory. Inspect the final diff, commit with the repository's Gitmoji style, push `feat/url-cleaning` and open a PR against `cxyfer/urlet:master`. Start an independent reviewer subagent alongside PR creation; address actionable findings and update/recheck the PR before reporting completion. Do not merge.
+
+**Plan self-review:** scope and acceptance match the user's approved design; all four create entry points converge on the existing service, admin settings remain the sole policy owner, no persistent data is rewritten, and the existing SPEC/API docs carry the changed contract. New code is necessary only for filtering, validation and the settings UI. Main risks are removing meaningful parameters or re-encoding untouched components; conservative exact/prefix rules and byte-preservation regression tests cover those boundaries. Built-in rules remain deliberately limited and custom rules can remove meaningful parameters if an administrator chooses them; explain this in the UI. No old path needs retirement.
+
+---
+
+## P17 — Editable Guest Destination Allowlist
 
 **Goal**: anonymous visitors may shorten only explicitly allowed destinations; administrators can edit the built-in list without restarting. Scope: local allowlist only, with no reputation API, blocklists, group overrides or redirect-time enforcement.
 
