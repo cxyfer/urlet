@@ -487,10 +487,19 @@ check "the access level can be opened to visitors" "200" \
         -H 'content-type: application/json' -H "origin: $BASE" \
         -d '{"public_create_access":"guest","public_rate_limit_per_ip":"0","public_rate_limit_global":"0"}')"
 contains "the landing page offers the public form" 'id="public_target_url"' "$(curl -s "$BASE/")"
-contains "guests can inspect allowed destinations" 'www.youtube.com/watch' "$(curl -s "$BASE/")"
+contains "guests can inspect allowed destinations" '<code>*.youtube.com</code>' "$(curl -s "$BASE/")"
 check "the built-in guest allowlist accepts a known content path" "201" \
     "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/public/urls" \
         -H 'content-type: application/json' -d '{"target_url":"https://www.youtube.com/watch?v=smoke"}')"
+check "the YouTube root is allowed without a content-path restriction" "201" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/public/urls" \
+        -H 'content-type: application/json' -d '{"target_url":"https://youtube.com/"}')"
+check "the Wikipedia wildcard accepts nested subdomains" "201" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/public/urls" \
+        -H 'content-type: application/json' -d '{"target_url":"https://de.m.wikipedia.org/wiki/Rust"}')"
+check "a wildcard does not accept a spoofed host suffix" "403" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/public/urls" \
+        -H 'content-type: application/json' -d '{"target_url":"https://www.youtube.com.evil.test/watch?v=smoke"}')"
 check "the guest API refuses an unlisted destination" "403" \
     "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/public/urls" \
         -H 'content-type: application/json' -d '{"target_url":"https://example.com/blocked"}')"
@@ -499,8 +508,11 @@ contains "the guest form explains an unlisted destination" 'err=guest_allowlist'
         -H "origin: $BASE" -d 'target_url=https://example.com/blocked')"
 check "an administrator can edit the guest allowlist" "200" \
     "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" -X PUT "$BASE/api/v1/admin/settings" \
-        -H 'content-type: application/json' -H "origin: $BASE" -d '{"guest_allowlist":"example.com"}')"
+        -H 'content-type: application/json' -H "origin: $BASE" -d '{"guest_allowlist":"example.com\n*.example.com"}')"
 contains "guest allowlist edits reach the form immediately" '<code>example.com</code>' "$(curl -s "$BASE/")"
+check "edited wildcard rules apply to nested subdomains immediately" "201" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/public/urls" \
+        -H 'content-type: application/json' -d '{"target_url":"https://a.b.example.com/wildcard"}')"
 
 PUBLIC_REDIRECT=$(curl -s -o /dev/null -w '%{redirect_url}' -X POST "$BASE/" \
     -H "origin: $BASE" -d 'target_url=https://example.com/public-smoke')
@@ -609,7 +621,7 @@ check "the session cookie survives a restart" "200" \
 check "the uploaded stylesheet survives a restart" "200" \
     "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/assets/custom-themes/$CUSTOM_KEY")"
 contains "the uploaded theme is still the default" "data-theme-key=\"$CUSTOM_KEY\"" "$(curl -s "$BASE/")"
-contains "the edited guest allowlist survives a restart" '"guest_allowlist":"example.com"' \
+contains "the edited guest allowlist survives a restart" '"guest_allowlist":"example.com\n*.example.com"' \
     "$(curl -s -b "$COOKIES" "$BASE/api/v1/admin/settings")"
 contains "the guest allowlist remains enabled after a restart" '"guest_allowlist_enabled":"true"' \
     "$(curl -s -b "$COOKIES" "$BASE/api/v1/admin/settings")"

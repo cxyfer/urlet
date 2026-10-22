@@ -1,4 +1,4 @@
-//! 訪客目標白名單：精確主機名稱與選填的路徑前綴，不抓取目標內容。
+//! 訪客目標白名單：精確主機或萬用子網域與選填的路徑前綴，不抓取目標內容。
 
 use crate::services::domains;
 
@@ -9,16 +9,17 @@ pub const BLOCKED: &str = "guests may only shorten destinations on the allowed l
 
 struct Rule {
     host: String,
+    subdomains_only: bool,
     path: String,
 }
 
 impl Rule {
     fn parse(raw: &str) -> Option<Self> {
-        // 設定只接受 hostname[/path]，避免 scheme、帳密、連接埠及萬用字元的歧義。
+        // 只接受 hostname[/path] 或 *.hostname[/path]，星號限用於開頭的子網域標記。
         if raw.is_empty()
             || !raw.is_ascii()
             || raw.chars().any(|c| c.is_control() || c.is_whitespace())
-            || raw.contains([':', '@', '?', '#', '\\', '*', '%'])
+            || raw.contains([':', '@', '?', '#', '\\', '%'])
         {
             return None;
         }
@@ -26,6 +27,8 @@ impl Rule {
             Some(index) => (&raw[..index], &raw[index..]),
             None => (raw, ""),
         };
+        let subdomains_only = host.starts_with("*.");
+        let host = host.strip_prefix("*.").unwrap_or(host);
         let host = domains::validate_domain_hostname(host).ok()?;
         if !host.contains('.') || host.parse::<std::net::IpAddr>().is_ok() {
             return None;
@@ -40,12 +43,23 @@ impl Rule {
         }
         Some(Self {
             host,
+            subdomains_only,
             path: if path == "/" { "" } else { path }.to_string(),
         })
     }
 
     fn matches(&self, url: &url::Url) -> bool {
-        if url.host_str().map(|host| host.trim_end_matches('.')) != Some(self.host.as_str()) {
+        let Some(host) = url.host_str().map(|host| host.trim_end_matches('.')) else {
+            return false;
+        };
+        let host_matches = if self.subdomains_only {
+            host.strip_suffix(&self.host)
+                .and_then(|prefix| prefix.strip_suffix('.'))
+                .is_some_and(|subdomain| !subdomain.is_empty())
+        } else {
+            host == self.host
+        };
+        if !host_matches {
             return false;
         }
         if self.path.is_empty() {
@@ -76,9 +90,10 @@ pub fn normalize(raw: &str) -> Result<String, &'static str> {
     let mut rules = Vec::new();
     for line in raw.lines().map(str::trim).filter(|line| !line.is_empty()) {
         let rule = Rule::parse(line).ok_or(
-            "use one exact hostname per line, optionally followed by an ASCII path (no scheme, port, wildcard, query or fragment)",
+            "use one hostname per line with an optional leading *. and ASCII path (no scheme, port, other wildcard, query or fragment)",
         )?;
-        let rule = format!("{}{}", rule.host, rule.path);
+        let wildcard = if rule.subdomains_only { "*." } else { "" };
+        let rule = format!("{wildcard}{}{}", rule.host, rule.path);
         if !rules.contains(&rule) {
             rules.push(rule);
         }
@@ -124,7 +139,16 @@ mod tests {
     fn refuses_ambiguous_rules_and_bounds_the_list() {
         for rule in [
             "https://example.com",
-            "*.example.com",
+            "*",
+            "*example.com",
+            "example.*",
+            "foo.*.example.com",
+            "*.*.example.com",
+            "**.example.com",
+            "*.com",
+            "*.localhost",
+            "*.127.0.0.1",
+            "*.example.com/a*",
             "example.com:443",
             "user@example.com",
             "example.com?next=evil",
@@ -206,22 +230,86 @@ mod tests {
     }
 
     #[test]
-    fn builtins_are_valid_and_keep_unrelated_redirect_paths_closed() {
+    fn wildcard_rules_match_all_subdomain_levels_but_never_the_root_or_spoofed_hosts() {
+        assert_eq!(
+            normalize(" *.Example.COM./Case/\n*.example.com/Case/\nexample.com/Case/ ").unwrap(),
+            "*.example.com/Case/\nexample.com/Case/"
+        );
+        for target in [
+            "https://zh.wikipedia.org/wiki/Rust",
+            "https://en.m.wikipedia.org/wiki/Rust",
+            "HTTPS://JA.WIKIPEDIA.ORG.:443/wiki/Rust",
+        ] {
+            assert!(allows("*.wikipedia.org", target), "{target}");
+        }
+        for target in [
+            "https://wikipedia.org/wiki/Rust",
+            "https://wikipedia.org./wiki/Rust",
+            "https://evilwikipedia.org/wiki/Rust",
+            "https://wikipedia.org.evil.test/wiki/Rust",
+            "https://zh.wikipedia.org.evil.test/wiki/Rust",
+            "https://zh.wikipedia.org@evil.test/wiki/Rust",
+            "https://evil.test@zh.wikipedia.org/wiki/Rust",
+            "https://zh.wikipedia.org:8443/wiki/Rust",
+        ] {
+            assert!(!allows("*.wikipedia.org", target), "{target}");
+        }
+        assert!(allows(
+            "*.wikipedia.org\nwikipedia.org",
+            "https://wikipedia.org"
+        ));
+    }
+
+    #[test]
+    fn wildcard_rules_preserve_path_restrictions() {
+        let rules = "*.example.com/Case/";
+        assert!(allows(rules, "https://a.b.example.com/Case/article?q=1#x"));
+        for target in [
+            "https://example.com/Case/article",
+            "https://a.example.com/Case",
+            "https://a.example.com/case/article",
+            "https://a.example.com/Cases/article",
+            "https://a.example.com/Case/../redirect",
+            "https://a.example.com/Case/%2e%2e/redirect",
+            "https://a.example.com/Case/a%2fb",
+            "https://a.example.com/Case/a%5cb",
+            "https://a.example.com/Case/%252e%252e/redirect",
+            "https://a.example.com/Case//other",
+        ] {
+            assert!(!allows(rules, target), "{target}");
+        }
+    }
+
+    #[test]
+    fn builtins_allow_youtube_hosts_and_keep_other_content_paths_scoped() {
         assert_eq!(normalize(DEFAULT_RULES).unwrap(), DEFAULT_RULES.trim_end());
         for target in [
             "https://www.youtube.com/watch?v=123",
+            "https://youtube.com/",
+            "https://m.youtube.com/shorts/123",
+            "https://a.b.youtube.com/any-path",
+            "https://www.youtube.com/redirect?q=https://evil.test",
             "https://zh.wikipedia.org/wiki/Rust",
+            "https://de.m.wikipedia.org/wiki/Rust",
             "https://github.com/cxyfer/urlet",
             "https://www.ptt.cc/bbs/Rust/index.html",
         ] {
             assert!(allows(DEFAULT_RULES, target), "{target}");
         }
         for target in [
-            "https://www.youtube.com/redirect?q=https://evil.test",
             "https://en.wikipedia.org/w/index.php",
+            "https://youtube.com.evil.test/watch?v=123",
+            "https://evilyoutube.com/watch?v=123",
             "https://youtu.be/123",
         ] {
             assert!(!allows(DEFAULT_RULES, target), "{target}");
         }
+        assert_eq!(
+            DEFAULT_RULES
+                .lines()
+                .filter(|rule| rule.contains("youtube"))
+                .collect::<Vec<_>>(),
+            ["*.youtube.com", "youtube.com"]
+        );
     }
 }

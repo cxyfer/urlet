@@ -310,11 +310,13 @@
 
 **任務**
 
-1. 新增 `src/services/guest_allowlist.rs` 與知名網站內建清單，適合時限定內容路徑。支援精確 ASCII DNS 主機名稱與選填、區分大小寫、依路徑區段比對的前綴，不隱含子網域，不接受帳密或非標準連接埠。限制並驗證編輯內容、處理點路徑，限定路徑的規則拒絕有歧義的編碼分隔符。單元測試涵蓋偽裝主機、路徑、空清單及預設值。
+1. 新增 `src/services/guest_allowlist.rs` 與知名網站內建清單，適合時限定內容路徑。支援精確 ASCII DNS 主機名稱，或以開頭 `*.` 允許所有層級的子網域（不含根網域），可加上區分大小寫、依路徑區段比對的前綴。不接受帳密或非標準連接埠。限制並驗證編輯內容、處理點路徑，限定路徑的規則拒絕有歧義的編碼分隔符。單元測試涵蓋偽裝主機、路徑、空清單及預設值。
 2. 在 `src/db/settings.rs`、`src/services/settings.rs` 及 `src/services/public_urls.rs` 接上 `guest_allowlist_enabled`／`guest_allowlist`。測試匿名表單／API 限制、即時修改、關閉／空清單、登入 session／token 豁免及設定重新載入後的持久性。
 3. 擴充既有管理設定頁／表單與共用首頁 partial。新增三語說明、專用拒絕訊息及訪客可見的允許目標清單。測試授權、無效更新的原子性、舊表單及所有內建主題。
 4. 更新規格、API 文件、本計畫及繁體中文鏡像；擴充 `scripts/smoke.sh`，透過實際 HTTP 驗證預設限制與清單編輯。
 5. 執行 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`、`bash scripts/smoke.sh`、`bash scripts/merge-check.sh`；審查後提交並推送 `feat/guest-allowlist`，建立到 `cxyfer/urlet:master` 的 PR，不合併。本次未要求嚴格 TDD，驗證後統一提交完整功能。
+
+**萬用字元追加需求（2026-10-23 核准）**：直接擴充既有比對模組；解析器目前拒絕 `*`，因此僅修改設定不足以完成。只接受有效 DNS 主機名稱前方的 `*.`，依網域標籤邊界比對且至少要有一層子網域，保留精確主機與選填路徑的既有行為。正規化時保留萬用字元。五條 YouTube 規則改為 `*.youtube.com` 與 `youtube.com`；Wikipedia 語言項目合併為 `*.wikipedia.org/wiki/`。保留已儲存的修改與空清單，只有缺少設定時才採用新版預設值。TDD 模式為 off，實作後補上回歸測試。同步三語介面、API／規格鏡像與既有 smoke 檢查。驗證管理 API／表單儲存、重新載入持久性、根網域排除、多層子網域、偽裝後綴、錯誤星號及路徑限制，完成全部必要檢查並更新 PR #34。無須新增模組擁有者、migration、依賴或設定鍵。
 
 **風險／淘汰**：知名網站仍可能包含使用者內容或轉址，內建清單是可編輯政策，不是安全認證。不抓取目標內容。保留既有設定與速率限制來源，不淘汰舊路徑。驗證涵蓋實際 router 與設定重新載入，不僅是獨立比對測試。
 

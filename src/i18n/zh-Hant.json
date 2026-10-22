@@ -833,10 +833,10 @@
   "admin.settings.guest_allowlist_heading": "訪客目標網址白名單",
   "admin.settings.guest_allowlist_enabled": "未登入訪客只能縮短白名單內的目標網址",
   "admin.settings.guest_allowlist_label": "允許的目標主機名稱與路徑",
-  "admin.settings.guest_allowlist_hint": "每行一個精確主機名稱，可加上區分大小寫的路徑，例如 example.com 或 example.com/articles/。子網域須分別列出。使用 ASCII 主機名稱與路徑，不含協定、連接埠、萬用字元、查詢或片段。最多 200 條規則／16 KiB。啟用且清單為空時拒絕所有訪客提交，登入帳號不受影響。內建網站僅供初始設定參考，不代表安全認證。",
-  "public.guest_allowlist_hint": "訪客只能縮短下列允許的目標。主機名稱必須完全相符，部分項目也限定路徑。",
+  "admin.settings.guest_allowlist_hint": "每行一個主機名稱，可加上區分大小寫的路徑，例如 example.com 或 example.com/articles/。開頭的 *. 允許所有層級的子網域，例如 *.example.com；不包含 example.com，根網域須另外列出。使用 ASCII 主機名稱與路徑，不含協定、連接埠、其他萬用字元、查詢或片段。最多 200 條規則／16 KiB。啟用且清單為空時拒絕所有訪客提交，登入帳號不受影響。內建網站僅供初始設定參考，不代表安全認證。",
+  "public.guest_allowlist_hint": "訪客只能縮短下列允許的目標。開頭的 *. 允許所有子網域，不含根網域；未加上時主機名稱必須完全相符。部分項目也限定路徑。",
   "public.guest_allowlist_show": "查看允許的目標網址",
   "public.guest_allowlist_empty": "目前未開放任何訪客可縮短的目標。",
   "flash.err.guest_allowlist": "訪客無法縮短此目標網址。請查看下方允許的目標，或登入後依帳號權限操作。",
-  "flash.err.guest_allowlist_rules": "白名單未儲存。請每行填入一個精確 ASCII 主機名稱，可加上路徑，例如 example.com/articles/。不含協定、連接埠、萬用字元、查詢、片段或點路徑；最多 200 條規則／16 KiB。"
+  "flash.err.guest_allowlist_rules": "白名單未儲存。請每行填入一個 ASCII 主機名稱，可在開頭加上 *. 允許子網域，也可加上路徑，例如 *.example.com/articles/。不含協定、連接埠、其他萬用字元、查詢、片段或點路徑；最多 200 條規則／16 KiB。"
 }

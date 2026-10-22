@@ -54,7 +54,8 @@ async fn defaults_restrict_both_anonymous_endpoints_and_explain_recovery() {
         .body
         .contains("This destination is not allowed for guests"));
     assert!(page.body.contains("View allowed destinations"));
-    assert!(page.body.contains("www.youtube.com/watch"));
+    assert!(page.body.contains("*.youtube.com"));
+    assert!(page.body.contains("*.wikipedia.org/wiki/"));
 
     let accepted = create(&app, "www.youtube.com/watch?v=123").await;
     assert_eq!(accepted.status, StatusCode::CREATED, "{}", accepted.body);
@@ -167,7 +168,7 @@ async fn admin_edits_apply_immediately_and_invalid_batches_are_atomic() {
         StatusCode::FORBIDDEN
     );
     for bad in [
-        json!({"guest_allowlist":"*.example.com", "site_name":"Bad"}),
+        json!({"guest_allowlist":"foo.*.example.com", "site_name":"Bad"}),
         json!({"guest_allowlist_enabled":"typo", "site_name":"Bad"}),
     ] {
         let response = app
@@ -222,6 +223,94 @@ async fn admin_edits_apply_immediately_and_invalid_batches_are_atomic() {
         Some("/app/admin/settings?err=guest_allowlist_rules")
     );
     assert_eq!(app.state.settings.guest_allowlist(), "other.example/news/");
+}
+
+#[tokio::test]
+async fn wildcard_edits_roundtrip_through_admin_api_and_form_and_enforce_subdomains_only() {
+    let app = TestApp::spawn().await;
+    let (admin, _) = app.register("admin@example.com", "supersecret").await;
+    open(&app).await;
+    let updated = app
+        .send(put_json_as(
+            "/api/v1/admin/settings",
+            json!({"guest_allowlist":" *.Wikipedia.ORG.\n*.wikipedia.org\n"}),
+            &admin,
+        ))
+        .await;
+    assert_eq!(updated.status, StatusCode::OK, "{}", updated.body);
+    assert_eq!(updated.json()["guest_allowlist"], "*.wikipedia.org");
+    for target in [
+        "https://zh.wikipedia.org/wiki/Rust",
+        "https://de.m.wikipedia.org/wiki/Rust",
+    ] {
+        assert_eq!(create(&app, target).await.status, StatusCode::CREATED);
+    }
+    for target in [
+        "https://wikipedia.org/wiki/Rust",
+        "https://evilwikipedia.org/wiki/Rust",
+        "https://zh.wikipedia.org.evil.test/wiki/Rust",
+    ] {
+        assert_eq!(create(&app, target).await.status, StatusCode::FORBIDDEN);
+    }
+
+    let saved = app
+        .send(post_form_as(
+            "/app/admin/settings",
+            &format!("{FORM}&guest_allowlist_enabled=on&guest_allowlist=%2A.wikipedia.org%2Fwiki%2F%0Awikipedia.org"),
+            &admin,
+        ))
+        .await;
+    assert_eq!(
+        saved.header("location").as_deref(),
+        Some("/app/admin/settings?ok=saved")
+    );
+    let rules = "*.wikipedia.org/wiki/\nwikipedia.org";
+    assert_eq!(app.state.settings.guest_allowlist(), rules);
+    let reloaded = Settings::load(&app.state.db, &app.state.config)
+        .await
+        .unwrap();
+    assert_eq!(reloaded.guest_allowlist(), rules);
+    let page = app.get_as("/app/admin/settings", &admin).await;
+    assert!(page.body.contains("*.wikipedia.org/wiki/"));
+    let page = app.get("/").await;
+    assert!(page.body.contains("<code>*.wikipedia.org/wiki/</code>"));
+    assert_eq!(
+        create(&app, "https://wikipedia.org/").await.status,
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        create(&app, "https://fr.m.wikipedia.org/wiki/Rust")
+            .await
+            .status,
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        create(&app, "https://fr.m.wikipedia.org/w/index.php")
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+    let form = app
+        .send(post_form(
+            "/",
+            "target_url=https://fr.m.wikipedia.org/wiki/Rust",
+            None,
+            Some("http://localhost:8080"),
+        ))
+        .await;
+    assert!(form.header("location").unwrap().starts_with("/?shortened="));
+    let form = app
+        .send(post_form(
+            "/",
+            "target_url=https://fr.m.wikipedia.org/w/index.php",
+            None,
+            Some("http://localhost:8080"),
+        ))
+        .await;
+    assert_eq!(
+        form.header("location").as_deref(),
+        Some("/?err=guest_allowlist")
+    );
 }
 
 #[tokio::test]

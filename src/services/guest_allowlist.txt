@@ -1,11 +1,6 @@
-www.youtube.com/watch
-www.youtube.com/shorts/
-www.youtube.com/live/
-youtube.com/watch
-m.youtube.com/watch
-zh.wikipedia.org/wiki/
-en.wikipedia.org/wiki/
-ja.wikipedia.org/wiki/
+*.youtube.com
+youtube.com
+*.wikipedia.org/wiki/
 github.com
 stackoverflow.com/questions/
 www.ptt.cc/bbs/

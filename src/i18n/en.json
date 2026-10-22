@@ -833,10 +833,10 @@
   "admin.settings.guest_allowlist_heading": "Guest destination allowlist",
   "admin.settings.guest_allowlist_enabled": "Restrict anonymous visitors to the allowed destinations",
   "admin.settings.guest_allowlist_label": "Allowed destination hosts and paths",
-  "admin.settings.guest_allowlist_hint": "One exact hostname per line, optionally followed by a case-sensitive path: example.com or example.com/articles/. Subdomains must be listed separately. Use ASCII hostnames and paths; no scheme, port, wildcard, query or fragment. Up to 200 rules / 16 KiB. An empty enabled list blocks all guest submissions. Signed-in accounts are unaffected. The built-in sites are starting suggestions, not a safety certification.",
-  "public.guest_allowlist_hint": "Guests can shorten only the destinations listed below. Hostnames must match exactly; some entries also restrict the path.",
+  "admin.settings.guest_allowlist_hint": "One hostname per line, optionally followed by a case-sensitive path: example.com or example.com/articles/. A leading *. allows every subdomain level, for example *.example.com; it excludes example.com, which must be listed separately. Use ASCII hostnames and paths; no scheme, port, other wildcard, query or fragment. Up to 200 rules / 16 KiB. An empty enabled list blocks all guest submissions. Signed-in accounts are unaffected. The built-in sites are starting suggestions, not a safety certification.",
+  "public.guest_allowlist_hint": "Guests can shorten only the destinations listed below. A leading *. allows all subdomains, excluding the root domain; entries without it match exactly. Some entries also restrict the path.",
   "public.guest_allowlist_show": "View allowed destinations",
   "public.guest_allowlist_empty": "No destinations are currently allowed for guests.",
   "flash.err.guest_allowlist": "This destination is not allowed for guests. Check the allowed destinations below or sign in to use your account’s permissions.",
-  "flash.err.guest_allowlist_rules": "The allowlist was not saved. Use one exact ASCII hostname per line, optionally followed by a path such as example.com/articles/. No scheme, port, wildcard, query, fragment or dot segments; up to 200 rules / 16 KiB."
+  "flash.err.guest_allowlist_rules": "The allowlist was not saved. Use one ASCII hostname per line, with an optional leading *. for subdomains and an optional path, such as *.example.com/articles/. No scheme, port, other wildcard, query, fragment or dot segments; up to 200 rules / 16 KiB."
 }

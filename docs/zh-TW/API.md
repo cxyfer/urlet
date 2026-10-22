@@ -628,13 +628,13 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 | Key | 預設值 | 意義 |
 |-----|--------|------|
 | `guest_allowlist_enabled` | `"true"` | 僅限制匿名建立；`"false"` 明確關閉此政策 |
-| `guest_allowlist` | 內建知名網站規則 | 每行一個精確 ASCII 主機名稱，可加上區分大小寫的 ASCII 路徑，例如 `example.com/articles/` |
+| `guest_allowlist` | 內建知名網站規則 | 每行一個 ASCII 主機名稱，可在開頭加上 `*.` 及區分大小寫的 ASCII 路徑，例如 `*.example.com/articles/` |
 
-透過 `PUT /api/v1/admin/settings` 編輯任一項。主機名稱轉為小寫，移除空行與重複項目。不接受協定、連接埠、帳密、萬用字元、查詢、片段、編碼規則路徑或點路徑。只有主機名稱時允許所有路徑；`/articles` 允許該路徑與子路徑，`/articles/` 則要求尾端斜線。查詢及片段不參與比對。限定路徑的規則拒絕目標中的編碼分隔符與巢狀編碼。僅允許 HTTP／HTTPS 及各自的標準連接埠。子網域須分別列出。上限為 200 條規則與 16 KiB；無效更新回傳 `422`，整批設定維持原值。
+透過 `PUT /api/v1/admin/settings` 編輯任一項。主機名稱轉為小寫，移除空行與重複項目。萬用字元僅接受開頭的 `*.`；不接受協定、連接埠、帳密、其他萬用字元、查詢、片段、編碼規則路徑或點路徑。只有主機名稱時允許所有路徑；`/articles` 允許該路徑與子路徑，`/articles/` 則要求尾端斜線。查詢及片段不參與比對。限定路徑的規則拒絕目標中的編碼分隔符與巢狀編碼。僅允許 HTTP／HTTPS 及各自的標準連接埠。未加 `*.` 時主機名稱必須完全相符。`*.example.com` 依 DNS 標籤邊界涵蓋 `a.example.com` 與 `a.b.example.com`，但不包含 `example.com`、`evilexample.com` 或 `example.com.evil.test`；若要包含根網域，須另外列出 `example.com`。上限為 200 條規則與 16 KiB；無效更新回傳 `422`，整批設定維持原值。
 
 啟用且清單為空時拒絕全部匿名目標；關閉政策會保留清單。更新立即生效且重啟保留，升級僅補齊缺少的 key。既有訪客連結仍可轉址。管理表單提供相同控制項，舊版表單省略新欄位時保留設定。訪客可在首頁查看目前允許的目標；表單遭拒時使用 `?err=guest_allowlist`。
 
-內建清單涵蓋 YouTube、Wikipedia、GitHub、Stack Overflow、PTT、Dcard、巴哈姆特、中央社與 Bilibili，適合時限定內容路徑。這是初始政策，不是安全認證：知名網站仍可能包含使用者內容或轉址。沒有可信度 API、目標內容抓取或轉址鏈檢查。
+內建清單涵蓋 YouTube、Wikipedia、GitHub、Stack Overflow、PTT、Dcard、巴哈姆特、中央社與 Bilibili，適合時限定內容路徑。YouTube 僅使用 `*.youtube.com` 與 `youtube.com`，允許這些主機的所有路徑；Wikipedia 使用 `*.wikipedia.org/wiki/`，涵蓋所有子網域的條目路徑。這是初始政策，不是安全認證：知名網站仍可能包含使用者內容或轉址。沒有可信度 API、目標內容抓取或轉址鏈檢查。
 
 ---
 
