@@ -278,8 +278,8 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | `/app/admin/groups/new` | 新增群組 | 建立表單：配額、功能開關、網域政策、轉址方式政策與預設網域；群組建立後才能轉移預設標記 |
 | `/app/admin/groups/{id}/edit` | 編輯群組 | 與 `/app/admin/groups/new` 相同的表單，預填目前設定；刪除與成員轉移在此頁 |
 | `/app/lang/{code}` | 語言切換 | 設定 `urlet_lang` cookie 並 302 至 `next`（未帶時轉往 `/app`） |
-| `/app/theme/{key}` | 主題切換 | 需要登入與切換權限；設定 `urlet_theme` cookie 並轉往同站 `next`（或 `Referer`，或 `/app`）。`?preview=1` 設定管理員專用預覽 cookie，可包含已停用主題 |
-| `/app/theme/default` | 網站預設 | 清除明確選擇與預覽 cookie，重新跟隨管理員預設 |
+| `/app/theme/{key}` | 主題切換 | 需要切換權限：已登入帳號，或 `all` 政策下的未登入訪客；設定 `urlet_theme` cookie 並轉往同站 `next`（或 `Referer`，已登入帳號為 `/app`、訪客為 `/`）。`admin` 政策下訪客改為導向登入頁。`?preview=1` 設定管理員專用預覽 cookie，可包含已停用主題 |
+| `/app/theme/default` | 網站預設 | 清除明確選擇與預覽 cookie，重新跟隨管理員預設；權限與切換相同 |
 | `/app/theme/preview/stop` | 結束預覽 | 清除管理員預覽 cookie |
 | `/app/admin/themes` | 主題管理 | 啟用/停用內建與上傳主題、上傳自訂樣式表、選擇預設與設定 `theme_switching` 政策 |
 | `/app/admin/themes/custom` | 自訂主題上傳 | `POST` multipart 上傳（名稱、說明、外觀、CSS）；僅限管理員 |
@@ -339,8 +339,8 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 |----|------|------|
 | FR-THEME-1 | 主題目錄 | binary 內建六個主題：`verdant`（v1.2 預設）、`aurora`、`paper`、`signal`、`gilded`、`swiss`。每個主題擁有 `templates/themes/<key>/` 模板目錄與內嵌 CSS。管理員另可註冊 `custom-…` 主題：它們是 CSS 檔、沿用 Verdant 模板，永不新增或修改模板 |
 | FR-THEME-2 | 管理 | `/app/admin/themes` 與 `GET/PUT /api/v1/admin/themes` 列出所有主題（內建與上傳）、啟用/停用、選擇唯一預設與設定 `theme_switching`。上傳主題可於管理頁建立、編輯與刪除。至少要有一個啟用主題，且預設必須啟用；違反時回 `422 validation_error`。預設標記由 partial unique index 保護 |
-| FR-THEME-3 | 選擇 | `GET /app/theme/{key}` 需要登入，僅接受已啟用的 key，設定 `urlet_theme` cookie（`Path=/`、`SameSite=Lax`、`HttpOnly`、一年，設定時加 `Secure`），並轉往同站 `next`、否則 `Referer` 路徑、否則 `/app`。未知或已停用的 key 回 404；未登入者帶著 `next` 導向登入頁。`?preview=1` 設定獨立的管理員預覽 cookie，可指向已停用主題；`/app/theme/default` 清除兩種 cookie，`/app/theme/preview/stop` 結束預覽 |
-| FR-THEME-4 | 權限 | `theme_switching` 為 `all`（預設）或 `admin`。政策在頁面渲染時強制執行：設為 `admin` 時，非管理員帳號與未登入訪客一律顯示預設，忽略既有 cookie。管理員永遠看得到切換器，並可透過獨立的預覽 cookie 檢視任何已編譯主題（包含已停用者）。無權限的直接切換請求回 403。停用主題不會刪除資料 |
+| FR-THEME-3 | 選擇 | `GET /app/theme/{key}` 需要切換權限，僅接受已啟用的 key，設定 `urlet_theme` cookie（`Path=/`、`SameSite=Lax`、`HttpOnly`、一年，設定時加 `Secure`），並轉往同站 `next`、否則 `Referer` 路徑、否則已登入帳號為 `/app`、訪客為 `/`。未知或已停用的 key 回 404；無權限的訪客帶著 `next` 導向登入頁。`?preview=1` 設定獨立的管理員預覽 cookie，可指向已停用主題；`/app/theme/default` 清除兩種 cookie，`/app/theme/preview/stop` 結束預覽 |
+| FR-THEME-4 | 權限 | `theme_switching` 為 `all`（預設）或 `admin`。`all` 就是字面上的每個人：已登入成員與未登入訪客，在具備站台外框的頁面（首頁、登入與註冊、錯誤頁）都看得到切換器並可切換。政策在頁面渲染時強制執行：設為 `admin` 時，非管理員帳號與未登入訪客一律顯示預設、忽略既有 cookie、不提供切換器，非管理員的直接切換回 403，訪客則導向登入頁。管理員永遠看得到切換器，並可透過獨立的預覽 cookie 檢視任何已編譯主題（包含已停用者）。轉址介面（短連結、密碼與 splash 頁）永遠不提供切換器，只跟隨 cookie。停用主題不會刪除資料 |
 | FR-THEME-5 | 預設與回退 | 恰有一個已啟用主題標記為預設。沒有 cookie、未知 key 或 key 已被停用時一律使用預設；切換器依 migration 的順序列出已啟用主題，並提供會清除 cookie 的**網站預設**項目；管理員可在不改變預設的情況下預覽已停用主題 |
 | FR-THEME-6 | 模板 | `templates/` 下的基底模板即 Verdant 主題與回退。主題目錄可覆寫任一頁面；未覆寫的頁面與共享的 v1.2 頁面內容仍可使用。主題模板由 `themed_page!` 在編譯期選擇，絕不使用請求提供的路徑 |
 | FR-THEME-7 | 資產 | `/assets/themes/{key}` 只提供固定的內建 key；`/assets/custom-themes/{key}` 依資料庫資料列提供上傳樣式表（前面接上 Verdant 基礎 CSS，讓上傳能與預設設計疊加），URL 帶有 `/assets/custom-themes/{key}?v=<內容雜湊>`；`/assets/theme-ui.css` 提供切換器與管理目錄的共用樣式。不引入外部字型、圖片、腳本或 CDN，維持 `default-src 'self'` CSP 與零建置部署 |
@@ -385,7 +385,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | NFR-SEC-14 | 密碼雜湊在 `spawn_blocking` 中執行，並以信號量限制同時最多 4 個 Argon2 計算（每個約 19 MiB） |
 | NFR-SEC-15 | 驗證碼驗證失敗一律關閉：以表單編碼 HTTPS POST 搭配 5 秒逾時呼叫設定的供應商，並透過 `ureq` 2 + rustls + webpki-roots 發出（不需 OpenSSL）；逾時、非 2xx 或無法解析的回應一律拒絕請求。secret key 永不回顯於管理後台 |
 | NFR-SEC-16 | 語言 cookie `urlet_lang` 刻意不設 HttpOnly（由前端程式讀取），內容僅為白名單語言標籤；切換端點的 `next` 只接受同站相對路徑，以防開放轉址 |
-| NFR-SEC-17 | 主題 cookie `urlet_theme` 為 HttpOnly、`SameSite=Lax`、一年，設定時加 `Secure`；管理員專用的預覽 cookie 屬性相同，但生命週期為一小時。其值只會與已知目錄 key 比對；上傳 CSS 由產生的 key 提供，使用 `text/css` 與 `nosniff`，並拒絕外部資源與 `@import`。預覽 cookie 僅對管理員生效，切換端點需要登入與 `theme_switching` 權限，且 `next`／`Referer` 會先化為同站路徑再轉址 |
+| NFR-SEC-17 | 主題 cookie `urlet_theme` 為 HttpOnly、`SameSite=Lax`、一年，設定時加 `Secure`；管理員專用的預覽 cookie 屬性相同，但生命週期為一小時。其值只會與已知目錄 key 比對；上傳 CSS 由產生的 key 提供，使用 `text/css` 與 `nosniff`，並拒絕外部資源與 `@import`。預覽 cookie 僅對管理員生效，切換端點需要 `theme_switching` 權限（已登入帳號，或 `all` 政策下的未登入訪客），且 `next`／`Referer` 會先化為同站路徑再轉址 |
 
 ### 5.2 效能 (NFR-PERF)
 

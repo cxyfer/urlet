@@ -23,9 +23,12 @@
         <span class="footer-meta">{{ lang.t("footer.tagline") }}</span>
     </div>
     {% block footer_tools %}
+    {# The pages that keep their controls in a top bar (landing, app shell)
+       override this block; the rest — sign-in, registration, error pages —
+       offer the same tools here. #}
     <div class="footer-tools">
         {% if self.theme_allows_toggle() %}{% include "partials/theme_toggle.html" %}{% endif %}
-        {% include "partials/lang_switcher.html" %}
+        {% include "partials/site_tools.html" %}
     </div>
     {% endblock %}
 </footer>

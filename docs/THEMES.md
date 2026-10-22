@@ -33,9 +33,12 @@ rather than frozen at their original feature set.
 3. Tick the designs that should be offered. At least one theme must stay enabled.
 4. Pick the **Default** theme. It must be enabled; visitors without a cookie see it.
 5. Choose **Who can change their theme**:
-   - `Everyone` — signed-in members may switch (the default).
+   - `Everyone` — members and visitors may switch (the default). A visitor
+     without a session gets the same picker on the pages that carry site chrome:
+     the landing page, sign-in and registration, and error pages.
    - `Administrators only` — administrators keep the picker for previews; members
-     do not see it, and a direct switch returns `403`.
+     do not see it, and a direct switch returns `403`. A visitor without a
+     session is sent to the sign-in screen instead.
 6. **Preview** applies a theme to the current administrator only, then returns to
    the theme page.
 7. Save. The selection is applied immediately; no restart is needed.
@@ -53,6 +56,11 @@ policy was `Everyone`) is ignored. Administrators keep the picker and can use
 **Preview** to inspect any theme, including one that is not enabled yet, without
 changing the visitor-facing default. The preview cookie lasts one hour. A normal
 picker click or **Stop preview** leaves preview mode.
+
+The redirect surface — a short link, its password prompt and the splash pages —
+never offers the picker, even under `Everyone`. Those pages stay minimal and only
+follow a cookie the visitor already has; the picker is one click away on the
+landing page they point back to.
 
 The same selection is available as `GET/PUT /api/v1/admin/themes`. The JSON API
 accepts `enabled`, `default` and `switching`; omitted fields keep their value.
@@ -107,7 +115,9 @@ markup or scripts.
 2. Otherwise the administrator's default.
 3. A cookie for a disabled or unknown theme is ignored and the default is used.
 
-The picker is a native `<details>` element and works without JavaScript. The
+The picker is a native `<details>` element and works without JavaScript. Under
+the `Everyone` policy a visitor who is not signed in sees it too, so a look
+chosen on the landing page survives the sign-in that follows. The
 cookie is `HttpOnly`, `SameSite=Lax`, lives for one year, and is `Secure` when
 the instance is configured for secure cookies. It is a cosmetic preference, not
 a per-user database column; a new browser starts at the default. The picker's
@@ -170,7 +180,11 @@ stylesheet URL.
 3. Add the catalogue strings to the three `src/i18n/*.json` files.
 4. Create `templates/themes/<key>/` with at least `base.html`, `app_base.html`,
    `landing.html`, the auth/link/splash/error pages, the admin tabs and the app pages.
-   Reuse the content macros for the dense app pages.
+   Reuse the content macros for the dense app pages. Render the picker exactly once per
+   page: in the top bar of `landing.html` and `app_base.html`, and through
+   `partials/site_tools.html` (picker plus language switcher) wherever the design keeps
+   its footer tools. A design that empties `footer_lang` for its own top bar must put the
+   picker there instead, as Swiss's auth pages do.
 5. Add `templates/themes/<key>/...` paths to every `themed_page!` call. Keep the
    `Verdant` entry in each invocation: it is also the fallback used when a page
    has not listed a newly added theme yet.

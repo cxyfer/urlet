@@ -1,0 +1,8 @@
+{# The theme picker and the language switcher, shared by every design.
+   A page that keeps its tools in a footer includes this where the footer shows
+   them; a page with a top bar (the landing page, the app shell, Swiss auth)
+   includes it there instead, so the picker is never rendered twice. The picker
+   decides for itself whether to appear, from the request's ThemeView. #}
+{%- import "partials/theme_switcher.html" as theme_switcher -%}
+{% call theme_switcher::switcher(self.theme_view(), lang) %}
+{% include "partials/lang_switcher.html" %}

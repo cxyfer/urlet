@@ -73,7 +73,7 @@ pub async fn home(
             site_name: state.settings.site_name(),
             canonical_url: state.config.base_url.clone(),
             lang: i18n::current(),
-            theme: crate::services::theme::for_anonymous(),
+            theme: crate::services::theme::current(),
         }
         .themed();
         let mut response = render(page)?;
@@ -92,7 +92,7 @@ pub async fn home(
     };
     let theme = match &current {
         Some(current) => crate::services::theme::for_user(&state.settings, &current.user),
-        None => crate::services::theme::for_anonymous(),
+        None => crate::services::theme::current(),
     };
 
     let page = LandingPage {

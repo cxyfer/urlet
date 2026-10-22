@@ -151,7 +151,7 @@ pub async fn login_page(
             email: String::new(),
             captcha: captcha_widget(&state, CaptchaFlow::Login),
             lang,
-            theme: theme::for_anonymous(),
+            theme: theme::current(),
         }
         .themed(),
     ))
@@ -173,7 +173,7 @@ pub async fn login_submit(
                 email: String::new(),
                 captcha: captcha_widget(&state, CaptchaFlow::Login),
                 lang: i18n::current(),
-                theme: theme::for_anonymous(),
+                theme: theme::current(),
             }
             .themed(),
         ));
@@ -249,7 +249,7 @@ pub async fn login_submit(
                 email: payload.email,
                 captcha: captcha_widget(&state, CaptchaFlow::Login),
                 lang: i18n::current(),
-                theme: theme::for_anonymous(),
+                theme: theme::current(),
             }
             .themed(),
         )),
@@ -290,7 +290,7 @@ pub async fn register_page(
             invite_code: invite_from_query(query.invite.as_deref()),
             captcha: captcha_widget(&state, CaptchaFlow::Register),
             lang,
-            theme: theme::for_anonymous(),
+            theme: theme::current(),
         }
         .themed(),
     )))
@@ -403,7 +403,7 @@ pub async fn register_submit(
                             invite_code: payload.invite_code.unwrap_or_default(),
                             captcha: captcha_widget(&state, CaptchaFlow::Register),
                             lang,
-                            theme: theme::for_anonymous(),
+                            theme: theme::current(),
                         }
                         .themed(),
                     )));

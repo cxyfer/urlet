@@ -67,6 +67,14 @@
     color: var(--ink, CanvasText);
     box-shadow: 0 .6rem 1.6rem rgba(0, 0, 0, .18);
 }
+/* A picker that sits in the page footer has no room below the fold, so its menu
+   opens upward — the same reason `footer.site .lang-menu` does. Paper calls its
+   footer `colophon`; every other design uses `site`. */
+footer.site .theme-menu,
+footer.colophon .theme-menu {
+    top: auto;
+    bottom: calc(100% + .45rem);
+}
 .theme-option {
     display: block;
     padding: .38rem .55rem;

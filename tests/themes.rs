@@ -293,6 +293,17 @@ async fn the_theme_picker_menu_paints_its_own_text_and_background() {
     assert!(rule.contains("background:"), "{rule}");
     assert!(rule.contains("color:"), "{rule}");
     assert!(!rule.contains("color: inherit"), "{rule}");
+
+    // The picker also sits in the page footer, where a downward menu would open
+    // past the end of the document.
+    assert!(
+        response.body.contains("footer.site .theme-menu"),
+        "the footer menu must be told to open upward"
+    );
+    assert!(
+        response.body.contains("footer.colophon .theme-menu"),
+        "Paper calls its footer `colophon`"
+    );
 }
 
 #[tokio::test]
@@ -343,6 +354,241 @@ async fn the_theme_picker_is_hidden_without_permission() {
     assert!(anonymous.body.contains("/assets/app.css"));
     let page = app.get_as("/app", &cookie).await;
     assert!(page.body.contains("data-theme-switcher"));
+}
+
+#[tokio::test]
+async fn a_visitor_can_pick_a_theme_while_the_policy_is_all() {
+    let app = TestApp::spawn().await;
+
+    // The landing page offers the picker to a visitor without a session, and the
+    // sign-in page repeats it in the shared footer.
+    let landing = app.get("/").await;
+    assert_eq!(landing.status, StatusCode::OK);
+    // The shared chrome imports the picker macro; the document must still start
+    // with the doctype rather than a stray newline.
+    assert!(landing.body.starts_with("<!DOCTYPE html>"));
+    assert!(landing.body.contains("data-theme-switcher"));
+    assert!(landing.body.contains("href=\"/app/theme/paper\""));
+    assert!(landing.body.contains("/assets/app.css"));
+    let login = app.get("/app/login").await;
+    assert!(login.body.contains("data-theme-switcher"));
+
+    // Picking a theme writes the cookie and returns to the landing page. With no
+    // `next` and no `Referer`, `/app` would only bounce the visitor to the
+    // sign-in screen, so the visitor fallback is `/`.
+    let switched = app.get("/app/theme/paper").await;
+    assert_eq!(switched.status, StatusCode::FOUND);
+    assert_eq!(switched.header("location").as_deref(), Some("/"));
+    let theme_cookie = switched.cookie_named("urlet_theme").expect("theme cookie");
+    assert!(theme_cookie.contains("urlet_theme=paper"));
+
+    // The next request renders the visitor's choice, not the site default.
+    let themed = app.get_as("/", &theme_cookie).await;
+    assert!(themed.body.contains("/assets/themes/paper"));
+    assert!(themed.body.contains("data-theme-key=\"paper\""));
+    assert!(themed.body.contains("data-theme-switcher"));
+
+    // The site-default entry clears the explicit choice again.
+    let cleared = app.get_as("/app/theme/default", &theme_cookie).await;
+    assert_eq!(cleared.status, StatusCode::FOUND);
+    let cleared_cookie = cleared.cookie_named("urlet_theme").expect("clear cookie");
+    assert_eq!(cleared_cookie, "urlet_theme=");
+
+    // The redirect surface stays minimal: a link page never offers the picker,
+    // even to a visitor who may switch on the landing page.
+    let missing = app.get("/definitely-not-a-slug").await;
+    assert!(!missing.body.contains("data-theme-switcher"));
+}
+
+#[tokio::test]
+async fn a_slug_beginning_with_app_stays_on_the_redirect_surface() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+
+    // `app` is reserved, but a slug that merely begins with it is an ordinary
+    // link. It must not be mistaken for the `/app` shell: that would give a
+    // visitor the picker on a link page under `all`, and cost the redirect hot
+    // path the session lookup it is meant to avoid.
+    let created = app
+        .post_json_as(
+            "/api/v1/urls",
+            json!({
+                "target_url": "https://example.com/apple",
+                "slug": "apple",
+                "password": "secret123"
+            }),
+            &cookie,
+        )
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+
+    // The cookie is still honoured; only the picker is withheld.
+    let page = app.get_as("/apple", "urlet_theme=paper").await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    assert!(page.body.contains("/assets/themes/paper"));
+    assert!(!page.body.contains("data-theme-switcher"));
+
+    // The same visitor is offered the picker on the landing page.
+    let landing = app.get_as("/", "urlet_theme=paper").await;
+    assert!(landing.body.contains("data-theme-switcher"));
+}
+
+#[tokio::test]
+async fn every_theme_offers_the_picker_to_a_visitor() {
+    let app = TestApp::spawn().await;
+
+    // Every design must behave the same for a visitor without a session: the
+    // landing page and the sign-in page carry the shared tools, the redirect
+    // surface stays minimal, and the picker is never rendered twice.
+    for theme in urlet::services::theme::ALL {
+        let key = theme.key();
+        let cookie = format!("urlet_theme={key}");
+
+        let landing = app.get_as("/", &cookie).await;
+        assert_eq!(landing.status, StatusCode::OK, "{key} landing");
+        assert_eq!(
+            landing.body.matches("data-theme-switcher").count(),
+            1,
+            "{key} must offer exactly one picker on the landing page"
+        );
+
+        let login = app.get_as("/app/login", &cookie).await;
+        assert_eq!(login.status, StatusCode::OK, "{key} sign-in");
+        assert_eq!(
+            login.body.matches("data-theme-switcher").count(),
+            1,
+            "{key} must offer exactly one picker on the sign-in page"
+        );
+        assert!(
+            login.body.contains("/assets/theme-ui.css"),
+            "{key} must load the picker stylesheet where it renders the picker"
+        );
+
+        let register = app.get_as("/app/register", &cookie).await;
+        assert_eq!(register.status, StatusCode::OK, "{key} registration");
+        assert_eq!(
+            register.body.matches("data-theme-switcher").count(),
+            1,
+            "{key} must offer exactly one picker on the registration page"
+        );
+
+        let link = app.get_as("/definitely-not-a-slug", &cookie).await;
+        assert_eq!(link.status, StatusCode::NOT_FOUND, "{key} link page");
+        assert!(
+            !link.body.contains("data-theme-switcher"),
+            "{key} must keep the link page free of the picker"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_visitor_keeps_the_default_while_the_policy_is_admin() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+    app.send(put_json_as(
+        "/api/v1/admin/themes",
+        json!({ "switching": "admin" }),
+        &cookie,
+    ))
+    .await;
+
+    // No picker, and a cookie from a previous `all` policy is ignored at render
+    // time rather than only hidden in the UI.
+    let landing = app.get_as("/", "urlet_theme=paper").await;
+    assert_eq!(landing.status, StatusCode::OK);
+    assert!(!landing.body.contains("data-theme-switcher"));
+    assert!(landing.body.contains("/assets/app.css"));
+    let login = app.get_as("/app/login", "urlet_theme=paper").await;
+    assert!(!login.body.contains("data-theme-switcher"));
+
+    // A direct switch is refused instead of being silently accepted: the visitor
+    // is sent to sign in with a way back to the page they were reading.
+    let refused = app.get_as("/app/theme/paper", "urlet_theme=paper").await;
+    assert_eq!(refused.status, StatusCode::SEE_OTHER);
+    let location = refused.header("location").expect("location");
+    assert!(location.starts_with("/app/login?next="), "{location}");
+    assert!(refused.cookie_named("urlet_theme").is_none());
+
+    // Administrators keep the picker and can still switch.
+    let admin_page = app.get_as("/app", &cookie).await;
+    assert!(admin_page.body.contains("data-theme-switcher"));
+    let admin_switch = app.get_as("/app/theme/paper", &cookie).await;
+    assert_eq!(admin_switch.status, StatusCode::FOUND);
+    assert!(admin_switch
+        .cookie_named("urlet_theme")
+        .expect("theme cookie")
+        .contains("urlet_theme=paper"));
+}
+
+#[tokio::test]
+async fn a_visitor_cannot_reach_the_administrator_preview() {
+    let app = TestApp::spawn().await;
+
+    // Preview may name a disabled theme, so it stays administrator-only even
+    // though `all` lets a visitor switch. A refused request must leave neither
+    // cookie behind.
+    let refused = app.get("/app/theme/aurora?preview=1").await;
+    assert_eq!(refused.status, StatusCode::FORBIDDEN);
+    assert!(refused.cookie_named("urlet_theme_preview").is_none());
+    assert!(refused.cookie_named("urlet_theme").is_none());
+
+    // Under `admin` the plain switch and the site-default reset are closed too.
+    let cookie = admin(&app).await;
+    app.send(put_json_as(
+        "/api/v1/admin/themes",
+        json!({ "switching": "admin" }),
+        &cookie,
+    ))
+    .await;
+
+    for uri in ["/app/theme/paper", "/app/theme/default"] {
+        let response = app.get(uri).await;
+        assert_eq!(response.status, StatusCode::SEE_OTHER, "{uri}");
+        let location = response.header("location").expect("location");
+        assert!(
+            location.starts_with("/app/login?next="),
+            "{uri}: {location}"
+        );
+        assert!(response.cookie_named("urlet_theme").is_none(), "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn a_visitor_switch_never_leaves_the_site() {
+    let app = TestApp::spawn().await;
+
+    // The anonymous path is new, so re-check that a hostile `next` cannot turn
+    // the switch into an open redirect: each rejected value falls back to `/`.
+    for next in [
+        "https%3A%2F%2Fevil.example%2Fx",
+        "%2F%2Fevil.example",
+        "%2F%5Cevil.example",
+        "%0A%2F%2Fevil.example",
+    ] {
+        let response = app.get(&format!("/app/theme/paper?next={next}")).await;
+        assert_eq!(response.status, StatusCode::FOUND, "next={next}");
+        assert_eq!(
+            response.header("location").as_deref(),
+            Some("/"),
+            "next={next} must not become an open redirect"
+        );
+    }
+
+    // A same-site `next` is still honoured.
+    let kept = app.get("/app/theme/paper?next=%2Fapp%2Faccount").await;
+    assert_eq!(kept.header("location").as_deref(), Some("/app/account"));
+
+    // An off-site referer is ignored the same way.
+    let request = Request::builder()
+        .method("GET")
+        .uri("/app/theme/paper")
+        .header(header::HOST, "localhost:8080")
+        .header(header::REFERER, "https://evil.example/app")
+        .body(Body::empty())
+        .expect("request");
+    let response = app.send(request).await;
+    assert_eq!(response.status, StatusCode::FOUND);
+    assert_eq!(response.header("location").as_deref(), Some("/"));
 }
 
 #[tokio::test]
@@ -589,6 +835,13 @@ async fn every_theme_renders_the_extra_domain_landing() {
         assert!(response.body.contains(&css), "{key} missing {css}");
         assert!(response.body.contains(&format!("data-theme-key=\"{key}\"")));
         assert!(response.body.contains("noindex"));
+        // The redirect-only landing page is a public page too, so a visitor can
+        // switch from it under the default `all` policy.
+        assert_eq!(
+            response.body.matches("data-theme-switcher").count(),
+            1,
+            "{key} must offer exactly one picker on the extra-domain landing"
+        );
     }
 }
 

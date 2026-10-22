@@ -19,7 +19,7 @@
 {% block footer %}
 <footer class="site">
     <span><span class="footer-brand">{{ site_name }}</span> — {{ lang.t("footer.tagline") }}</span>
-    {% block footer_lang %}{% include "partials/lang_switcher.html" %}{% endblock %}
+    {% block footer_lang %}{% include "partials/site_tools.html" %}{% endblock %}
 </footer>
 {% endblock %}
 <script src="/assets/app.js?v={{ self.asset_version() }}" defer></script>

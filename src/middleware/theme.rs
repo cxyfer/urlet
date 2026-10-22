@@ -21,12 +21,18 @@ use crate::state::AppState;
 
 /// Does this path need the account-aware view?
 ///
-/// `/` and `/app/**` render the signed-in shell or the landing page and need the
-/// policy check. The redirect surface (`/{slug}`, `/{slug}/unlock`) and health
-/// endpoints do not: authenticating there would add two queries to the hot
-/// redirect path and break the NFR-PERF-1 budget.
+/// `/` and `/app` (with its subpaths) render the signed-in shell or the landing
+/// page and need the policy check. The redirect surface (`/{slug}`,
+/// `/{slug}/unlock`) and health endpoints do not: authenticating there would add
+/// two queries to the hot redirect path and break the NFR-PERF-1 budget.
+///
+/// The match is on the path boundary, not the bare prefix. `app` is reserved as
+/// a slug, but a slug that merely begins with it (`/apple`) is an ordinary link:
+/// matching `starts_with("/app")` would give such a link page the session lookup
+/// the redirect surface avoids, and — under the `all` policy — the picker that
+/// only the pages carrying site chrome may show.
 fn needs_account(path: &str) -> bool {
-    path == "/" || path.starts_with("/app")
+    path == "/" || path == "/app" || path.starts_with("/app/")
 }
 
 /// Install the request theme for the rest of the stack.
@@ -44,7 +50,9 @@ pub async fn theme(State(state): State<AppState>, request: Request, next: Next) 
 
     // The redirect surface only needs the cookie. Under `admin` it deliberately
     // ignores the cookie, matching the anonymous default, but it never resolves
-    // a session: the redirect hot path must stay a single indexed lookup.
+    // a session: the redirect hot path must stay a single indexed lookup. It also
+    // never offers the picker, even under `all`: a link page is about the link,
+    // and the visitor can switch from the landing page it points back to.
     if !needs_account(path) {
         let requested = if switching == ThemeSwitching::AdminOnly {
             None
@@ -93,10 +101,12 @@ pub async fn theme(State(state): State<AppState>, request: Request, next: Next) 
             cookies::get(request.headers(), COOKIE_NAME)
         };
         let mut view = state.themes.view(lang, requested.as_deref());
-        view.can_switch = current
-            .as_ref()
-            .map(|current| theme::can_switch(&state.settings, &current.user))
-            .unwrap_or(false);
+        // No session: the site-wide policy decides on its own. `all` is
+        // literally everyone, so a visitor gets the same picker as a member.
+        view.can_switch = match current.as_ref() {
+            Some(current) => theme::can_switch(&state.settings, &current.user),
+            None => theme::anonymous_can_switch(&state.settings),
+        };
         view
     };
 
@@ -113,9 +123,14 @@ mod tests {
     fn the_redirect_surface_skips_authentication() {
         assert!(needs_account("/"));
         assert!(needs_account("/app"));
+        assert!(needs_account("/app/"));
         assert!(needs_account("/app/admin/themes"));
         assert!(!needs_account("/promo"));
         assert!(!needs_account("/promo/unlock"));
         assert!(!needs_account("/health"));
+        // A slug that merely begins with `app` is a link, not the app shell.
+        assert!(!needs_account("/apple"));
+        assert!(!needs_account("/apple/unlock"));
+        assert!(!needs_account("/application"));
     }
 }

@@ -529,10 +529,12 @@ fn wants_preview(value: Option<&str>) -> bool {
 
 /// `GET /app/theme/{key}` — remember the choice in a cookie and go back.
 ///
-/// Only a signed-in account may switch, and only when the site policy allows
-/// it. The choice lives in a cookie so it applies before authentication too;
-/// the server validates the key against the enabled themes on every request,
-/// so a stale or hand-written value cannot load a disabled theme.
+/// A signed-in account may switch when the site policy allows it, and an
+/// anonymous visitor may switch when the policy is `all`; under `admin` the
+/// visitor is sent to the sign-in screen with a way back. The choice lives in a
+/// cookie so it applies before authentication too; the server validates the key
+/// against the enabled themes on every request, so a stale or hand-written value
+/// cannot load a disabled theme.
 ///
 /// An administrator can pass `?preview=1` to set the separate preview cookie,
 /// which may name a disabled theme. The theme middleware only honours that
@@ -544,12 +546,19 @@ pub async fn theme_switch(
     Query(query): Query<ThemeQuery>,
     headers: HeaderMap,
 ) -> Response {
-    let target = theme_target(&headers, &state.config.base_url, query.next.as_deref());
-    let Some(current) = current else {
+    let target = theme_target(
+        &headers,
+        &state.config.base_url,
+        query.next.as_deref(),
+        current.is_some(),
+    );
+    if let Some(account) = &current {
+        if !theme::can_switch(&state.settings, &account.user) {
+            return AppError::forbidden("theme switching is disabled for this account")
+                .into_response();
+        }
+    } else if !theme::anonymous_can_switch(&state.settings) {
         return redirect_to_login(Some(&target)).into_response();
-    };
-    if !theme::can_switch(&state.settings, &current.user) {
-        return AppError::forbidden("theme switching is disabled for this account").into_response();
     }
     let lang = crate::i18n::current();
     let Some(theme_key) = state.themes.known(&key, lang) else {
@@ -558,7 +567,11 @@ pub async fn theme_switch(
 
     let mut cookies = Vec::new();
     if wants_preview(query.preview.as_deref()) {
-        if !current.is_admin() {
+        let is_admin = current
+            .as_ref()
+            .map(|account| account.is_admin())
+            .unwrap_or(false);
+        if !is_admin {
             return AppError::forbidden("theme preview is administrator only").into_response();
         }
         cookies.push(crate::services::cookies::build(
@@ -594,12 +607,19 @@ pub async fn theme_default(
     Query(query): Query<ThemeQuery>,
     headers: HeaderMap,
 ) -> Response {
-    let target = theme_target(&headers, &state.config.base_url, query.next.as_deref());
-    let Some(current) = current else {
+    let target = theme_target(
+        &headers,
+        &state.config.base_url,
+        query.next.as_deref(),
+        current.is_some(),
+    );
+    if let Some(account) = &current {
+        if !theme::can_switch(&state.settings, &account.user) {
+            return AppError::forbidden("theme switching is disabled for this account")
+                .into_response();
+        }
+    } else if !theme::anonymous_can_switch(&state.settings) {
         return redirect_to_login(Some(&target)).into_response();
-    };
-    if !theme::can_switch(&state.settings, &current.user) {
-        return AppError::forbidden("theme switching is disabled for this account").into_response();
     }
     let cookies = vec![
         crate::services::cookies::clear(
@@ -621,7 +641,12 @@ pub async fn theme_preview_stop(
     Query(query): Query<ThemeQuery>,
     headers: HeaderMap,
 ) -> Response {
-    let target = theme_target(&headers, &state.config.base_url, query.next.as_deref());
+    let target = theme_target(
+        &headers,
+        &state.config.base_url,
+        query.next.as_deref(),
+        current.is_some(),
+    );
     if current.is_none() {
         return redirect_to_login(Some(&target)).into_response();
     }
@@ -632,10 +657,21 @@ pub async fn theme_preview_stop(
     theme_redirect(&target, &cookies)
 }
 
-fn theme_target(headers: &HeaderMap, base_url: &str, next: Option<&str>) -> String {
+/// Where a theme switch goes once the cookie is written.
+///
+/// An explicit same-site `next` wins, then the same-site `Referer` path, and
+/// finally the dashboard for a signed-in account or the landing page for a
+/// visitor — `/app` would only bounce an anonymous visitor to the sign-in
+/// screen.
+fn theme_target(
+    headers: &HeaderMap,
+    base_url: &str,
+    next: Option<&str>,
+    signed_in: bool,
+) -> String {
     safe_next(next)
         .or_else(|| referrer_path(headers, base_url))
-        .unwrap_or_else(|| "/app".to_string())
+        .unwrap_or_else(|| if signed_in { "/app" } else { "/" }.to_string())
 }
 
 fn theme_redirect(target: &str, cookies: &[String]) -> Response {

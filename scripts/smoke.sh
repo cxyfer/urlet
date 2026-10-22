@@ -477,6 +477,13 @@ contains "the chosen theme is rendered" 'data-theme-key="paper"' \
     "$(curl -s -b "$DATA/theme-cookies.txt" "$BASE/app")"
 contains "the chosen theme loads its stylesheet" '/assets/themes/paper' \
     "$(curl -s -b "$DATA/theme-cookies.txt" "$BASE/app")"
+# The default policy is `all`, which includes visitors without a session.
+check "a visitor can switch themes" "302" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -c "$DATA/visitor-theme-cookies.txt" "$BASE/app/theme/aurora")"
+contains "the visitor sees the picker" 'data-theme-switcher' \
+    "$(curl -s -b "$DATA/visitor-theme-cookies.txt" "$BASE/")"
+contains "the visitor's choice is rendered" 'data-theme-key="aurora"' \
+    "$(curl -s -b "$DATA/visitor-theme-cookies.txt" "$BASE/")"
 
 # ----------------------------------------------------------- custom themes
 echo

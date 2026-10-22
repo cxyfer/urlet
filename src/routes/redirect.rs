@@ -349,7 +349,7 @@ fn splash_page(state: &AppState, url: &Url) -> Response {
             &[("seconds", delay_seconds.to_string())],
         ),
         lang,
-        theme: theme::for_anonymous(),
+        theme: theme::current(),
     }
     .themed();
     render(page, StatusCode::OK)
@@ -366,7 +366,7 @@ fn password_page(
         slug: slug.to_string(),
         error: error.map(str::to_string),
         lang: i18n::current(),
-        theme: theme::for_anonymous(),
+        theme: theme::current(),
     }
     .themed();
     render(page, status)
@@ -380,7 +380,7 @@ fn not_found_page(state: &AppState) -> Response {
         title: lang.t("link.not_found.title").to_string(),
         message: lang.t("link.not_found.message").to_string(),
         lang,
-        theme: theme::for_anonymous(),
+        theme: theme::current(),
     }
     .themed();
     render(page, StatusCode::NOT_FOUND)
@@ -395,7 +395,7 @@ fn gone_page(state: &AppState, title_key: &str, message_key: &str) -> Response {
         title: lang.t(title_key).to_string(),
         message: lang.t(message_key).to_string(),
         lang,
-        theme: theme::for_anonymous(),
+        theme: theme::current(),
     }
     .themed();
     render(page, StatusCode::GONE)

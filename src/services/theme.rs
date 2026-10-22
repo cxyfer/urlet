@@ -428,15 +428,19 @@ pub fn can_switch(settings: &Settings, user: &User) -> bool {
     user.is_admin() || settings.theme_switching() == ThemeSwitching::All
 }
 
+/// Whether an anonymous visitor may change the theme.
+///
+/// There is no account to consult, so the site-wide policy decides alone:
+/// `all` is literally everyone, which includes a visitor without a session.
+/// Under `admin` the picker is not offered, the cookie is ignored at render
+/// time and the switch endpoint sends the visitor to the sign-in screen.
+pub fn anonymous_can_switch(settings: &Settings) -> bool {
+    settings.theme_switching() == ThemeSwitching::All
+}
+
 /// Build the view for a signed-in account.
 pub fn for_user(settings: &Settings, user: &User) -> ThemeView {
     current().with_can_switch(can_switch(settings, user))
-}
-
-/// Build the view for an anonymous visitor: the cookie still selects a look,
-/// but the picker is hidden because there is no account to check.
-pub fn for_anonymous() -> ThemeView {
-    current().with_can_switch(false)
 }
 
 /// In-memory cache of the catalogue rows and the uploaded theme metadata.
