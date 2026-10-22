@@ -131,6 +131,17 @@ curl -s -c "$COOKIES_B" -o /dev/null -X POST "$BASE/api/v1/auth/register" \
     -H 'content-type: application/json' \
     -d '{"email":"member@example.com","password":"memberpassword"}'
 
+# Account ids are resolved from the database rather than hard-coded: the
+# reserved Guest account (schema 15) owns id 1, so people start at 2.
+ADMIN_ID=$(sqlite3 "$DATA/smoke.db" "SELECT id FROM users WHERE email_normalized='owner@example.com';")
+MEMBER_ID=$(sqlite3 "$DATA/smoke.db" "SELECT id FROM users WHERE email_normalized='member@example.com';")
+GUEST_ID=$(sqlite3 "$DATA/smoke.db" "SELECT id FROM users WHERE is_system = 1;")
+if [ -n "$ADMIN_ID" ] && [ -n "$MEMBER_ID" ]; then
+    pass "the reserved Guest account is seeded and people start after it"
+else
+    fail "cannot resolve the seeded accounts"
+fi
+
 # ------------------------------------------------------------------ links
 echo
 echo "short link management"
@@ -351,8 +362,11 @@ check "a member cannot list users" "403" "$(curl -s -o /dev/null -w '%{http_code
 check "an admin can list users" "200" "$(curl -s -o /dev/null -w '%{http_code}' \
     -b "$COOKIES" "$BASE/api/v1/admin/users")"
 check "an admin cannot demote themselves" "422" "$(curl -s -o /dev/null -w '%{http_code}' \
-    -b "$COOKIES" -X PATCH "$BASE/api/v1/admin/users/1" -H 'content-type: application/json' \
+    -b "$COOKIES" -X PATCH "$BASE/api/v1/admin/users/$ADMIN_ID" -H 'content-type: application/json' \
     -H "origin: $BASE" -d '{"role":"user"}')"
+check "the reserved Guest account cannot be edited" "403" "$(curl -s -o /dev/null -w '%{http_code}' \
+    -b "$COOKIES" -X PATCH "$BASE/api/v1/admin/users/$GUEST_ID" -H 'content-type: application/json' \
+    -H "origin: $BASE" -d '{"status":"active"}')"
 check "settings can be updated" "200" "$(curl -s -o /dev/null -w '%{http_code}' \
     -b "$COOKIES" -X PUT "$BASE/api/v1/admin/settings" -H 'content-type: application/json' \
     -H "origin: $BASE" -d '{"site_name":"Smoke Test"}')"
@@ -369,7 +383,7 @@ contains "a user group is created" '"name":"Smoke"' "$GROUP"
 contains "the group disables domain selection" '"allow_domain_selection":false' "$GROUP"
 contains "the group stores the redirect mode policy" '"redirect_mode_policy":"direct"' "$GROUP"
 check "a user is assigned to the group" "200" "$(curl -s -o /dev/null -w '%{http_code}' \
-    -b "$COOKIES" -X PATCH "$BASE/api/v1/admin/users/2" -H 'content-type: application/json' \
+    -b "$COOKIES" -X PATCH "$BASE/api/v1/admin/users/$MEMBER_ID" -H 'content-type: application/json' \
     -H "origin: $BASE" -d "{\"group_id\":$GROUP_ID}")"
 check "a non-default domain is refused by the group" "403" "$(curl -s -o /dev/null -w '%{http_code}' \
     -b "$COOKIES_B" -X POST "$BASE/api/v1/urls" -H 'content-type: application/json' \
@@ -400,7 +414,7 @@ POLICY=$(curl -s -b "$COOKIES" -X POST "$BASE/api/v1/admin/groups" -H 'content-t
 POLICY_ID=$(echo "$POLICY" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
 contains "a group default domain is stored" "\"default_domain_id\":$GO_ID" "$POLICY"
 check "the policy group is assigned" "200" "$(curl -s -o /dev/null -w '%{http_code}' \
-    -b "$COOKIES" -X PATCH "$BASE/api/v1/admin/users/2" -H 'content-type: application/json' \
+    -b "$COOKIES" -X PATCH "$BASE/api/v1/admin/users/$MEMBER_ID" -H 'content-type: application/json' \
     -H "origin: $BASE" -d "{\"group_id\":$POLICY_ID}")"
 HOST=${BASE#http://}
 POLICY_DOMAINS=$(curl -s -b "$COOKIES_B" "$BASE/api/v1/domains")
@@ -463,6 +477,58 @@ contains "the theme list opens the upload in a dialog" 'data-theme-dialog-root' 
 contains "the theme upload is a drop zone" 'data-theme-drop' \
     "$(curl -s -b "$COOKIES" "$BASE/app/admin/themes/new")"
 check "GET /app without a session redirects" "303" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/app")"
+
+# ------------------------------------------------------- public shortener
+echo
+echo "public shortener"
+missing "the public form is closed by default" 'id="public_target_url"' "$(curl -s "$BASE/")"
+check "the access level can be opened to visitors" "200" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" -X PUT "$BASE/api/v1/admin/settings" \
+        -H 'content-type: application/json' -H "origin: $BASE" \
+        -d '{"public_create_access":"guest","public_rate_limit_per_ip":"0","public_rate_limit_global":"0"}')"
+contains "the landing page offers the public form" 'id="public_target_url"' "$(curl -s "$BASE/")"
+
+PUBLIC_REDIRECT=$(curl -s -o /dev/null -w '%{redirect_url}' -X POST "$BASE/" \
+    -H "origin: $BASE" -d 'target_url=https://example.com/public-smoke')
+PUBLIC_SLUG=$(printf '%s' "$PUBLIC_REDIRECT" | sed -n 's/.*shortened=\([^&]*\).*/\1/p')
+if [ -n "$PUBLIC_SLUG" ]; then
+    pass "an anonymous visitor creates a link"
+else
+    fail "the public form did not redirect to a created link ($PUBLIC_REDIRECT)"
+fi
+contains "the result page shows the short URL" "$BASE/$PUBLIC_SLUG" "$(curl -s "$PUBLIC_REDIRECT")"
+check "the guest link redirects" "302" \
+    "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/$PUBLIC_SLUG")"
+check "the link belongs to the reserved Guest account" "$GUEST_ID" \
+    "$(sqlite3 "$DATA/smoke.db" "SELECT user_id FROM urls WHERE slug='$PUBLIC_SLUG';")"
+missing "the Guest account is hidden from the user list" 'guest@urlet.invalid' \
+    "$(curl -s -b "$COOKIES" "$BASE/app/admin/users")"
+contains "the link list labels its owner as the Guest account" '>Guest</a>' \
+    "$(curl -s -b "$COOKIES" "$BASE/app/admin/urls")"
+
+check "the public API answers JSON" "201" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/public/urls" \
+        -H 'content-type: application/json' -d '{"target_url":"https://example.com/public-api"}')"
+contains "the API reports the short URL" '"short_url":"'"$BASE"'/' \
+    "$(curl -s -X POST "$BASE/api/v1/public/urls" -H 'content-type: application/json' \
+        -d '{"target_url":"https://example.com/public-api-two"}')"
+
+check "the visitor budget can be tightened" "200" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" -X PUT "$BASE/api/v1/admin/settings" \
+        -H 'content-type: application/json' -H "origin: $BASE" \
+        -d '{"public_rate_limit_per_ip":"1"}')"
+check "the first creation under the new budget succeeds" "303" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/" \
+        -H "origin: $BASE" -d 'target_url=https://example.com/public-smoke-two')"
+contains "the second creation from one address is refused" 'err=rate_limited' \
+    "$(curl -s -o /dev/null -w '%{redirect_url}' -X POST "$BASE/" \
+        -H "origin: $BASE" -d 'target_url=https://example.com/public-smoke-three')"
+
+check "the public tool can be closed again" "200" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" -X PUT "$BASE/api/v1/admin/settings" \
+        -H 'content-type: application/json' -H "origin: $BASE" \
+        -d '{"public_create_access":"user","public_rate_limit_per_ip":"20","public_rate_limit_global":"500"}')"
+missing "the form is closed again for anonymous visitors" 'id="public_target_url"' "$(curl -s "$BASE/")"
 
 # ---------------------------------------------------------------- themes
 echo

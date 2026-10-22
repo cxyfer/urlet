@@ -5,15 +5,16 @@
         <h1 class="page-title">{{ lang.t("admin.settings.heading") }}</h1>
     </div>
     <div class="page-head-side">
-        <span class="page-note" aria-hidden="true">CFG · 01 / 02</span>
+        <span class="page-note" aria-hidden="true">CFG · 01 / 03</span>
     </div>
 </div>
 
 <div class="settings-layout">
     <aside class="settings-rail">
-        <span class="rail-title" aria-hidden="true">01 / 02</span>
+        <span class="rail-title" aria-hidden="true">01 / 03</span>
         <a href="#settings-general"><span class="rail-index" aria-hidden="true">01</span>{{ lang.t("admin.settings.heading") }}</a>
         <a href="#settings-protection"><span class="rail-index" aria-hidden="true">02</span>{{ lang.t("admin.settings.bot_protection") }}</a>
+        <a href="#settings-public"><span class="rail-index" aria-hidden="true">03</span>{{ lang.t("admin.settings.public_shortener") }}</a>
     </aside>
 
     <form method="post" action="/app/admin/settings" class="settings-form">
@@ -150,6 +151,95 @@
                     <input type="checkbox" name="captcha_on_create" value="on"
                            {% if values.captcha_on_create %}checked{% endif %}>
                     {{ lang.t("admin.settings.captcha_on_create") }}
+                </label>
+            </div>
+        </section>
+
+        <section class="panel settings-block" id="settings-public">
+            <span class="kicker" aria-hidden="true"><span class="kicker-dot"></span>03</span>
+            <h2>{{ lang.t("admin.settings.public_shortener") }}</h2>
+            <div class="rule-lime" aria-hidden="true"></div>
+            <p class="hint mt">{{ lang.t("admin.settings.public_shortener_hint") }}</p>
+
+            <div class="form-grid mt">
+                <div class="field">
+                    <label class="label" for="public_create_access">{{ lang.t("admin.settings.public_access") }}</label>
+                    <select class="select" id="public_create_access" name="public_create_access">
+                        <option value="guest" {% if values.public_create_access == "guest" %}selected{% endif %}>{{ lang.t("admin.settings.public_access.guest") }}</option>
+                        <option value="user" {% if values.public_create_access == "user" %}selected{% endif %}>{{ lang.t("admin.settings.public_access.user") }}</option>
+                        <option value="admin" {% if values.public_create_access == "admin" %}selected{% endif %}>{{ lang.t("admin.settings.public_access.admin") }}</option>
+                    </select>
+                    <span class="hint">{{ lang.t("admin.settings.public_access_hint") }}</span>
+                </div>
+                <div class="field">
+                    <label class="label" for="public_rate_limit_per_ip">{{ lang.t("admin.settings.public_rate_per_ip") }}</label>
+                    <input class="input" type="number" id="public_rate_limit_per_ip" name="public_rate_limit_per_ip"
+                           min="0" max="1000000" step="1" value="{{ values.public_rate_limit_per_ip }}">
+                    <span class="hint">{{ lang.t("admin.settings.public_rate_per_ip_hint") }}</span>
+                </div>
+                <div class="field">
+                    <label class="label" for="public_rate_limit_global">{{ lang.t("admin.settings.public_rate_global") }}</label>
+                    <input class="input" type="number" id="public_rate_limit_global" name="public_rate_limit_global"
+                           min="0" max="1000000" step="1" value="{{ values.public_rate_limit_global }}">
+                    <span class="hint">{{ lang.t("admin.settings.public_rate_global_hint") }}</span>
+                </div>
+                <div class="field">
+                    <label class="label" for="public_max_urls">{{ lang.t("admin.settings.public_max_urls") }}</label>
+                    <input class="input" type="number" id="public_max_urls" name="public_max_urls"
+                           min="0" max="1000000" step="1" value="{{ values.public_max_urls }}">
+                    <span class="hint">{{ lang.t("admin.settings.public_max_urls_hint") }}</span>
+                </div>
+            </div>
+
+            <div class="check-cluster">
+                <label class="checkbox">
+                    <input type="checkbox" name="public_captcha" value="on"
+                           {% if values.public_captcha %}checked{% endif %}>
+                    {{ lang.t("admin.settings.public_captcha") }}
+                </label>
+            </div>
+
+            <p class="hint mt">{{ lang.t("admin.settings.public_fields_hint") }}</p>
+            <div class="check-cluster">
+                <label class="checkbox">
+                    <input type="checkbox" name="public_allow_slug" value="on"
+                           {% if values.public_allow_slug %}checked{% endif %}>
+                    {{ lang.t("admin.settings.public_allow_slug") }}
+                </label>
+                <label class="checkbox">
+                    <input type="checkbox" name="public_allow_title" value="on"
+                           {% if values.public_allow_title %}checked{% endif %}>
+                    {{ lang.t("admin.settings.public_allow_title") }}
+                </label>
+                <label class="checkbox">
+                    <input type="checkbox" name="public_allow_tags" value="on"
+                           {% if values.public_allow_tags %}checked{% endif %}>
+                    {{ lang.t("admin.settings.public_allow_tags") }}
+                </label>
+                <label class="checkbox">
+                    <input type="checkbox" name="public_allow_password" value="on"
+                           {% if values.public_allow_password %}checked{% endif %}>
+                    {{ lang.t("admin.settings.public_allow_password") }}
+                </label>
+                <label class="checkbox">
+                    <input type="checkbox" name="public_allow_expiry" value="on"
+                           {% if values.public_allow_expiry %}checked{% endif %}>
+                    {{ lang.t("admin.settings.public_allow_expiry") }}
+                </label>
+                <label class="checkbox">
+                    <input type="checkbox" name="public_allow_max_clicks" value="on"
+                           {% if values.public_allow_max_clicks %}checked{% endif %}>
+                    {{ lang.t("admin.settings.public_allow_max_clicks") }}
+                </label>
+                <label class="checkbox">
+                    <input type="checkbox" name="public_allow_redirect" value="on"
+                           {% if values.public_allow_redirect %}checked{% endif %}>
+                    {{ lang.t("admin.settings.public_allow_redirect") }}
+                </label>
+                <label class="checkbox">
+                    <input type="checkbox" name="public_allow_domain" value="on"
+                           {% if values.public_allow_domain %}checked{% endif %}>
+                    {{ lang.t("admin.settings.public_allow_domain") }}
                 </label>
             </div>
         </section>

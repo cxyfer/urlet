@@ -49,6 +49,9 @@ pub struct DashboardPage {
     pub allow_max_clicks: bool,
     pub allow_tags: bool,
     pub allow_domain_selection: bool,
+    /// False when the site-wide access level reserves creation for
+    /// administrators; the create form is then replaced by a notice.
+    pub can_create: bool,
     pub default_redirect_type: i64,
     /// `direct`, `splash` or `choice`: the group's redirect-mode policy.
     pub redirect_mode_policy: String,
@@ -209,6 +212,8 @@ pub async fn dashboard(
         allow_max_clicks: effective.allow_max_clicks,
         allow_tags: effective.allow_tags,
         allow_domain_selection: policy.allow_selection,
+        // The site-wide access level may restrict creation to administrators.
+        can_create: state.settings.public_create_access().allows(Some(&user)),
         default_redirect_type: state.settings.default_redirect_type(),
         redirect_mode_policy: effective.redirect_mode_policy.as_str().to_string(),
         allow_direct_mode: effective

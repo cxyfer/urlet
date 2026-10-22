@@ -64,6 +64,9 @@
             </div>
         </section>
 
+        {# The public shortener, when the administrator allows this visitor to use it. #}
+        {% include "partials/shorten.html" %}
+
         <section class="index" aria-labelledby="landing-highlights">
             <div class="index-head">
                 <h2 id="landing-highlights">{{ lang.t("landing.features.heading") }}</h2>

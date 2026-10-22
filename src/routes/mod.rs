@@ -15,6 +15,7 @@ pub mod dto;
 pub mod extract;
 pub mod health;
 pub mod pages;
+pub mod public_urls;
 pub mod redirect;
 
 use axum::http::{header, HeaderValue};

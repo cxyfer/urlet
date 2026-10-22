@@ -32,6 +32,28 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     // without a session, or administrators only ("admin"). Administrators can
     // always preview any enabled theme.
     ("theme_switching", "all"),
+    // Public shortener. `user` keeps the historical behaviour (only signed-in
+    // accounts create links); `guest` also serves the form on the landing page
+    // and `admin` restricts creation to administrators. The rate limits count
+    // creations per hour and 0 means unlimited; the field switches decide which
+    // optional inputs the public form offers (the target URL is always
+    // required, and the switches are enforced server side).
+    ("public_create_access", "user"),
+    ("public_captcha", "true"),
+    ("public_rate_limit_per_ip", "20"),
+    ("public_rate_limit_global", "500"),
+    // How many links the reserved Guest account may own in total. Separate from
+    // `max_urls_per_user` so a flood of anonymous links cannot eat the quota set
+    // for real accounts; 0 means unlimited.
+    ("public_max_urls", "1000"),
+    ("public_allow_slug", "true"),
+    ("public_allow_title", "true"),
+    ("public_allow_tags", "false"),
+    ("public_allow_password", "false"),
+    ("public_allow_expiry", "false"),
+    ("public_allow_max_clicks", "false"),
+    ("public_allow_redirect", "false"),
+    ("public_allow_domain", "false"),
 ];
 
 /// Load all settings.

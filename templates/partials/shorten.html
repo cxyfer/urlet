@@ -1,0 +1,146 @@
+{# Public shortener: the form on the landing page, its result and its errors.
+   Rendered only when the visitor is allowed to create a link (or when there is
+   something to report back), so an instance that keeps creation for signed-in
+   accounts shows the historical landing page unchanged. #}
+{% if shorten.show || shorten.result.is_some() || flash.is_some() %}
+<section class="panel landing-shorten" id="shorten">
+    <div class="panel-head">
+        <h2>{{ lang.t("public.heading") }}</h2>
+        <span class="panel-sub">{{ lang.t("public.subheading") }}</span>
+    </div>
+
+    {% match flash %}
+    {% when Some with (flash) %}
+    <div class="alert alert-{{ flash.kind }}">{{ flash.message }}</div>
+    {% when None %}
+    {% endmatch %}
+
+    {% match shorten.result %}
+    {% when Some with (short_url) %}
+    <div class="field">
+        <span class="label">{{ lang.t("public.result.label") }}</span>
+        <span class="slug-value" id="public-short-url">{{ short_url }}</span>
+        <span class="form-actions">
+            <button class="btn btn-sm btn-sage" type="button" data-copy="#public-short-url">{{ lang.t("common.copy") }}</button>
+            <a class="btn btn-sm btn-ghost" href="{{ short_url }}" target="_blank" rel="noopener">{{ lang.t("common.open") }}</a>
+        </span>
+        {% if !signed_in %}<span class="hint">{{ lang.t("public.result.guest_hint") }}</span>{% endif %}
+    </div>
+    {% when None %}
+    {% endmatch %}
+
+    {% if shorten.show %}
+    <form method="post" action="/">
+        <div class="form-grid">
+            <div class="field">
+                <label class="label" for="public_target_url">{{ lang.t("dashboard.new.destination") }}</label>
+                <input class="input" type="text" id="public_target_url" name="target_url"
+                       placeholder="{{ lang.t("dashboard.new.destination_placeholder") }}" required>
+                <span class="hint">{{ lang.t("dashboard.new.destination_hint") }}</span>
+            </div>
+            {% if shorten.fields.domain %}
+            <div class="field">
+                <label class="label" for="public_domain">{{ lang.t("dashboard.new.domain") }}</label>
+                <select class="select" id="public_domain" name="domain">
+                    {% for domain in shorten.domains %}
+                    <option value="{{ domain.hostname }}" {% if domain.is_default %}selected{% endif %}>{{ domain.hostname }}{% if domain.is_default %} · {{ lang.t("dashboard.new.domain_default") }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+                <span class="hint">{{ lang.t("dashboard.new.domain_hint") }}</span>
+            </div>
+            {% endif %}
+            {% if shorten.fields.slug %}
+            <div class="field">
+                <label class="label" for="public_slug">{{ lang.t("dashboard.new.slug") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
+                <input class="input" type="text" id="public_slug" name="slug" maxlength="64"
+                       placeholder="{{ lang.t("dashboard.new.slug_placeholder") }}">
+                <span class="hint">{{ lang.t("dashboard.new.slug_hint") }}</span>
+            </div>
+            {% endif %}
+        </div>
+
+        {# The first glance is the destination, the optional slug and the button;
+           every other input lives behind the disclosure below. #}
+        {% if shorten.fields.title || shorten.fields.tags || shorten.fields.password || shorten.fields.expiry || shorten.fields.max_clicks || shorten.fields.redirect %}
+        <details class="advanced">
+            <summary>{{ lang.t("public.more_options") }}</summary>
+            <div class="advanced-body">
+                <div class="form-grid">
+                    {% if shorten.fields.title %}
+                    <div class="field">
+                        <label class="label" for="public_title">{{ lang.t("dashboard.new.title") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
+                        <input class="input" type="text" id="public_title" name="title" maxlength="200">
+                    </div>
+                    {% endif %}
+                    {% if shorten.fields.tags %}
+                    <div class="field">
+                        <label class="label" for="public_tags">{{ lang.t("dashboard.new.tags") }} <span class="muted">{{ lang.t("dashboard.new.tags_suffix") }}</span></label>
+                        <input class="input" type="text" id="public_tags" name="tags" placeholder="{{ lang.t("dashboard.new.tags_placeholder") }}">
+                    </div>
+                    {% endif %}
+                    {% if shorten.fields.password %}
+                    <div class="field">
+                        <label class="label" for="public_password">{{ lang.t("dashboard.advanced.link_password") }}</label>
+                        <input class="input" type="password" id="public_password" name="password"
+                               autocomplete="new-password" minlength="4">
+                        <span class="hint">{{ lang.t("dashboard.advanced.link_password_hint") }}</span>
+                    </div>
+                    {% endif %}
+                    {% if shorten.fields.expiry %}
+                    <div class="field">
+                        <label class="label" for="public_expires_at">{{ lang.t("common.expires_at") }}</label>
+                        <input class="input" type="text" id="public_expires_at" name="expires_at"
+                               placeholder="{{ lang.t("common.password_placeholder") }}">
+                        <span class="hint">{{ lang.t("dashboard.advanced.expires_hint") }}</span>
+                    </div>
+                    {% endif %}
+                    {% if shorten.fields.max_clicks %}
+                    <div class="field">
+                        <label class="label" for="public_max_clicks">{{ lang.t("dashboard.advanced.max_clicks") }}</label>
+                        <input class="input" type="number" id="public_max_clicks" name="max_clicks" min="1">
+                        <span class="hint">{{ lang.t("dashboard.advanced.max_clicks_hint") }}</span>
+                    </div>
+                    {% endif %}
+                    {% if shorten.fields.redirect %}
+                    <div class="field">
+                        <label class="label" for="public_redirect_mode">{{ lang.t("dashboard.advanced.redirect_mode") }}</label>
+                        <select class="select" id="public_redirect_mode" name="redirect_mode">
+                            <option value="direct">{{ lang.t("dashboard.advanced.redirect_mode_direct") }}</option>
+                            <option value="splash">{{ lang.t("dashboard.advanced.redirect_mode_splash") }}</option>
+                        </select>
+                        <span class="hint">{{ lang.t("dashboard.advanced.redirect_mode_hint") }}</span>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="public_splash_delay_seconds">{{ lang.t("dashboard.advanced.splash_delay") }}</label>
+                        <input class="input" type="number" id="public_splash_delay_seconds" name="splash_delay_seconds" min="1" max="60" value="5">
+                        <span class="hint">{{ lang.t("dashboard.advanced.splash_delay_hint") }}</span>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="public_splash_title">{{ lang.t("dashboard.advanced.splash_title") }}</label>
+                        <input class="input" type="text" id="public_splash_title" name="splash_title" maxlength="120"
+                               placeholder="{{ lang.t("dashboard.advanced.splash_title_placeholder") }}">
+                        <span class="hint">{{ lang.t("dashboard.advanced.splash_hint") }}</span>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="public_splash_message">{{ lang.t("dashboard.advanced.splash_message") }}</label>
+                        <textarea class="textarea" id="public_splash_message" name="splash_message" maxlength="500" rows="3"
+                                  placeholder="{{ lang.t("dashboard.advanced.splash_message_placeholder") }}"></textarea>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </details>
+        {% endif %}
+
+        {% include "partials/captcha.html" %}
+
+        <div class="form-actions">
+            <button class="btn btn-primary" type="submit">{{ lang.t("public.submit") }}</button>
+        </div>
+        {% if !signed_in %}
+        <p class="hint">{{ lang.t("public.guest_note") }}</p>
+        {% endif %}
+    </form>
+    {% endif %}
+</section>
+{% endif %}

@@ -446,8 +446,10 @@ async fn non_ascii_next_targets_are_percent_encoded() {
 #[tokio::test]
 async fn admin_pages_label_the_registration_mode() {
     let app = TestApp::spawn().await;
-    // The first account bootstraps the instance as administrator.
-    let (session, _) = app.register("mode@example.com", "supersecret").await;
+    // The first account bootstraps the instance as administrator. Its id is not
+    // 1: the reserved Guest account owns that row.
+    let (session, user) = app.register("mode@example.com", "supersecret").await;
+    let actor_id = user["user"]["id"].as_i64().expect("id");
     let cookie = format!("{session}; urlet_lang=zh-Hant");
 
     let overview = app.send(get_with("/app/admin", None, Some(&cookie))).await;
@@ -477,8 +479,12 @@ async fn admin_pages_label_the_registration_mode() {
         .send(get_with("/app/admin/audit", None, Some(&cookie)))
         .await;
     assert_eq!(audit.status, StatusCode::OK);
-    assert!(audit.body.contains("#1 (管理員)"), "{}", audit.body);
-    assert!(!audit.body.contains("#1 (admin)"));
+    assert!(
+        audit.body.contains(&format!("#{actor_id} (管理員)")),
+        "{}",
+        audit.body
+    );
+    assert!(!audit.body.contains(&format!("#{actor_id} (admin)")));
     assert!(audit.body.contains("auth.register"));
 }
 

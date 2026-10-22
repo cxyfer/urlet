@@ -225,8 +225,8 @@ pub struct UpdateForm {
     pub status: Option<String>,
 }
 
-/// Split a comma separated tag field.
-fn split_tags(raw: &Option<String>) -> Vec<String> {
+/// Split a comma separated tag field. Shared with the public form.
+pub(crate) fn split_tags(raw: &Option<String>) -> Vec<String> {
     raw.as_deref()
         .unwrap_or_default()
         .split(',')
@@ -236,11 +236,24 @@ fn split_tags(raw: &Option<String>) -> Vec<String> {
         .collect()
 }
 
-fn optional_number(raw: &Option<String>) -> Option<i64> {
-    raw.as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .and_then(|value| value.parse().ok())
+/// Parse an optional numeric form field. Shared with the public form.
+///
+/// An absent or blank field means "not submitted" and yields `Ok(None)`.
+/// Anything else must be a whole number: a typo is reported instead of being
+/// dropped, because silently ignoring `max_clicks=abc` would hand back a link
+/// without the cap the caller asked for — and, on the public form, would slip
+/// past the field switch that refuses a disabled input.
+pub(crate) fn number_field(
+    raw: &Option<String>,
+    field: &'static str,
+) -> Result<Option<i64>, AppError> {
+    match raw.as_deref().map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(value) => value
+            .parse()
+            .map(Some)
+            .map_err(|_| AppError::validation(field, format!("{field} must be a whole number"))),
+    }
 }
 
 fn checkbox(raw: &Option<String>) -> bool {
@@ -296,6 +309,21 @@ pub async fn create(
         ip_hash: client.ip_hash.as_deref(),
     };
 
+    // A malformed number is reported, never dropped: the link would otherwise
+    // come back without the click cap or countdown the form asked for.
+    let (max_clicks, redirect_type, splash_delay_seconds) = match (
+        number_field(&payload.max_clicks, "max_clicks"),
+        number_field(&payload.redirect_type, "redirect_type"),
+        number_field(&payload.splash_delay_seconds, "splash_delay_seconds"),
+    ) {
+        (Ok(max_clicks), Ok(redirect_type), Ok(splash_delay_seconds)) => {
+            (max_clicks, redirect_type, splash_delay_seconds)
+        }
+        (Err(err), _, _) | (_, Err(err), _) | (_, _, Err(err)) => {
+            return Ok(redirect_err("/app", error_code(&err)).into_response())
+        }
+    };
+
     let outcome = context
         .create(CreateInput {
             target_url: payload.target_url,
@@ -306,10 +334,10 @@ pub async fn create(
             tags: split_tags(&payload.tags),
             password: payload.password,
             expires_at: payload.expires_at,
-            max_clicks: optional_number(&payload.max_clicks),
-            redirect_type: optional_number(&payload.redirect_type),
+            max_clicks,
+            redirect_type,
             redirect_mode: payload.redirect_mode,
-            splash_delay_seconds: optional_number(&payload.splash_delay_seconds),
+            splash_delay_seconds,
             splash_title: payload.splash_title,
             splash_message: payload.splash_message,
         })
@@ -510,7 +538,10 @@ pub async fn update(
     let max_clicks = if checkbox(&payload.clear_max_clicks) {
         Some(None)
     } else {
-        optional_number(&payload.max_clicks).map(Some)
+        match number_field(&payload.max_clicks, "max_clicks") {
+            Ok(value) => value.map(Some),
+            Err(err) => return Ok(redirect_err(&target_page, error_code(&err)).into_response()),
+        }
     };
 
     // The tag field is hidden when the group disables tags; the clear checkbox
@@ -519,6 +550,16 @@ pub async fn update(
         Some(Vec::new())
     } else {
         payload.tags.as_ref().map(|_| split_tags(&payload.tags))
+    };
+
+    let (redirect_type, splash_delay_seconds) = match (
+        number_field(&payload.redirect_type, "redirect_type"),
+        number_field(&payload.splash_delay_seconds, "splash_delay_seconds"),
+    ) {
+        (Ok(redirect_type), Ok(splash_delay_seconds)) => (redirect_type, splash_delay_seconds),
+        (Err(err), _) | (_, Err(err)) => {
+            return Ok(redirect_err(&target_page, error_code(&err)).into_response())
+        }
     };
 
     let outcome = context
@@ -534,11 +575,11 @@ pub async fn update(
                 password,
                 expires_at,
                 max_clicks,
-                redirect_type: optional_number(&payload.redirect_type),
+                redirect_type,
                 redirect_mode: payload
                     .redirect_mode
                     .filter(|value| !value.trim().is_empty()),
-                splash_delay_seconds: optional_number(&payload.splash_delay_seconds),
+                splash_delay_seconds,
                 splash_title: payload
                     .splash_title
                     .as_ref()
@@ -612,7 +653,18 @@ pub async fn extend(
     };
 
     let mut update = UpdateInput::default();
-    if let Some(days) = optional_number(&payload.days).filter(|days| (1..=3650).contains(days)) {
+    // Both fields are optional; a malformed one is reported rather than ignored,
+    // so a typo cannot silently extend the wrong thing.
+    let (days, clicks) = match (
+        number_field(&payload.days, "days"),
+        number_field(&payload.clicks, "clicks"),
+    ) {
+        (Ok(days), Ok(clicks)) => (days, clicks),
+        (Err(err), _) | (_, Err(err)) => {
+            return Ok(redirect_err(&target_page, error_code(&err)).into_response())
+        }
+    };
+    if let Some(days) = days.filter(|days| (1..=3650).contains(days)) {
         // Extend from the later of "now" and the current expiry.
         let base = url
             .expires_at
@@ -622,9 +674,7 @@ pub async fn extend(
             .unwrap_or_else(time::now);
         update.expires_at = Some(Some(time::to_iso(time::plus_days(base, days))));
     }
-    if let Some(clicks) =
-        optional_number(&payload.clicks).filter(|clicks| (1..=1_000_000).contains(clicks))
-    {
+    if let Some(clicks) = clicks.filter(|clicks| (1..=1_000_000).contains(clicks)) {
         let base = url.max_clicks.unwrap_or(0).max(url.click_count);
         update.max_clicks = Some(Some(base + clicks));
     }

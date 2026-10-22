@@ -93,6 +93,9 @@
         </div>
         <span class="panel-sub" aria-hidden="true">0x2F / 06</span>
     </div>
+    {% if !can_create %}
+    <p class="hint">{{ lang.t("dashboard.create_disabled") }}</p>
+    {% else %}
     {% if !allow_custom_slug || !allow_password || !allow_expiry || !allow_max_clicks || !allow_tags || !allow_domain_selection || redirect_mode_policy != "choice" %}
     <p class="hint">{{ lang.t("dashboard.group_restricted") }}</p>
     {% endif %}
@@ -219,6 +222,7 @@
             <button class="btn btn-primary" type="submit">{{ lang.t("dashboard.create") }}</button>
         </div>
     </form>
+    {% endif %}
 </div>
 
 <div class="panel">

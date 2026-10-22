@@ -108,6 +108,11 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/0014_invite_issuance_released.sql"),
         kind: MigrationKind::Transactional,
     },
+    Migration {
+        version: "0015_public_shorten",
+        sql: include_str!("../../migrations/0015_public_shorten.sql"),
+        kind: MigrationKind::Transactional,
+    },
 ];
 
 /// Apply all pending migrations.
@@ -1021,8 +1026,10 @@ mod tests {
                 .expect("group");
         assert_eq!(group, ("Standard".to_string(), 1, None, None));
 
+        // The reserved Guest account (schema 15) has no group on purpose, so it
+        // is excluded here; the assertion is about the backfill of real users.
         let group_ids: Vec<Option<i64>> =
-            sqlx::query_scalar("SELECT group_id FROM users ORDER BY id")
+            sqlx::query_scalar("SELECT group_id FROM users WHERE is_system = 0 ORDER BY id")
                 .fetch_all(&pool)
                 .await
                 .expect("user groups");

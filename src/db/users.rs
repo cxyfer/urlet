@@ -4,6 +4,13 @@ use sqlx::{FromRow, SqlitePool};
 
 use crate::services::time::now_iso;
 
+/// Address of the reserved Guest account that owns anonymous links.
+///
+/// `.invalid` is reserved by RFC 2606 and the row is created by migration 15, so
+/// the address can never belong to a person. It is only ever a label in the
+/// admin UI; see [`User::is_system`].
+pub const GUEST_EMAIL: &str = "guest@urlet.invalid";
+
 #[derive(Debug, Clone, FromRow)]
 pub struct User {
     pub id: i64,
@@ -19,6 +26,10 @@ pub struct User {
     pub created_at: String,
     pub updated_at: String,
     pub deleted_at: Option<String>,
+    /// `true` for the reserved accounts the application manages itself. They are
+    /// hidden from every listing and count, cannot sign in and cannot be edited
+    /// by an administrator.
+    pub is_system: bool,
 }
 
 impl User {
@@ -28,6 +39,11 @@ impl User {
 
     pub fn is_active(&self) -> bool {
         self.status == "active" && self.deleted_at.is_none()
+    }
+
+    /// True for the reserved Guest account that owns anonymous links.
+    pub fn is_guest(&self) -> bool {
+        self.is_system
     }
 
     /// Name to show in the UI.
@@ -56,7 +72,7 @@ pub struct NewUser {
 
 const SELECT: &str = "SELECT id, email, email_normalized, password_hash, display_name, role, \
                       status, group_id, email_verified_at, last_login_at, created_at, updated_at, \
-                      deleted_at FROM users";
+                      deleted_at, is_system FROM users";
 
 /// Insert a user and return its id.
 pub async fn create(pool: &SqlitePool, new_user: &NewUser) -> Result<i64, sqlx::Error> {
@@ -101,11 +117,22 @@ pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<User>, sqlx
         .await
 }
 
-/// Total number of accounts that are not deleted.
+/// Total number of accounts a person registered (the reserved Guest account is
+/// not a person and is never counted; see [`User::is_system`]).
 pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE deleted_at IS NULL")
+    sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND is_system = 0")
         .fetch_one(pool)
         .await
+}
+
+/// The reserved system account (the Guest owner of anonymous links), if the
+/// migration created it.
+pub async fn find_system(pool: &SqlitePool) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as::<_, User>(&format!(
+        "{SELECT} WHERE is_system = 1 AND deleted_at IS NULL ORDER BY id LIMIT 1"
+    ))
+    .fetch_optional(pool)
+    .await
 }
 
 /// Filters for the administrative user listing.
@@ -128,6 +155,7 @@ pub async fn list(
     sqlx::query_as::<_, User>(&format!(
         "{SELECT}
          WHERE deleted_at IS NULL
+           AND is_system = 0
            AND (?1 IS NULL OR role = ?1)
            AND (?2 IS NULL OR status = ?2)
            AND (?3 IS NULL OR email LIKE ?3 ESCAPE '\\'
@@ -152,6 +180,7 @@ pub async fn count_filtered(pool: &SqlitePool, filter: &UserFilter) -> Result<i6
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM users
          WHERE deleted_at IS NULL
+           AND is_system = 0
            AND (?1 IS NULL OR role = ?1)
            AND (?2 IS NULL OR status = ?2)
            AND (?3 IS NULL OR email LIKE ?3 ESCAPE '\\'
@@ -173,7 +202,7 @@ pub async fn count_active_admins(
 ) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM users
-         WHERE role = 'admin' AND status = 'active' AND deleted_at IS NULL
+         WHERE role = 'admin' AND status = 'active' AND deleted_at IS NULL AND is_system = 0
            AND (?1 IS NULL OR id <> ?1)",
     )
     .bind(excluding)
@@ -200,14 +229,19 @@ pub async fn set_last_login(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Erro
 }
 
 /// Replace the password hash.
-pub async fn set_password(pool: &SqlitePool, id: i64, hash: &str) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?")
-        .bind(hash)
-        .bind(now_iso())
-        .bind(id)
-        .execute(pool)
-        .await?;
-    Ok(())
+///
+/// Refuses system accounts: their unparsable sentinel is one of the defences
+/// that keep the reserved Guest account from ever signing in.
+pub async fn set_password(pool: &SqlitePool, id: i64, hash: &str) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ? AND is_system = 0",
+    )
+    .bind(hash)
+    .bind(now_iso())
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
 }
 
 /// Update the display name.
@@ -275,6 +309,7 @@ pub async fn apply_admin_update(
                 group_id = CASE WHEN ?3 = 1 THEN ?4 ELSE group_id END,
                 updated_at = ?5
           WHERE id = ?6
+            AND is_system = 0
             AND (
               NOT (role = 'admin' AND status = 'active'
                    AND (COALESCE(?1, role) <> 'admin' OR COALESCE(?2, status) <> 'active'))
@@ -327,6 +362,7 @@ pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error
     let result = sqlx::query(
         "UPDATE users SET deleted_at = ?, updated_at = ?
           WHERE id = ?
+            AND is_system = 0
             AND (
               NOT (role = 'admin' AND status = 'active')
               OR (SELECT COUNT(*) FROM users

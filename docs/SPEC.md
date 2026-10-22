@@ -2,9 +2,9 @@
 
 # urlet — Lightweight Multi-User URL Shortener Specification
 
-> Version: 1.5
+> Version: 1.6
 > Status: Approved for implementation
-> Last updated: 2026-10-21
+> Last updated: 2026-10-22
 
 ---
 
@@ -25,7 +25,9 @@ template set plus stylesheet, administrators may also upload additional CSS-only
 which designs are offered and who may switch, and users keep their choice in a cookie. The v1.5
 line adds **splash pages**: a link can show a promotional interstitial with a countdown before the
 destination, and a per-group policy decides whether members may use direct redirects, splash pages,
-or either.
+or either. The v1.6 line adds the **public shortener**: the landing page can carry a shortening
+form for visitors without an account, with an administrator-controlled access level, a per-field
+switch set, bot protection and both a per-address and a shared visitor rate limit.
 
 ### 1.1 Core Design Principles (from the requester)
 
@@ -37,8 +39,8 @@ or either.
 | P4 | Docker Compose deployment | A single `docker-compose.yml` (app + named volume), with an optional Caddy TLS overlay |
 | P5 | As lightweight as possible | One binary, SQLite (no MySQL/Redis), SSR templates (no Node build), image < 40 MB |
 | P6 | Rust implementation | Rust 2021 + Axum 0.8 + Tokio + sqlx (SQLite) |
-| P7 | Well-designed schema | 19 tables, 35 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
-| P8 | Sensible extra features | Tags, click analytics, API tokens, invite codes, admin panel, audit log, daily rollups, trilingual UI, optional bot protection, quota/feature user groups, switchable and uploadable themes, splash pages |
+| P7 | Well-designed schema | 19 tables, 36 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
+| P8 | Sensible extra features | Tags, click analytics, API tokens, invite codes, admin panel, audit log, daily rollups, trilingual UI, optional bot protection, quota/feature user groups, switchable and uploadable themes, splash pages, a public shortener for visitors |
 
 ### 1.2 Relationship to the Earlier Prototypes (OURLS / OURLS2)
 
@@ -87,6 +89,10 @@ per-action permission matrix.
 | Splash page | The interstitial served for a link whose `redirect_mode` is `splash`; it shows optional promotional copy, the destination host and a countdown before continuing |
 | Redirect mode | How a link hands over the visitor: `direct` (an immediate 30x response) or `splash` (the interstitial first). Stored in `urls.redirect_mode` |
 | Redirect-mode policy | The per-group `redirect_mode_policy` (`direct`, `splash` or `choice`) that limits the mode of **new** links. Existing links keep their mode |
+| Public shortener | The shortening form the landing page serves at `/`; it posts to `POST /` and is also available as `POST /api/v1/public/urls` |
+| Access level | The `public_create_access` setting (`guest`, `user` or `admin`) that decides who may create a link. The levels are cumulative: `user` includes administrators, `guest` includes both |
+| Guest account | The single reserved, system-owned `users` row (`is_system = 1`, `guest@urlet.invalid`) that owns every link an anonymous visitor creates. It is hidden from listings and counts, cannot sign in and cannot be edited |
+| Public field switch | A `public_allow_*` boolean that decides whether the public form offers one optional input. A submission that fills in a disabled field is refused server side |
 
 ---
 
@@ -99,9 +105,11 @@ per-action permission matrix.
                         │ urlet (single container)                       │
 Browser / curl          │                                                 │
 ───────────────────►    │ Axum Router                                     │
-:8080                   │  ├─ /                 landing / navigation page │
+:8080                   │  ├─ /                landing + public shortener │
+                        │  │                      (POST / creates a link) │
                         │  ├─ /{slug}     redirect / password / splash  │
                         │  ├─ /api/v1/**        JSON API                  │
+                        │  │   └─ /public/urls   unauthenticated creation │
                         │  ├─ /app/**           SSR user + admin UI       │
                         │  ├─ /app/lang/{code}  language switch (302)     │
                         │  ├─ /app/theme/{key}  theme switch (302)        │
@@ -279,10 +287,10 @@ target is still met.
 
 | Path | Page | Description |
 |------|------|-------------|
-| `/` | Landing / navigation | Hero, feature highlights, login and register entry points, language switcher, and footer; a signed-in visitor also gets an entry point to the dashboard. This is no longer a 302 redirect to `/app` |
+| `/` | Landing / navigation + public shortener | Hero, feature highlights, login and register entry points, language switcher, and footer; a signed-in visitor also gets an entry point to the dashboard. When the access level allows the visitor to create a link, the page also carries the public shortener form and the result of the last submission. This is no longer a 302 redirect to `/app` |
 | `/app/login` | Login | Email + password |
 | `/app/register` | Register | Shows the invite-code field or a "closed" notice depending on the registration mode; `?invite=CODE` prefills the field |
-| `/app` | Dashboard | Stat cards, daily trend chart, link list (search/filter/pagination), create form |
+| `/app` | Dashboard | Stat cards, daily trend chart, link list (search/filter/pagination), create form (replaced by a notice when the access level reserves creation for administrators) |
 | `/app/urls/{id}` | Link detail | Edit form, analytics charts, recent clicks, delete (QR codes are a non-goal) |
 | `/app/account` | Account | Profile, change password, session list, API token management |
 | `/app/admin` | Admin panel | Users, user groups, all links, domains, invite codes, settings, audit log |
@@ -376,6 +384,20 @@ the create/edit dialogs shared by the group and theme forms).
 | FR-SPLASH-6 | Countdown | `splash_delay_seconds` is an integer in `1..=60`, default `5`. A value outside the range is rejected by both forms and the API; a stored out-of-range value is clamped when rendering so a manual database edit cannot break the page |
 | FR-SPLASH-7 | Group policy | `user_groups.redirect_mode_policy` is `direct` (new links must redirect immediately), `splash` (new links must use the interstitial) or `choice` (the default, either mode). It gates creation and switching modes on update, never rewrites existing links, and the web forms hide the blocked option; a refused request is `403`. The policy is exposed in `GET /api/v1/auth/me` as `limits.redirect_mode_policy` |
 
+### 4.16 Public Shortener (FR-PUB)
+
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-PUB-1 | Form | The canonical landing page carries a shortening form whenever the visitor is allowed to create a link; an extra (redirect-only) domain never does, and `POST /` there is `404`. The form is a plain HTML `POST /` with the CSRF same-origin rule, and a successful submission redirects to `/?shortened=<slug>&domain=<hostname>`. The first glance stays minimal — the destination, the optional custom slug and the submit button — and every other enabled input lives behind a `More options` disclosure |
+| FR-PUB-2 | Result | The landing page resolves `?shortened=` against the database and renders the short URL with a copy button. Nothing is printed from the query string verbatim, and the destination is never shown: the same page must not leak the target of somebody else's password-protected link |
+| FR-PUB-3 | Access level | `public_create_access` is `guest` (anybody, including visitors without an account), `user` (signed-in accounts, the default and the historical behaviour) or `admin`. The levels are cumulative. The setting gates **every** creation path — the landing page form, `POST /app/urls` and `POST /api/v1/urls` — so an instance restricted to administrators refuses a member everywhere with `403`; the dashboard then replaces the form with a notice |
+| FR-PUB-4 | Guest ownership | A link created by an anonymous visitor is owned by the reserved Guest account (`users.is_system = 1`), because `urls.user_id` is a required foreign key. The account is created by the migration, has no group (so the public switches, not a group, decide what a visitor may do), cannot sign in (`status = suspended`, unparsable password hash) and cannot be edited or deleted; it is hidden from the user list and every user count, and the admin link list labels its links `Guest` |
+| FR-PUB-5 | Field switches | The administrator enables the optional inputs the public form offers: custom slug and title (on by default), tags, link password, expiry, click limit, redirect mode with splash copy, and domain selection (off by default). The target URL is always required. A submission that fills in a disabled field is refused with `403` before any work happens, so hiding an input is never the only defence |
+| FR-PUB-6 | Bot protection | The public form is protected by the configured provider through the dedicated `public_captcha` switch (on by default, inert without a provider). An anonymous visitor is verified with the public flow; a signed-in browser session follows `captcha_on_create` instead, so the public endpoint cannot be used to bypass it; a Bearer API token is exempt like every other create path. Failure is fail-closed and answers `?err=captcha` / `400` |
+| FR-PUB-7 | Rate limits | Two in-memory token buckets guard anonymous creation: `public_rate_limit_per_ip` (creations per hour from one client address, default 20) and `public_rate_limit_global` (a budget every anonymous visitor shares, default 500). `0` disables either limit. A signed-in caller keeps the per-account bucket, and the per-address bucket always applies. Both per-caller budgets are charged before the provider call; the shared budget is charged only after bot protection succeeded, so a submission that fails the check cannot drain what legitimate visitors need. A refused request is `429` with `Retry-After` (the form redirects with `?err=rate_limited`) |
+| FR-PUB-8 | API | `POST /api/v1/public/urls` accepts the same payload as the form (plus `captcha_token`) and answers `201` with `domain`, `slug`, `short_url`, `target_url` and `created_at`. It deliberately omits the link id: the caller has no account to manage the link with |
+| FR-PUB-9 | Audit and quota | A guest creation is audited like any other (`url.created`, actor = the Guest account) and counts against `public_max_urls` (default 1000, `0` = unlimited), the total the Guest account may own. It is deliberately not `max_urls_per_user`: a flood of anonymous links must not consume the quota an administrator set for real accounts. Once the budget is full every visitor gets a quota error until those links are deleted (the admin link list can filter by owner), and the maintenance pass logs a warning so the operator notices |
+
 ---
 
 ## 5. Non-Functional Requirements
@@ -392,7 +414,7 @@ the create/edit dialogs shared by the group and theme forms).
 | NFR-SEC-6 | Reserved words: `api`, `app`, `assets`, `health`, `static`, `favicon.ico`, and similar names cannot be used as slugs |
 | NFR-SEC-7 | Error messages never leak internal details; a failed login always responds with "invalid email or password" |
 | NFR-SEC-8 | User enumeration protection: registering a duplicate email returns 409 (an accepted, common trade-off); login uses a uniform error message |
-| NFR-SEC-9 | Rate limiting: login 10 per 5 minutes per (IP,email) **plus** 40 per 5 minutes per IP, registration 5 per hour per IP, unlock 10 per 5 minutes per (slug,IP), link creation 120 per hour per user, password change 10 per hour per user |
+| NFR-SEC-9 | Rate limiting: login 10 per 5 minutes per (IP,email) **plus** 40 per 5 minutes per IP, registration 5 per hour per IP, unlock 10 per 5 minutes per (slug,IP), link creation 120 per hour per user, password change 10 per hour per user, public creation 20 per hour per address **plus** a shared 500 per hour for all anonymous visitors (`0` disables either budget) |
 | NFR-SEC-9b | Account lockout: 30 accumulated failures for the same email within 15 minutes temporarily refuse login (429); this is persisted in the `login_attempts` table and survives a restart; in-memory rate limiter keys are stored as SHA-256 and capped at 50,000 entries |
 | NFR-SEC-10 | All SQL is parameterized (sqlx bind) with no string concatenation (no SQL outside `src/db/`) |
 | NFR-SEC-11 | The audit log covers every sensitive operation |
@@ -402,6 +424,7 @@ the create/edit dialogs shared by the group and theme forms).
 | NFR-SEC-15 | Captcha verification fails closed: a form-encoded HTTPS POST with a 5-second timeout to the configured provider, sent through `ureq` 2 over rustls + webpki-roots (no OpenSSL); a timeout, a non-2xx status, or an unparsable body rejects the request. The secret key is never rendered back into the admin UI |
 | NFR-SEC-16 | The language cookie `urlet_lang` is intentionally not HttpOnly (client code reads it) and holds only a whitelisted language tag; the `next` parameter of the switch endpoint accepts only same-site relative paths to prevent open redirects |
 | NFR-SEC-17 | The theme cookie (`urlet_theme`) is HttpOnly, `SameSite=Lax`, one year and `Secure` when configured; the administrator-only preview cookie uses the same attributes with a one-hour lifetime. Their values are only ever compared with known catalogue keys; uploaded CSS is served from a generated key with `text/css` and `nosniff`, and external resources/imports are rejected. The preview cookie is honoured only for an administrator, the switch endpoint requires the `theme_switching` permission (a session, or an anonymous visitor under `all`), and its `next`/`Referer` target is reduced to a same-site path before the redirect |
+| NFR-SEC-18 | The public shortener is guarded by three independent layers: the `public_create_access` level, the `public_allow_*` field switches (a disabled field is refused server side) and the two rate limits, with bot protection on by default. The form submission additionally passes the ordinary CSRF same-origin rule, and the anonymous JSON API cannot be reached with a cookie-less cross-site form; a cross-site JSON `POST` cannot read the response and is bounded by the same budgets |
 
 ### 5.2 Performance (NFR-PERF)
 
@@ -479,12 +502,12 @@ login_attempts (auditing)
 
 ### 6.3 DDL (migration summary)
 
-> The complete source of truth is `migrations/` (`0001_init.sql` through `0014_invite_issuance_released.sql`): `0003_multi_domain.sql` rebuilds the domain schema, `0004_user_groups.sql`–`0007_member_invites.sql` add groups and invite quotas, `0010`/`0012`/`0013` add themes, `0011_splash_pages.sql` adds splash pages, and `0014_invite_issuance_released.sql` adds the invite-refund column. The table below is a structural summary.
+> The complete source of truth is `migrations/` (`0001_init.sql` through `0015_public_shorten.sql`): `0003_multi_domain.sql` rebuilds the domain schema, `0004_user_groups.sql`–`0007_member_invites.sql` add groups and invite quotas, `0010`/`0012`/`0013` add themes, `0011_splash_pages.sql` adds splash pages, `0014_invite_issuance_released.sql` adds the invite-refund column, and `0015_public_shorten.sql` adds `users.is_system` with the reserved Guest account and the public-shortener settings. The table below is a structural summary.
 
 
 | Table | Main columns | Purpose |
 |-------|--------------|---------|
-| `users` | id, email, email_normalized(UNIQUE), password_hash, display_name, role, status, group_id, email_verified_at, last_login_at, created_at, updated_at, deleted_at | Users |
+| `users` | id, email, email_normalized(UNIQUE), password_hash, display_name, role, status, group_id, is_system, email_verified_at, last_login_at, created_at, updated_at, deleted_at | Users; `is_system = 1` marks the reserved Guest account that owns anonymous links |
 | `user_groups` | id, name(UNIQUE, NOCASE), description, max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection, redirect_mode_policy, default_domain_id, restrict_domains, is_default, created_at, updated_at | Quota, feature-toggle, redirect-mode and domain-policy groups |
 | `group_domains` | group_id, domain_id (PK) | Explicit per-group domain allowlist |
 | `sessions` | id, user_id, token_hash(UNIQUE), user_agent, ip_hash, created_at, last_seen_at, expires_at, revoked_at | Login state |
@@ -524,6 +547,7 @@ login_attempts (auditing)
 | `group_domains(domain_id)` | Domain deletion and allowlist checks |
 | `themes(is_default) WHERE is_default = 1` UNIQUE | At most one default theme |
 | `custom_themes(created_by)` | Upload attribution and cleanup |
+| `users(is_system) WHERE is_system = 1` UNIQUE | At most one reserved system account |
 
 The v1.1 changes add settings **keys** only; because `settings` is a key-value table, v1.1 kept
 the schema at 14 tables and 27 indexes. v1.2 adds the `user_groups` and `group_domains`
@@ -537,7 +561,8 @@ taking the schema to **17 tables and 33 indexes**. v1.3 adds only the nullable
 `custom_themes` and its creator index, for **19 tables and 35 indexes**. The invite-refund work adds
 the nullable `invite_issuance.released_at` column; the table and index counts stay at 19/35. On the
 first start after upgrading, codes that were already revoked and never redeemed are released too,
-so `invites_used` can drop once.
+so `invites_used` can drop once. v1.6 adds only the `users.is_system` column and its partial unique
+index (no new table), for **19 tables and 36 indexes**.
 
 ### 6.5 Seed Data
 
@@ -561,6 +586,15 @@ so `invites_used` can drop once.
   upgrade keeps the current look until an administrator changes the default.
 - `group_domains`: no rows are seeded; an existing or new group without restriction rows may use
   every active domain.
+- Public shortener (v1.6): `public_create_access=user` (an upgrade keeps the previous behaviour),
+  `public_captcha=true`, `public_rate_limit_per_ip=20`, `public_rate_limit_global=500`,
+  `public_max_urls=1000`,
+  `public_allow_slug=true`, `public_allow_title=true`, and `public_allow_tags`,
+  `public_allow_password`, `public_allow_expiry`, `public_allow_max_clicks`,
+  `public_allow_redirect`, `public_allow_domain` all `false`. The migration also inserts the
+  reserved Guest account (`guest@urlet.invalid`, `is_system = 1`, `status = suspended`, no group);
+  it is skipped only in the pathological case where that address already belongs to somebody, which
+  is reported at startup.
 - `domains`: at startup the canonical domain is inserted/updated from the host of `URLET_BASE_URL`
   (`source=system`, always active). It is made the default only when no default exists, so an
   administrator can choose another default. `URLET_DOMAINS` inserts missing domains as
@@ -654,7 +688,9 @@ Every group mutation is audited (`admin.group_created`, `admin.group_updated`,
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/` | Landing / navigation page (HTML) |
+| GET | `/` | Landing / navigation page (HTML), including the public shortener when the visitor may create a link |
+| POST | `/` | Public shortener form (HTML). On success 303 → `/?shortened=<slug>&domain=<hostname>`; on failure 303 → `/?err=<code>`, one of `denied` (below the access level, or a disabled field), `rate_limited`, `captcha`, `quota`, `conflict`, `slug`, `target`, `expiry`, `tags`, `password_rules`, `domain`, `mode_denied` or `invalid`. Only on the canonical host |
+| POST | `/api/v1/public/urls` | Public shortener (JSON): `{target_url, domain?, slug?, title?, tags?, password?, expires_at?, max_clicks?, redirect_mode?, splash_delay_seconds?, splash_title?, splash_message?, captcha_token?}` → `201 {domain, slug, short_url, target_url, created_at}`. `403` below the access level or for a disabled field, `400` when the bot protection check fails, `429` when a budget is exhausted |
 | GET | `/health` | `{status, version, database, uptime_seconds}` |
 | GET | `/app/lang/{code}` | Set the `urlet_lang` cookie and 302 to `next`, or to `/app` when `next` is missing or not a same-site relative path |
 | GET | `/{slug}` | Redirect (302 and friends), splash page (HTML), password page (HTML), or a 410/404 page |
@@ -711,7 +747,7 @@ urlet/
 ├── docker-compose.tls.yml        # optional: Caddy automatic HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_splash_pages.sql 0012_custom_themes.sql 0013_custom_theme_appearance.sql 0014_invite_issuance_released.sql
+├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_splash_pages.sql 0012_custom_themes.sql 0013_custom_theme_appearance.sql 0014_invite_issuance_released.sql 0015_public_shorten.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama templates (base, app_base, landing.html + pages + admin/)
@@ -798,6 +834,19 @@ v1.1 additions (this batch):
 - [ ] `POST /api/v1/urls` is captcha-exempt only for API-token calls (a session-cookie call honours `on_create`), and the admin secret-key field is write-only
 - [ ] `GET /` returns 200 as a landing/navigation page for anonymous and signed-in visitors, and no longer redirects to `/app`
 - [ ] `cargo test` (the full suite), `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are clean, `scripts/smoke.sh` passes all end-to-end checks, and the container image builds and runs under musl (§3.3)
+
+v1.6 additions (this batch):
+
+- [x] The canonical landing page serves the public shortener whenever the visitor may create a link; extra (redirect-only) domains never do, and `POST /` there is `404`
+- [x] `public_create_access` (`guest` / `user` / `admin`, default `user`) gates every creation path, and the dashboard replaces the form with a notice when the caller is below the level
+- [x] The reserved Guest account (`users.is_system = 1`, 19 tables / 36 indexes) owns anonymous links; it is hidden from the user list and every count, labelled `Guest` in the admin link list, cannot sign in, and cannot be edited or deleted
+- [x] The `public_allow_*` switches decide which optional inputs the public form offers; a submission that fills in a disabled field is refused with `403`
+- [x] `public_captcha` protects the anonymous flow, a signed-in session follows `captcha_on_create`, and a Bearer token stays exempt
+- [x] `public_rate_limit_per_ip` (20/hour) and `public_rate_limit_global` (500/hour) bound anonymous creation, `0` disables either, and a refusal is `429` / `?err=rate_limited`
+- [x] `POST /api/v1/public/urls` answers `201 {domain, slug, short_url, target_url, created_at}` without handing out the link id
+- [x] `?shortened=<slug>` is resolved against the database, so the result box never prints a query-string value verbatim and never leaks a destination
+- [x] The three locale catalogues and all six landing templates carry the new strings and the shared form partial
+- [x] `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `scripts/smoke.sh` and `scripts/merge-check.sh` are green
 
 v1.5 additions (this batch):
 

@@ -64,7 +64,100 @@ pub const EDITABLE_KEYS: &[&str] = &[
     "captcha_on_login",
     "captcha_on_create",
     "theme_switching",
+    "public_create_access",
+    "public_captcha",
+    "public_rate_limit_per_ip",
+    "public_rate_limit_global",
+    "public_max_urls",
+    "public_allow_slug",
+    "public_allow_title",
+    "public_allow_tags",
+    "public_allow_password",
+    "public_allow_expiry",
+    "public_allow_max_clicks",
+    "public_allow_redirect",
+    "public_allow_domain",
 ];
+
+/// Who may create a short link.
+///
+/// The three levels are cumulative: `User` implies `Guest`, `Admin` implies
+/// both. The public form on the landing page is shown to whoever the level
+/// allows, so `Guest` is the only level an anonymous visitor ever sees it at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PublicCreateAccess {
+    /// Anybody, signed in or not. Anonymous links belong to the Guest account.
+    Guest,
+    /// Signed-in accounts (the historical behaviour).
+    User,
+    /// Administrators only.
+    Admin,
+}
+
+impl PublicCreateAccess {
+    /// Parse a stored value. An unknown value falls back to the restrictive
+    /// `User` level rather than silently opening the public form.
+    pub fn parse(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "guest" | "guests" | "anyone" | "public" | "anonymous" => Self::Guest,
+            "admin" | "admins" | "admin_only" | "admin-only" => Self::Admin,
+            _ => Self::User,
+        }
+    }
+
+    /// Canonical name, as stored in the settings table.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Guest => "guest",
+            Self::User => "user",
+            Self::Admin => "admin",
+        }
+    }
+
+    /// True when `user` (or an anonymous visitor, for `None`) may create a link.
+    pub fn allows(self, user: Option<&crate::db::users::User>) -> bool {
+        match self {
+            Self::Guest => true,
+            Self::User => user.is_some(),
+            Self::Admin => user.map(|user| user.is_admin()).unwrap_or(false),
+        }
+    }
+}
+
+/// The optional inputs the public form offers.
+///
+/// Only the *public* form is described here: a signed-in account always keeps
+/// the full dashboard form, where the group toggles apply instead. The target
+/// URL is not part of this struct because it is never optional.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PublicFields {
+    pub slug: bool,
+    pub title: bool,
+    pub tags: bool,
+    pub password: bool,
+    pub expiry: bool,
+    pub max_clicks: bool,
+    /// Redirect mode (direct/splash) together with the splash copy.
+    pub redirect: bool,
+    /// Choosing a domain other than the default one.
+    pub domain: bool,
+}
+
+impl PublicFields {
+    /// Every optional input enabled, with the defaults in parentheses.
+    pub fn from_settings(settings: &Settings) -> Self {
+        Self {
+            slug: settings.raw_bool("public_allow_slug", true),
+            title: settings.raw_bool("public_allow_title", true),
+            tags: settings.raw_bool("public_allow_tags", false),
+            password: settings.raw_bool("public_allow_password", false),
+            expiry: settings.raw_bool("public_allow_expiry", false),
+            max_clicks: settings.raw_bool("public_allow_max_clicks", false),
+            redirect: settings.raw_bool("public_allow_redirect", false),
+            domain: settings.raw_bool("public_allow_domain", false),
+        }
+    }
+}
 
 /// Who may change their own theme.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -279,6 +372,46 @@ impl Settings {
     /// Who may switch to another theme. Administrators are never restricted.
     pub fn theme_switching(&self) -> ThemeSwitching {
         ThemeSwitching::parse(&self.raw("theme_switching").unwrap_or_default())
+    }
+
+    /// Who may create a short link (see [`PublicCreateAccess`]).
+    pub fn public_create_access(&self) -> PublicCreateAccess {
+        PublicCreateAccess::parse(&self.raw("public_create_access").unwrap_or_default())
+    }
+
+    /// True when the public form is protected by bot protection. Only takes
+    /// effect once a provider, a site key and a secret key are configured.
+    pub fn public_captcha(&self) -> bool {
+        self.raw_bool("public_captcha", true)
+    }
+
+    /// Link creations allowed per hour from one address; `0` is unlimited.
+    pub fn public_rate_limit_per_ip(&self) -> i64 {
+        self.raw_i64("public_rate_limit_per_ip", 20).max(0)
+    }
+
+    /// Link creations allowed per hour across every anonymous visitor; `0` is
+    /// unlimited. This is the shared bucket the whole visitor population draws
+    /// from, on top of the per-address limit.
+    pub fn public_rate_limit_global(&self) -> i64 {
+        self.raw_i64("public_rate_limit_global", 500).max(0)
+    }
+
+    /// How many links the reserved Guest account may own in total; `0` is
+    /// unlimited.
+    ///
+    /// Deliberately separate from [`max_urls_per_user`]: an anonymous flood must
+    /// not consume the quota an administrator set for real accounts, and the two
+    /// want different values.
+    ///
+    /// [`max_urls_per_user`]: Settings::max_urls_per_user
+    pub fn public_max_urls(&self) -> i64 {
+        self.raw_i64("public_max_urls", 1000).max(0)
+    }
+
+    /// Optional inputs the public form offers (see [`PublicFields`]).
+    pub fn public_fields(&self) -> PublicFields {
+        PublicFields::from_settings(self)
     }
 
     pub fn click_retention_days(&self) -> i64 {
@@ -534,6 +667,44 @@ fn validate_value(key: &str, value: &str) -> Result<String> {
             "admin" | "admins" | "admin_only" | "admin-only" => Ok("admin".to_string()),
             _ => Err(invalid("theme switching must be 'all' or 'admin'")),
         },
+        "public_create_access" => match value.to_ascii_lowercase().as_str() {
+            "guest" | "guests" | "anyone" | "public" | "anonymous" => Ok("guest".to_string()),
+            "user" | "users" | "member" | "members" => Ok("user".to_string()),
+            "admin" | "admins" | "admin_only" | "admin-only" => Ok("admin".to_string()),
+            _ => Err(invalid(
+                "public creation must be allowed for 'guest', 'user' or 'admin'",
+            )),
+        },
+        "public_captcha" => Ok(matches!(
+            value.to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+        .to_string()),
+        // Per-hour creation budgets. 0 disables the limit; the upper bound is a
+        // sanity check, not a policy.
+        "public_rate_limit_per_ip" | "public_rate_limit_global" | "public_max_urls" => {
+            let parsed: i64 = value
+                .parse()
+                .map_err(|_| invalid("the limit must be a number"))?;
+            if !(0..=1_000_000).contains(&parsed) {
+                return Err(invalid(
+                    "the limit must be between 0 and 1000000 (0 = unlimited)",
+                ));
+            }
+            Ok(parsed.to_string())
+        }
+        "public_allow_slug"
+        | "public_allow_title"
+        | "public_allow_tags"
+        | "public_allow_password"
+        | "public_allow_expiry"
+        | "public_allow_max_clicks"
+        | "public_allow_redirect"
+        | "public_allow_domain" => Ok(matches!(
+            value.to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+        .to_string()),
         _ => Err(invalid("unknown setting")),
     }
 }
@@ -553,6 +724,70 @@ mod tests {
         assert_eq!(ThemeSwitching::parse("nonsense"), ThemeSwitching::AdminOnly);
         assert_eq!(ThemeSwitching::All.as_str(), "all");
         assert_eq!(ThemeSwitching::AdminOnly.as_str(), "admin");
+    }
+
+    /// Build a user row for the `allows` matrix.
+    fn user(role: &str) -> crate::db::users::User {
+        crate::db::users::User {
+            id: 1,
+            email: "member@example.com".to_string(),
+            email_normalized: "member@example.com".to_string(),
+            password_hash: "x".to_string(),
+            display_name: None,
+            role: role.to_string(),
+            status: "active".to_string(),
+            group_id: None,
+            email_verified_at: None,
+            last_login_at: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            deleted_at: None,
+            is_system: false,
+        }
+    }
+
+    #[test]
+    fn parses_public_create_access_levels() {
+        assert_eq!(
+            PublicCreateAccess::parse("guest"),
+            PublicCreateAccess::Guest
+        );
+        assert_eq!(
+            PublicCreateAccess::parse(" ANYONE "),
+            PublicCreateAccess::Guest
+        );
+        assert_eq!(PublicCreateAccess::parse("user"), PublicCreateAccess::User);
+        assert_eq!(
+            PublicCreateAccess::parse("admin-only"),
+            PublicCreateAccess::Admin
+        );
+        // An unknown or empty value must never open the public form.
+        assert_eq!(
+            PublicCreateAccess::parse("nonsense"),
+            PublicCreateAccess::User
+        );
+        assert_eq!(PublicCreateAccess::parse(""), PublicCreateAccess::User);
+
+        assert_eq!(PublicCreateAccess::Guest.as_str(), "guest");
+        assert_eq!(PublicCreateAccess::User.as_str(), "user");
+        assert_eq!(PublicCreateAccess::Admin.as_str(), "admin");
+    }
+
+    #[test]
+    fn public_create_access_is_cumulative() {
+        let member = user("user");
+        let admin = user("admin");
+
+        // Anonymous visitors only ever pass the most open level.
+        assert!(PublicCreateAccess::Guest.allows(None));
+        assert!(!PublicCreateAccess::User.allows(None));
+        assert!(!PublicCreateAccess::Admin.allows(None));
+
+        assert!(PublicCreateAccess::Guest.allows(Some(&member)));
+        assert!(PublicCreateAccess::User.allows(Some(&member)));
+        assert!(!PublicCreateAccess::Admin.allows(Some(&member)));
+
+        assert!(PublicCreateAccess::Admin.allows(Some(&admin)));
     }
 
     #[test]
@@ -676,6 +911,56 @@ mod tests {
         assert!(!SECRET_KEYS.is_empty());
         for key in SECRET_KEYS {
             assert!(EDITABLE_KEYS.contains(key), "{key} must be editable");
+        }
+    }
+
+    #[test]
+    fn validates_public_shortener_values() {
+        assert_eq!(
+            validate_value("public_create_access", " GUEST ").expect("ok"),
+            "guest"
+        );
+        assert_eq!(
+            validate_value("public_create_access", "admin").expect("ok"),
+            "admin"
+        );
+        assert_eq!(
+            validate_value("public_create_access", "members").expect("ok"),
+            "user"
+        );
+        assert!(validate_value("public_create_access", "somebody").is_err());
+
+        assert_eq!(
+            validate_value("public_captcha", "off").expect("ok"),
+            "false"
+        );
+        assert_eq!(validate_value("public_captcha", "on").expect("ok"), "true");
+
+        assert_eq!(
+            validate_value("public_rate_limit_per_ip", "0").expect("ok"),
+            "0"
+        );
+        assert_eq!(
+            validate_value("public_rate_limit_global", "500").expect("ok"),
+            "500"
+        );
+        assert!(validate_value("public_rate_limit_per_ip", "-1").is_err());
+        assert!(validate_value("public_rate_limit_global", "many").is_err());
+        assert!(validate_value("public_rate_limit_global", "1000001").is_err());
+
+        for key in [
+            "public_allow_slug",
+            "public_allow_title",
+            "public_allow_tags",
+            "public_allow_password",
+            "public_allow_expiry",
+            "public_allow_max_clicks",
+            "public_allow_redirect",
+            "public_allow_domain",
+        ] {
+            assert_eq!(validate_value(key, "yes").expect("ok"), "true");
+            assert_eq!(validate_value(key, "no").expect("ok"), "false");
+            assert!(EDITABLE_KEYS.contains(&key), "{key} must be editable");
         }
     }
 }

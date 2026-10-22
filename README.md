@@ -14,6 +14,7 @@ service, no frontend build step.
 |---------|-------------|
 | 👥 Multi-user | Every user manages their own links; cross-account access always returns 404 |
 | 🏠 Landing page | `/` is an introduction and navigation page with sign-in and sign-up entries; it no longer redirects straight to the login form |
+| ⚡ Public shortener | The landing page can carry a shortening form for visitors without an account. The administrator chooses who may create links (visitors, users or administrators only) and which fields the form offers, protects it with the configured bot protection, and bounds it with a per-address and a shared visitor rate limit |
 | 🔗 Link management | Custom or generated slugs, titles, notes, tags, enable/disable, soft delete |
 | 🔒 Password protection | Per-link passwords (Argon2id); after unlocking, a signed cookie remembers the visitor for 30 minutes |
 | 🚏 Splash pages | Optional interstitial with a countdown, custom heading/message and destination host before the target; automatic and manual continuation, and a per-link delay |
@@ -178,10 +179,10 @@ urlet/
 ## Development
 
 ```bash
-cargo test                 # unit + integration tests (374)
+cargo test                 # unit + integration tests (530)
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-bash scripts/smoke.sh      # end-to-end acceptance run against the real binary (119 checks)
+bash scripts/smoke.sh      # end-to-end acceptance run against the real binary (177 checks)
 bash scripts/demo.sh       # build a demo site and write screenshots to .tmp/demo/shots
 ```
 
