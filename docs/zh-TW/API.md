@@ -335,8 +335,9 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 送出成功為 `303` 轉往 `/?shortened=<slug>&domain=<hostname>`。失敗則為 `303` 轉往
 `/?err=<code>`，其中 `<code>` 為 `denied`（低於存取層級，或填了被停用的欄位）、
-`rate_limited`、`captcha`、`conflict`、`slug`、`target`、`expiry`、`tags`、`domain` 或
-`invalid`。
+`rate_limited`、`captcha`、`quota`（訪客帳號的 `public_max_urls` 額度已滿）、
+`conflict`、`slug`、`target`、`expiry`、`tags`、`password_rules`、`domain`、`mode_denied` 或
+`invalid`。非數值的 `max_clicks` 或 `splash_delay_seconds` 會回報為 `invalid`，而不是默默丟棄。
 
 表單套用 CSRF 同源規則，一般安全標頭維持不變。
 
@@ -615,7 +616,8 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 公開短網址工具另新增 `public_create_access`（`guest`/`user`/`admin`，預設 `user`）、
 `public_captcha`（預設 `true`）、`public_rate_limit_per_ip`（每小時可建立數，預設 20，
 `0` = 不限次數）、`public_rate_limit_global`（所有訪客合計每小時可建立數，預設 500，`0` =
-不限次數），以及欄位開關 `public_allow_slug`、`public_allow_title`（兩者預設 `true`），
+不限次數）、`public_max_urls`（保留的訪客帳號可擁有的連結總數，預設 1000，`0` = 無限制；與
+`max_urls_per_user` 分開），以及欄位開關 `public_allow_slug`、`public_allow_title`（兩者預設 `true`），
 再加上 `public_allow_tags`、`public_allow_password`、`public_allow_expiry`、
 `public_allow_max_clicks`、`public_allow_redirect` 與 `public_allow_domain`（皆預設 `false`）。
 
@@ -642,7 +644,7 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 | 註冊 | 每 IP 每小時 5 次 |
 | 解鎖短網址 | 每 (slug, IP) 5 分鐘 10 次 |
 | 建立短網址 | 每使用者每小時 120 次 |
-| 公開短網址工具 | 每來源位址每小時 `public_rate_limit_per_ip` 次（預設 20），**以及**所有匿名訪客合計每小時 `public_rate_limit_global` 次（預設 500）；`0` 會停用任一額度 |
+| 公開短網址工具 | 每來源位址每小時 `public_rate_limit_per_ip` 次（預設 20），**以及**所有匿名訪客合計每小時 `public_rate_limit_global` 次（預設 500）；`0` 會停用任一額度。每來源位址的額度在防機器人驗證呼叫前扣抵，共用額度則只在驗證成功後扣抵 |
 | 修改密碼 | 每使用者每小時 10 次 |
 
 超過限制回 `429` 並附 `Retry-After`（秒）。記憶體計數器重啟即重置，

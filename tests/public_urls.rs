@@ -497,7 +497,24 @@ async fn guest_links_are_labelled_and_the_account_is_protected() {
         .await;
     assert_eq!(delete.status, StatusCode::FORBIDDEN, "{}", delete.body);
 
-    // And it still cannot sign in, whatever password is tried.
+    // Neither can a password reset: it would replace the unparsable sentinel
+    // that keeps the account from ever verifying a password.
+    let reset = app
+        .send(common::post_json_as(
+            &format!("/api/v1/admin/users/{id}/password"),
+            json!({ "new_password": "chosen-by-the-admin" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(reset.status, StatusCode::FORBIDDEN, "{}", reset.body);
+    let hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE is_system = 1")
+        .fetch_one(&app.state.db)
+        .await
+        .expect("guest hash");
+    assert_eq!(hash, "!", "the sentinel hash is untouched");
+
+    // And it still cannot sign in, whatever password is tried. The refusal comes
+    // from the suspension, so it holds even though the hash cannot parse.
     let login = app
         .post_json(
             "/api/v1/auth/login",
@@ -505,6 +522,199 @@ async fn guest_links_are_labelled_and_the_account_is_protected() {
         )
         .await;
     assert_eq!(login.status, StatusCode::UNAUTHORIZED, "{}", login.body);
+}
+
+#[tokio::test]
+async fn a_rejected_bot_check_does_not_consume_the_shared_budget() {
+    // A provider is configured, so the anonymous flow is protected. Every
+    // attempt below fails the check (no token); none of them may spend the
+    // budget the whole visitor population draws from.
+    let app = TestApp::spawn_with(|config| {
+        config.captcha_provider_override = Some("turnstile".to_string());
+        config.captcha_site_key_override = Some("site-key".to_string());
+        config.captcha_secret_key_override = Some("secret-key".to_string());
+        config.captcha_verify_url = Some("http://127.0.0.1:1/siteverify".to_string());
+    })
+    .await;
+    open_to_guests(&app).await;
+    set(&app, "public_rate_limit_per_ip", "0").await;
+    set(&app, "public_rate_limit_global", "1").await;
+
+    for attempt in 0..3 {
+        let response = submit(&app, "target_url=https%3A%2F%2Fexample.com%2Fbot").await;
+        assert_eq!(
+            response.header("location").as_deref(),
+            Some("/?err=captcha"),
+            "attempt {attempt} must fail the bot check, not the budget"
+        );
+    }
+    assert_eq!(guest_links(&app).await, 0);
+}
+
+#[tokio::test]
+async fn the_guest_budget_is_its_own_setting() {
+    let app = TestApp::spawn().await;
+    open_to_guests(&app).await;
+    set(&app, "public_rate_limit_per_ip", "0").await;
+    set(&app, "public_rate_limit_global", "0").await;
+    // The two budgets are independent: one link per account, two for visitors.
+    set(&app, "max_urls_per_user", "1").await;
+    set(&app, "public_max_urls", "2").await;
+
+    for index in 0..2 {
+        let body = format!("target_url=https%3A%2F%2Fexample.com%2Fguest-{index}");
+        created_slug(&submit(&app, &body).await);
+    }
+    let third = submit(&app, "target_url=https%3A%2F%2Fexample.com%2Fguest-2").await;
+    assert_eq!(
+        third.header("location").as_deref(),
+        Some("/?err=quota"),
+        "the visitor budget, not the per-user quota, is what fills up"
+    );
+
+    // A real account still follows `max_urls_per_user`.
+    let member = register_member(&app).await;
+    let first = app
+        .post_json_as(
+            "/api/v1/urls",
+            api_body("https://example.com/mine"),
+            &member,
+        )
+        .await;
+    assert_eq!(first.status, StatusCode::CREATED, "{}", first.body);
+    let second = app
+        .post_json_as(
+            "/api/v1/urls",
+            api_body("https://example.com/mine-2"),
+            &member,
+        )
+        .await;
+    assert_eq!(second.status, StatusCode::FORBIDDEN, "{}", second.body);
+}
+
+#[tokio::test]
+async fn a_malformed_number_is_refused_instead_of_dropped() {
+    let app = TestApp::spawn().await;
+    open_to_guests(&app).await;
+    set(&app, "public_allow_max_clicks", "true").await;
+
+    // The click cap is enabled and the value is nonsense: the link must not be
+    // created without the cap the visitor asked for.
+    let response = submit(
+        &app,
+        "target_url=https%3A%2F%2Fexample.com%2Ftypo&max_clicks=abc",
+    )
+    .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some("/?err=invalid")
+    );
+    assert_eq!(guest_links(&app).await, 0);
+
+    // The same value must not slip past a *disabled* field either.
+    set(&app, "public_allow_max_clicks", "false").await;
+    let response = submit(
+        &app,
+        "target_url=https%3A%2F%2Fexample.com%2Ftypo&max_clicks=abc",
+    )
+    .await;
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some("/?err=invalid")
+    );
+    assert_eq!(guest_links(&app).await, 0);
+
+    // A blank field is simply "not submitted".
+    created_slug(
+        &submit(
+            &app,
+            "target_url=https%3A%2F%2Fexample.com%2Fblank&max_clicks=",
+        )
+        .await,
+    );
+
+    // The countdown field is held to the same rule.
+    set(&app, "public_allow_redirect", "true").await;
+    let response = submit(
+        &app,
+        "target_url=https%3A%2F%2Fexample.com%2Fsplash&splash_delay_seconds=soon",
+    )
+    .await;
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some("/?err=invalid")
+    );
+    assert_eq!(guest_links(&app).await, 1);
+}
+
+#[tokio::test]
+async fn the_result_box_is_hidden_while_the_form_is_closed() {
+    let app = TestApp::spawn().await;
+    register_admin(&app).await;
+    let member = register_member(&app).await;
+    let created = app
+        .post_json_as(
+            "/api/v1/urls",
+            json!({ "target_url": "https://example.com/private", "slug": "private-one", "password": "linkpass" }),
+            &member,
+        )
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+
+    // With the public shortener closed, `/?shortened=` must not confirm that a
+    // slug exists — it would be a free existence oracle.
+    let probe = "/?shortened=private-one&domain=localhost:8080";
+    let page = app.get(probe).await;
+    assert!(
+        !page.body.contains("id=\"public-short-url\""),
+        "the result box stays hidden"
+    );
+
+    // Once the form is open, the same request shows the short URL.
+    open_to_guests(&app).await;
+    let page = app.get(probe).await;
+    assert!(page.body.contains("id=\"public-short-url\""));
+    assert!(page.body.contains("http://localhost:8080/private-one"));
+}
+
+#[tokio::test]
+async fn the_form_hides_fields_the_group_forbids() {
+    let app = TestApp::spawn().await;
+    register_admin(&app).await;
+    let member = register_member(&app).await;
+
+    // The public switches allow custom slugs; the member's group does not.
+    let now = urlet::services::time::now_iso();
+    sqlx::query(
+        "INSERT INTO user_groups (name, allow_custom_slug, is_default, created_at, updated_at)
+         VALUES ('NoSlug', 0, 0, ?, ?)",
+    )
+    .bind(&now)
+    .bind(&now)
+    .execute(&app.state.db)
+    .await
+    .expect("group");
+    let group: i64 = sqlx::query_scalar("SELECT id FROM user_groups WHERE name = 'NoSlug'")
+        .fetch_one(&app.state.db)
+        .await
+        .expect("group id");
+    sqlx::query("UPDATE users SET group_id = ? WHERE email_normalized = 'member@example.com'")
+        .bind(group)
+        .execute(&app.state.db)
+        .await
+        .expect("assign group");
+
+    assert!(app.state.settings.public_fields().slug, "the switch is on");
+    let page = app.get_as("/", &member).await;
+    assert!(
+        !page.body.contains("id=\"public_slug\""),
+        "the group's rule wins over the public switch"
+    );
+    // A visitor (the ungrouped Guest) still gets the field once the form is open
+    // to them.
+    open_to_guests(&app).await;
+    assert!(app.get("/").await.body.contains("id=\"public_slug\""));
 }
 
 #[tokio::test]

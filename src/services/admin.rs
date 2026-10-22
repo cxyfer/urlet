@@ -219,10 +219,22 @@ impl AdminContext<'_> {
             .await
             .map_err(AppError::from)?
             .ok_or_else(AppError::not_found)?;
+        // A reset would replace the unparsable sentinel that keeps the reserved
+        // Guest account from ever verifying a password; like its neighbours,
+        // this path refuses system accounts outright.
+        if user.is_system {
+            return Err(AppError::forbidden(
+                "the reserved system account cannot be modified",
+            ));
+        }
         let hash = password::hash_async(new_password.to_string()).await?;
-        users::set_password(self.pool, user.id, &hash)
+        if !users::set_password(self.pool, user.id, &hash)
             .await
-            .map_err(AppError::from)?;
+            .map_err(AppError::from)?
+        {
+            // The row vanished between the read and the write.
+            return Err(AppError::not_found());
+        }
         sessions::revoke_for_user(self.pool, user.id, &time::now_iso(), None)
             .await
             .map_err(AppError::from)?;
@@ -786,7 +798,40 @@ pub async fn run_maintenance(pool: &SqlitePool, settings: &Settings) -> Result<(
             "maintenance pass complete"
         );
     }
+    warn_about_the_guest_quota(pool, settings).await?;
     let _ = now;
+    Ok(())
+}
+
+/// Tell the operator when the public shortener has run out of room.
+///
+/// The Guest account owns every anonymous link and its budget is the
+/// `public_max_urls` setting; once it is full the public form answers "quota
+/// reached" until an administrator deletes some of those links. Nothing prunes
+/// them automatically (expiry is optional and off by default), so the log line
+/// is the only signal short of watching the link list.
+async fn warn_about_the_guest_quota(pool: &SqlitePool, settings: &Settings) -> Result<()> {
+    let limit = settings.public_max_urls();
+    if limit <= 0 {
+        return Ok(());
+    }
+    let Some(guest) = crate::db::users::find_system(pool)
+        .await
+        .map_err(AppError::from)?
+    else {
+        return Ok(());
+    };
+    let used = crate::db::urls::count_for_user(pool, guest.id)
+        .await
+        .map_err(AppError::from)?;
+    if used >= limit {
+        tracing::warn!(
+            used,
+            limit,
+            "the public shortener has reached public_max_urls; anonymous creation now \
+             fails with a quota error until links of the Guest account are deleted"
+        );
+    }
     Ok(())
 }
 

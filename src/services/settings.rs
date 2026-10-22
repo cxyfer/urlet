@@ -68,6 +68,7 @@ pub const EDITABLE_KEYS: &[&str] = &[
     "public_captcha",
     "public_rate_limit_per_ip",
     "public_rate_limit_global",
+    "public_max_urls",
     "public_allow_slug",
     "public_allow_title",
     "public_allow_tags",
@@ -396,6 +397,18 @@ impl Settings {
         self.raw_i64("public_rate_limit_global", 500).max(0)
     }
 
+    /// How many links the reserved Guest account may own in total; `0` is
+    /// unlimited.
+    ///
+    /// Deliberately separate from [`max_urls_per_user`]: an anonymous flood must
+    /// not consume the quota an administrator set for real accounts, and the two
+    /// want different values.
+    ///
+    /// [`max_urls_per_user`]: Settings::max_urls_per_user
+    pub fn public_max_urls(&self) -> i64 {
+        self.raw_i64("public_max_urls", 1000).max(0)
+    }
+
     /// Optional inputs the public form offers (see [`PublicFields`]).
     pub fn public_fields(&self) -> PublicFields {
         PublicFields::from_settings(self)
@@ -669,10 +682,10 @@ fn validate_value(key: &str, value: &str) -> Result<String> {
         .to_string()),
         // Per-hour creation budgets. 0 disables the limit; the upper bound is a
         // sanity check, not a policy.
-        "public_rate_limit_per_ip" | "public_rate_limit_global" => {
+        "public_rate_limit_per_ip" | "public_rate_limit_global" | "public_max_urls" => {
             let parsed: i64 = value
                 .parse()
-                .map_err(|_| invalid("the limit must be a number of creations per hour"))?;
+                .map_err(|_| invalid("the limit must be a number"))?;
             if !(0..=1_000_000).contains(&parsed) {
                 return Err(invalid(
                     "the limit must be between 0 and 1000000 (0 = unlimited)",

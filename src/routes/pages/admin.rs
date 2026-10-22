@@ -828,6 +828,8 @@ pub struct SettingsValues {
     /// Creations per hour; `0` is unlimited.
     pub public_rate_limit_per_ip: i64,
     pub public_rate_limit_global: i64,
+    /// Total links the reserved Guest account may own; `0` is unlimited.
+    pub public_max_urls: i64,
     pub public_allow_slug: bool,
     pub public_allow_title: bool,
     pub public_allow_tags: bool,
@@ -1256,6 +1258,8 @@ pub struct SettingsForm {
     pub public_rate_limit_per_ip: Option<String>,
     #[serde(default)]
     pub public_rate_limit_global: Option<String>,
+    #[serde(default)]
+    pub public_max_urls: Option<String>,
     #[serde(default)]
     pub public_allow_slug: Option<String>,
     #[serde(default)]
@@ -2550,6 +2554,7 @@ pub async fn update_settings(
     for (key, value) in [
         ("public_rate_limit_per_ip", payload.public_rate_limit_per_ip),
         ("public_rate_limit_global", payload.public_rate_limit_global),
+        ("public_max_urls", payload.public_max_urls),
     ] {
         if let Some(value) = value.filter(|value| !value.trim().is_empty()) {
             values.push((key.to_string(), value));
@@ -3338,6 +3343,7 @@ pub fn settings_values(settings: &Settings) -> SettingsValues {
         public_captcha: settings.public_captcha(),
         public_rate_limit_per_ip: settings.public_rate_limit_per_ip(),
         public_rate_limit_global: settings.public_rate_limit_global(),
+        public_max_urls: settings.public_max_urls(),
         public_allow_slug: settings.public_fields().slug,
         public_allow_title: settings.public_fields().title,
         public_allow_tags: settings.public_fields().tags,

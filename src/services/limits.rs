@@ -94,6 +94,15 @@ struct GroupOverrides {
 /// Resolve the limits for a user. One indexed lookup at most; there is no cache,
 /// so an administrator's change applies to the next request.
 pub async fn effective(pool: &SqlitePool, settings: &Settings, user: &User) -> Result<Limits> {
+    // The reserved Guest account that owns anonymous links draws on the public
+    // shortener's own budget rather than the per-user quota: a flood of
+    // anonymous links must not consume the limit an administrator set for real
+    // accounts, and the two want different values.
+    if user.is_system {
+        let mut limits = Limits::site_defaults(settings);
+        limits.max_urls = settings.public_max_urls();
+        return Ok(limits);
+    }
     let Some(group_id) = user.group_id else {
         return Ok(Limits::site_defaults(settings));
     };

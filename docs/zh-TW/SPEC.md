@@ -380,9 +380,9 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | FR-PUB-4 | 訪客所有權 | 匿名訪客建立的連結由保留的訪客帳號擁有（`users.is_system = 1`），因為 `urls.user_id` 是必填外鍵。該帳號由 migration 建立、沒有群組（因此由公開開關而非群組決定訪客能做什麼）、無法登入（`status = suspended`、無法解析的密碼雜湊），也不能編輯或刪除；它不會出現在使用者列表與任何使用者計數中，管理員的網址列表則把它的連結標為 `Guest` |
 | FR-PUB-5 | 欄位開關 | 管理員可啟用公開表單提供的選填欄位：自訂 slug 與標題（預設開啟）、標籤、連結密碼、過期、點擊上限、含中轉頁文案的轉址方式，以及網域選擇（預設關閉）。目標網址一律必填。送出時若填了被停用的欄位，會在進行任何工作前以 `403` 拒絕，因此隱藏欄位永遠不是唯一的防線 |
 | FR-PUB-6 | 防機器人驗證 | 公開表單由設定的供應商透過專用的 `public_captcha` 開關保護（預設開啟，未設供應商時不生效）。匿名訪客以公開流程驗證；已登入的瀏覽器 Session 則改依 `captcha_on_create`，因此公開端點不能被用來繞過它；`Bearer` API Token 如同其他建立路徑一樣豁免。失敗一律關閉並回應 `?err=captcha` / `400` |
-| FR-PUB-7 | 速率限制 | 兩個記憶體權杖桶守護匿名建立：`public_rate_limit_per_ip`（單一來源位址每小時的建立次數，預設 20）與 `public_rate_limit_global`（所有匿名訪客共用的額度，預設 500）。`0` 會停用任一限制。已登入的呼叫者維持每個帳號的桶，而每個來源位址的桶一律套用。被拒絕的請求回 `429` 並附 `Retry-After`（表單則以 `?err=rate_limited` 轉址） |
+| FR-PUB-7 | 速率限制 | 兩個記憶體權杖桶守護匿名建立：`public_rate_limit_per_ip`（單一來源位址每小時的建立次數，預設 20）與 `public_rate_limit_global`（所有匿名訪客共用的額度，預設 500）。`0` 會停用任一限制。已登入的呼叫者維持每個帳號的桶，而每個來源位址的桶一律套用。兩道依呼叫者計算的額度都在呼叫供應商前扣抵；共用額度則只在防機器人驗證成功後扣抵，因此未通過驗證的提交無法耗盡合法訪客所需的額度。被拒絕的請求回 `429` 並附 `Retry-After`（表單則以 `?err=rate_limited` 轉址） |
 | FR-PUB-8 | API | `POST /api/v1/public/urls` 接受與表單相同的內容（外加 `captcha_token`），並回 `201` 與 `domain`、`slug`、`short_url`、`target_url` 與 `created_at`。它刻意不提供連結 id：呼叫者沒有帳號可以管理該連結 |
-| FR-PUB-9 | 稽核與配額 | 訪客建立與其他建立一樣都會寫入稽核（`url.created`，actor = 訪客帳號），並計入訪客帳號自身的連結配額；由於該帳號沒有群組，配額即全站的 `max_urls_per_user` |
+| FR-PUB-9 | 稽核與配額 | 訪客建立與其他建立一樣都會寫入稽核（`url.created`，actor = 訪客帳號），並計入 `public_max_urls`（預設 1000，`0` = 無限制），也就是訪客帳號可擁有的連結總數。這刻意不是 `max_urls_per_user`：匿名連結的洪水不應耗用管理員為真實帳號設定的配額。配額用滿後，除非刪除那些連結，否則所有訪客都會取得配額錯誤（管理員的網址列表可依擁有者篩選），且維護任務會記錄一筆警告，讓管理者察覺 |
 
 ---
 
@@ -564,6 +564,7 @@ v1.6 只新增 `users.is_system` 欄位與其部分唯一索引（沒有新表�
 - `group_domains`：不種任何資料；沒有資料列的既有或新群組可使用所有 active 網域。
 - 公開短網址工具（v1.6）：`public_create_access=user`（升級後維持原有行為）、
   `public_captcha=true`、`public_rate_limit_per_ip=20`、`public_rate_limit_global=500`、
+  `public_max_urls=1000`、
   `public_allow_slug=true`、`public_allow_title=true`，而 `public_allow_tags`、
   `public_allow_password`、`public_allow_expiry`、`public_allow_max_clicks`、
   `public_allow_redirect`、`public_allow_domain` 皆為 `false`。migration 也會插入保留的
@@ -659,7 +660,7 @@ v1.6 只新增 `users.is_system` 欄位與其部分唯一索引（沒有新表�
 | 方法 | 路徑 | 說明 |
 |------|------|------|
 | GET | `/` | 導覽首頁（HTML）；當訪客可以建立連結時，另含公開短網址工具 |
-| POST | `/` | 公開短網址工具表單（HTML）。成功時 303 → `/?shortened=<slug>&domain=<hostname>`；失敗時 303 → `/?err=<code>`（`denied`、`rate_limited`、`captcha`、`conflict`、`slug`、`target`……）。僅限 canonical 主機 |
+| POST | `/` | 公開短網址工具表單（HTML）。成功時 303 → `/?shortened=<slug>&domain=<hostname>`；失敗時 303 → `/?err=<code>`，為 `denied`（低於存取層級，或填了被停用的欄位）、`rate_limited`、`captcha`、`quota`、`conflict`、`slug`、`target`、`expiry`、`tags`、`password_rules`、`domain`、`mode_denied` 或 `invalid` 之一。僅限 canonical 主機 |
 | POST | `/api/v1/public/urls` | 公開短網址工具（JSON）：`{target_url, domain?, slug?, title?, tags?, password?, expires_at?, max_clicks?, redirect_mode?, splash_delay_seconds?, splash_title?, splash_message?, captcha_token?}` → `201 {domain, slug, short_url, target_url, created_at}`。低於存取層級或填了被停用的欄位回 `403`，防機器人驗證失敗回 `400`，額度用盡回 `429` |
 | GET | `/health` | `{status, version, database, uptime_seconds}` |
 | GET | `/app/lang/{code}` | 設定 `urlet_lang` cookie 並 302 至 `next`；`next` 未帶或不是同站相對路徑時轉往 `/app` |

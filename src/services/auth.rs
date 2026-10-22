@@ -405,9 +405,14 @@ impl AuthContext<'_> {
         }
 
         let hash = password::hash_async(new_password.to_string()).await?;
-        users::set_password(self.pool, user.id, &hash)
+        // `false` means the row vanished or belongs to a reserved system
+        // account, which keeps its unparsable hash.
+        if !users::set_password(self.pool, user.id, &hash)
             .await
-            .map_err(AppError::from)?;
+            .map_err(AppError::from)?
+        {
+            return Err(AppError::not_found());
+        }
         let revoked = sessions::revoke_for_user(self.pool, user.id, &time::now_iso(), keep_session)
             .await
             .map_err(AppError::from)?;

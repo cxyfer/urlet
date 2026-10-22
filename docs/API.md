@@ -364,7 +364,10 @@ only. It accepts `target_url` (required) plus the optional inputs the administra
 
 A successful submission is `303` to `/?shortened=<slug>&domain=<hostname>`. A failure is `303` to
 `/?err=<code>`, where `<code>` is one of `denied` (below the access level, or a disabled field),
-`rate_limited`, `captcha`, `conflict`, `slug`, `target`, `expiry`, `tags`, `domain` or `invalid`.
+`rate_limited`, `captcha`, `quota` (the `public_max_urls` budget of the Guest account is full),
+`conflict`, `slug`, `target`, `expiry`, `tags`, `password_rules`, `domain`, `mode_denied` or
+`invalid`. A non-numeric `max_clicks` or `splash_delay_seconds` is reported as `invalid` rather
+than silently dropped.
 
 The CSRF same-origin rule applies to the form, and the ordinary security headers are unchanged.
 
@@ -669,7 +672,8 @@ write-only: it is never returned in plaintext, and submitting it empty keeps the
 The public shortener adds `public_create_access` (`guest`/`user`/`admin`, default `user`),
 `public_captcha` (default `true`), `public_rate_limit_per_ip` (creations per hour, default 20,
 `0` = unlimited), `public_rate_limit_global` (shared creations per hour, default 500, `0` =
-unlimited) and the field switches `public_allow_slug`, `public_allow_title` (both default `true`)
+unlimited), `public_max_urls` (total links the reserved Guest account may own, default 1000, `0` =
+unlimited; separate from `max_urls_per_user`) and the field switches `public_allow_slug`, `public_allow_title` (both default `true`)
 plus `public_allow_tags`, `public_allow_password`, `public_allow_expiry`, `public_allow_max_clicks`,
 `public_allow_redirect` and `public_allow_domain` (all default `false`).
 
@@ -696,7 +700,7 @@ plus `public_allow_tags`, `public_allow_password`, `public_allow_expiry`, `publi
 | Registration | 5 attempts per hour per IP |
 | Short link unlock | 10 attempts per 5 minutes per (slug, IP) |
 | Short link creation | 120 per hour per user |
-| Public shortener | `public_rate_limit_per_ip` per hour per client address (default 20) **and** `public_rate_limit_global` per hour across all anonymous visitors (default 500); `0` disables either budget |
+| Public shortener | `public_rate_limit_per_ip` per hour per client address (default 20) **and** `public_rate_limit_global` per hour across all anonymous visitors (default 500); `0` disables either budget. The per-address budget is charged before the bot protection call, the shared one only after it succeeded |
 | Password change | 10 per hour per user |
 
 Exceeding a limit returns `429` with `Retry-After` (seconds). The in-memory counters reset on

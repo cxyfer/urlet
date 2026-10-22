@@ -183,6 +183,12 @@
                            min="0" max="1000000" step="1" value="{{ values.public_rate_limit_global }}">
                     <span class="hint">{{ lang.t("admin.settings.public_rate_global_hint") }}</span>
                 </div>
+                <div class="field">
+                    <label class="label" for="public_max_urls">{{ lang.t("admin.settings.public_max_urls") }}</label>
+                    <input class="input" type="number" id="public_max_urls" name="public_max_urls"
+                           min="0" max="1000000" step="1" value="{{ values.public_max_urls }}">
+                    <span class="hint">{{ lang.t("admin.settings.public_max_urls_hint") }}</span>
+                </div>
             </div>
 
             <div class="check-cluster">

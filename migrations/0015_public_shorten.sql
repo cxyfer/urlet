@@ -44,6 +44,11 @@ INSERT OR IGNORE INTO settings (key, value, updated_at, updated_by) VALUES
     ('public_captcha', 'true', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL),
     ('public_rate_limit_per_ip', '20', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL),
     ('public_rate_limit_global', '500', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL),
+    -- The total number of links the Guest account may own. It is deliberately
+    -- separate from `max_urls_per_user`: a flood of anonymous links must not
+    -- consume the quota an administrator set for real accounts, and the two
+    -- need different values.
+    ('public_max_urls', '1000', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL),
     ('public_allow_slug', 'true', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL),
     ('public_allow_title', 'true', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL),
     ('public_allow_tags', 'false', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL),

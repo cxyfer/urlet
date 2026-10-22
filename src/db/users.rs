@@ -229,14 +229,19 @@ pub async fn set_last_login(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Erro
 }
 
 /// Replace the password hash.
-pub async fn set_password(pool: &SqlitePool, id: i64, hash: &str) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?")
-        .bind(hash)
-        .bind(now_iso())
-        .bind(id)
-        .execute(pool)
-        .await?;
-    Ok(())
+///
+/// Refuses system accounts: their unparsable sentinel is one of the defences
+/// that keep the reserved Guest account from ever signing in.
+pub async fn set_password(pool: &SqlitePool, id: i64, hash: &str) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ? AND is_system = 0",
+    )
+    .bind(hash)
+    .bind(now_iso())
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
 }
 
 /// Update the display name.

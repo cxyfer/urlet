@@ -170,7 +170,7 @@ urlet/
 ## 開發
 
 ```bash
-cargo test                 # 單元 + 整合測試（518 個）
+cargo test                 # 單元 + 整合測試（523 個）
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收（172 項）

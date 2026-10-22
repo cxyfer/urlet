@@ -151,16 +151,19 @@ fn enforce_hourly(limiter: &RateLimiter, key: &str, per_hour: i64) -> Result<()>
 /// The inner field is private, so only this module can build one: [`create`]
 /// cannot run before the access level, the field switches and the budgets were
 /// checked, and the bot protection call the route performs in between is
-/// reached only by a request that already paid for a token.
+/// reached only by a request that already paid for a per-address token.
 #[derive(Debug)]
 pub struct Authorized(());
 
 /// Check everything that must hold before the provider is contacted or the
-/// database is touched: the access level, the field switches and the rate
-/// limits.
+/// database is touched: the access level, the field switches and the two
+/// *per-caller* budgets.
 ///
 /// This runs before bot protection on purpose, matching every other create
 /// path: an unprotected submission must not be able to spend provider calls.
+/// The shared visitor budget is deliberately **not** charged here — a request
+/// that fails bot protection would otherwise let one attacker drain the budget
+/// every other visitor draws from. [`admit`] charges it afterwards.
 pub fn authorize(
     state: &AppState,
     client: &ClientInfo,
@@ -179,20 +182,13 @@ pub fn authorize(
     }
     enforce_fields(settings.public_fields(), input)?;
 
-    // The per-address budget protects the instance from one host; the shared
-    // bucket caps what the anonymous population as a whole can consume.
+    // The per-address budget protects the instance from one host, and bounds
+    // how many provider calls a single address can trigger.
     enforce_hourly(
         &state.limiter,
         &format!("{PER_IP_KEY}{}", client.limiter_key()),
         settings.public_rate_limit_per_ip(),
     )?;
-    if current.is_none() {
-        enforce_hourly(
-            &state.limiter,
-            GLOBAL_KEY,
-            settings.public_rate_limit_global(),
-        )?;
-    }
 
     // A signed-in caller keeps the per-account bucket every other create path
     // charges, so the public endpoint cannot be used to outrun it.
@@ -208,11 +204,32 @@ pub fn authorize(
     Ok(Authorized(()))
 }
 
+/// Charge the budget every anonymous visitor shares.
+///
+/// Call this **after** the flow's bot protection check succeeded (and with the
+/// proof [`authorize`] returned), so that a rejected submission cannot consume
+/// the budget legitimate visitors need. A signed-in caller has already paid the
+/// per-account budget and does not touch the shared one.
+pub fn admit(
+    state: &AppState,
+    current: Option<&CurrentUser>,
+    authorized: Authorized,
+) -> Result<Authorized> {
+    if current.is_none() {
+        enforce_hourly(
+            &state.limiter,
+            GLOBAL_KEY,
+            state.settings.public_rate_limit_global(),
+        )?;
+    }
+    Ok(authorized)
+}
+
 /// Create a short link from the public form or the public API.
 ///
-/// The caller must have run [`authorize`] (the [`Authorized`] proof) and, when
-/// [`guard_flow`] returns a flow, verified bot protection with the submitted
-/// token.
+/// The caller must have run [`authorize`], verified bot protection with the
+/// submitted token when [`guard_flow`] returns a flow, and then passed the proof
+/// through [`admit`].
 pub async fn create(
     state: &AppState,
     client: &ClientInfo,

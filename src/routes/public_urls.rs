@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{ApiError, AppError};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::middleware::domain::HostContext;
-use crate::routes::pages::urls::{optional_number, split_tags};
+use crate::routes::pages::urls::{number_field, split_tags};
 use crate::routes::pages::{captcha_rejected, encode, redirect_err};
 use crate::routes::verify_captcha;
 use crate::services::public_urls::{self, PublicInput};
@@ -61,8 +61,13 @@ pub struct PublicCreateForm {
 }
 
 impl PublicCreateForm {
-    fn into_input(self) -> PublicInput {
-        PublicInput {
+    /// Convert the submitted form, rejecting a malformed number.
+    ///
+    /// A blank field means "not submitted"; `max_clicks=abc` must not be turned
+    /// into "no click cap", which would both drop what the visitor asked for and
+    /// slip past the field switch that refuses a disabled input.
+    fn into_input(self) -> Result<PublicInput, AppError> {
+        Ok(PublicInput {
             target_url: self.target_url,
             domain: self.domain,
             slug: self.slug,
@@ -70,12 +75,12 @@ impl PublicCreateForm {
             tags: split_tags(&self.tags),
             password: self.password,
             expires_at: self.expires_at,
-            max_clicks: optional_number(&self.max_clicks),
+            max_clicks: number_field(&self.max_clicks, "max_clicks")?,
             redirect_mode: self.redirect_mode,
-            splash_delay_seconds: optional_number(&self.splash_delay_seconds),
+            splash_delay_seconds: number_field(&self.splash_delay_seconds, "splash_delay_seconds")?,
             splash_title: self.splash_title,
             splash_message: self.splash_message,
-        }
+        })
     }
 }
 
@@ -165,7 +170,14 @@ pub async fn create_form(
     let turnstile_token = payload.turnstile_token.take();
     let recaptcha_token = payload.recaptcha_token.take();
 
-    let input = payload.into_input();
+    let input = match payload.into_input() {
+        Ok(input) => input,
+        Err(err) => {
+            return Ok(
+                redirect_err("/", crate::routes::pages::urls::error_code(&err)).into_response(),
+            )
+        }
+    };
     // Access level, field switches and rate limits first: only a request that
     // passed them is allowed to spend a provider call.
     let authorized = match public_urls::authorize(&state, &client, current.as_ref(), &input) {
@@ -197,6 +209,17 @@ pub async fn create_form(
             }
         }
     }
+
+    // The shared visitor budget is charged only now, so an attempt that failed
+    // bot protection cannot drain it for everybody else.
+    let authorized = match public_urls::admit(&state, current.as_ref(), authorized) {
+        Ok(authorized) => authorized,
+        Err(err) => {
+            return Ok(
+                redirect_err("/", crate::routes::pages::urls::error_code(&err)).into_response(),
+            )
+        }
+    };
 
     match public_urls::create(&state, &client, current.as_ref(), input, authorized).await {
         Ok(url) => {
@@ -243,6 +266,10 @@ pub async fn create_api(
             verify_captcha(&state, &client, flow, captcha_token.as_deref()).await?;
         }
     }
+
+    // The shared visitor budget is charged only now, so an attempt that failed
+    // bot protection cannot drain it for everybody else.
+    let authorized = public_urls::admit(&state, current.as_ref(), authorized)?;
 
     let url = public_urls::create(&state, &client, current.as_ref(), input, authorized).await?;
     let domain = state.domain_hostname(url.domain_id);

@@ -146,7 +146,24 @@ pub async fn home(
     let anonymous = current.is_none();
     let allowed =
         public_urls::access(&state.settings).allows(current.as_ref().map(|current| &current.user));
-    let fields = state.settings.public_fields();
+    let mut fields = state.settings.public_fields();
+    if let Some(current) = &current {
+        // A signed-in visitor's group can narrow the public field set further;
+        // the service refuses those fields anyway, so offering them would only
+        // produce a rejected submission.
+        let limits =
+            crate::services::limits::effective(&state.db, &state.settings, &current.user).await?;
+        fields.slug &= limits.allow_custom_slug;
+        fields.tags &= limits.allow_tags;
+        fields.password &= limits.allow_password;
+        fields.expiry &= limits.allow_expiry;
+        fields.max_clicks &= limits.allow_max_clicks;
+        fields.domain &= limits.allow_domain_selection;
+        // A locked redirect-mode policy is applied by the service; the form
+        // would only be able to offer the one mode it allows.
+        fields.redirect &= limits.redirect_mode_policy
+            == crate::services::redirect_mode::RedirectModePolicy::Choice;
+    }
     let domains = match (&current, fields.domain) {
         (_, false) => Vec::new(),
         // A signed-in account sees the domains its group allows; a visitor gets
@@ -164,6 +181,14 @@ pub async fn home(
     } else {
         None
     };
+    // The result is resolved only for a visitor who may use the form at all:
+    // otherwise `/?shortened=` would be a free "does this slug exist" oracle on
+    // an instance whose public shortener is closed.
+    let result = if allowed {
+        created_short_url(&state, &query).await
+    } else {
+        None
+    };
 
     let page = LandingPage {
         site_name: state.settings.site_name(),
@@ -175,7 +200,7 @@ pub async fn home(
         captcha,
         shorten: ShortenView {
             show: allowed,
-            result: created_short_url(&state, &query).await,
+            result,
             fields,
             domains,
         },

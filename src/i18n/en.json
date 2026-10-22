@@ -826,5 +826,7 @@
   "admin.settings.public_allow_redirect": "Redirect mode and splash page",
   "admin.settings.public_allow_domain": "Domain selection",
   "admin.urls.guest_user": "Guest",
-  "dashboard.create_disabled": "An administrator has reserved link creation for themselves, so the form is hidden here. Existing links are unaffected."
+  "dashboard.create_disabled": "An administrator has reserved link creation for themselves, so the form is hidden here. Existing links are unaffected.",
+  "admin.settings.public_max_urls": "Links visitors may create in total",
+  "admin.settings.public_max_urls_hint": "The budget of the reserved Guest account that owns anonymous links, separate from the per-user quota. 0 means unlimited. Once it is full, visitors get a quota error until those links are deleted; a full budget is reported in the log by the maintenance pass."
 }
