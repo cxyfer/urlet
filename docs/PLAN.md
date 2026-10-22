@@ -316,6 +316,30 @@ Approved scope (2026-10-23): optional cleanup on **creation only**, disabled by 
 
 ---
 
+## P17 — Editable Guest Destination Allowlist
+
+**Goal**: anonymous visitors may shorten only explicitly allowed destinations; administrators can edit the built-in list without restarting. Scope: local allowlist only, with no reputation API, blocklists, group overrides or redirect-time enforcement.
+
+**Architecture / baseline**: reuse SQLite settings and the atomic, audited admin API/form (`docs/SPEC.md` §4.16). Add one focused matcher shared by public HTML/JSON creation. The existing domain policy governs short-link hosts and cannot restrict destinations, so source changes are necessary. Parse with `url::Url`, already in the dependency graph. No schema change is needed; seed missing settings through the existing defaults owner.
+
+**Compatibility**: default `guest_allowlist_enabled=true`; never overwrite edited or empty lists. Empty enabled lists deny all guest targets. Enforce before captcha and the shared guest budget. Signed-in callers and existing redirects keep their behavior. Old settings forms that omit the new controls preserve them. Keep matching logic out of the large admin/settings handlers; those receive wiring only.
+
+**Tasks**
+
+1. Add `src/services/guest_allowlist.rs` and a compiled-in list of established service hosts without path restrictions; exclude separate public website hosting domains. Support exact ASCII DNS hosts or a leading `*.` for all subdomain levels (excluding the root), plus optional case-sensitive path prefixes with segment boundaries. Refuse credentials and nonstandard ports. Bound and validate edits; handle dot segments and reject ambiguous encoded separators for scoped paths. Unit tests cover spoofed hosts, paths, empty lists and defaults.
+2. Wire `guest_allowlist_enabled` / `guest_allowlist` into `src/db/settings.rs`, `src/services/settings.rs`, and `src/services/public_urls.rs`. Test anonymous form/API enforcement, immediate edits, disabled/empty states, signed-in session/token exemption, and persistence after settings reload.
+3. Extend the existing admin settings view/form and shared landing partial. Add all three locales, a specific refusal message and a guest-visible list of allowed destinations. Test authorization, atomic invalid edits, old forms and every compiled-in theme.
+4. Update the spec, API docs, this plan and their Traditional Chinese mirrors; extend `scripts/smoke.sh` with default enforcement and editable rules over real HTTP.
+5. Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `bash scripts/smoke.sh`, `bash scripts/merge-check.sh`; review, commit, push `feat/guest-allowlist` and open a PR against `cxyfer/urlet:master` without merging. No strict TDD route is requested; commit the completed business change after verification.
+
+**Wildcard follow-up (approved 2026-10-23)**: extend the existing matcher in place; configuration-only changes cannot work while the parser rejects `*`. Accept only a leading `*.` before a valid DNS hostname; match at a label boundary and require a nonempty subdomain, preserving exact-host behavior and optional path restrictions. Normalize without dropping the wildcard. Replace the five YouTube rules with `*.youtube.com` and `youtube.com`; consolidate Wikipedia language entries with `*.wikipedia.org` and list `wikipedia.org` separately. Preserve stored edits and empty lists; only missing settings receive the revised defaults. TDD mode is off; add regression coverage after implementation. Update three UI locales, API/spec mirrors and existing smoke checks. Verify admin API/form saving, reload persistence, root exclusion, nested subdomains, suffix spoofing, malformed stars and scoped paths, then run all required checks and update PR #34. No new owner, migration, dependency or setting is needed.
+
+**Built-in policy expansion (approved 2026-10-23)**: expand the default list to 24 services / 43 host rules, covering knowledge/development, Taiwan discussion, video/music, social, news and product support. Use established service hosts without path restrictions; do not include separate public website hosting domains such as `*.github.io`, `*.gitlab.io` or `sites.google.com`. Reuse the matcher and settings owners unchanged. Update the existing policy regression cases, real-router defaults and smoke checks, plus the bilingual API/spec/plan. Verify broadened and newly added destinations, spoofed hosts, excluded hosting domains and saved-list preservation; run the required checks and update PR #34. This bounded defaults refinement needs no new owner, migration, dependency or runtime reputation lookup. TDD remains off; update existing tests for changed behavior.
+
+**Risks / retirement**: known sites can host user content and redirects; the built-in list is an editable policy, not a safety certification. Do not fetch targets. Preserve the existing settings/rate-limit owners; no legacy path is retired. Verify real router paths and settings reload, beyond isolated matcher tests.
+
+---
+
 ## Risks and Mitigations
 
 | Risk | Impact | Mitigation |

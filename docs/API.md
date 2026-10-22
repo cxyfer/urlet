@@ -364,7 +364,7 @@ only. It accepts `target_url` (required) plus the optional inputs the administra
 
 A successful submission is `303` to `/?shortened=<slug>&domain=<hostname>`. A failure is `303` to
 `/?err=<code>`, where `<code>` is one of `denied` (below the access level, or a disabled field),
-`rate_limited`, `captcha`, `quota` (the `public_max_urls` budget of the Guest account is full),
+`guest_allowlist` (anonymous destination not allowed), `rate_limited`, `captcha`, `quota` (the `public_max_urls` budget of the Guest account is full),
 `conflict`, `slug`, `target`, `expiry`, `tags`, `password_rules`, `domain`, `mode_denied` or
 `invalid`. A non-numeric `max_clicks` or `splash_delay_seconds` is reported as `invalid` rather
 than silently dropped.
@@ -377,9 +377,11 @@ The same operation as JSON, for scripts. No credential is required when `public_
 `guest`; a session cookie or a Bearer token may be supplied instead, and the link is then owned by
 that account.
 
+Anonymous requests must also match the enabled guest destination allowlist; the example below is included in the built-in rules. Signed-in sessions and Bearer tokens use their existing account permissions.
+
 ```json
 {
-  "target_url": "https://example.com/launch",
+  "target_url": "https://github.com/cxyfer/urlet",
   "slug": "launch",
   "title": "Launch day",
   "captcha_token": "0.abc..."
@@ -393,7 +395,7 @@ that account.
   "domain": "s.example.com",
   "slug": "launch",
   "short_url": "https://s.example.com/launch",
-  "target_url": "https://example.com/launch",
+  "target_url": "https://github.com/cxyfer/urlet",
   "created_at": "2026-10-22T12:00:00.000Z"
 }
 ```
@@ -401,7 +403,7 @@ that account.
 The link id is deliberately not returned: the caller has no account to manage the link with.
 
 - `403` `forbidden` — the caller is below the access level, or submitted a field the administrator
-  disabled
+  disabled, or an anonymous destination is not on the enabled guest allowlist
 - `400` `captcha_failed` — the bot protection check failed (fail closed)
 - `429` `rate_limited` — the per-address or the shared visitor budget is exhausted (`Retry-After`)
 - `409` `conflict` — the requested slug is already taken
@@ -678,7 +680,31 @@ unlimited; separate from `max_urls_per_user`) and the field switches `public_all
 plus `public_allow_tags`, `public_allow_password`, `public_allow_expiry`, `public_allow_max_clicks`,
 `public_allow_redirect` and `public_allow_domain` (all default `false`).
 
-Guest quota periods accept `minute`, `hour`, `day`, `week` or `month`. They use the server process timezone (`TZ`, otherwise the OS timezone); Docker Compose defaults `TZ` to `UTC`, and operators can set `TZ=Asia/Taipei`, for example. The admin page shows the timezone and reveals guest rate, total-link and captcha settings only when `public_create_access=guest`. Hidden settings are preserved; without JavaScript, save the access level to reveal the fields. Public-form field switches remain visible because they also apply to signed-in callers.
+Guest quota periods accept `minute`, `hour`, `day`, `week` or `month`. They use the server process timezone (`TZ`, otherwise the OS timezone); Docker Compose defaults `TZ` to `UTC`, and operators can set `TZ=Asia/Taipei`, for example. The admin page shows the timezone and reveals guest rate, total-link, captcha and destination allowlist settings only when `public_create_access=guest`. Hidden settings are preserved; without JavaScript, save the access level to reveal the fields. Public-form field switches remain visible because they also apply to signed-in callers.
+
+The guest destination policy adds two string settings:
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `guest_allowlist_enabled` | `"true"` | Restrict only anonymous creation; `"false"` explicitly disables the policy |
+| `guest_allowlist` | Built-in known-site rules | One ASCII hostname per line, optionally with a leading `*.` and a case-sensitive ASCII path, for example `*.example.com/articles/` |
+
+Use `PUT /api/v1/admin/settings` to edit either key. Hostnames are lowercased, blank lines and duplicates removed. Only a leading `*.` wildcard is accepted; no scheme, port, credentials, other wildcard, query, fragment, encoded rule path or dot segment is accepted. A bare host allows any path; `/articles` allows that path and its descendants, while `/articles/` requires the trailing slash. Query strings and fragments do not contribute to a match. Target paths with encoded separators or nested encoding are refused for path-scoped rules. Only HTTP/HTTPS with their standard ports are allowed. Without `*.`, hostnames match exactly. `*.example.com` matches `a.example.com` and `a.b.example.com` at DNS label boundaries, but excludes `example.com`, `evilexample.com` and `example.com.evil.test`. List `example.com` separately to include the root. The limits are 200 rules and 16 KiB; invalid edits return `422` and leave the entire settings batch unchanged.
+
+An enabled empty list denies all anonymous destinations. Disabling the policy preserves its list. Updates take effect immediately and persist across restarts; upgrades seed only missing keys. Existing guest links continue to redirect. The admin form offers the same controls and preserves these settings when an older form omits them. Visitors can inspect the current allowed destinations on the landing page; refused forms use `?err=guest_allowlist`.
+
+The built-in list has 43 host rules across 24 established services. These entries allow all paths on the listed hosts; administrators can still add optional path restrictions to their own rules. Root domains and subdomains are listed separately where needed. The default scope is:
+
+| Area | Services and allowed hosts |
+|------|----------------------------|
+| Knowledge and development | Wikipedia (`wikipedia.org`, `*.wikipedia.org`), GitHub (`github.com`), GitLab (`gitlab.com`), Stack Overflow (`stackoverflow.com`, `*.stackoverflow.com`), Stack Exchange (`stackexchange.com`, `*.stackexchange.com`), MDN (`developer.mozilla.org`), Python documentation (`docs.python.org`), Rust documentation (`doc.rust-lang.org`) |
+| Taiwan discussion | PTT (`ptt.cc`, `www.ptt.cc`), Dcard (`dcard.tw`, `www.dcard.tw`), Bahamut (`gamer.com.tw`, `*.gamer.com.tw`) |
+| Video and music | YouTube (`*.youtube.com`, `youtube.com`), Bilibili (`bilibili.com`, `*.bilibili.com`), Twitch (`twitch.tv`, `*.twitch.tv`), Spotify (`spotify.com`, `*.spotify.com`) |
+| Social | Reddit (`reddit.com`, `*.reddit.com`), Instagram (`instagram.com`, `www.instagram.com`), Facebook (`facebook.com`, `*.facebook.com`), X (`x.com`, `www.x.com`) |
+| News | CNA (`cna.com.tw`, `www.cna.com.tw`), BBC (`bbc.com`, `www.bbc.com`, `bbc.co.uk`, `www.bbc.co.uk`), Reuters (`reuters.com`, `www.reuters.com`) |
+| Product support | Apple (`support.apple.com`), Microsoft (`support.microsoft.com`) |
+
+Public website hosting domains such as `*.github.io`, `*.gitlab.io` and `sites.google.com` are not included. GitHub and GitLab document that users can publish their own sites on their Pages domains; allowing the main service does not imply allowing those separate hosting domains. See the official [GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages) and [GitLab Pages](https://docs.gitlab.com/user/project/pages/) documentation. This is a starting policy, not a safety certification: known hosts can carry user content or redirects. There is no reputation API, target fetch or redirect-chain inspection.
 
 ---
 
@@ -726,6 +752,8 @@ Cleanup applies **only when creating links**, through `POST /api/v1/urls`, `POST
 | Short link creation | 120 per hour per user |
 | Public shortener | Anonymous visitors only: `public_rate_limit_per_ip` per `public_rate_limit_per_ip_period` and `public_rate_limit_global` per `public_rate_limit_global_period` (defaults: 20/hour and 500/hour). Periods are calendar minute/hour/day/week/month in the server timezone, with Monday-based weeks and actual calendar months. `0` disables either budget. The per-address budget is charged before bot protection, the shared one only after success. SQLite counters survive restart; `Retry-After` is the time to the next boundary. Signed-in callers retain group quotas and the existing per-account throttle, without consuming guest quotas |
 | Password change | 10 per hour per user |
+
+The persistent guest-quota table holds at most 50,000 rows across sources, shared budgets and periods. At capacity, new rows return `429`; existing counters keep their usage and limits. Reservations reclaim expired windows immediately, and maintenance also cleans them. Active counters are never evicted to make room for new addresses.
 
 Exceeding a limit returns `429` with `Retry-After` (seconds). The in-memory counters reset on
 restart, but **account lockout** is persistent: once one email accumulates 30 failures within

@@ -137,6 +137,7 @@ pub async fn enforce(
         window.start,
         window.end,
         limit,
+        now.as_second(),
     )
     .await
     .map_err(AppError::from)?;

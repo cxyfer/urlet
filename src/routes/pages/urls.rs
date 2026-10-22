@@ -755,6 +755,9 @@ pub fn error_code(err: &AppError) -> &'static str {
         AppError::Forbidden(message) if message.starts_with("you have reached your limit of ") => {
             "quota"
         }
+        AppError::Forbidden(message) if message == crate::services::guest_allowlist::BLOCKED => {
+            "guest_allowlist"
+        }
         AppError::Forbidden(_) => "denied",
         AppError::RateLimited { .. } => "rate_limited",
         AppError::Validation { field, .. } => match *field {
@@ -762,6 +765,7 @@ pub fn error_code(err: &AppError) -> &'static str {
             "slug" => "slug",
             "domain" => "domain",
             "target_url" => "target",
+            "guest_allowlist" => "guest_allowlist_rules",
             "password" => "password_rules",
             "tags" => "tags",
             _ => "invalid",

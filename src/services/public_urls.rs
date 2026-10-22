@@ -1,6 +1,6 @@
 //! The public shortener: a visitor may create a link from the landing page.
 //!
-//! Three things stand between the public form and the database, and all three
+//! Four checks stand between the public form and the database, and all four
 //! are enforced here rather than in the templates:
 //!
 //! 1. **Access level** (`public_create_access`) — `guest` also serves anonymous
@@ -12,6 +12,7 @@
 //!    so hiding it in the template is never the only defence.
 //! 3. **Calendar quotas** — a per-address budget for anonymous visitors, plus one shared
 //!    calendar quota that the whole anonymous population draws from.
+//! 4. **訪客目標白名單** — 未登入者必須命中管理員允許的目標；驗證碼與共用額度之前檢查。
 //!
 //! A link created by an anonymous visitor is owned by the reserved Guest
 //! account ([`crate::db::users::User::is_system`]), because `urls.user_id` is a
@@ -135,14 +136,14 @@ fn enforce(limiter: &RateLimiter, key: &str, capacity: f64, refill_per_second: f
 /// Proof that [`authorize`] accepted a request.
 ///
 /// The inner field is private, so only this module can build one: [`create`]
-/// cannot run before the access level, the field switches and the budgets were
+/// cannot run before the access level, field switches, guest allowlist and budgets were
 /// checked, and the bot protection call the route performs in between is
 /// reached only by a request that already paid for its caller's allowance.
 #[derive(Debug)]
 pub struct Authorized(());
 
 /// Check everything that must hold before the provider is contacted or a
-/// link is created: the access level, the field switches and the
+/// link is created: access level, field switches, guest allowlist and the
 /// caller's budget (per-address for guests, per-account for signed-in callers).
 ///
 /// This runs before bot protection on purpose, matching every other create
@@ -188,6 +189,15 @@ pub async fn authorize(
             jiff::Timestamp::now(),
         )
         .await?;
+    }
+
+    if current.is_none() && settings.guest_allowlist_enabled() {
+        let target = crate::services::target::validate(&input.target_url)?;
+        if !crate::services::guest_allowlist::allows(&settings.guest_allowlist(), &target) {
+            return Err(AppError::forbidden(
+                crate::services::guest_allowlist::BLOCKED,
+            ));
+        }
     }
 
     Ok(Authorized(()))

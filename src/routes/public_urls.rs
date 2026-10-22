@@ -2,7 +2,7 @@
 //!
 //! Both accept the same payload and call the same service
 //! ([`crate::services::public_urls::create`]), which enforces the access level,
-//! the field switches and the rate limits. Only the presentation differs: the
+//! the field switches, guest allowlist and rate limits. Only the presentation differs: the
 //! form answers with a redirect back to the landing page, the API with JSON.
 //!
 //! Bot protection is verified here because it needs the submitted token: the

@@ -25,6 +25,8 @@ async fn set(app: &TestApp, key: &str, value: &str) {
 
 async fn open_to_guests(app: &TestApp) {
     set(app, "public_create_access", "guest").await;
+    // 既有流程測試使用保留的 example.com；仍保留白名單檢查。
+    set(app, "guest_allowlist", "example.com").await;
 }
 
 /// Register the first account, which the instance promotes to administrator.
@@ -1014,7 +1016,8 @@ async fn calendar_quota_resets_at_the_boundary_and_survives_reopening_the_databa
         urlet::db::public_quota::delete_expired(&pool, after.as_second())
             .await
             .expect("cleanup"),
-        1
+        0,
+        "扣抵新週期前已回收到期用量"
     );
     assert!(
         enforce(
@@ -1058,4 +1061,162 @@ async fn calendar_quota_reservations_are_atomic() {
         accepted += usize::from(result.expect("request"));
     }
     assert_eq!(accepted, 3);
+}
+
+const QUOTA_ROW_CAP: i64 = 50_000;
+
+async fn fill_quota_rows(app: &TestApp, count: i64, now: i64) {
+    sqlx::query(
+        "WITH RECURSIVE sources(n) AS (
+             SELECT 1 UNION ALL SELECT n + 1 FROM sources WHERE n < ?
+         )
+         INSERT INTO public_creation_quota (scope, period, window_start, window_end, used)
+         SELECT 'seed-quota-' || n, 'month', 0, ?, 1 FROM sources",
+    )
+    .bind(count)
+    .bind(now + 31 * 86400)
+    .execute(&app.state.db)
+    .await
+    .expect("fill quota table");
+}
+
+async fn quota_row_count(app: &TestApp) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM public_creation_quota")
+        .fetch_one(&app.state.db)
+        .await
+        .expect("quota rows")
+}
+
+#[tokio::test]
+async fn quota_rows_are_bounded_before_captcha_and_after_global_exhaustion() {
+    let app = TestApp::spawn_with(|config| config.trust_proxy = true).await;
+    open_to_guests(&app).await;
+    set(&app, "public_rate_limit_global", "1").await;
+    created_slug(&submit(&app, "target_url=https%3A%2F%2Fexample.com%2Ffirst").await);
+    let now = jiff::Timestamp::now().as_second();
+    let existing = quota_row_count(&app).await;
+    fill_quota_rows(&app, QUOTA_ROW_CAP - existing, now).await;
+
+    for captcha in [false, true] {
+        if captcha {
+            set(&app, "captcha_provider", "turnstile").await;
+            set(&app, "captcha_site_key", "test-site-key").await;
+            set(&app, "captcha_secret_key", "test-secret-key").await;
+        }
+        for address in 1..=5 {
+            let mut request =
+                common::post_json("/api/v1/public/urls", api_body("https://example.com/flood"));
+            request.headers_mut().insert(
+                "x-real-ip",
+                format!("2001:db8:{}::{address}", u8::from(captcha))
+                    .parse()
+                    .expect("address header"),
+            );
+            let response = app.send(request).await;
+            assert_eq!(response.status, StatusCode::TOO_MANY_REQUESTS);
+            assert_eq!(quota_row_count(&app).await, QUOTA_ROW_CAP);
+        }
+    }
+    assert_eq!(guest_links(&app).await, 1);
+}
+
+#[tokio::test]
+async fn quota_capacity_preserves_active_usage_and_reclaims_expired_rows() {
+    use urlet::services::public_quota::{enforce, PublicRatePeriod};
+    let app = TestApp::spawn().await;
+    let now: jiff::Timestamp = "2026-10-23T12:00:00Z".parse().expect("now");
+    let zone = jiff::tz::TimeZone::UTC;
+    enforce(
+        &app.state.db,
+        &zone,
+        "existing",
+        2,
+        PublicRatePeriod::Day,
+        now,
+    )
+    .await
+    .expect("first use");
+    fill_quota_rows(&app, QUOTA_ROW_CAP - 1, now.as_second()).await;
+    enforce(
+        &app.state.db,
+        &zone,
+        "existing",
+        2,
+        PublicRatePeriod::Day,
+        now,
+    )
+    .await
+    .expect("existing row can still be charged at capacity");
+    assert!(enforce(
+        &app.state.db,
+        &zone,
+        "existing",
+        2,
+        PublicRatePeriod::Day,
+        now
+    )
+    .await
+    .is_err());
+    assert!(
+        enforce(&app.state.db, &zone, "new", 2, PublicRatePeriod::Day, now)
+            .await
+            .is_err()
+    );
+
+    sqlx::query("UPDATE public_creation_quota SET window_end = ? WHERE scope = 'seed-quota-1'")
+        .bind(now.as_second())
+        .execute(&app.state.db)
+        .await
+        .expect("expire one row");
+    enforce(&app.state.db, &zone, "new", 2, PublicRatePeriod::Day, now)
+        .await
+        .expect("reclaim expired row without maintenance");
+    assert_eq!(quota_row_count(&app).await, QUOTA_ROW_CAP);
+    assert!(
+        enforce(
+            &app.state.db,
+            &zone,
+            "existing",
+            2,
+            PublicRatePeriod::Day,
+            now
+        )
+        .await
+        .is_err(),
+        "容量回收不可重設未到期用量"
+    );
+}
+
+#[tokio::test]
+async fn quota_row_capacity_is_atomic_for_concurrent_new_sources() {
+    use urlet::services::public_quota::{enforce, PublicRatePeriod};
+    let app = TestApp::spawn().await;
+    let now: jiff::Timestamp = "2026-10-23T12:00:00Z".parse().expect("now");
+    fill_quota_rows(&app, QUOTA_ROW_CAP - 3, now.as_second()).await;
+    let mut requests = tokio::task::JoinSet::new();
+    for source in 0..12 {
+        let pool = app.state.db.clone();
+        requests.spawn(async move {
+            match enforce(
+                &pool,
+                &jiff::tz::TimeZone::UTC,
+                &format!("new-source-{source}"),
+                2,
+                PublicRatePeriod::Day,
+                now,
+            )
+            .await
+            {
+                Ok(()) => true,
+                Err(urlet::error::AppError::RateLimited { .. }) => false,
+                Err(error) => panic!("unexpected reservation error: {error}"),
+            }
+        });
+    }
+    let mut accepted = 0;
+    while let Some(result) = requests.join_next().await {
+        accepted += usize::from(result.expect("request"));
+    }
+    assert_eq!(accepted, 3);
+    assert_eq!(quota_row_count(&app).await, QUOTA_ROW_CAP);
 }

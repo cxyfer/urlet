@@ -828,6 +828,8 @@ pub struct SettingsValues {
     pub captcha_state: Option<String>,
     /// Public shortener: `guest`, `user` or `admin`.
     pub public_create_access: String,
+    pub guest_allowlist_enabled: bool,
+    pub guest_allowlist: String,
     pub public_captcha: bool,
     /// 遊客在所選自然週期的建立額度；`0` 表示不限。
     pub public_rate_limit_per_ip: i64,
@@ -1263,6 +1265,10 @@ pub struct SettingsForm {
     // page rendered before the feature existed must still submit.
     #[serde(default)]
     pub public_create_access: Option<String>,
+    #[serde(default)]
+    pub guest_allowlist_enabled: Option<String>,
+    #[serde(default)]
+    pub guest_allowlist: Option<String>,
     #[serde(default)]
     pub public_captcha: Option<String>,
     #[serde(default)]
@@ -2612,6 +2618,14 @@ pub async fn update_settings(
             values.push((key.to_string(), value));
         }
     }
+    // 新表單一定提交 textarea；舊頁面省略時保留限制，不可把缺欄位解讀成關閉。
+    if let Some(rules) = payload.guest_allowlist {
+        values.push(("guest_allowlist".to_string(), rules));
+        values.push((
+            "guest_allowlist_enabled".to_string(),
+            payload.guest_allowlist_enabled.is_some().to_string(),
+        ));
+    }
     for (key, checked) in [
         ("public_captcha", payload.public_captcha.is_some()),
         ("public_allow_slug", payload.public_allow_slug.is_some()),
@@ -3398,6 +3412,8 @@ pub fn settings_values(state: &AppState) -> SettingsValues {
         // Filled in by `render_settings`, which knows the language.
         captcha_state: None,
         public_create_access: settings.public_create_access().as_str().to_string(),
+        guest_allowlist_enabled: settings.guest_allowlist_enabled(),
+        guest_allowlist: settings.guest_allowlist(),
         public_captcha: settings.public_captcha(),
         public_rate_limit_per_ip: settings.public_rate_limit_per_ip(),
         public_rate_limit_per_ip_period: settings

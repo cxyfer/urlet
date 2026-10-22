@@ -11,6 +11,7 @@ pub mod custom_theme;
 pub mod domain_policy;
 pub mod domains;
 pub mod groups;
+pub mod guest_allowlist;
 pub mod invite_code;
 pub mod invite_quota;
 pub mod invites;
