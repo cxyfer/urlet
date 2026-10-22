@@ -617,12 +617,15 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 永不回傳明文，留白送出表示維持已儲存的值。
 
 公開短網址工具另新增 `public_create_access`（`guest`/`user`/`admin`，預設 `user`）、
-`public_captcha`（預設 `true`）、`public_rate_limit_per_ip`（每小時可建立數，預設 20，
-`0` = 不限次數）、`public_rate_limit_global`（所有訪客合計每小時可建立數，預設 500，`0` =
-不限次數）、`public_max_urls`（保留的訪客帳號可擁有的連結總數，預設 1000，`0` = 無限制；與
+`public_captcha`（預設 `true`）、`public_rate_limit_per_ip`（遊客每週期可建立數，預設 20，
+`0` = 不限）、`public_rate_limit_per_ip_period`（預設 `hour`）、`public_rate_limit_global`
+（全部遊客每週期合計可建立數，預設 500，`0` = 不限）、
+`public_rate_limit_global_period`（預設 `hour`）、`public_max_urls`（保留的訪客帳號可擁有的連結總數，預設 1000，`0` = 無限制；與
 `max_urls_per_user` 分開），以及欄位開關 `public_allow_slug`、`public_allow_title`（兩者預設 `true`），
 再加上 `public_allow_tags`、`public_allow_password`、`public_allow_expiry`、
 `public_allow_max_clicks`、`public_allow_redirect` 與 `public_allow_domain`（皆預設 `false`）。
+
+遊客配額週期接受 `minute`、`hour`、`day`、`week`、`month`，使用服務進程的時區（`TZ`，未設定則採系統時區）。Docker Compose 預設 `TZ=UTC`，可例如設為 `TZ=Asia/Taipei`。後台顯示計數時區，且只有 `public_create_access=guest` 時才展開遊客速率、連結總額度、驗證與目標白名單設定。隱藏時保留原設定；無 JavaScript 時儲存存取層級後即可顯示欄位。首頁表單欄位開關因也套用於登入用戶而維持顯示。
 
 訪客目標政策新增兩項字串設定：
 
@@ -692,8 +695,10 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 | 註冊 | 每 IP 每小時 5 次 |
 | 解鎖短網址 | 每 (slug, IP) 5 分鐘 10 次 |
 | 建立短網址 | 每使用者每小時 120 次 |
-| 公開短網址工具 | 每來源位址每小時 `public_rate_limit_per_ip` 次（預設 20），**以及**所有匿名訪客合計每小時 `public_rate_limit_global` 次（預設 500）；`0` 會停用任一額度。每來源位址的額度在防機器人驗證呼叫前扣抵，共用額度則只在驗證成功後扣抵 |
+| 公開短網址工具 | 只限未登入遊客：`public_rate_limit_per_ip` 依 `public_rate_limit_per_ip_period` 計數，`public_rate_limit_global` 依 `public_rate_limit_global_period` 計數（預設每小時 20／500 次）。週期為伺服器時區的自然分鐘、時、日、週、月，週一為週首，月份按曆月。`0` 停用任一配額。單一來源配額在驗證前扣抵，共用配額只在成功後扣抵。SQLite 用量跨重啟保留；`Retry-After` 為距離下個自然邊界的秒數。登入用戶維持分組額度與原有帳號防濫用機制，不消耗遊客配額 |
 | 修改密碼 | 每使用者每小時 10 次 |
+
+遊客持久化配額表中，所有來源、共用配額與週期合計最多 50,000 列。滿額時新列回 `429`，既有計數仍保留用量與限制。扣抵前會立即回收已到期週期，維護時也會清理；不會為了新來源淘汰未到期計數。
 
 超過限制回 `429` 並附 `Retry-After`（秒）。記憶體計數器重啟即重置，
 但**帳號鎖定**會持久化：同一個 email 於 15 分鐘內累積 30 次失敗後，

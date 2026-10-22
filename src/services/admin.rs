@@ -798,6 +798,9 @@ pub async fn run_maintenance(pool: &SqlitePool, settings: &Settings) -> Result<(
             "maintenance pass complete"
         );
     }
+    crate::db::public_quota::delete_expired(pool, time::now().unix_timestamp())
+        .await
+        .map_err(AppError::from)?;
     warn_about_the_guest_quota(pool, settings).await?;
     let _ = now;
     Ok(())

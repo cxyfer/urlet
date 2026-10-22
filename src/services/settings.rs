@@ -13,6 +13,7 @@ use crate::db;
 use crate::error::{AppError, Result};
 use crate::services::captcha::{self, CaptchaProvider};
 use crate::services::invite_quota::InvitePeriod;
+use crate::services::public_quota::PublicRatePeriod;
 
 /// Who may register.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,7 +110,9 @@ pub const EDITABLE_KEYS: &[&str] = &[
     "guest_allowlist",
     "public_captcha",
     "public_rate_limit_per_ip",
+    "public_rate_limit_per_ip_period",
     "public_rate_limit_global",
+    "public_rate_limit_global_period",
     "public_max_urls",
     "public_allow_slug",
     "public_allow_title",
@@ -478,16 +481,31 @@ impl Settings {
         self.raw_bool("public_captcha", true)
     }
 
-    /// Link creations allowed per hour from one address; `0` is unlimited.
+    /// 遊客同一來源在所選週期內的建立額度；`0` 表示不限。
     pub fn public_rate_limit_per_ip(&self) -> i64 {
         self.raw_i64("public_rate_limit_per_ip", 20).max(0)
     }
 
-    /// Link creations allowed per hour across every anonymous visitor; `0` is
-    /// unlimited. This is the shared bucket the whole visitor population draws
+    pub fn public_rate_limit_per_ip_period(&self) -> PublicRatePeriod {
+        self.public_rate_period("public_rate_limit_per_ip_period")
+    }
+
+    fn public_rate_period(&self, key: &str) -> PublicRatePeriod {
+        self.raw(key)
+            .as_deref()
+            .and_then(PublicRatePeriod::parse)
+            .unwrap_or(PublicRatePeriod::Hour)
+    }
+
+    /// Link creations allowed per selected period across every anonymous visitor; `0` is
+    /// unlimited. This is the shared quota the whole visitor population draws
     /// from, on top of the per-address limit.
     pub fn public_rate_limit_global(&self) -> i64 {
         self.raw_i64("public_rate_limit_global", 500).max(0)
+    }
+
+    pub fn public_rate_limit_global_period(&self) -> PublicRatePeriod {
+        self.public_rate_period("public_rate_limit_global_period")
     }
 
     /// How many links the reserved Guest account may own in total; `0` is
@@ -795,7 +813,14 @@ fn validate_value(key: &str, value: &str) -> Result<String> {
             "1" | "true" | "yes" | "on"
         )
         .to_string()),
-        // Per-hour creation budgets. 0 disables the limit; the upper bound is a
+        "public_rate_limit_per_ip_period" | "public_rate_limit_global_period" => {
+            PublicRatePeriod::parse(&value.to_ascii_lowercase())
+                .map(|period| period.as_str().to_string())
+                .ok_or_else(|| {
+                    invalid("the period must be 'minute', 'hour', 'day', 'week' or 'month'")
+                })
+        }
+        // Creation budgets. 0 disables the limit; the upper bound is a
         // sanity check, not a policy.
         "public_rate_limit_per_ip" | "public_rate_limit_global" | "public_max_urls" => {
             let parsed: i64 = value
@@ -1026,6 +1051,24 @@ mod tests {
         assert!(!SECRET_KEYS.is_empty());
         for key in SECRET_KEYS {
             assert!(EDITABLE_KEYS.contains(key), "{key} must be editable");
+        }
+    }
+
+    #[test]
+    fn validates_guest_calendar_periods() {
+        for key in [
+            "public_rate_limit_per_ip_period",
+            "public_rate_limit_global_period",
+        ] {
+            for period in ["minute", "hour", "day", "week", "month"] {
+                assert_eq!(
+                    validate_value(key, &format!(" {} ", period.to_uppercase())).expect("period"),
+                    period
+                );
+            }
+            for invalid in ["", "year", "30days", "weekly"] {
+                assert!(validate_value(key, invalid).is_err());
+            }
         }
     }
 

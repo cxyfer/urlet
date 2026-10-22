@@ -10,8 +10,8 @@
 //! 2. **Field switches** (`public_allow_*`) — the administrator decides which
 //!    optional inputs the form offers. Submitting a disabled field is refused,
 //!    so hiding it in the template is never the only defence.
-//! 3. **Rate limits** — a per-address budget for everyone, plus one shared
-//!    bucket that the whole anonymous population draws from.
+//! 3. **Calendar quotas** — a per-address budget for anonymous visitors, plus one shared
+//!    calendar quota that the whole anonymous population draws from.
 //! 4. **訪客目標白名單** — 未登入者必須命中管理員允許的目標；驗證碼與共用額度之前檢查。
 //!
 //! A link created by an anonymous visitor is owned by the reserved Guest
@@ -24,18 +24,16 @@ use crate::db::users::{self, User};
 use crate::error::{AppError, Result};
 use crate::middleware::auth::{ClientInfo, CurrentUser};
 use crate::services::captcha::CaptchaFlow;
+use crate::services::public_quota;
 use crate::services::ratelimit::{limits, RateLimiter};
 use crate::services::settings::{PublicCreateAccess, PublicFields, Settings};
 use crate::services::urls::{CreateInput, UrlContext};
 use crate::state::AppState;
 
-/// Key prefix of the per-address bucket.
+/// Key prefix of the per-address calendar quota.
 const PER_IP_KEY: &str = "public-create:ip:";
-/// Key of the bucket every anonymous visitor shares.
+/// Key of the calendar quota every anonymous visitor shares.
 const GLOBAL_KEY: &str = "public-create:global";
-
-/// One hour, the window the configurable limits are expressed in.
-const HOUR_SECS: f64 = 3600.0;
 
 /// Everything the public form and the public API may submit.
 ///
@@ -135,37 +133,25 @@ fn enforce(limiter: &RateLimiter, key: &str, capacity: f64, refill_per_second: f
         .map_err(AppError::rate_limited)
 }
 
-/// Consume one token from a budget expressed as creations per hour.
-///
-/// `per_hour <= 0` disables the limit entirely, which is what an administrator
-/// who wants no ceiling stores.
-fn enforce_hourly(limiter: &RateLimiter, key: &str, per_hour: i64) -> Result<()> {
-    if per_hour <= 0 {
-        return Ok(());
-    }
-    let capacity = per_hour as f64;
-    enforce(limiter, key, capacity, capacity / HOUR_SECS)
-}
-
 /// Proof that [`authorize`] accepted a request.
 ///
 /// The inner field is private, so only this module can build one: [`create`]
 /// cannot run before the access level, field switches, guest allowlist and budgets were
 /// checked, and the bot protection call the route performs in between is
-/// reached only by a request that already paid for a per-address token.
+/// reached only by a request that already paid for its caller's allowance.
 #[derive(Debug)]
 pub struct Authorized(());
 
-/// Check everything that must hold before the provider is contacted or the
-/// database is touched: the access level, field switches, guest allowlist and
-/// the two *per-caller* budgets.
+/// Check everything that must hold before the provider is contacted or a
+/// link is created: access level, field switches, guest allowlist and the
+/// caller's budget (per-address for guests, per-account for signed-in callers).
 ///
 /// This runs before bot protection on purpose, matching every other create
 /// path: an unprotected submission must not be able to spend provider calls.
 /// The shared visitor budget is deliberately **not** charged here — a request
 /// that fails bot protection would otherwise let one attacker drain the budget
 /// every other visitor draws from. [`admit`] charges it afterwards.
-pub fn authorize(
+pub async fn authorize(
     state: &AppState,
     client: &ClientInfo,
     current: Option<&CurrentUser>,
@@ -183,14 +169,6 @@ pub fn authorize(
     }
     enforce_fields(settings.public_fields(), input)?;
 
-    // The per-address budget protects the instance from one host, and bounds
-    // how many provider calls a single address can trigger.
-    enforce_hourly(
-        &state.limiter,
-        &format!("{PER_IP_KEY}{}", client.limiter_key()),
-        settings.public_rate_limit_per_ip(),
-    )?;
-
     // A signed-in caller keeps the per-account bucket every other create path
     // charges, so the public endpoint cannot be used to outrun it.
     if let Some(current) = current {
@@ -200,6 +178,17 @@ pub fn authorize(
             limits::CREATE_URL_CAPACITY,
             limits::CREATE_URL_REFILL_PER_SEC,
         )?;
+    } else {
+        // 遊客才消耗來源位址額度，避免同一網路的會員互相影響。
+        public_quota::enforce(
+            &state.db,
+            &state.config.timezone,
+            &format!("{PER_IP_KEY}{}", client.limiter_key()),
+            settings.public_rate_limit_per_ip(),
+            settings.public_rate_limit_per_ip_period(),
+            jiff::Timestamp::now(),
+        )
+        .await?;
     }
 
     if current.is_none() && settings.guest_allowlist_enabled() {
@@ -220,17 +209,21 @@ pub fn authorize(
 /// proof [`authorize`] returned), so that a rejected submission cannot consume
 /// the budget legitimate visitors need. A signed-in caller has already paid the
 /// per-account budget and does not touch the shared one.
-pub fn admit(
+pub async fn admit(
     state: &AppState,
     current: Option<&CurrentUser>,
     authorized: Authorized,
 ) -> Result<Authorized> {
     if current.is_none() {
-        enforce_hourly(
-            &state.limiter,
+        public_quota::enforce(
+            &state.db,
+            &state.config.timezone,
             GLOBAL_KEY,
             state.settings.public_rate_limit_global(),
-        )?;
+            state.settings.public_rate_limit_global_period(),
+            jiff::Timestamp::now(),
+        )
+        .await?;
     }
     Ok(authorized)
 }

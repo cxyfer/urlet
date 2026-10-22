@@ -290,6 +290,7 @@ override a saved browser preference; the CSS file exists in `URLET_THEMES_DIR`; 
 6. `src/routes/public_urls.rs` + `src/routes/pages/home.rs`: `POST /`, `POST /api/v1/public/urls`, the form/result view, and the `?shortened=` lookup that never trusts the query string
 7. `templates/partials/shorten.html` plus an include in all six landing templates; a dashboard notice when creation is reserved for administrators
 8. Admin settings section, three locale catalogues, `tests/public_urls.rs`, `scripts/smoke.sh` and both doc languages
+9. Guest quota follow-up: migration `0017_public_creation_quota.sql` persists atomic natural-period counters; independent minute/hour/day/week/month settings follow the server timezone, survive restart and keep authenticated callers on group quotas and their existing account throttle. Reveal guest settings only for guest access, preserve hidden values, and test timezone/DST/calendar boundaries.
 
 **Acceptance**: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`,
 `scripts/smoke.sh` and `scripts/merge-check.sh` are green; an upgrade leaves the public form closed

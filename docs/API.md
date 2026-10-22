@@ -673,12 +673,15 @@ default `month`), `default_redirect_type` (301/302/307/308), `analytics_enabled`
 write-only: it is never returned in plaintext, and submitting it empty keeps the stored value.
 
 The public shortener adds `public_create_access` (`guest`/`user`/`admin`, default `user`),
-`public_captcha` (default `true`), `public_rate_limit_per_ip` (creations per hour, default 20,
-`0` = unlimited), `public_rate_limit_global` (shared creations per hour, default 500, `0` =
-unlimited), `public_max_urls` (total links the reserved Guest account may own, default 1000, `0` =
+`public_captcha` (default `true`), `public_rate_limit_per_ip` (guest creations per period, default 20,
+`0` = unlimited), `public_rate_limit_per_ip_period` (default `hour`), `public_rate_limit_global`
+(shared guest creations per period, default 500, `0` = unlimited),
+`public_rate_limit_global_period` (default `hour`), `public_max_urls` (total links the reserved Guest account may own, default 1000, `0` =
 unlimited; separate from `max_urls_per_user`) and the field switches `public_allow_slug`, `public_allow_title` (both default `true`)
 plus `public_allow_tags`, `public_allow_password`, `public_allow_expiry`, `public_allow_max_clicks`,
 `public_allow_redirect` and `public_allow_domain` (all default `false`).
+
+Guest quota periods accept `minute`, `hour`, `day`, `week` or `month`. They use the server process timezone (`TZ`, otherwise the OS timezone); Docker Compose defaults `TZ` to `UTC`, and operators can set `TZ=Asia/Taipei`, for example. The admin page shows the timezone and reveals guest rate, total-link, captcha and destination allowlist settings only when `public_create_access=guest`. Hidden settings are preserved; without JavaScript, save the access level to reveal the fields. Public-form field switches remain visible because they also apply to signed-in callers.
 
 The guest destination policy adds two string settings:
 
@@ -748,8 +751,10 @@ Cleanup applies **only when creating links**, through `POST /api/v1/urls`, `POST
 | Registration | 5 attempts per hour per IP |
 | Short link unlock | 10 attempts per 5 minutes per (slug, IP) |
 | Short link creation | 120 per hour per user |
-| Public shortener | `public_rate_limit_per_ip` per hour per client address (default 20) **and** `public_rate_limit_global` per hour across all anonymous visitors (default 500); `0` disables either budget. The per-address budget is charged before the bot protection call, the shared one only after it succeeded |
+| Public shortener | Anonymous visitors only: `public_rate_limit_per_ip` per `public_rate_limit_per_ip_period` and `public_rate_limit_global` per `public_rate_limit_global_period` (defaults: 20/hour and 500/hour). Periods are calendar minute/hour/day/week/month in the server timezone, with Monday-based weeks and actual calendar months. `0` disables either budget. The per-address budget is charged before bot protection, the shared one only after success. SQLite counters survive restart; `Retry-After` is the time to the next boundary. Signed-in callers retain group quotas and the existing per-account throttle, without consuming guest quotas |
 | Password change | 10 per hour per user |
+
+The persistent guest-quota table holds at most 50,000 rows across sources, shared budgets and periods. At capacity, new rows return `429`; existing counters keep their usage and limits. Reservations reclaim expired windows immediately, and maintenance also cleans them. Active counters are never evicted to make room for new addresses.
 
 Exceeding a limit returns `429` with `Retry-After` (seconds). The in-memory counters reset on
 restart, but **account lockout** is persistent: once one email accumulates 30 failures within

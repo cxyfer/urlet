@@ -868,3 +868,81 @@ async fn value_helper_keeps_types_checked() {
     assert!(body["items"][0]["email"].is_string());
     assert!(body["items"][0]["link_count"].is_number());
 }
+
+#[tokio::test]
+async fn guest_settings_visibility_and_periods_follow_the_access_level() {
+    let app = TestApp::spawn_with(|config| {
+        config.timezone = jiff::tz::TimeZone::get("Asia/Taipei").expect("timezone");
+    })
+    .await;
+    let (cookie, _) = admin(&app).await;
+    let page = app.get_as("/app/admin/settings", &cookie).await;
+    assert!(page.body.contains("id=\"public-guest-settings\" hidden"));
+    assert!(page.body.contains("Asia/Taipei (+08)"));
+    let saved = app.send(post_form_as("/app/admin/settings",
+        "site_name=urlet&registration_mode=open&default_slug_length=7&max_urls_per_user=1000&max_api_tokens_per_user=20&default_redirect_type=302&click_retention_days=0&public_create_access=guest&public_rate_limit_per_ip=3&public_rate_limit_per_ip_period=week&public_rate_limit_global=50&public_rate_limit_global_period=month&public_max_urls=200&public_captcha=on", &cookie)).await;
+    assert_eq!(
+        saved.header("location").as_deref(),
+        Some("/app/admin/settings?ok=saved")
+    );
+    let page = app.get_as("/app/admin/settings", &cookie).await;
+    assert!(!page.body.contains("id=\"public-guest-settings\" hidden"));
+    assert_eq!(
+        app.state
+            .settings
+            .public_rate_limit_per_ip_period()
+            .as_str(),
+        "week"
+    );
+    assert_eq!(
+        app.state
+            .settings
+            .public_rate_limit_global_period()
+            .as_str(),
+        "month"
+    );
+    assert!(app.state.settings.public_captcha());
+    let updated = app
+        .send(put_json_as(
+            "/api/v1/admin/settings",
+            json!({"public_create_access":"admin"}),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(updated.status, StatusCode::OK, "{}", updated.body);
+    let page = app.get_as("/app/admin/settings", &cookie).await;
+    assert!(page.body.contains("id=\"public-guest-settings\" hidden"));
+    assert_eq!(app.state.settings.public_rate_limit_per_ip(), 3);
+    assert_eq!(app.state.settings.public_rate_limit_global(), 50);
+    assert_eq!(app.state.settings.public_max_urls(), 200);
+    assert!(app.state.settings.public_captcha());
+}
+
+#[tokio::test]
+async fn guest_period_settings_are_validated_by_the_admin_api() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = admin(&app).await;
+    let defaults = app.get_as("/api/v1/admin/settings", &cookie).await.json();
+    assert_eq!(defaults["public_rate_limit_per_ip_period"], "hour");
+    assert_eq!(defaults["public_rate_limit_global_period"], "hour");
+    for period in ["minute", "hour", "day", "week", "month"] {
+        let updated = app.send(put_json_as("/api/v1/admin/settings", json!({"public_rate_limit_per_ip_period":period,"public_rate_limit_global_period":period}), &cookie)).await;
+        assert_eq!(updated.status, StatusCode::OK, "{}", updated.body);
+        assert_eq!(updated.json()["public_rate_limit_global_period"], period);
+    }
+    let invalid = app.send(put_json_as("/api/v1/admin/settings", json!({"public_rate_limit_per_ip_period":"year", "public_rate_limit_global_period":"day"}), &cookie)).await;
+    assert_eq!(
+        invalid.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        invalid.body
+    );
+    assert_eq!(
+        app.state
+            .settings
+            .public_rate_limit_global_period()
+            .as_str(),
+        "month",
+        "整批驗證失敗時不應部分寫入"
+    );
+}

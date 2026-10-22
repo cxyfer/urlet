@@ -118,6 +118,11 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/0016_url_previews.sql"),
         kind: MigrationKind::Transactional,
     },
+    Migration {
+        version: "0017_public_creation_quota",
+        sql: include_str!("../../migrations/0017_public_creation_quota.sql"),
+        kind: MigrationKind::Transactional,
+    },
 ];
 
 /// Apply all pending migrations.
@@ -1533,6 +1538,84 @@ mod tests {
             MIGRATIONS.len() as i64
         );
 
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[tokio::test]
+    async fn guest_calendar_quota_upgrade_preserves_existing_settings_and_previews() {
+        let dir =
+            std::env::temp_dir().join(format!("urlet-migrate-guest-quota-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = format!("{}/upgrade.db", dir.display());
+        let options = test_options(&path);
+        let pool = test_pool(&options).await;
+        run_until(&pool, &options, "0016_url_previews")
+            .await
+            .expect("schema with SNS previews");
+        sqlx::query("UPDATE settings SET value = '7' WHERE key = 'public_rate_limit_per_ip'")
+            .execute(&pool)
+            .await
+            .expect("existing guest limit");
+        let guest_before: i64 = sqlx::query_scalar("SELECT id FROM users WHERE is_system = 1")
+            .fetch_one(&pool)
+            .await
+            .expect("guest");
+        // 配額遷移接在 SNS 預覽之後，升級必須保留既有預覽資料。
+        let now = now_iso();
+        sqlx::query(
+            "INSERT INTO domains (hostname, is_default, is_verified, status, source, created_at)
+             VALUES ('quota.example.com', 1, 1, 'active', 'ui', ?)",
+        )
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("domain");
+        let url_id = sqlx::query(
+            "INSERT INTO urls (user_id, domain_id, slug, target_url, created_at, updated_at)
+             VALUES (?, (SELECT id FROM domains WHERE hostname = 'quota.example.com'),
+                     'preview', 'https://example.com', ?, ?)",
+        )
+        .bind(guest_before)
+        .bind(&now)
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("existing link")
+        .last_insert_rowid();
+        sqlx::query("INSERT INTO url_previews (url_id, title) VALUES (?, 'Existing card')")
+            .bind(url_id)
+            .execute(&pool)
+            .await
+            .expect("existing preview");
+        run(&pool, &options).await.expect("upgrade");
+        run(&pool, &options)
+            .await
+            .expect("upgrade remains idempotent");
+        let title: String = sqlx::query_scalar("SELECT title FROM url_previews WHERE url_id = ?")
+            .bind(url_id)
+            .fetch_one(&pool)
+            .await
+            .expect("preview retained");
+        assert_eq!(title, "Existing card");
+        let value: String =
+            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'public_rate_limit_per_ip'")
+                .fetch_one(&pool)
+                .await
+                .expect("limit");
+        assert_eq!(value, "7");
+        let periods: Vec<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key IN ('public_rate_limit_per_ip_period', 'public_rate_limit_global_period')")
+            .fetch_all(&pool).await.expect("periods");
+        assert_eq!(periods, ["hour", "hour"]);
+        let guest_after: i64 = sqlx::query_scalar("SELECT id FROM users WHERE is_system = 1")
+            .fetch_one(&pool)
+            .await
+            .expect("guest retained");
+        assert_eq!(guest_before, guest_after);
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM public_creation_quota")
+            .fetch_one(&pool)
+            .await
+            .expect("quota table");
+        assert_eq!(rows, 0);
         pool.close().await;
         let _ = std::fs::remove_dir_all(&dir);
     }

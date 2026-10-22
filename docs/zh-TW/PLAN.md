@@ -294,6 +294,7 @@
 7. `templates/partials/shorten.html` 與六個導覽首頁模板的 include；當建立權保留給管理員時，
    儀表板顯示提示
 8. 管理設定區塊、三份語言目錄、`tests/public_urls.rs`、`scripts/smoke.sh` 與雙語文件
+9. 遊客配額後續：migration `0017_public_creation_quota.sql` 持久化原子自然週期計數；兩組額度各自選擇分鐘／時／日／週／月，依伺服器時區計算並跨重啟保留。登入用戶維持分組額度與既有帳號防濫用機制；只有開放遊客才展開相關設定，隱藏時保留值，並驗證時區、日光節約時間與自然邊界。
 
 **驗收**：`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`、
 `scripts/smoke.sh` 與 `scripts/merge-check.sh` 全綠；升級後公開表單維持關閉，直到管理員開啟。

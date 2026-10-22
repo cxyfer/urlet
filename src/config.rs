@@ -46,6 +46,8 @@ impl LogFormat {
 #[derive(Clone)]
 pub struct Config {
     pub bind: SocketAddr,
+    /// 遊客自然週期配額使用服務進程的 TZ 或系統時區。
+    pub timezone: jiff::tz::TimeZone,
     /// Public base URL without a trailing slash, e.g. `https://s.example.com`.
     pub base_url: String,
     pub base_scheme: String,
@@ -99,6 +101,7 @@ impl std::fmt::Debug for Config {
         let hidden = |present: bool| present.then_some(secret::REDACTED);
         f.debug_struct("Config")
             .field("bind", &self.bind)
+            .field("timezone", &self.timezone)
             .field("base_url", &self.base_url)
             .field("base_scheme", &self.base_scheme)
             .field("base_host", &self.base_host)
@@ -191,6 +194,10 @@ impl Config {
         };
 
         Ok(Config {
+            timezone: jiff::tz::TimeZone::try_system().map_err(|err| ConfigError::Invalid {
+                name: "server timezone (TZ)",
+                value: err.to_string(),
+            })?,
             bind: env_str("URLET_BIND")
                 .unwrap_or_else(|| "0.0.0.0:8080".into())
                 .parse()
@@ -246,6 +253,7 @@ impl Config {
         let secret = Arc::new(b"test-secret-test-secret-test-secret".to_vec());
         Self {
             bind: "127.0.0.1:0".parse().expect("valid socket addr"),
+            timezone: jiff::tz::TimeZone::UTC,
             base_url: "http://localhost:8080".into(),
             base_scheme: "http".into(),
             base_host: "localhost:8080".into(),

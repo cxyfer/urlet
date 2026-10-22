@@ -39,7 +39,7 @@ switch set, bot protection and both a per-address and a shared visitor rate limi
 | P4 | Docker Compose deployment | A single `docker-compose.yml` (app + named volume), with an optional Caddy TLS overlay |
 | P5 | As lightweight as possible | One binary, SQLite (no MySQL/Redis), SSR templates (no Node build), image < 40 MB |
 | P6 | Rust implementation | Rust 2021 + Axum 0.8 + Tokio + sqlx (SQLite) |
-| P7 | Well-designed schema | 20 tables, 36 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
+| P7 | Well-designed schema | 21 tables, 37 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
 | P8 | Sensible extra features | Tags, click analytics, API tokens, invite codes, admin panel, audit log, daily rollups, trilingual UI, optional bot protection, quota/feature user groups, switchable and uploadable themes, splash pages, a public shortener for visitors |
 
 ### 1.2 Relationship to the Earlier Prototypes (OURLS / OURLS2)
@@ -142,7 +142,7 @@ Browser / curl          │                                                 │
 | Sessions/tokens | Custom `sha2` hashing + random `getrandom` | No JWT dependency; server-side revocation is immediate |
 | Bot protection | Optional Cloudflare Turnstile or Google reCAPTCHA v2 over HTTPS, through `ureq` 2 on rustls + webpki-roots | Off by default, no vendor lock-in, no OpenSSL dependency, fail-closed verification |
 | Logging | `tracing` + `tracing-subscriber` | Structured logs controlled by `RUST_LOG` |
-| Time | `time` 0.3 | Lighter than `chrono`; ISO-8601 formatting is all that is needed |
+| Time | `time` 0.3 + `jiff` 0.2 | UTC storage/formatting plus server-timezone calendar quotas with DST handling |
 
 **Dependencies deliberately avoided**: Redis, a MySQL client, jsonwebtoken, MaxMind/GeoIP, and the
 React/Node toolchain. No outbound request ever fetches the target URL, which also removes the SSRF
@@ -394,10 +394,11 @@ the create/edit dialogs shared by the group and theme forms).
 | FR-PUB-4 | Guest ownership | A link created by an anonymous visitor is owned by the reserved Guest account (`users.is_system = 1`), because `urls.user_id` is a required foreign key. The account is created by the migration, has no group (so the public switches, not a group, decide what a visitor may do), cannot sign in (`status = suspended`, unparsable password hash) and cannot be edited or deleted; it is hidden from the user list and every user count, and the admin link list labels its links `Guest` |
 | FR-PUB-5 | Field switches | The administrator enables the optional inputs the public form offers: custom slug and title (on by default), tags, link password, expiry, click limit, redirect mode with splash copy, and domain selection (off by default). The target URL is always required. A submission that fills in a disabled field is refused with `403` before any work happens, so hiding an input is never the only defence |
 | FR-PUB-6 | Bot protection | The public form is protected by the configured provider through the dedicated `public_captcha` switch (on by default, inert without a provider). An anonymous visitor is verified with the public flow; a signed-in browser session follows `captcha_on_create` instead, so the public endpoint cannot be used to bypass it; a Bearer API token is exempt like every other create path. Failure is fail-closed and answers `?err=captcha` / `400` |
-| FR-PUB-7 | Rate limits | Two in-memory token buckets guard anonymous creation: `public_rate_limit_per_ip` (creations per hour from one client address, default 20) and `public_rate_limit_global` (a budget every anonymous visitor shares, default 500). `0` disables either limit. A signed-in caller keeps the per-account bucket, and the per-address bucket always applies. Both per-caller budgets are charged before the provider call; the shared budget is charged only after bot protection succeeded, so a submission that fails the check cannot drain what legitimate visitors need. A refused request is `429` with `Retry-After` (the form redirects with `?err=rate_limited`) |
+| FR-PUB-7 | Guest calendar quotas | `public_rate_limit_per_ip` (default 20) and `public_rate_limit_global` (default 500) apply **only to anonymous visitors**. Each has its own `_period` setting: `minute`, `hour` (default), `day`, `week` or `month`. Counters reset at natural calendar boundaries in the server process timezone (`TZ`, otherwise the OS timezone): weeks start Monday at 00:00 and months on the 1st at 00:00, including daylight-saving transitions. Usage is atomically stored in SQLite and survives restart. The table is capped at 50,000 rows across sources, shared budgets and periods: at capacity, new rows are refused with `429`, while existing rows retain their usage and limits. Expired windows are reclaimed before reservations and during maintenance; active counters are never evicted to admit new sources. `0` disables either limit. Signed-in callers use their effective group link quota and the existing per-account abuse throttle, without consuming guest quotas. The per-address quota is charged before bot protection; the shared quota only after it succeeds. Refusal is `429` with `Retry-After` until the next boundary (the form redirects with `?err=rate_limited`) |
 | FR-PUB-8 | API | `POST /api/v1/public/urls` accepts the same payload as the form (plus `captcha_token`) and answers `201` with `domain`, `slug`, `short_url`, `target_url` and `created_at`. It deliberately omits the link id: the caller has no account to manage the link with |
 | FR-PUB-9 | Audit and quota | A guest creation is audited like any other (`url.created`, actor = the Guest account) and counts against `public_max_urls` (default 1000, `0` = unlimited), the total the Guest account may own. It is deliberately not `max_urls_per_user`: a flood of anonymous links must not consume the quota an administrator set for real accounts. Once the budget is full every visitor gets a quota error until those links are deleted (the admin link list can filter by owner), and the maintenance pass logs a warning so the operator notices |
 | FR-PUB-10 | Guest destination allowlist | `guest_allowlist_enabled` defaults to `true`; `guest_allowlist` starts with an editable list of 24 established services across knowledge/development, discussion, media, social, news and support (43 host rules, with no built-in path restrictions; public website hosting domains are excluded). Anonymous HTML/API creation must match an exact host or leading `*.` rule covering every subdomain level but excluding the root, plus any configured case-sensitive path prefix; path prefixes respect segment boundaries, and credentials/nonstandard ports are refused. Checks happen after the per-address budget but before captcha and the shared guest budget. Rules are editable through admin settings/API (at most 200 rules / 16 KiB), apply immediately and persist across restarts; empty enabled lists deny all guest targets. Signed-in sessions/tokens and existing redirects are unaffected. Insert-if-missing defaults never overwrite edited/empty lists. The landing form shows allowed targets and a specific refusal message. This is local policy, not reputation analysis or a safety guarantee; no target is fetched |
+| FR-PUB-11 | Admin visibility | Guest rates, periods, total-link quota, captcha and destination allowlist settings are shown only when guest creation is allowed. Changing access updates visibility immediately and preserves hidden values; without JavaScript, save the access level first. The signed-in group-quota explanation and common public-form field switches remain visible; the guest block displays the counting timezone |
 
 ---
 
@@ -445,7 +446,7 @@ The built-in rule source is `src/rules/url-cleaning.txt`, maintained separately 
 | NFR-SEC-6 | Reserved words: `api`, `app`, `assets`, `health`, `static`, `favicon.ico`, and similar names cannot be used as slugs |
 | NFR-SEC-7 | Error messages never leak internal details; a failed login always responds with "invalid email or password" |
 | NFR-SEC-8 | User enumeration protection: registering a duplicate email returns 409 (an accepted, common trade-off); login uses a uniform error message |
-| NFR-SEC-9 | Rate limiting: login 10 per 5 minutes per (IP,email) **plus** 40 per 5 minutes per IP, registration 5 per hour per IP, unlock 10 per 5 minutes per (slug,IP), link creation 120 per hour per user, password change 10 per hour per user, public creation 20 per hour per address **plus** a shared 500 per hour for all anonymous visitors (`0` disables either budget) |
+| NFR-SEC-9 | Rate limiting: login 10 per 5 minutes per (IP,email) **plus** 40 per 5 minutes per IP, registration 5 per hour per IP, unlock 10 per 5 minutes per (slug,IP), link creation 120 per hour per user, password change 10 per hour per user, anonymous creation defaults to 20 per calendar hour per address **plus** a shared 500 per calendar hour, with independent minute/hour/day/week/month periods (`0` disables either budget) |
 | NFR-SEC-9b | Account lockout: 30 accumulated failures for the same email within 15 minutes temporarily refuse login (429); this is persisted in the `login_attempts` table and survives a restart; in-memory rate limiter keys are stored as SHA-256 and capped at 50,000 entries |
 | NFR-SEC-10 | All SQL is parameterized (sqlx bind) with no string concatenation (no SQL outside `src/db/`) |
 | NFR-SEC-11 | The audit log covers every sensitive operation |
@@ -533,7 +534,7 @@ login_attempts (auditing)
 
 ### 6.3 DDL (migration summary)
 
-> The complete source of truth is `migrations/` (`0001_init.sql` through `0016_url_previews.sql`): `0003_multi_domain.sql` rebuilds the domain schema, `0004_user_groups.sql`–`0007_member_invites.sql` add groups and invite quotas, `0010`/`0012`/`0013` add themes, `0011_splash_pages.sql` adds splash pages, `0014_invite_issuance_released.sql` adds the invite-refund column, and `0015_public_shorten.sql` adds `users.is_system` with the reserved Guest account and the public-shortener settings. The table below is a structural summary.
+> The complete source of truth is `migrations/` (`0001_init.sql` through `0017_public_creation_quota.sql`): `0003_multi_domain.sql` rebuilds the domain schema, `0004_user_groups.sql`–`0007_member_invites.sql` add groups and invite quotas, `0010`/`0012`/`0013` add themes, `0011_splash_pages.sql` adds splash pages, `0014_invite_issuance_released.sql` adds the invite-refund column, and `0015_public_shorten.sql` adds `users.is_system` with the reserved Guest account and the public-shortener settings. `0016_url_previews.sql` adds SNS preview metadata and images. `0017_public_creation_quota.sql` adds durable guest calendar counters and period settings. The table below is a structural summary.
 
 
 | Table | Main columns | Purpose |
@@ -554,6 +555,7 @@ login_attempts (auditing)
 | `custom_themes` | id, key(UNIQUE), name, description, appearance, is_dark_only(legacy), css_version, css_size, original_filename, created_by, created_at, updated_at | Metadata for administrator-uploaded stylesheets, including the `auto`/`light`/`dark` appearance; the file lives in `URLET_THEMES_DIR` |
 | `invite_issuance` | id, group_id, actor_id, invite_id, created_at, released_at | Per-group invite issuance ledger; a released row (an unused code revoked before redemption) no longer counts towards the quota |
 | `url_previews` | url_id(PK, FK), title, description, image_url, image_key(UNIQUE), image_mime, image_data | Optional public SNS card and uploaded image; metadata queries omit BLOBs |
+| `public_creation_quota` | scope(hashed), period, window_start, window_end, used (PK: scope+period+window_start) | Durable, atomically reserved guest calendar usage |
 | `settings` | key(PK), value, updated_at, updated_by | Site settings |
 | `invite_codes` | id, code_hash(UNIQUE), code_prefix, code_sealed, note, group_id, created_by, max_uses, used_count, expires_at, status, created_at | Invite codes; `code_sealed` is the encrypted copy used to display a code again |
 | `invite_redemptions` | id, invite_id, user_id, redeemed_at, UNIQUE(invite_id,user_id) | Invite redemption records |
@@ -594,7 +596,8 @@ taking the schema to **17 tables and 33 indexes**. v1.3 adds only the nullable
 the nullable `invite_issuance.released_at` column; the table and index counts stay at 19/35. On the
 first start after upgrading, codes that were already revoked and never redeemed are released too,
 so `invites_used` can drop once. v1.6 adds only the `users.is_system` column and its partial unique
-index (no new table), for **19 tables and 36 indexes**.
+index (no new table), for **19 tables and 36 indexes**. SNS previews add `url_previews` without an explicit index. Calendar quotas add
+`public_creation_quota` and its expiry index, bringing the current total to **21 tables and 37 indexes**.
 
 ### 6.5 Seed Data
 
@@ -622,7 +625,8 @@ index (no new table), for **19 tables and 36 indexes**.
 - `group_domains`: no rows are seeded; an existing or new group without restriction rows may use
   every active domain.
 - Public shortener (v1.6): `public_create_access=user` (an upgrade keeps the previous behaviour),
-  `public_captcha=true`, `public_rate_limit_per_ip=20`, `public_rate_limit_global=500`,
+  `public_captcha=true`, `public_rate_limit_per_ip=20`, `public_rate_limit_per_ip_period=hour`,
+  `public_rate_limit_global=500`, `public_rate_limit_global_period=hour`,
   `public_max_urls=1000`,
   `public_allow_slug=true`, `public_allow_title=true`, and `public_allow_tags`,
   `public_allow_password`, `public_allow_expiry`, `public_allow_max_clicks`,
@@ -738,6 +742,7 @@ Every group mutation is audited (`admin.group_created`, `admin.group_updated`,
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `TZ` | OS timezone; Docker defaults to `UTC` | Server process timezone for guest calendar quotas, for example `Asia/Taipei`; read at startup |
 | `URLET_BIND` | `0.0.0.0:8080` | Listen address |
 | `URLET_BASE_URL` | `http://localhost:8080` | Canonical public base URL (used to build short links, check CSRF same-origin, and decide cookie `Secure`) |
 | `URLET_DOMAINS` | Empty | Extra redirect-only hostnames, comma separated; inserted as `active` on first boot and never overriding an existing row |
@@ -782,7 +787,7 @@ urlet/
 ├── docker-compose.tls.yml        # optional: Caddy automatic HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_splash_pages.sql 0012_custom_themes.sql 0013_custom_theme_appearance.sql 0014_invite_issuance_released.sql 0015_public_shorten.sql 0016_url_previews.sql
+├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_splash_pages.sql 0012_custom_themes.sql 0013_custom_theme_appearance.sql 0014_invite_issuance_released.sql 0015_public_shorten.sql 0016_url_previews.sql 0017_public_creation_quota.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama templates (base, app_base, landing.html + pages + admin/)
@@ -877,7 +882,7 @@ v1.6 additions (this batch):
 - [x] The reserved Guest account (`users.is_system = 1`, 19 tables / 36 indexes) owns anonymous links; it is hidden from the user list and every count, labelled `Guest` in the admin link list, cannot sign in, and cannot be edited or deleted
 - [x] The `public_allow_*` switches decide which optional inputs the public form offers; a submission that fills in a disabled field is refused with `403`
 - [x] `public_captcha` protects the anonymous flow, a signed-in session follows `captcha_on_create`, and a Bearer token stays exempt
-- [x] `public_rate_limit_per_ip` (20/hour) and `public_rate_limit_global` (500/hour) bound anonymous creation, `0` disables either, and a refusal is `429` / `?err=rate_limited`
+- [x] `public_rate_limit_per_ip` and `public_rate_limit_global` bound only anonymous creation, each with its own calendar minute/hour/day/week/month period (defaults: 20/hour and 500/hour), `0` disables either, and a refusal is `429` / `?err=rate_limited`
 - [x] `POST /api/v1/public/urls` answers `201 {domain, slug, short_url, target_url, created_at}` without handing out the link id
 - [x] `?shortened=<slug>` is resolved against the database, so the result box never prints a query-string value verbatim and never leaks a destination
 - [x] The three locale catalogues and all six landing templates carry the new strings and the shared form partial
@@ -924,4 +929,4 @@ v1.2 additions (this batch):
 | Click export / CSV | The full `clicks` column set + indexes |
 | Audit compliance | `audit_logs.metadata` keeps the full JSON context |
 
-Migration `0016_url_previews.sql` adds `url_previews` (one optional row per link), bringing the schema to 20 tables and 36 explicit indexes. Metadata reads exclude image BLOBs; the database remains the backup boundary. A trigger removes the preview row and its image when the owning link is soft-deleted, including account deletion; disabling or expiring a link preserves its preview. SQLite can reuse the freed pages; the database file does not automatically shrink.
+Migration `0016_url_previews.sql` adds `url_previews` (one optional row per link), bringing the schema to 20 tables and 36 explicit indexes before the guest calendar counters; with those counters, the current total is 21 tables and 37 explicit indexes. Metadata reads exclude image BLOBs; the database remains the backup boundary. A trigger removes the preview row and its image when the owning link is soft-deleted, including account deletion; disabling or expiring a link preserves its preview. SQLite can reuse the freed pages; the database file does not automatically shrink.

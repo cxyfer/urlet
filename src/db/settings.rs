@@ -38,7 +38,8 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     // Public shortener. `user` keeps the historical behaviour (only signed-in
     // accounts create links); `guest` also serves the form on the landing page
     // and `admin` restricts creation to administrators. The rate limits count
-    // creations per hour and 0 means unlimited; the field switches decide which
+    // guest creations per natural calendar period and 0 means unlimited;
+    // field switches decide which
     // optional inputs the public form offers (the target URL is always
     // required, and the switches are enforced server side).
     ("public_create_access", "user"),
@@ -49,7 +50,9 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ),
     ("public_captcha", "true"),
     ("public_rate_limit_per_ip", "20"),
+    ("public_rate_limit_per_ip_period", "hour"),
     ("public_rate_limit_global", "500"),
+    ("public_rate_limit_global_period", "hour"),
     // How many links the reserved Guest account may own in total. Separate from
     // `max_urls_per_user` so a flood of anonymous links cannot eat the quota set
     // for real accounts; 0 means unlimited.
