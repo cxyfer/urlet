@@ -59,26 +59,25 @@
             {% endif %}
         </div>
 
-        <div class="form-grid">
-            {% if shorten.fields.title %}
-            <div class="field">
-                <label class="label" for="public_title">{{ lang.t("dashboard.new.title") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
-                <input class="input" type="text" id="public_title" name="title" maxlength="200">
-            </div>
-            {% endif %}
-            {% if shorten.fields.tags %}
-            <div class="field">
-                <label class="label" for="public_tags">{{ lang.t("dashboard.new.tags") }} <span class="muted">{{ lang.t("dashboard.new.tags_suffix") }}</span></label>
-                <input class="input" type="text" id="public_tags" name="tags" placeholder="{{ lang.t("dashboard.new.tags_placeholder") }}">
-            </div>
-            {% endif %}
-        </div>
-
-        {% if shorten.fields.password || shorten.fields.expiry || shorten.fields.max_clicks || shorten.fields.redirect %}
+        {# The first glance is the destination, the optional slug and the button;
+           every other input lives behind the disclosure below. #}
+        {% if shorten.fields.title || shorten.fields.tags || shorten.fields.password || shorten.fields.expiry || shorten.fields.max_clicks || shorten.fields.redirect %}
         <details class="advanced">
-            <summary>{{ lang.t("dashboard.advanced.summary") }}</summary>
+            <summary>{{ lang.t("public.more_options") }}</summary>
             <div class="advanced-body">
                 <div class="form-grid">
+                    {% if shorten.fields.title %}
+                    <div class="field">
+                        <label class="label" for="public_title">{{ lang.t("dashboard.new.title") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
+                        <input class="input" type="text" id="public_title" name="title" maxlength="200">
+                    </div>
+                    {% endif %}
+                    {% if shorten.fields.tags %}
+                    <div class="field">
+                        <label class="label" for="public_tags">{{ lang.t("dashboard.new.tags") }} <span class="muted">{{ lang.t("dashboard.new.tags_suffix") }}</span></label>
+                        <input class="input" type="text" id="public_tags" name="tags" placeholder="{{ lang.t("dashboard.new.tags_placeholder") }}">
+                    </div>
+                    {% endif %}
                     {% if shorten.fields.password %}
                     <div class="field">
                         <label class="label" for="public_password">{{ lang.t("dashboard.advanced.link_password") }}</label>

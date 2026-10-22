@@ -828,5 +828,6 @@
   "admin.urls.guest_user": "訪客",
   "dashboard.create_disabled": "管理員已將建立連結的權限保留給自己，因此這裡不顯示表單。既有連結不受影響。",
   "admin.settings.public_max_urls": "訪客可建立的連結總數",
-  "admin.settings.public_max_urls_hint": "由擁有訪客連結的保留 Guest 帳號使用的額度，與每位使用者的配額分開計算。0 表示不限。額度用完後，訪客會收到配額錯誤，直到刪除這些連結為止；額度用盡時維護排程會在日誌中回報。"
+  "admin.settings.public_max_urls_hint": "由擁有訪客連結的保留 Guest 帳號使用的額度，與每位使用者的配額分開計算。0 表示不限。額度用完後，訪客會收到配額錯誤，直到刪除這些連結為止；額度用盡時維護排程會在日誌中回報。",
+  "public.more_options": "更多選項"
 }

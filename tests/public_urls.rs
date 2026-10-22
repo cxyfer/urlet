@@ -525,6 +525,36 @@ async fn guest_links_are_labelled_and_the_account_is_protected() {
 }
 
 #[tokio::test]
+async fn the_first_glance_is_destination_slug_and_button() {
+    let app = TestApp::spawn().await;
+    open_to_guests(&app).await;
+
+    let page = app.get("/").await;
+    let details = page
+        .body
+        .find("class=\"advanced\"")
+        .expect("the more-options disclosure");
+    for (id, name) in [
+        ("public_target_url", "destination"),
+        ("public_slug", "slug"),
+    ] {
+        let at = page
+            .body
+            .find(&format!("id=\"{id}\""))
+            .unwrap_or_else(|| panic!("the {name} field is rendered"));
+        assert!(at < details, "the {name} field is on the first glance");
+    }
+    // Everything else is behind the disclosure, even though it is enabled.
+    assert!(app.state.settings.public_fields().title);
+    for id in ["public_title", "public_password", "public_expires_at"] {
+        if let Some(at) = page.body.find(&format!("id=\"{id}\"")) {
+            assert!(at > details, "{id} lives behind More options");
+        }
+    }
+    assert!(page.body.contains("More options"));
+}
+
+#[tokio::test]
 async fn a_rejected_bot_check_does_not_consume_the_shared_budget() {
     // A provider is configured, so the anonymous flow is protected. Every
     // attempt below fails the check (no token); none of them may spend the

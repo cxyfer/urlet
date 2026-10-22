@@ -828,5 +828,6 @@
   "admin.urls.guest_user": "访客",
   "dashboard.create_disabled": "管理员已将创建链接的权限保留给自己，因此这里不显示表单。已有链接不受影响。",
   "admin.settings.public_max_urls": "访客可创建的链接总数",
-  "admin.settings.public_max_urls_hint": "由拥有访客链接的保留 Guest 账号使用的额度，与每位用户的配额分开计算。0 表示不限。额度用完后，访客会收到配额错误，直到删除这些链接为止；额度用尽时维护排程会在日志中报告。"
+  "admin.settings.public_max_urls_hint": "由拥有访客链接的保留 Guest 账号使用的额度，与每位用户的配额分开计算。0 表示不限。额度用完后，访客会收到配额错误，直到删除这些链接为止；额度用尽时维护排程会在日志中报告。",
+  "public.more_options": "更多选项"
 }
