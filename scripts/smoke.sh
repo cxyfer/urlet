@@ -452,14 +452,16 @@ check "the default group id is discoverable" "true" \
 for path in /app/login /app/register; do
     check "GET $path renders" "200" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE$path")"
 done
-for path in /app /app/account /app/admin /app/admin/users /app/admin/groups /app/admin/groups/new /app/admin/groups/$DEFAULT_GROUP_ID/edit /app/admin/urls /app/admin/invites /app/admin/domains /app/admin/themes /app/admin/settings /app/admin/audit; do
+for path in /app /app/account /app/admin /app/admin/users /app/admin/groups /app/admin/groups/new /app/admin/groups/$DEFAULT_GROUP_ID/edit /app/admin/urls /app/admin/invites /app/admin/domains /app/admin/themes /app/admin/themes/new /app/admin/settings /app/admin/audit; do
     check "GET $path renders for an admin" "200" \
         "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" "$BASE$path")"
 done
 check "the admin user filter accepts an empty group" "200" \
     "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" "$BASE/app/admin/users?q=&role=&status=&group_id=")"
-contains "the theme upload is a drop zone" 'data-theme-drop' \
+contains "the theme list opens the upload in a dialog" 'data-theme-dialog-root' \
     "$(curl -s -b "$COOKIES" "$BASE/app/admin/themes")"
+contains "the theme upload is a drop zone" 'data-theme-drop' \
+    "$(curl -s -b "$COOKIES" "$BASE/app/admin/themes/new")"
 check "GET /app without a session redirects" "303" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/app")"
 
 # ---------------------------------------------------------------- themes

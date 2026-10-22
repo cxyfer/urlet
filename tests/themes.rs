@@ -465,6 +465,7 @@ async fn every_theme_renders_every_page() {
         "/app/admin/invites",
         "/app/admin/domains",
         "/app/admin/themes",
+        "/app/admin/themes/new",
         "/app/admin/settings",
         "/app/admin/audit",
         "/app/urls/{id}",
@@ -1082,12 +1083,33 @@ async fn an_administrator_can_upload_manage_and_delete_a_custom_theme() {
         Some("/app/admin/themes?ok=theme_created")
     );
 
+    // The list links to the shared form instead of embedding the upload form,
+    // and the dialog is the enhanced path to the same pages.
     let page = app.get_as("/app/admin/themes", &cookie).await;
     assert_eq!(page.status, StatusCode::OK);
     assert!(page.body.contains("Night Bloom"), "{}", page.body);
     assert!(page.body.contains("/app/admin/themes/custom/"));
-    assert!(page.body.contains("data-theme-drop"));
-    assert!(page.body.contains("data-theme-drop-input"));
+    assert!(!page.body.contains("data-theme-drop-input"));
+    assert!(page.body.contains("<dialog class=\"form-dialog\""));
+    assert!(page.body.contains("data-theme-dialog-root"));
+    assert!(page.body.contains("data-theme-dialog"));
+    assert!(page.body.contains("/app/admin/themes/new"));
+
+    // The upload page renders the same form the edit page does.
+    let new_page = app.get_as("/app/admin/themes/new", &cookie).await;
+    assert_eq!(new_page.status, StatusCode::OK, "{}", new_page.body);
+    assert!(new_page.body.contains("data-theme-form-panel"));
+    assert!(new_page.body.contains("data-theme-form"));
+    assert!(new_page
+        .body
+        .contains("action=\"/app/admin/themes/custom\""));
+    assert!(new_page.body.contains("data-theme-drop"));
+    assert!(new_page.body.contains("data-theme-drop-input"));
+    assert!(new_page
+        .body
+        .contains("name=\"appearance\" value=\"auto\" checked"));
+    // Deleting only exists once the upload has an id.
+    assert!(!new_page.body.contains("Deleting removes the uploaded file"));
 
     let rows = custom_theme_rows(&app).await;
     assert_eq!(rows.len(), 1);
@@ -1151,8 +1173,15 @@ async fn an_administrator_can_upload_manage_and_delete_a_custom_theme() {
     assert_eq!(edit.status, StatusCode::OK, "{}", edit.body);
     assert!(edit.body.contains("Night Bloom"));
     assert!(edit.body.contains(&key));
+    assert!(edit.body.contains("data-theme-form-panel"));
+    assert!(edit.body.contains("data-theme-form"));
+    assert!(edit
+        .body
+        .contains(&format!("action=\"/app/admin/themes/custom/{id}\"")));
     assert!(edit.body.contains("data-theme-drop"));
     assert!(edit.body.contains("data-theme-drop-input"));
+    // The edit page keeps the delete flow the upload page has no id for.
+    assert!(edit.body.contains("Deleting removes the uploaded file"));
 
     // Make the upload the only enabled theme and the default.
     let response = app
@@ -1328,36 +1357,56 @@ async fn custom_theme_uploads_are_validated_and_never_reach_the_volume() {
     let app = TestApp::spawn().await;
     let cookie = admin(&app).await;
 
-    for (name, css, code) in [
+    for (name, css, message) in [
         (
             "External",
             "body { background: url(https://example.com/x.png); }",
-            "theme_css",
+            "The stylesheet is invalid",
         ),
         (
             "Imported",
             "@import url(/assets/app.css);\nbody { color: red; }",
-            "theme_css",
+            "The stylesheet is invalid",
         ),
-        ("Not CSS", "this is not a stylesheet", "theme_css"),
-        ("", "body { color: red; }", "theme_name"),
+        (
+            "Not CSS",
+            "this is not a stylesheet",
+            "The stylesheet is invalid",
+        ),
+        ("", "body { color: red; }", "Use a name of 1-60 characters"),
     ] {
         let response = app.send(upload_request(&cookie, name, "", Some(css))).await;
-        assert_eq!(response.status, StatusCode::SEE_OTHER);
-        let location = response.header("location").unwrap_or_default();
+        // A rejected upload re-renders the shared form with 422 and the values
+        // the administrator typed, instead of bouncing to the list page that
+        // no longer carries the form.
+        assert_eq!(
+            response.status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{name:?}: {}",
+            response.body
+        );
+        assert!(response.body.contains("data-theme-form-panel"), "{name:?}");
+        assert!(response.body.contains("data-theme-form"), "{name:?}");
         assert!(
-            location.contains(&format!("err={code}")),
-            "{name:?} produced {location}"
+            response.body.contains(message),
+            "{name:?} lost its flash: {}",
+            response.body
+        );
+        assert!(
+            response.body.contains(&format!("value=\"{name}\"")),
+            "{name:?} lost the submitted name"
         );
     }
 
     // No file at all is rejected before the service is called.
     let response = app.send(upload_request(&cookie, "Empty", "", None)).await;
-    assert_eq!(response.status, StatusCode::SEE_OTHER);
-    assert!(response
-        .header("location")
-        .unwrap_or_default()
-        .contains("err=theme_css"));
+    assert_eq!(response.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        response.body.contains("The stylesheet is invalid"),
+        "{}",
+        response.body
+    );
+    assert!(response.body.contains("value=\"Empty\""));
 
     // Oversized CSS reaches the service (the multipart limit is larger) and is
     // rejected by the stylesheet validator.
@@ -1365,11 +1414,12 @@ async fn custom_theme_uploads_are_validated_and_never_reach_the_volume() {
     let response = app
         .send(upload_request(&cookie, "Huge", "", Some(&huge)))
         .await;
-    assert_eq!(response.status, StatusCode::SEE_OTHER);
-    assert!(response
-        .header("location")
-        .unwrap_or_default()
-        .contains("err=theme_css"));
+    assert_eq!(response.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        response.body.contains("The stylesheet is invalid"),
+        "{}",
+        response.body
+    );
 
     assert!(custom_theme_rows(&app).await.is_empty());
     let api = app.get_as("/api/v1/admin/themes", &cookie).await;
@@ -1412,6 +1462,8 @@ async fn only_administrators_can_upload_or_edit_custom_themes() {
     let response = app
         .get_as("/app/admin/themes/custom/1", &member_cookie)
         .await;
+    assert_eq!(response.status, StatusCode::FORBIDDEN);
+    let response = app.get_as("/app/admin/themes/new", &member_cookie).await;
     assert_eq!(response.status, StatusCode::FORBIDDEN);
     let response = app
         .send(post_form_as(

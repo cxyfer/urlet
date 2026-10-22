@@ -1,9 +1,0 @@
-{% extends "themes/paper/app_base.html" %}
-
-{% block title %}{{ lang.t("admin.themes.custom.edit_heading") }} — {{ site_name }}{% endblock %}
-
-{% import "content/admin/theme_edit.html" as content %}
-{% block content %}
-{% include "themes/paper/admin/tabs.html" %}
-{% call content::content() %}
-{% endblock %}

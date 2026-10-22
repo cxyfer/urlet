@@ -485,6 +485,7 @@ pub fn router() -> Router<AppState> {
             "/admin/themes",
             get(admin::themes_page).post(admin::update_themes),
         )
+        .route("/admin/themes/new", get(admin::new_custom_theme_page))
         .route(
             "/admin/themes/custom",
             post(admin::create_custom_theme)

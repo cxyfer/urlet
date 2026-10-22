@@ -71,6 +71,7 @@ async fn admin_pages_render_for_administrators() {
         ("/app/admin/urls", "All links"),
         ("/app/admin/invites", "Invite codes"),
         ("/app/admin/themes", "Theme catalogue"),
+        ("/app/admin/themes/new", "New custom theme"),
         ("/app/admin/settings", "Instance settings"),
         ("/app/admin/audit", "Audit log"),
     ] {

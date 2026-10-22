@@ -847,7 +847,7 @@ themed_page!(themes_templates, ThemesPageView, ThemesPage,
     Swiss => "themes/swiss/admin/themes.html",
 );
 
-/// One uploaded theme on its edit page.
+/// One uploaded theme as the shared create/edit form needs it.
 #[derive(Debug, Clone)]
 pub struct CustomThemeEdit {
     pub id: i64,
@@ -875,25 +875,55 @@ impl CustomThemeEdit {
             css_url: theme_service::custom_css_url(&row.key, &row.css_version),
         }
     }
+
+    /// Values for the upload form: no stored row exists yet.
+    fn blank() -> Self {
+        Self {
+            id: 0,
+            key: String::new(),
+            name: String::new(),
+            description: String::new(),
+            appearance: theme_service::ThemeAppearance::Auto.as_str().to_string(),
+            size: String::new(),
+            created: String::new(),
+            filename: String::new(),
+            css_url: String::new(),
+        }
+    }
+
+    /// Keep the values a rejected submission typed, so the administrator does
+    /// not have to enter the name and description again.
+    fn with_submission(mut self, form: &ThemeFormFields) -> Self {
+        self.name = form.name.clone();
+        self.description = form.description.clone();
+        self.appearance = form.appearance.as_str().to_string();
+        self
+    }
 }
 
-/// Edit page for an uploaded theme.
+/// Create and edit page for an uploaded theme.
+///
+/// Both flows render this one context and template; `is_edit` is false when the
+/// form is uploading a new theme. That keeps the fields, the appearance choice
+/// and the stylesheet picker identical in both cases.
 #[derive(Debug)]
-pub struct CustomThemePage {
+pub struct CustomThemeFormPage {
     pub site_name: String,
     pub section: &'static str,
     pub chrome: Chrome,
     pub custom_theme: CustomThemeEdit,
+    pub is_edit: bool,
+    pub form_action: String,
     pub lang: Lang,
 }
 
-themed_page!(custom_theme_templates, CustomThemePageView, CustomThemePage,
-    Verdant => "admin/theme_edit.html",
-    Aurora => "themes/aurora/admin/theme_edit.html",
-    Paper => "themes/paper/admin/theme_edit.html",
-    Signal => "themes/signal/admin/theme_edit.html",
-    Gilded => "themes/gilded/admin/theme_edit.html",
-    Swiss => "themes/swiss/admin/theme_edit.html",
+themed_page!(custom_theme_form_templates, CustomThemeFormPageView, CustomThemeFormPage,
+    Verdant => "admin/theme_form.html",
+    Aurora => "themes/aurora/admin/theme_form.html",
+    Paper => "themes/paper/admin/theme_form.html",
+    Signal => "themes/signal/admin/theme_form.html",
+    Gilded => "themes/gilded/admin/theme_form.html",
+    Swiss => "themes/swiss/admin/theme_form.html",
 );
 
 /// Audit page.
@@ -1867,26 +1897,58 @@ pub async fn update_themes(
     Ok(redirect_ok("/app/admin/themes", "saved").into_response())
 }
 
-/// Fields of the custom theme upload/edit form.
+/// Fields of the custom theme upload/edit form, before the stylesheet is
+/// validated.
+///
+/// The raw bytes are kept apart from [`ThemeUpload`] so a rejected stylesheet
+/// still leaves the name and description available for the re-rendered form.
 #[derive(Debug, Default)]
-struct ThemeUpload {
+struct ThemeFormFields {
     name: String,
     description: String,
     appearance: theme_service::ThemeAppearance,
     /// Whether the form sent the new `appearance` field. Kept so an old cached
     /// form that only posts `is_dark_only` still maps to dark instead of auto.
     appearance_explicit: bool,
+    css: Option<Vec<u8>>,
+    filename: Option<String>,
+}
+
+impl ThemeFormFields {
+    /// Validate the stylesheet and produce the values the service takes.
+    /// `require_css` is true on upload, false on an edit that only changes
+    /// metadata.
+    fn validated(&self, require_css: bool) -> Result<ThemeUpload, AppError> {
+        if require_css && self.css.is_none() {
+            return Err(AppError::validation("css", "choose a CSS file"));
+        }
+        let css = match &self.css {
+            Some(bytes) => Some(custom_theme::validate_css(bytes)?),
+            None => None,
+        };
+        Ok(ThemeUpload {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            appearance: self.appearance,
+            css,
+            filename: self.filename.clone(),
+        })
+    }
+}
+
+/// A validated custom theme form.
+#[derive(Debug, Default)]
+struct ThemeUpload {
+    name: String,
+    description: String,
+    appearance: theme_service::ThemeAppearance,
     css: Option<String>,
     filename: Option<String>,
 }
 
-/// Read a multipart theme form. `require_css` is true on upload, false on an
-/// edit that only changes metadata.
-async fn read_theme_upload(
-    mut multipart: Multipart,
-    require_css: bool,
-) -> Result<ThemeUpload, AppError> {
-    let mut form = ThemeUpload::default();
+/// Read a multipart theme form without validating the stylesheet yet.
+async fn read_theme_form(mut multipart: Multipart) -> Result<ThemeFormFields, AppError> {
+    let mut form = ThemeFormFields::default();
     loop {
         let field = multipart
             .next_field()
@@ -1944,7 +2006,7 @@ async fn read_theme_upload(
                 if bytes.is_empty() && filename.is_none() {
                     continue;
                 }
-                form.css = Some(custom_theme::validate_css(&bytes)?);
+                form.css = Some(bytes.to_vec());
                 form.filename = filename;
             }
             _ => {
@@ -1952,9 +2014,6 @@ async fn read_theme_upload(
                 let _ = field.bytes().await;
             }
         }
-    }
-    if require_css && form.css.is_none() {
-        return Err(AppError::validation("css", "choose a CSS file"));
     }
     Ok(form)
 }
@@ -1999,20 +2058,35 @@ pub async fn create_custom_theme(
     multipart: std::result::Result<Multipart, MultipartRejection>,
 ) -> Result<Response, AppError> {
     let Some(current) = admin_user(current)? else {
-        return Ok(redirect_to_login(Some("/app/admin/themes")).into_response());
+        return Ok(redirect_to_login(Some("/app/admin/themes/new")).into_response());
     };
     let Ok(multipart) = multipart else {
         return Ok(redirect_err("/app/admin/themes", "theme_upload").into_response());
     };
-    let form = match read_theme_upload(multipart, true).await {
-        Ok(form) => form,
+    let fields = match read_theme_form(multipart).await {
+        Ok(fields) => fields,
         Err(err) => {
             log_theme_error(&err, "upload");
             return Ok(redirect_err("/app/admin/themes", theme_error_code(&err)).into_response());
         }
     };
-    let Some(css) = form.css else {
-        // `read_theme_upload` already enforces this on create; a missing file
+    let form = match fields.validated(true) {
+        Ok(form) => form,
+        Err(err) => {
+            log_theme_error(&err, "upload");
+            return render_theme_form(
+                &state,
+                &current.user,
+                flash_from_query(None, Some(theme_error_code(&err))),
+                None,
+                Some(&fields),
+                StatusCode::UNPROCESSABLE_ENTITY,
+            )
+            .await;
+        }
+    };
+    let Some(css) = form.css.as_deref() else {
+        // `validated(true)` already enforces this on create; a missing file
         // means the request was rejected above, so this is unreachable.
         return Ok(redirect_err("/app/admin/themes", "theme_css").into_response());
     };
@@ -2026,7 +2100,7 @@ pub async fn create_custom_theme(
         &form.name,
         &form.description,
         form.appearance,
-        &css,
+        css,
         filename,
         Some(current.user.id),
     )
@@ -2049,9 +2123,37 @@ pub async fn create_custom_theme(
         }
         Err(err) => {
             log_theme_error(&err, "create");
-            Ok(redirect_err("/app/admin/themes", theme_error_code(&err)).into_response())
+            render_theme_form(
+                &state,
+                &current.user,
+                flash_from_query(None, Some(theme_error_code(&err))),
+                None,
+                Some(&fields),
+                StatusCode::UNPROCESSABLE_ENTITY,
+            )
+            .await
         }
     }
+}
+
+/// `GET /app/admin/themes/new` — the upload form on its own page.
+pub async fn new_custom_theme_page(
+    State(state): State<AppState>,
+    MaybeUser(current): MaybeUser,
+    Query(query): Query<AdminQuery>,
+) -> Result<Response, AppError> {
+    let Some(current) = admin_user(current)? else {
+        return Ok(redirect_to_login(Some("/app/admin/themes/new")).into_response());
+    };
+    render_theme_form(
+        &state,
+        &current.user,
+        flash_from_query(query.ok.as_deref(), query.err.as_deref()),
+        None,
+        None,
+        StatusCode::OK,
+    )
+    .await
 }
 
 /// `GET /app/admin/themes/custom/{id}` — edit one upload.
@@ -2062,30 +2164,19 @@ pub async fn custom_theme_page(
     Query(query): Query<AdminQuery>,
 ) -> Result<Response, AppError> {
     let Some(current) = admin_user(current)? else {
-        return Ok(redirect_to_login(Some("/app/admin/themes")).into_response());
+        return Ok(
+            redirect_to_login(Some(&format!("/app/admin/themes/custom/{id}"))).into_response(),
+        );
     };
-    let Some(row) = custom_db::find(&state.db, id)
-        .await
-        .map_err(|err| AppError::internal(format!("cannot read custom theme: {err}")))?
-    else {
-        return Err(AppError::NotFound);
-    };
-    let lang = i18n::current();
-    render(
-        CustomThemePage {
-            site_name: state.settings.site_name(),
-            section: "themes",
-            chrome: Chrome::new(
-                &state,
-                &current.user,
-                "admin",
-                flash_from_query(query.ok.as_deref(), query.err.as_deref()),
-            ),
-            custom_theme: CustomThemeEdit::new(&row, lang),
-            lang,
-        },
+    render_theme_form(
+        &state,
+        &current.user,
+        flash_from_query(query.ok.as_deref(), query.err.as_deref()),
+        Some(id),
+        None,
         StatusCode::OK,
     )
+    .await
 }
 
 /// `POST /app/admin/themes/custom/{id}` — update metadata and/or replace CSS.
@@ -2097,17 +2188,34 @@ pub async fn update_custom_theme(
     multipart: std::result::Result<Multipart, MultipartRejection>,
 ) -> Result<Response, AppError> {
     let Some(current) = admin_user(current)? else {
-        return Ok(redirect_to_login(Some("/app/admin/themes")).into_response());
+        return Ok(
+            redirect_to_login(Some(&format!("/app/admin/themes/custom/{id}"))).into_response(),
+        );
     };
     let edit_path = format!("/app/admin/themes/custom/{id}");
     let Ok(multipart) = multipart else {
         return Ok(redirect_err(&edit_path, "theme_upload").into_response());
     };
-    let form = match read_theme_upload(multipart, false).await {
-        Ok(form) => form,
+    let fields = match read_theme_form(multipart).await {
+        Ok(fields) => fields,
         Err(err) => {
             log_theme_error(&err, "upload");
             return Ok(redirect_err(&edit_path, theme_error_code(&err)).into_response());
+        }
+    };
+    let form = match fields.validated(false) {
+        Ok(form) => form,
+        Err(err) => {
+            log_theme_error(&err, "upload");
+            return render_theme_form(
+                &state,
+                &current.user,
+                flash_from_query(None, Some(theme_error_code(&err))),
+                Some(id),
+                Some(&fields),
+                StatusCode::UNPROCESSABLE_ENTITY,
+            )
+            .await;
         }
     };
 
@@ -2145,7 +2253,15 @@ pub async fn update_custom_theme(
         }
         Err(err) => {
             log_theme_error(&err, "update");
-            Ok(redirect_err(&edit_path, theme_error_code(&err)).into_response())
+            render_theme_form(
+                &state,
+                &current.user,
+                flash_from_query(None, Some(theme_error_code(&err))),
+                Some(id),
+                Some(&fields),
+                StatusCode::UNPROCESSABLE_ENTITY,
+            )
+            .await
         }
     }
 }
@@ -2217,6 +2333,54 @@ async fn render_themes(
             lang,
         },
         StatusCode::OK,
+    )
+}
+
+/// Render the upload form (`id == None`) or the edit form for one upload.
+///
+/// Both paths share [`CustomThemeEdit`] and the `theme_form` template, so a
+/// field added to one flow immediately appears in the other.
+async fn render_theme_form(
+    state: &AppState,
+    user: &User,
+    flash: Option<crate::routes::pages::Flash>,
+    id: Option<i64>,
+    submitted: Option<&ThemeFormFields>,
+    status: StatusCode,
+) -> Result<Response, AppError> {
+    let lang = i18n::current();
+    let (custom_theme, form_action) = match id {
+        Some(id) => {
+            let row = custom_db::find(&state.db, id)
+                .await
+                .map_err(|err| AppError::internal(format!("cannot read custom theme: {err}")))?
+                .ok_or(AppError::NotFound)?;
+            (
+                CustomThemeEdit::new(&row, lang),
+                format!("/app/admin/themes/custom/{id}"),
+            )
+        }
+        None => (
+            CustomThemeEdit::blank(),
+            "/app/admin/themes/custom".to_string(),
+        ),
+    };
+    let custom_theme = match submitted {
+        Some(fields) => custom_theme.with_submission(fields),
+        None => custom_theme,
+    };
+
+    render(
+        CustomThemeFormPage {
+            section: "themes",
+            site_name: state.settings.site_name(),
+            chrome: Chrome::new(state, user, "admin", flash),
+            custom_theme,
+            is_edit: id.is_some(),
+            form_action,
+            lang,
+        },
+        status,
     )
 }
 

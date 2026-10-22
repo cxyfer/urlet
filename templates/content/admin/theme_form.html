@@ -2,25 +2,34 @@
 <div class="page-head">
     <div class="page-head-main">
         <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ lang.t("nav.admin") }}</span>
-        <h1 class="page-title">{{ lang.t("admin.themes.custom.edit_heading") }}</h1>
+        <h1 class="page-title">{% if is_edit %}{{ lang.t("admin.themes.custom.edit_heading") }}{% else %}{{ lang.t("admin.themes.custom.upload_heading") }}{% endif %}</h1>
     </div>
     <div class="page-head-side">
-        <span class="hint">{{ lang.t("admin.themes.custom.edit_hint") }}</span>
+        {% if is_edit %}
+        <span class="small muted">{{ custom_theme.name }}</span>
+        {% else %}
+        <span class="hint">{{ lang.t("admin.themes.custom.new_hint") }}</span>
+        {% endif %}
+        <a class="btn btn-sm btn-ghost" href="/app/admin/themes">{{ lang.t("admin.themes.custom.back") }}</a>
     </div>
 </div>
 
-<form method="post" action="/app/admin/themes/custom/{{ custom_theme.id }}" enctype="multipart/form-data" class="theme-upload">
-    <section class="panel">
+{# One panel is fetched into the list dialog and also rendered standalone, so
+   uploading and editing can never drift apart. #}
+<div data-theme-form-panel>
+<form method="post" action="{{ form_action }}" enctype="multipart/form-data" class="theme-upload" data-theme-form>
+    <section class="panel mt">
         <div class="panel-head">
-            <h2>{{ custom_theme.name }}</h2>
-            <span class="panel-sub" aria-hidden="true">{{ custom_theme.key }}</span>
+            <h2>{% if is_edit %}{{ custom_theme.name }}{% else %}{{ lang.t("admin.themes.custom.upload_heading") }}{% endif %}</h2>
+            <span class="panel-sub" aria-hidden="true">{% if is_edit %}{{ custom_theme.key }}{% else %}THM / 01{% endif %}</span>
         </div>
 
         <div class="theme-upload-grid">
             <div class="theme-upload-fields">
                 <div class="field">
                     <label class="label" for="custom_name">{{ lang.t("admin.themes.custom.name") }}</label>
-                    <input class="input" type="text" id="custom_name" name="name" maxlength="60" value="{{ custom_theme.name }}" required>
+                    <input class="input" type="text" id="custom_name" name="name" maxlength="60" required
+                           value="{{ custom_theme.name }}" {% if !is_edit %}autofocus{% endif %}>
                 </div>
                 <div class="field">
                     <label class="label" for="custom_description">{{ lang.t("admin.themes.custom.description") }}</label>
@@ -47,12 +56,12 @@
                 </fieldset>
             </div>
             <div class="theme-upload-file">
-                <span class="label" id="custom_css_label">{{ lang.t("admin.themes.custom.replace_css") }}</span>
+                <span class="label" id="custom_css_label">{% if is_edit %}{{ lang.t("admin.themes.custom.replace_css") }}{% else %}{{ lang.t("admin.themes.custom.css") }}{% endif %}</span>
                 <div class="theme-drop" data-theme-drop
                      data-drop-invalid="{{ lang.t("admin.themes.custom.drop_invalid") }}"
                      data-drop-required="{{ lang.t("admin.themes.custom.drop_required") }}">
                     <input class="theme-drop-input" type="file" id="custom_css" name="css"
-                           accept=".css,text/css"
+                           accept=".css,text/css"{% if !is_edit %} required{% endif %}
                            aria-labelledby="custom_css_label" aria-describedby="custom_css_hint"
                            data-theme-drop-input>
                     <label class="theme-drop-zone" for="custom_css" data-theme-drop-zone>
@@ -63,7 +72,7 @@
                                 <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"></path>
                             </svg>
                         </span>
-                        <span class="theme-drop-title">{{ lang.t("admin.themes.custom.replace_drop_title") }}</span>
+                        <span class="theme-drop-title">{% if is_edit %}{{ lang.t("admin.themes.custom.replace_drop_title") }}{% else %}{{ lang.t("admin.themes.custom.drop_title") }}{% endif %}</span>
                         <span class="theme-drop-hint">{{ lang.t("admin.themes.custom.drop_hint") }}</span>
                     </label>
                     <div class="theme-drop-file" data-theme-drop-file hidden>
@@ -76,10 +85,14 @@
                     </div>
                     <p class="theme-drop-error" data-theme-drop-error role="alert" hidden></p>
                 </div>
-                <span class="hint" id="custom_css_hint">{{ lang.t("admin.themes.custom.replace_css_hint") }}</span>
+                <span class="hint" id="custom_css_hint">
+                    {% if is_edit %}{{ lang.t("admin.themes.custom.replace_css_hint") }}
+                    {% else %}{{ lang.t("admin.themes.custom.css_hint") }} <a href="/assets/app.css" target="_blank" rel="noopener">{{ lang.t("admin.themes.custom.base_css") }}</a>{% endif %}
+                </span>
             </div>
         </div>
 
+        {% if is_edit %}
         <dl class="meta mt">
             <dt>{{ lang.t("admin.themes.custom.key") }}</dt><dd>{{ custom_theme.key }}</dd>
             <dt>{{ lang.t("admin.themes.custom.size") }}</dt><dd>{{ custom_theme.size }}</dd>
@@ -87,17 +100,30 @@
             <dt>{{ lang.t("admin.themes.custom.filename") }}</dt><dd>{{ custom_theme.filename }}</dd>
             <dt>{{ lang.t("admin.themes.custom.stylesheet") }}</dt><dd><a href="{{ custom_theme.css_url }}" rel="nofollow">{{ custom_theme.css_url }}</a></dd>
         </dl>
+        {% endif %}
 
         <div class="form-actions">
-            <a class="btn btn-ghost" href="/app/admin/themes">{{ lang.t("admin.themes.custom.back") }}</a>
-            <button class="btn btn-primary" type="submit">{{ lang.t("admin.themes.custom.save") }}</button>
+            <a class="btn btn-ghost" href="/app/admin/themes"
+               data-theme-dialog-close>{{ lang.t("common.cancel") }}</a>
+            <button class="btn btn-primary" type="submit">{% if is_edit %}{{ lang.t("admin.themes.custom.save") }}{% else %}{{ lang.t("admin.themes.custom.submit") }}{% endif %}</button>
         </div>
     </section>
 </form>
 
-<form method="post" action="/app/admin/themes/custom/{{ custom_theme.id }}/delete" class="mt">
-    <p class="hint">{{ lang.t("admin.themes.custom.delete_hint") }}</p>
-    <button class="btn btn-danger" type="submit"
-            data-confirm="{{ lang.t("admin.themes.custom.delete_confirm") }}">{{ lang.t("admin.themes.custom.delete") }}</button>
-</form>
+{% if is_edit %}
+<section class="panel mt">
+    <div class="panel-head">
+        <h2>{{ lang.t("admin.themes.custom.delete") }}</h2>
+        <span class="panel-sub" aria-hidden="true">THM / 02</span>
+    </div>
+    <form method="post" action="/app/admin/themes/custom/{{ custom_theme.id }}/delete">
+        <p class="hint">{{ lang.t("admin.themes.custom.delete_hint") }}</p>
+        <div class="form-actions">
+            <button class="btn btn-danger" type="submit"
+                    data-confirm="{{ lang.t("admin.themes.custom.delete_confirm") }}">{{ lang.t("admin.themes.custom.delete") }}</button>
+        </div>
+    </form>
+</section>
+{% endif %}
+</div>
 {% endmacro %}

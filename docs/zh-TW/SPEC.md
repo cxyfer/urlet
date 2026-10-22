@@ -281,15 +281,17 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | `/app/theme/{key}` | 主題切換 | 需要登入與切換權限；設定 `urlet_theme` cookie 並轉往同站 `next`（或 `Referer`，或 `/app`）。`?preview=1` 設定管理員專用預覽 cookie，可包含已停用主題 |
 | `/app/theme/default` | 網站預設 | 清除明確選擇與預覽 cookie，重新跟隨管理員預設 |
 | `/app/theme/preview/stop` | 結束預覽 | 清除管理員預覽 cookie |
-| `/app/admin/themes` | 主題管理 | 啟用/停用內建與上傳主題、上傳自訂樣式表、選擇預設與設定 `theme_switching` 政策 |
+| `/app/admin/themes` | 主題管理 | 啟用/停用內建與上傳主題、選擇預設與設定 `theme_switching` 政策；連往新增與編輯表單 |
+| `/app/admin/themes/new` | 新增自訂主題 | 上傳表單：名稱、說明、外觀與樣式表；與編輯頁共用同一個模板 |
 | `/app/admin/themes/custom` | 自訂主題上傳 | `POST` multipart 上傳（名稱、說明、外觀、CSS）；僅限管理員 |
-| `/app/admin/themes/custom/{id}` | 自訂主題編輯 | `GET` 編輯表單、`POST` 更新中介資料與選填的樣式表替換 |
+| `/app/admin/themes/custom/{id}` | 自訂主題編輯 | `GET` 共用表單並預填目前設定、`POST` 更新中介資料與選填的樣式表替換 |
 | `/app/admin/themes/custom/{id}/delete` | 自訂主題刪除 | `POST` 移除目錄資料列與 CSS 檔；預設主題不可刪除 |
 | `/{slug}` | 轉址 / 密碼頁 / 中轉頁 / 410 / 404 | 公開 |
 | 額外網域 | 僅轉址 | `/` 顯示簡單首頁、`/{slug}` 轉址、`/app` 308 回 canonical、`/api` 回 404 |
 
-**UI 技術**：Askama 模板 + 手寫 CSS（含 `prefers-color-scheme` 深色模式）+ 約 150 行原生 JS
-（複製到剪貼簿、確認對話框、表單增強）。**不使用**任何前端框架或 CDN 資源（CSP 可嚴格限制為 `'self'`）。
+**UI 技術**：Askama 模板 + 手寫 CSS（含 `prefers-color-scheme` 深色模式）+ 約 500 行原生 JS
+（複製到剪貼簿、確認對話框、表單增強、群組與主題表單共用的新增/編輯懸浮框）。
+**不使用**任何前端框架或 CDN 資源（CSP 可嚴格限制為 `'self'`）。
 
 ### 4.11 多語系介面 (FR-I18N)
 

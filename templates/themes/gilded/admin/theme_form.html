@@ -1,0 +1,9 @@
+{% extends "themes/gilded/app_base.html" %}
+
+{% block title %}{% if is_edit %}{{ lang.t("admin.themes.custom.edit_heading") }}{% else %}{{ lang.t("admin.themes.custom.upload_heading") }}{% endif %} — {{ site_name }}{% endblock %}
+
+{% import "content/admin/theme_form.html" as content %}
+{% block content %}
+{% include "themes/gilded/admin/tabs.html" %}
+{% call content::content() %}
+{% endblock %}

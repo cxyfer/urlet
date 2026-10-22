@@ -758,10 +758,11 @@
     .groups-table .col-members { display: none; }
 }
 
-/* Group create/edit dialog. The list keeps normal links so the form pages are
- * still the no-JavaScript path; this only styles the enhanced floating window.
- * Panels are flattened inside the dialog so the form reads as one surface. */
-.group-dialog {
+/* Shared create/edit dialog for the group and theme forms. Both lists keep
+ * ordinary links so the form pages are still the no-JavaScript path; this only
+ * styles the enhanced floating window. Panels are flattened inside the dialog
+ * so the form reads as one surface. */
+.form-dialog {
     width: min(56rem, calc(100vw - 2rem));
     max-width: 56rem;
     max-height: min(90vh, 54rem);
@@ -774,12 +775,12 @@
     box-shadow: 0 2rem 5rem rgb(0 0 0 / .32);
     overflow: hidden;
 }
-.group-dialog[open] { display: flex; flex-direction: column; }
-.group-dialog::backdrop {
+.form-dialog[open] { display: flex; flex-direction: column; }
+.form-dialog::backdrop {
     background: rgb(8 19 14 / .55);
     backdrop-filter: blur(3px);
 }
-.group-dialog-head {
+.form-dialog-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -789,8 +790,8 @@
     border-bottom: 1px solid var(--hairline, var(--line, rgb(127 127 127 / .28)));
     background: var(--surface, var(--paper-2, var(--bg-1, #fff)));
 }
-.group-dialog-head h2 { margin: 0; font-size: 1.15rem; }
-.group-dialog-close {
+.form-dialog-head h2 { margin: 0; font-size: 1.15rem; }
+.form-dialog-close {
     flex: none;
     width: 2rem;
     height: 2rem;
@@ -800,16 +801,16 @@
     font-size: 1rem;
     line-height: 1;
 }
-.group-dialog-body {
+.form-dialog-body {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 1.2rem 1.3rem 1.4rem;
 }
-.group-dialog-body[aria-busy="true"] { cursor: progress; }
-.group-dialog-loading { padding: 2rem 0; text-align: center; }
-.group-dialog-body .panel {
+.form-dialog-body[aria-busy="true"] { cursor: progress; }
+.form-dialog-loading { padding: 2rem 0; text-align: center; }
+.form-dialog-body .panel {
     margin: 0;
     padding: 0;
     border: 0;
@@ -817,14 +818,14 @@
     background: transparent;
     box-shadow: none;
 }
-.group-dialog-body .panel + .panel {
+.form-dialog-body .panel + .panel {
     margin-top: 1.4rem;
     padding-top: 1.4rem;
     border-top: 1px solid var(--hairline, var(--line, rgb(127 127 127 / .28)));
 }
-.group-dialog-body .form-actions { margin-top: 1.2rem; }
+.form-dialog-body .form-actions { margin-top: 1.2rem; }
 @media (max-width: 700px) {
-    .group-dialog {
+    .form-dialog {
         width: 100vw;
         max-width: none;
         height: 100dvh;
@@ -833,6 +834,6 @@
         border: 0;
         border-radius: 0;
     }
-    .group-dialog-head { padding: .85rem 1rem; }
-    .group-dialog-body { padding: 1rem; }
+    .form-dialog-head { padding: .85rem 1rem; }
+    .form-dialog-body { padding: 1rem; }
 }
