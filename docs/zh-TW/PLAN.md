@@ -2,7 +2,7 @@
 
 # urlet — 分階段實作計畫 (Implementation Plan)
 
-> 對應規格：`docs/SPEC.md` v1.5
+> 對應規格：`docs/SPEC.md` v1.6
 > 原則：每個階段結束時程式碼必須**可編譯、可測試、可提交**；每個階段一個（或數個）本地 commit。
 
 ## 執行結果（已完成）
@@ -23,6 +23,7 @@
 | P12 可切換主題 (v1.4) | ✅ 完成 | 見 `git log`（migration 0010、主題 registry、管理目錄、六套模板、測試） |
 | P13 中轉頁與轉址方式政策 (v1.5) | ✅ 完成 | 見 `git log`（migration 0011、六個主題的中轉頁模板、群組政策、三語字串、文件、測試） |
 | P14 可上傳主題 (v1.5) | ✅ 完成 | 見 `git log`（migration 0012、CSS 上傳/編輯/刪除、雜湊資產、持久化 theme volume、測試） |
+| P15 公開短網址工具 (v1.6) | ✅ 完成 | 見 `git log`（migration 0015、保留的訪客帳號、存取層級、欄位開關、兩組訪客額度、導覽首頁表單、公開 API、三語字串、文件、測試） |
 
 驗收數據（v1.0）：`cargo test` 187 個測試全綠、`cargo clippy --all-targets -- -D warnings` 與
 `cargo fmt --check` 無警告、`scripts/smoke.sh` 81 項端對端檢查全數通過。
@@ -48,6 +49,7 @@
 | P12 | 可切換主題 (v1.4) | 六個內建模板／CSS 主題、`themes` 表與 registry、管理啟用／預設／政策頁面與 API、`urlet_theme` cookie、主題切換器與共享回退內容 | 18 張表／34 個索引、每個主題都能渲染每個頁面、權限與回退皆有測試、fmt/clippy/test/smoke 全綠 | `✨ feat(themes): ...` |
 | P13 | 中轉頁與轉址方式政策 (v1.5) | `urls.redirect_mode` 與中轉頁文案、六個主題模板、`user_groups.redirect_mode_policy`、表單/API/`/auth/me`、語言目錄 | 既有連結維持直接跳轉、密碼頁仍是唯一中間頁、政策只把關建立與更新、fmt/clippy/test/smoke 全綠 | `✨ feat(splash): ...` |
 | P14 | 可上傳主題 (v1.5) | `custom_themes` 中介資料、管理主題頁的 CSS 上傳/編輯/刪除、內容雜湊 `/assets/custom-themes/{key}`、`auto`/`light`/`dark` 外觀、驗證與限制、`URLET_THEMES_DIR` + `urlet-themes` volume | 19 張表／35 個索引、重載/重啟後上傳仍在、明暗強制、預設/刪除規則與成員授權皆有測試、fmt/clippy/test/smoke 全綠 | `✨ feat(themes): ...` |
+| P15 | 公開短網址工具 (v1.6) | 導覽首頁的縮網址表單與 `POST /api/v1/public/urls`、擁有匿名連結的保留訪客帳號、`public_create_access`、八個 `public_allow_*` 欄位開關、`public_captcha`、每來源位址與全體訪客共用額度、管理設定區塊、三語字串、六個導覽首頁模板 | 19 張表／36 個索引、升級後訪客仍無法建立、存取層級把關每一條建立路徑、被停用的欄位由伺服器端拒絕、額度與訪客帳號皆有測試、fmt/clippy/test/smoke/merge-check 全綠 | `✨ feat(public): ...` |
 
 ---
 
@@ -271,6 +273,30 @@
 明暗模式可覆寫瀏覽器儲存的偏好；CSS 檔存在於 `URLET_THEMES_DIR`；且
 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test` 與
 `scripts/smoke.sh` 全綠。
+
+---
+
+## P15 — 公開短網址工具 (v1.6)
+
+**任務**
+
+1. `migrations/0015_public_shorten.sql`：`users.is_system` 與其部分唯一索引、保留的訪客帳號
+   （`guest@urlet.invalid`、已停用、無法解析的雜湊、無群組）以及十二個公開短網址工具設定
+2. `src/db/users.rs`：`is_system` 欄位、`find_system`，並在每個列表、計數與管理寫入加上
+   `is_system = 0`
+3. `src/services/settings.rs`：`PublicCreateAccess`（`guest`/`user`/`admin`）、`PublicFields`、
+   `public_*` 存取子與驗證
+4. `src/services/public_urls.rs`：存取檢查、伺服器端欄位強制、每來源位址與共用額度，以及解析
+   訪客 actor 的建立流程
+5. `src/services/urls.rs`：存取層級同時把關儀表板與已認證 API
+6. `src/routes/public_urls.rs` + `src/routes/pages/home.rs`：`POST /`、`POST /api/v1/public/urls`、
+   表單／結果檢視，以及永不信任查詢字串的 `?shortened=` 查詢
+7. `templates/partials/shorten.html` 與六個導覽首頁模板的 include；當建立權保留給管理員時，
+   儀表板顯示提示
+8. 管理設定區塊、三份語言目錄、`tests/public_urls.rs`、`scripts/smoke.sh` 與雙語文件
+
+**驗收**：`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`、
+`scripts/smoke.sh` 與 `scripts/merge-check.sh` 全綠；升級後公開表單維持關閉，直到管理員開啟。
 
 ---
 

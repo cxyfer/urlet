@@ -321,6 +321,59 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 導覽首頁：介紹服務並提供登入／註冊入口。首頁不再 302 轉到 `/app`；
 已登入的使用者會看到進入儀表板的按鈕。
 
+當訪客被允許建立連結時（見下方的 `public_create_access` 設定），頁面也會帶上公開短網址工具。
+`?shortened=<slug>&domain=<hostname>` 會渲染剛建立連結的短網址；該值以資料庫解析，因此結果框
+永不逐字印出查詢字串的值，也永不揭露目的地。
+
+### `POST /`
+
+公開短網址工具表單（`application/x-www-form-urlencoded`），僅限 canonical 主機。它接受
+`target_url`（必填），以及管理員已啟用的選填欄位：`slug`、`title`、`tags`（逗號分隔）、
+`password`、`expires_at`、`max_clicks`、`redirect_mode`、`splash_delay_seconds`、
+`splash_title`、`splash_message`、`domain`，以及供應商的權杖欄位
+（`cf-turnstile-response` 或 `g-recaptcha-response`）。
+
+送出成功為 `303` 轉往 `/?shortened=<slug>&domain=<hostname>`。失敗則為 `303` 轉往
+`/?err=<code>`，其中 `<code>` 為 `denied`（低於存取層級，或填了被停用的欄位）、
+`rate_limited`、`captcha`、`conflict`、`slug`、`target`、`expiry`、`tags`、`domain` 或
+`invalid`。
+
+表單套用 CSRF 同源規則，一般安全標頭維持不變。
+
+### `POST /api/v1/public/urls`
+
+與表單相同的操作，以 JSON 提供給指令稿使用。當 `public_create_access` 為 `guest` 時不需要任何
+憑證；也可改帶 Session cookie 或 Bearer Token，此時連結由該帳號擁有。
+
+```json
+{
+  "target_url": "https://example.com/launch",
+  "slug": "launch",
+  "title": "Launch day",
+  "captcha_token": "0.abc..."
+}
+```
+
+`201`：
+
+```json
+{
+  "domain": "s.example.com",
+  "slug": "launch",
+  "short_url": "https://s.example.com/launch",
+  "target_url": "https://example.com/launch",
+  "created_at": "2026-10-22T12:00:00.000Z"
+}
+```
+
+刻意不回傳連結 id：呼叫者沒有帳號可以管理該連結。
+
+- `403` `forbidden` —— 呼叫者低於存取層級，或送出了管理員停用的欄位
+- `400` `captcha_failed` —— 防機器人驗證失敗（fail closed）
+- `429` `rate_limited` —— 每來源位址或全體訪客的額度用盡（`Retry-After`）
+- `409` `conflict` —— 要求的 slug 已被使用
+- `422` `validation_error` —— 目標網址或選項不合法
+
 ### `GET /health`
 
 ```json
@@ -559,6 +612,13 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 `captcha_on_login`、`captcha_on_create`、`captcha_allowed_hostnames`。secret key 為唯寫：
 永不回傳明文，留白送出表示維持已儲存的值。
 
+公開短網址工具另新增 `public_create_access`（`guest`/`user`/`admin`，預設 `user`）、
+`public_captcha`（預設 `true`）、`public_rate_limit_per_ip`（每小時可建立數，預設 20，
+`0` = 不限次數）、`public_rate_limit_global`（所有訪客合計每小時可建立數，預設 500，`0` =
+不限次數），以及欄位開關 `public_allow_slug`、`public_allow_title`（兩者預設 `true`），
+再加上 `public_allow_tags`、`public_allow_password`、`public_allow_expiry`、
+`public_allow_max_clicks`、`public_allow_redirect` 與 `public_allow_domain`（皆預設 `false`）。
+
 ---
 
 ## 稽核動作代碼
@@ -582,6 +642,7 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 | 註冊 | 每 IP 每小時 5 次 |
 | 解鎖短網址 | 每 (slug, IP) 5 分鐘 10 次 |
 | 建立短網址 | 每使用者每小時 120 次 |
+| 公開短網址工具 | 每來源位址每小時 `public_rate_limit_per_ip` 次（預設 20），**以及**所有匿名訪客合計每小時 `public_rate_limit_global` 次（預設 500）；`0` 會停用任一額度 |
 | 修改密碼 | 每使用者每小時 10 次 |
 
 超過限制回 `429` 並附 `Retry-After`（秒）。記憶體計數器重啟即重置，

@@ -349,6 +349,61 @@ The landing page: an introduction to the service with sign-in and sign-up entry 
 longer redirects to `/app`; a visitor who is already signed in sees a button that opens the
 dashboard.
 
+When the visitor is allowed to create a link — see the `public_create_access` setting below — the
+page also carries the public shortener. `?shortened=<slug>&domain=<hostname>` renders the short URL
+of a link that was just created; the value is resolved against the database, so the result box never
+prints a query-string value verbatim and never discloses the destination.
+
+### `POST /`
+
+The public shortener form (`application/x-www-form-urlencoded`), available on the canonical host
+only. It accepts `target_url` (required) plus the optional inputs the administrator enabled:
+`slug`, `title`, `tags` (comma separated), `password`, `expires_at`, `max_clicks`, `redirect_mode`,
+`splash_delay_seconds`, `splash_title`, `splash_message`, `domain`, and the provider token field
+(`cf-turnstile-response` or `g-recaptcha-response`).
+
+A successful submission is `303` to `/?shortened=<slug>&domain=<hostname>`. A failure is `303` to
+`/?err=<code>`, where `<code>` is one of `denied` (below the access level, or a disabled field),
+`rate_limited`, `captcha`, `conflict`, `slug`, `target`, `expiry`, `tags`, `domain` or `invalid`.
+
+The CSRF same-origin rule applies to the form, and the ordinary security headers are unchanged.
+
+### `POST /api/v1/public/urls`
+
+The same operation as JSON, for scripts. No credential is required when `public_create_access` is
+`guest`; a session cookie or a Bearer token may be supplied instead, and the link is then owned by
+that account.
+
+```json
+{
+  "target_url": "https://example.com/launch",
+  "slug": "launch",
+  "title": "Launch day",
+  "captcha_token": "0.abc..."
+}
+```
+
+`201`:
+
+```json
+{
+  "domain": "s.example.com",
+  "slug": "launch",
+  "short_url": "https://s.example.com/launch",
+  "target_url": "https://example.com/launch",
+  "created_at": "2026-10-22T12:00:00.000Z"
+}
+```
+
+The link id is deliberately not returned: the caller has no account to manage the link with.
+
+- `403` `forbidden` — the caller is below the access level, or submitted a field the administrator
+  disabled
+- `400` `captcha_failed` — the bot protection check failed (fail closed)
+- `429` `rate_limited` — the per-address or the shared visitor budget is exhausted (`Retry-After`)
+- `409` `conflict` — the requested slug is already taken
+- `422` `validation_error` — an invalid target URL or option
+
 ### `GET /health`
 
 ```json
@@ -611,6 +666,13 @@ default `month`), `default_redirect_type` (301/302/307/308), `analytics_enabled`
 `captcha_on_login`, `captcha_on_create` and `captcha_allowed_hostnames`. The secret key is
 write-only: it is never returned in plaintext, and submitting it empty keeps the stored value.
 
+The public shortener adds `public_create_access` (`guest`/`user`/`admin`, default `user`),
+`public_captcha` (default `true`), `public_rate_limit_per_ip` (creations per hour, default 20,
+`0` = unlimited), `public_rate_limit_global` (shared creations per hour, default 500, `0` =
+unlimited) and the field switches `public_allow_slug`, `public_allow_title` (both default `true`)
+plus `public_allow_tags`, `public_allow_password`, `public_allow_expiry`, `public_allow_max_clicks`,
+`public_allow_redirect` and `public_allow_domain` (all default `false`).
+
 ---
 
 ## Audit action codes
@@ -634,6 +696,7 @@ write-only: it is never returned in plaintext, and submitting it empty keeps the
 | Registration | 5 attempts per hour per IP |
 | Short link unlock | 10 attempts per 5 minutes per (slug, IP) |
 | Short link creation | 120 per hour per user |
+| Public shortener | `public_rate_limit_per_ip` per hour per client address (default 20) **and** `public_rate_limit_global` per hour across all anonymous visitors (default 500); `0` disables either budget |
 | Password change | 10 per hour per user |
 
 Exceeding a limit returns `429` with `Retry-After` (seconds). The in-memory counters reset on

@@ -2,7 +2,7 @@
 
 # urlet — Phased Implementation Plan
 
-> Spec: `docs/SPEC.md` v1.5
+> Spec: `docs/SPEC.md` v1.6
 > Principle: at the end of every phase the code must **compile, test, and commit**; each phase gets one (or a few) local commits.
 
 ## Results (completed)
@@ -23,6 +23,7 @@
 | P12 Switchable themes (v1.4) | ✅ Done | See `git log` (migration 0010, theme registry, admin catalogue, six template sets, tests) |
 | P13 Splash pages and redirect-mode policy (v1.5) | ✅ Done | See `git log` (migration 0011, splash templates for six themes, per-group policy, trilingual strings, docs, tests) |
 | P14 Uploadable themes (v1.5) | ✅ Done | See `git log` (migration 0012, CSS upload/edit/delete, hashed assets, persistent theme volume, tests) |
+| P15 Public shortener (v1.6) | ✅ Done | See `git log` (migration 0015, reserved Guest account, access level, field switches, two visitor budgets, landing form, public API, trilingual strings, docs, tests) |
 
 Acceptance data (v1.0): `cargo test` is all green with 187 tests, `cargo clippy --all-targets -- -D warnings`
 and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scripts/smoke.sh` pass.
@@ -48,6 +49,7 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 | P12 | Switchable themes (v1.4) | Six compiled-in template/CSS themes, `themes` table and registry, admin enable/default/policy page and API, `urlet_theme` cookie, theme picker and shared fallback content | 18 tables / 34 indexes, every theme renders every page, permission and fallback covered, fmt/clippy/test/smoke green | `✨ feat(themes): ...` |
 | P13 | Splash pages and redirect-mode policy (v1.5) | `urls.redirect_mode` and splash copy, six theme templates, `user_groups.redirect_mode_policy`, forms/API/`/auth/me`, locale catalogs | Existing links stay direct, password pages stay the only interstitial, mode policy enforced on create/update only, fmt/clippy/test/smoke green | `✨ feat(splash): ...` |
 | P14 | Uploadable themes (v1.5) | `custom_themes` metadata, CSS upload/edit/delete from the admin theme page, content-hashed `/assets/custom-themes/{key}`, `auto`/`light`/`dark` appearance, validation and limits, `URLET_THEMES_DIR` + `urlet-themes` volume | 19 tables / 35 indexes, uploads survive a reload/restart, light/dark forcing, default/delete rules and member authorization covered, fmt/clippy/test/smoke green | `✨ feat(themes): ...` |
+| P15 | Public shortener (v1.6) | Landing-page shortening form plus `POST /api/v1/public/urls`, the reserved Guest account that owns anonymous links, `public_create_access`, eight `public_allow_*` field switches, `public_captcha`, per-address and shared visitor budgets, admin settings section, trilingual strings, six landing templates | 19 tables / 36 indexes, an upgrade keeps creation closed to visitors, the access level gates every creation path, disabled fields are refused server side, budgets and the Guest account covered, fmt/clippy/test/smoke/merge-check green | `✨ feat(public): ...` |
 
 ---
 
@@ -273,6 +275,25 @@ make it the default, replace its stylesheet, and delete it after moving the defa
 override a saved browser preference; the CSS file exists in `URLET_THEMES_DIR`; and
 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and
 `scripts/smoke.sh` are clean.
+
+---
+
+## P15 — Public Shortener (v1.6)
+
+**Tasks**
+
+1. `migrations/0015_public_shorten.sql`: `users.is_system` plus the partial unique index, the reserved Guest account (`guest@urlet.invalid`, suspended, unparsable hash, no group) and the twelve public-shortener settings
+2. `src/db/users.rs`: the `is_system` column, `find_system`, and `is_system = 0` on every listing, count and administrative write
+3. `src/services/settings.rs`: `PublicCreateAccess` (`guest`/`user`/`admin`), `PublicFields`, the `public_*` accessors and validation
+4. `src/services/public_urls.rs`: the access check, the server-side field enforcement, the per-address and shared budgets, and the create flow that resolves the Guest actor
+5. `src/services/urls.rs`: the access level also gates the dashboard and the authenticated API
+6. `src/routes/public_urls.rs` + `src/routes/pages/home.rs`: `POST /`, `POST /api/v1/public/urls`, the form/result view, and the `?shortened=` lookup that never trusts the query string
+7. `templates/partials/shorten.html` plus an include in all six landing templates; a dashboard notice when creation is reserved for administrators
+8. Admin settings section, three locale catalogues, `tests/public_urls.rs`, `scripts/smoke.sh` and both doc languages
+
+**Acceptance**: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`,
+`scripts/smoke.sh` and `scripts/merge-check.sh` are green; an upgrade leaves the public form closed
+until an administrator opens it.
 
 ---
 
