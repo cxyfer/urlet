@@ -2,9 +2,9 @@
 
 # urlet — Lightweight Multi-User URL Shortener Specification
 
-> Version: 1.6
+> Version: 1.7
 > Status: Approved for implementation
-> Last updated: 2026-10-22
+> Last updated: 2026-10-23
 
 ---
 
@@ -400,7 +400,23 @@ the create/edit dialogs shared by the group and theme forms).
 
 ---
 
-### 4.17 SNS Preview Cards (FR-PREVIEW)
+### 4.17 Tracking Parameter Cleanup (FR-CLEAN)
+
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-CLEAN-1 | Opt-in policy | `url_cleaning_enabled=false` by default. Administrators can enable cleanup at `/app/admin/settings` or through the existing settings API. It applies to all new links from browser forms, authenticated APIs (including API tokens), and the public API |
+| FR-CLEAN-2 | Conservative built-ins | On Facebook, Instagram, Threads, X/Twitter, YouTube, TikTok and Bilibili, remove `utm_*` and the explicitly listed platform tracking parameters. All other domains remain unchanged unless covered by a custom rule. Built-ins preserve video IDs, playlists and playback times |
+| FR-CLEAN-3 | Custom rules | `url_cleaning_rules` is a text setting, initially empty. Each nonblank, non-comment line is `domain parameter [parameter ...]`, for example `example.com utm_* ref`. A domain includes its subdomains with a dot boundary. Parameter matching ignores ASCII case after decoding the name; a trailing `*` means prefix matching. A `#` at the beginning of a trimmed line starts a comment. Rules add to built-ins; clearing them keeps the built-ins |
+| FR-CLEAN-4 | Validation | At most 8192 bytes, 100 rules, 32 parameters per rule and 64 bytes per parameter (including `*`). Domains are ASCII hostnames with at least two nonempty labels, at most 253 bytes total and 63 bytes per label; labels contain letters, digits or hyphens and cannot begin/end with a hyphen. No scheme, port, path, userinfo or wildcard domain. Parameter names contain ASCII letters, digits, `_`, `-` or `.`, optionally followed by one final `*`; bare `*` and regex are rejected. Invalid batches write no settings or cache entries |
+| FR-CLEAN-5 | URL preservation | Validate the original target first. Remove matching query components only, including repeats; preserve the raw encoding, ordering and values of all remaining components, path and fragment. Drop the query marker when removal empties the query. Do not expand share shortlinks, fetch targets, rewrite hosts/paths or clean at redirect time |
+| FR-CLEAN-6 | Compatibility | Only creation cleans the stored and returned target. Existing links and explicit target edits are unchanged, regardless of later setting changes. Disabling cleanup keeps custom rules stored for future reuse. No new table or migration is required: startup seeds absent settings without overwriting existing values |
+| FR-CLEAN-7 | Admin experience | All six themes share the switch, rule textarea, visible format/limits/warning and built-in rule disclosure; all three locales are supported. Invalid submitted cleanup rules return a 422 page with the escaped input and localized error retained; no settings are saved |
+
+The built-in rule source is `src/rules/url-cleaning.txt`, maintained separately from Rust logic in the same format as custom rules. `include_str!` embeds it in the binary at compile time; the cleaner and administrator UI share that embedded list. Update the list and rebuild to change built-ins; deployments need no external rules file. Custom rules may remove meaningful parameters; the UI warns administrators to remove only known tracking names.
+
+---
+
+### 4.18 SNS Preview Cards (FR-PREVIEW)
 
 | ID | Requirement | Description |
 |----|-------------|-------------|
@@ -411,6 +427,7 @@ the create/edit dialogs shared by the group and theme forms).
 | FR-PREVIEW-5 | Accounting and caches | Custom preview fetches do not record clicks or consume the click cap. Short-link responses vary on User-Agent; custom previews and their images use no-store. Third-party platforms can retain their own cached cards; exact layout and instant refresh are not guaranteed |
 | FR-PREVIEW-6 | Recovery and permission | Metadata/image changes are atomic, owner-only and subject to existing CSRF protection. Upload routes have bounded bodies and rate limits. Invalid uploads preserve stored data and retry forms retain entered text; browsers require file reselection |
 
+---
 
 ## 5. Non-Functional Requirements
 
@@ -578,6 +595,8 @@ so `invites_used` can drop once. v1.6 adds only the `users.is_system` column and
 index (no new table), for **19 tables and 36 indexes**.
 
 ### 6.5 Seed Data
+
+- URL cleanup: `url_cleaning_enabled=false`, `url_cleaning_rules=` (empty); startup seeds absent keys and preserves existing values.
 
 - `settings`: `site_name=urlet`, `registration_mode=open`, `default_slug_length=7`,
   `max_urls_per_user=1000`, `default_redirect_type=302`, `analytics_enabled=true`, `click_retention_days=0`.
@@ -902,4 +921,4 @@ v1.2 additions (this batch):
 | Click export / CSV | The full `clicks` column set + indexes |
 | Audit compliance | `audit_logs.metadata` keeps the full JSON context |
 
-Migration `0016_url_previews.sql` adds `url_previews` (one optional row per link), bringing the schema to 20 tables and 36 explicit indexes. Metadata reads exclude image BLOBs; the database remains the backup boundary.
+Migration `0016_url_previews.sql` adds `url_previews` (one optional row per link), bringing the schema to 20 tables and 36 explicit indexes. Metadata reads exclude image BLOBs; the database remains the backup boundary. A trigger removes the preview row and its image when the owning link is soft-deleted, including account deletion; disabling or expiring a link preserves its preview. SQLite can reuse the freed pages; the database file does not automatically shrink.

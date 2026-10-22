@@ -29,3 +29,5 @@
 SNS User-Agent 與平台快取會變動，本地 HTTP 測試只證明伺服器回應，不等同實際 Discord 卡片驗收；不保證特定版型或立即更新。圖片使 SQLite 增大（每連結至多 2 MiB），沿用資料庫備份。停用功能時可保留 additive migration，不編輯或刪除已套用 migration、既有連結；不記錄憑證值。獨立審核後新增全域兩個解碼 permit，64 MiB 為解碼 buffer 預算而非程序 RSS 硬上限，額外工作記憶體須另計。
 
 獨立審核補強：兩個全域解碼 permit；解碼前檢查 WebP RIFF、畫布及巢狀 VP8／VP8L／ANMF 尺寸，並以 GIF descriptor 掃描確保所有影格位於受限畫布內。64 MiB 解碼 buffer 預算不等於程序 RSS 上限。為 image-webp 將宣告最低 Rust 版本從 1.80 提升至 1.80.1。
+
+PR 審核後續：整合 master 5a0646b 並保留追蹤參數清理；兩語規格的預覽章節編為 4.18。在尚未發布的 migration 加入 trigger，首次軟刪除連結時清理預覽資料，包含帳號刪除；停用／過期及其他擁有者的預覽仍保留。HTML 提交遇登入逾期會導向登入並記住連結詳情返回路徑，API 認證維持不變。以整合測試驗證兩項修正，並重跑必要檢查。

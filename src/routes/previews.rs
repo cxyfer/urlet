@@ -12,10 +12,10 @@ use crate::{
     db::url_previews::{self, Changes, Image, Preview},
     error::{ApiError, AppError},
     i18n::{self, Lang},
-    middleware::auth::CurrentUser,
+    middleware::auth::{CurrentUser, MaybeUser},
     routes::{
         dto::double_option,
-        pages::{redirect_ok, Chrome},
+        pages::{redirect_ok, redirect_to_login, Chrome},
     },
     services::{
         audit::{action, Audit},
@@ -301,10 +301,13 @@ themed_page!(preview_edit_templates, EditView, EditPage,
 
 pub async fn save_form(
     State(state): State<AppState>,
-    user: CurrentUser,
+    MaybeUser(user): MaybeUser,
     Path(id): Path<i64>,
     multipart: Result<Multipart, axum::extract::multipart::MultipartRejection>,
 ) -> Result<Response, AppError> {
+    let Some(user) = user else {
+        return Ok(redirect_to_login(Some(&format!("/app/urls/{id}"))).into_response());
+    };
     service::owned(&state.db, user.user.id, id).await?;
     upload_limit(&state, user.user.id)?;
     let old = url_previews::find(&state.db, id).await?;

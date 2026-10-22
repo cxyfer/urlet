@@ -401,13 +401,104 @@ async fn lifecycle_checks_precede_metadata_and_media_delivery() {
         .execute(&app.state.db)
         .await
         .unwrap();
-    app.send(delete_as(&format!("/api/v1/urls/{id}"), &cookie))
+    assert!(urlet::db::url_previews::find(&app.state.db, id)
+        .await
+        .unwrap()
+        .is_some());
+    let deleted = app
+        .send(delete_as(&format!("/api/v1/urls/{id}"), &cookie))
         .await;
+    assert_eq!(deleted.status, StatusCode::NO_CONTENT);
     assert_eq!(
         crawl(&app, "Discordbot").await.status,
         StatusCode::NOT_FOUND
     );
     assert_eq!(app.get(path).await.status, StatusCode::NOT_FOUND);
+    assert!(urlet::db::url_previews::find(&app.state.db, id)
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn signed_out_form_returns_to_login_with_link_detail_destination() {
+    let (app, _, id) = setup().await;
+    let response = app
+        .send(multipart(
+            &format!("/app/urls/{id}/preview"),
+            "",
+            &[("title", "Unsaved")],
+            None,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some(format!("/app/login?next=%2Fapp%2Furls%2F{id}").as_str())
+    );
+    assert!(urlet::db::url_previews::find(&app.state.db, id)
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn account_deletion_reclaims_previews_and_preserves_other_owners() {
+    let (app, admin_cookie, admin_url_id) = setup().await;
+    patch(
+        &app,
+        &admin_cookie,
+        admin_url_id,
+        json!({"title":"Keep me"}),
+    )
+    .await;
+    let (member_cookie, member) = app.register("member@example.com", "supersecret").await;
+    let member_id = member["user"]["id"].as_i64().unwrap();
+    let created = app
+        .post_json_as(
+            "/api/v1/urls",
+            json!({"target_url":"https://example.com", "slug":"member-share"}),
+            &member_cookie,
+        )
+        .await;
+    let id = created.json()["id"].as_i64().unwrap();
+    let uploaded = app
+        .send(multipart(
+            &format!("/api/v1/urls/{id}/preview/image"),
+            &member_cookie,
+            &[],
+            Some(&png()),
+        ))
+        .await;
+    assert_eq!(uploaded.status, StatusCode::OK, "{}", uploaded.body);
+    let value = uploaded.json();
+    let path = value["image_url"]
+        .as_str()
+        .unwrap()
+        .strip_prefix(&app.state.config.base_url)
+        .unwrap();
+    assert_eq!(app.get(path).await.status, StatusCode::OK);
+    let deleted = app
+        .send(delete_as(
+            &format!("/api/v1/admin/users/{member_id}"),
+            &admin_cookie,
+        ))
+        .await;
+    assert_eq!(deleted.status, StatusCode::NO_CONTENT, "{}", deleted.body);
+    assert!(urlet::db::url_previews::find(&app.state.db, id)
+        .await
+        .unwrap()
+        .is_none());
+    assert_eq!(app.get(path).await.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        urlet::db::url_previews::find(&app.state.db, admin_url_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .title
+            .as_deref(),
+        Some("Keep me")
+    );
 }
 
 #[tokio::test]
