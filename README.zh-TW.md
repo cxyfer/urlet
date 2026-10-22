@@ -143,7 +143,9 @@ urlet version | help
 
 ```
 urlet/
-├── .github/workflows/release-image.yml  # 標籤觸發的多架構映像發布
+├── .github/workflows/
+│   ├── ci.yml                  # 格式化、Clippy、測試與 smoke，每個 PR 都跑
+│   └── release-image.yml       # 標籤觸發的多架構映像發布
 ├── Cargo.toml
 ├── Dockerfile                  # 多階段建置（rust:alpine → alpine）
 ├── docker-compose.yml          # 單一容器 + named volume
@@ -178,6 +180,10 @@ bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 ```
 
 需要 Rust 1.80 以上。整合測試使用獨立的臨時 SQLite，不會碰到你的開發資料。
+
+前四個指令也會在每個 pull request 的 CI 中執行，見
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml)。`demo.sh` 需要 Playwright 與 Chromium，
+只在本機使用。
 
 ## 發布新版本
 

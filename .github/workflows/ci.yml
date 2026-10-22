@@ -1,0 +1,84 @@
+name: CI
+
+# Everything a pull request has to pass before it can merge: formatting, lints,
+# the test suite and the end-to-end smoke run. The same jobs also run on pushes
+# to the default branch, so a direct push cannot quietly skip the gate and the
+# branch always shows whether `master` itself is green.
+#
+# The commands mirror "Before you call a change done" in AGENTS.md. When a check
+# is added or dropped there, update this file too.
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+# A new push makes the previous pull request run obsolete, so cancel it. A push
+# to the default branch instead gets a group of its own. Sharing one group per
+# branch would not be enough: `cancel-in-progress: false` protects only the run
+# that is already going, while the next push still replaces the queued run — so
+# a second push arriving mid-run would leave the first commit with no CI result.
+# (`queue: max` would preserve the queue, but it cannot be combined with the
+# conditional `cancel-in-progress` below.)
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'push' && github.run_id || 'pull-request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  # --------------------------------------------------------------- formatting
+  # No build is needed, so this job finishes in seconds and fails first.
+  fmt:
+    name: Formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: cargo fmt --check
+        run: cargo fmt --check
+
+  # ------------------------------------------------------------------- lints
+  # Clippy and the tests share one job on purpose: `cargo test` reuses most of
+  # what Clippy already compiled, so separate jobs would build the whole
+  # dependency graph twice for no benefit.
+  #
+  # `--locked` turns a lockfile that was not refreshed alongside Cargo.toml into
+  # a clear failure here instead of a surprise in the release build, which
+  # compiles with `--locked` too.
+  lint-and-test:
+    name: Lints and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo clippy --locked --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: cargo test
+        run: cargo test --locked
+
+  # --------------------------------------------------------- end-to-end smoke
+  # scripts/smoke.sh builds the real binary and drives it over HTTP. It needs
+  # curl and sqlite3, both of which ship with the GitHub-hosted runner image.
+  smoke:
+    name: Smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: bash scripts/smoke.sh
+        run: bash scripts/smoke.sh
