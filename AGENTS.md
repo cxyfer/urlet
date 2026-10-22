@@ -20,6 +20,10 @@ bash scripts/smoke.sh        # builds and drives the real binary over HTTP
 bash scripts/merge-check.sh  # the merged group and domain flows
 ```
 
+The first four run on every pull request — see
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml). `merge-check.sh` stays a post-merge
+check for the group and domain flows.
+
 Schema changes go in `migrations/` and run at startup. Migrations are additive and
 checksum-protected: never edit one that has already been released, add a new file instead.
 

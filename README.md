@@ -151,7 +151,9 @@ blocklists, webhooks, email delivery. The tables and architecture leave room for
 
 ```
 urlet/
-├── .github/workflows/release-image.yml  # tag-driven multi-arch image release
+├── .github/workflows/
+│   ├── ci.yml                  # fmt, Clippy, tests and smoke on every pull request
+│   └── release-image.yml       # tag-driven multi-arch image release
 ├── Cargo.toml
 ├── Dockerfile                  # multi-stage build (rust:alpine → alpine)
 ├── docker-compose.yml          # single container + named volume
@@ -187,6 +189,10 @@ bash scripts/demo.sh       # build a demo site and write screenshots to .tmp/dem
 
 Rust 1.80 or newer is required. Integration tests use their own temporary SQLite database
 and never touch your development data.
+
+The first four commands also run in CI on every pull request — see
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml). `demo.sh` stays local because it needs
+Playwright and Chromium.
 
 ## Releasing
 
