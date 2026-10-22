@@ -113,6 +113,11 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/0015_public_shorten.sql"),
         kind: MigrationKind::Transactional,
     },
+    Migration {
+        version: "0016_url_previews",
+        sql: include_str!("../../migrations/0016_url_previews.sql"),
+        kind: MigrationKind::Transactional,
+    },
 ];
 
 /// Apply all pending migrations.

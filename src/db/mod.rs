@@ -93,3 +93,5 @@ pub async fn init(config: &Config) -> Result<SqlitePool> {
     migrate::run(&pool, &options).await?;
     Ok(pool)
 }
+
+pub mod url_previews;

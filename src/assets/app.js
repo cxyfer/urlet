@@ -533,6 +533,22 @@
         enhance: initThemeDrops
     });
 
+    /* 預覽來源只啟用對應欄位；無 JS 時仍可明確選擇來源並提交。 */
+    document.querySelectorAll("[data-preview-form]").forEach(function (form) {
+        var source = form.querySelector("[data-preview-source]");
+        function updatePreviewSource() {
+            form.querySelectorAll("[data-preview-input]").forEach(function (group) {
+                var active = group.getAttribute("data-preview-input") === source.value;
+                group.hidden = !active;
+                group.querySelectorAll("input").forEach(function (input) {
+                    input.disabled = !active;
+                });
+            });
+        }
+        source.addEventListener("change", updatePreviewSource);
+        updatePreviewSource();
+    });
+
     /* Dismiss alerts after a while so success banners do not pile up. */
     window.setTimeout(function () {
         document.querySelectorAll(".alert-ok[data-auto-dismiss]").forEach(function (node) {

@@ -39,7 +39,7 @@ switch set, bot protection and both a per-address and a shared visitor rate limi
 | P4 | Docker Compose deployment | A single `docker-compose.yml` (app + named volume), with an optional Caddy TLS overlay |
 | P5 | As lightweight as possible | One binary, SQLite (no MySQL/Redis), SSR templates (no Node build), image < 40 MB |
 | P6 | Rust implementation | Rust 2021 + Axum 0.8 + Tokio + sqlx (SQLite) |
-| P7 | Well-designed schema | 19 tables, 36 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
+| P7 | Well-designed schema | 20 tables, 36 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
 | P8 | Sensible extra features | Tags, click analytics, API tokens, invite codes, admin panel, audit log, daily rollups, trilingual UI, optional bot protection, quota/feature user groups, switchable and uploadable themes, splash pages, a public shortener for visitors |
 
 ### 1.2 Relationship to the Earlier Prototypes (OURLS / OURLS2)
@@ -417,6 +417,20 @@ The built-in rule source is `src/rules/url-cleaning.txt`, maintained separately 
 
 ---
 
+### 4.18 SNS Preview Cards (FR-PREVIEW)
+
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-PREVIEW-1 | Owner configuration | Each signed-in owner can edit the optional SNS preview from the link detail page or authenticated preview API. The preview title (200 characters), description (1000 characters) and image are independent of management title/notes and splash copy. Blank titles use the site name. Clearing all fields removes the custom preview |
+| FR-PREVIEW-2 | Image inputs | Use either an absolute HTTPS image URL without credentials or whitespace (2048 characters maximum), or an uploaded PNG/JPEG/GIF/WebP (2 MiB maximum, 4096 × 4096 maximum, validated by bounded decoding). Uploaded bytes are stored in SQLite. Keeping, replacing and removing an image are explicit; replacement/removal revokes its previous opaque URL. The server never fetches external images or destination metadata |
+| FR-PREVIEW-3 | Delivery | Known social preview crawlers receive 200 HTML with escaped Open Graph/Twitter metadata for an active link with custom preview data. Ordinary browsers retain direct/splash/password behavior; links without custom previews are unchanged. Analytics bot detection is not the preview classifier. User-Agent matching selects presentation only, not authentication |
+| FR-PREVIEW-4 | Public/private boundary | Configured metadata and uploaded images are public, including on password-protected links; the editor explains this. Preview HTML never publishes the destination, private management title or notes. Expiry, click cap, disabled/deleted links and inactive domains take precedence over metadata/image delivery |
+| FR-PREVIEW-5 | Accounting and caches | Custom preview fetches do not record clicks or consume the click cap. Short-link responses vary on User-Agent; custom previews and their images use no-store. Third-party platforms can retain their own cached cards; exact layout and instant refresh are not guaranteed |
+| FR-PREVIEW-6 | Recovery and permission | Metadata/image changes are atomic, owner-only and subject to existing CSRF protection. Upload routes have bounded bodies and rate limits. Invalid uploads preserve stored data and retry forms retain entered text; browsers require file reselection |
+| FR-PREVIEW-7 | Image policy | Administrators choose `preview_image_policy=none/url/upload/both` (default `both`) in settings or the settings API. The policy applies to all owners, form/API writes, metadata images and uploaded-image delivery. Prohibited sources are hidden in the editor and rejected server-side; keep/clear and text-only edits remain available. Disallowed existing images are retained but not served until allowed again; external content already copied by third parties cannot be revoked |
+
+---
+
 ## 5. Non-Functional Requirements
 
 ### 5.1 Security (NFR-SEC)
@@ -447,7 +461,7 @@ The built-in rule source is `src/rules/url-cleaning.txt`, maintained separately 
 
 | ID | Requirement |
 |----|-------------|
-| NFR-PERF-1 | Redirect path: a single indexed `SELECT` plus a queued write; P95 < 10 ms (measured 0.74 ms) |
+| NFR-PERF-1 | Redirect path: indexed URL and optional-preview lookups plus a queued write; target P95 < 10 ms (historical redirect baseline 0.74 ms; the new preview lookup is not benchmarked) |
 | NFR-PERF-2 | SQLite: `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=5000` |
 | NFR-PERF-3 | Connection pool: `max_connections=8`; click writes are serialized through a single background writer (so the WAL cannot grow without bound because concurrent writes prevent checkpointing) |
 | NFR-PERF-4 | List queries are always paginated (default 20, maximum 100) |
@@ -519,7 +533,7 @@ login_attempts (auditing)
 
 ### 6.3 DDL (migration summary)
 
-> The complete source of truth is `migrations/` (`0001_init.sql` through `0015_public_shorten.sql`): `0003_multi_domain.sql` rebuilds the domain schema, `0004_user_groups.sql`–`0007_member_invites.sql` add groups and invite quotas, `0010`/`0012`/`0013` add themes, `0011_splash_pages.sql` adds splash pages, `0014_invite_issuance_released.sql` adds the invite-refund column, and `0015_public_shorten.sql` adds `users.is_system` with the reserved Guest account and the public-shortener settings. The table below is a structural summary.
+> The complete source of truth is `migrations/` (`0001_init.sql` through `0016_url_previews.sql`): `0003_multi_domain.sql` rebuilds the domain schema, `0004_user_groups.sql`–`0007_member_invites.sql` add groups and invite quotas, `0010`/`0012`/`0013` add themes, `0011_splash_pages.sql` adds splash pages, `0014_invite_issuance_released.sql` adds the invite-refund column, and `0015_public_shorten.sql` adds `users.is_system` with the reserved Guest account and the public-shortener settings. The table below is a structural summary.
 
 
 | Table | Main columns | Purpose |
@@ -539,6 +553,7 @@ login_attempts (auditing)
 | `themes` | id, key(UNIQUE), is_enabled, is_default, sort_order, created_at, updated_at | Administrator's choice among all themes; uploaded themes get a row when they are registered; one default enforced by a partial unique index |
 | `custom_themes` | id, key(UNIQUE), name, description, appearance, is_dark_only(legacy), css_version, css_size, original_filename, created_by, created_at, updated_at | Metadata for administrator-uploaded stylesheets, including the `auto`/`light`/`dark` appearance; the file lives in `URLET_THEMES_DIR` |
 | `invite_issuance` | id, group_id, actor_id, invite_id, created_at, released_at | Per-group invite issuance ledger; a released row (an unused code revoked before redemption) no longer counts towards the quota |
+| `url_previews` | url_id(PK, FK), title, description, image_url, image_key(UNIQUE), image_mime, image_data | Optional public SNS card and uploaded image; metadata queries omit BLOBs |
 | `settings` | key(PK), value, updated_at, updated_by | Site settings |
 | `invite_codes` | id, code_hash(UNIQUE), code_prefix, code_sealed, note, group_id, created_by, max_uses, used_count, expires_at, status, created_at | Invite codes; `code_sealed` is the encrypted copy used to display a code again |
 | `invite_redemptions` | id, invite_id, user_id, redeemed_at, UNIQUE(invite_id,user_id) | Invite redemption records |
@@ -583,6 +598,7 @@ index (no new table), for **19 tables and 36 indexes**.
 
 ### 6.5 Seed Data
 
+- SNS images: `preview_image_policy=both`; accepted values are `none`, `url`, `upload`, `both`.
 - URL cleanup: `url_cleaning_enabled=false`, `url_cleaning_rules=` (empty); startup seeds absent keys and preserves existing values.
 
 - `settings`: `site_name=urlet`, `registration_mode=open`, `default_slug_length=7`,
@@ -766,7 +782,7 @@ urlet/
 ├── docker-compose.tls.yml        # optional: Caddy automatic HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_splash_pages.sql 0012_custom_themes.sql 0013_custom_theme_appearance.sql 0014_invite_issuance_released.sql 0015_public_shorten.sql
+├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_splash_pages.sql 0012_custom_themes.sql 0013_custom_theme_appearance.sql 0014_invite_issuance_released.sql 0015_public_shorten.sql 0016_url_previews.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama templates (base, app_base, landing.html + pages + admin/)
@@ -907,3 +923,5 @@ v1.2 additions (this batch):
 | GeoIP country analytics | `clicks.country_code` already exists; only a resolver is missing |
 | Click export / CSV | The full `clicks` column set + indexes |
 | Audit compliance | `audit_logs.metadata` keeps the full JSON context |
+
+Migration `0016_url_previews.sql` adds `url_previews` (one optional row per link), bringing the schema to 20 tables and 36 explicit indexes. Metadata reads exclude image BLOBs; the database remains the backup boundary. A trigger removes the preview row and its image when the owning link is soft-deleted, including account deletion; disabling or expiring a link preserves its preview. SQLite can reuse the freed pages; the database file does not automatically shrink.

@@ -1,0 +1,43 @@
+<section class="card" aria-labelledby="preview-heading">
+    <h2 id="preview-heading">{{ lang.t("preview.heading") }}</h2>
+    <p class="hint">{{ lang.t("preview.hint") }}</p>
+    {% if !preview.error.is_empty() %}<div class="alert alert-error" role="alert">{{ lang.t(preview.error.as_str()) }}</div>{% endif %}
+    <form method="post" action="/app/urls/{{ preview.url_id }}/preview" enctype="multipart/form-data" data-preview-form>
+        <div class="field">
+            <label class="label" for="preview-title">{{ lang.t("preview.title") }}</label>
+            <input class="input" id="preview-title" name="title" maxlength="200" value="{{ preview.title }}">
+        </div>
+        <div class="field">
+            <label class="label" for="preview-description">{{ lang.t("preview.description") }}</label>
+            <textarea class="textarea" id="preview-description" name="description" maxlength="1000" rows="3">{{ preview.description }}</textarea>
+        </div>
+        <div class="field">
+            <label class="label" for="preview-image-mode">{{ lang.t("preview.image_source") }}</label>
+            <p class="hint" id="preview-policy">{{ lang.t("preview.policy_label") }} {{ lang.t(preview.policy_key.as_str()) }}</p>
+            <select class="select" id="preview-image-mode" name="image_mode" data-preview-source aria-describedby="preview-policy">
+                <option value="none" {% if preview.image_mode == "none" %}selected{% endif %}>{{ lang.t("preview.none") }}</option>
+                <option value="keep" {% if preview.image_mode == "keep" %}selected{% endif %}>{{ lang.t("preview.keep") }}</option>
+                {% if preview.allow_url %}<option value="url" {% if preview.image_mode == "url" %}selected{% endif %}>{{ lang.t("preview.url") }}</option>{% endif %}
+                {% if preview.allow_upload %}<option value="upload" {% if preview.image_mode == "upload" %}selected{% endif %}>{{ lang.t("preview.upload") }}</option>{% endif %}
+            </select>
+        </div>
+        {% if preview.allow_url %}
+        <div class="field" data-preview-input="url">
+            <label class="label" for="preview-image-url">{{ lang.t("preview.url") }}</label>
+            <input class="input" type="url" id="preview-image-url" name="image_url" maxlength="2048" placeholder="https://example.com/image.png" value="{{ preview.image_url }}">
+        </div>
+        {% endif %}
+        {% if preview.allow_upload %}
+        <div class="field" data-preview-input="upload">
+            <label class="label" for="preview-image">{{ lang.t("preview.upload") }}</label>
+            <input class="input" type="file" id="preview-image" name="image" accept="image/png,image/jpeg,image/gif,image/webp" aria-describedby="preview-image-hint">
+            <p class="hint" id="preview-image-hint">{{ lang.t("preview.image_hint") }}</p>
+        </div>
+        {% endif %}
+        {% if preview.image_suppressed %}<p class="hint">{{ lang.t("preview.image_suppressed") }}</p>{% endif %}
+        {% if !preview.current_image.is_empty() %}<p><a href="{{ preview.current_image }}" target="_blank" rel="noopener noreferrer">{{ lang.t("preview.current_image") }}</a></p>{% endif %}
+        <p class="hint">{{ lang.t("preview.public_hint") }}</p>
+        <p class="hint">{{ lang.t("preview.clear_hint") }}</p>
+        <button class="btn btn-primary" type="submit">{{ lang.t("preview.save") }}</button>
+    </form>
+</section>

@@ -12,6 +12,7 @@ use crate::state::AppState;
 /// JSON API, version 1.
 pub fn router() -> Router<AppState> {
     Router::new()
+        .merge(crate::routes::previews::api_router())
         // authentication and profile
         .route("/auth/register", post(api_auth::register))
         .route("/auth/login", post(api_auth::login))

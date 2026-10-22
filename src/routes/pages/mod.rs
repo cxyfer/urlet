@@ -441,6 +441,12 @@ pub fn router() -> Router<AppState> {
         .route("/urls", post(urls::create))
         .route("/urls/{id}", get(urls::detail).post(urls::update))
         .route("/urls/{id}/delete", post(urls::delete))
+        .route(
+            "/urls/{id}/preview",
+            post(crate::routes::previews::save_form).layer(DefaultBodyLimit::max(
+                crate::services::url_preview::MAX_BODY_BYTES,
+            )),
+        )
         .route("/urls/{id}/extend", post(urls::extend))
         .route("/account", get(account::page).post(account::update_profile))
         .route("/account/password", post(account::change_password))

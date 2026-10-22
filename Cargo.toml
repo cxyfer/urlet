@@ -2,7 +2,7 @@
 name = "urlet"
 version = "1.4.0-rc.1"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.80.1"
 description = "Lightweight multi-user URL shortener with password protection, expiry and multi-domain support"
 license = "MIT"
 default-run = "urlet"
@@ -28,6 +28,11 @@ ureq = { version = "2", default-features = false, features = ["tls"] }
 
 # Database
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "macros"] }
+
+# Bounded raster validation for uploaded SNS thumbnails. image-webp requires Rust 1.80.1.
+image = { version = "=0.25.6", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+# Metadata-only GIF frame checks before raster allocation.
+gif = { version = "0.13", default-features = false, features = ["std"] }
 
 # Templates / serialization
 askama = { version = "0.12", default-features = false }

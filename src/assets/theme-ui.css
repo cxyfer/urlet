@@ -850,3 +850,8 @@ footer.colophon .theme-menu {
     .form-dialog-head { padding: .85rem 1rem; }
     .form-dialog-body { padding: 1rem; }
 }
+
+/* 主題的 .field display 不得蓋過預覽來源欄位的 hidden 狀態。 */
+[data-preview-input][hidden] {
+  display: none;
+}

@@ -42,6 +42,16 @@
                     <span class="hint">{{ lang.t("admin.settings.slug_length_hint") }}</span>
                 </div>
                 <div class="field">
+                    <label class="label" for="preview_image_policy">{{ lang.t("admin.settings.preview_image_policy") }}</label>
+                    <select class="select" id="preview_image_policy" name="preview_image_policy" aria-describedby="preview-policy-hint">
+                        <option value="none" {% if values.preview_image_policy == "none" %}selected{% endif %}>{{ lang.t("preview.policy.none") }}</option>
+                        <option value="url" {% if values.preview_image_policy == "url" %}selected{% endif %}>{{ lang.t("preview.policy.url") }}</option>
+                        <option value="upload" {% if values.preview_image_policy == "upload" %}selected{% endif %}>{{ lang.t("preview.policy.upload") }}</option>
+                        <option value="both" {% if values.preview_image_policy == "both" %}selected{% endif %}>{{ lang.t("preview.policy.both") }}</option>
+                    </select>
+                    <span class="hint" id="preview-policy-hint">{{ lang.t("admin.settings.preview_image_policy_hint") }}</span>
+                </div>
+                <div class="field">
                     <label class="label" for="max_urls_per_user">{{ lang.t("admin.settings.links_per_user") }}</label>
                     <input class="input" type="number" id="max_urls_per_user" name="max_urls_per_user"
                            min="0" max="1000000" step="1" value="{{ values.max_urls_per_user }}" required>

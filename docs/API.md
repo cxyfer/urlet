@@ -666,6 +666,7 @@ Editable setting keys: `site_name`, `registration_mode` (`open`/`invite`/`closed
 `max_api_tokens_per_user` (0 = unlimited, default 20),
 `max_invites_per_period` (0 = unlimited, default 0), `invite_period` (`day`/`week`/`month`,
 default `month`), `default_redirect_type` (301/302/307/308), `analytics_enabled`,
+`preview_image_policy` (`none`/`url`/`upload`/`both`, default `both`),
 `click_retention_days` (0 = keep forever), plus the bot verification keys
 `captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`,
 `captcha_on_login`, `captcha_on_create` and `captcha_allowed_hostnames`. The secret key is
@@ -757,3 +758,32 @@ past.
 
 The IP used for login comes from `X-Real-IP` when `URLET_TRUST_PROXY=true`, falling back to the
 rightmost address in `X-Forwarded-For`.
+
+
+## SNS preview configuration
+
+Administrators control `preview_image_policy` at `/app/admin/settings` or with `PUT /api/v1/admin/settings`: `{"preview_image_policy":"none"}`. Values: `none` (no images), `url` (HTTPS URLs only), `upload` (uploads only), `both` (default). Invalid values return 422 without partial updates. The policy applies to administrators and members alike; API attempts to set a prohibited source return 403, and browser forms return a 422 retry page retaining text. Keeping/removing an image and editing text remain allowed. Existing disallowed images stay stored but are omitted from metadata and the response `image_url`; `image_uploaded` still describes the stored source. Uploaded-image URLs return 404 with no-store while uploads are disabled. Re-enabling restores delivery. Third-party copies/caches of previously public images cannot be revoked. Startup seeds only missing settings, and old settings forms that omit this field preserve the existing policy.
+
+
+Social platforms build link cards from the fetched page's Open Graph (`og:title`, `og:description`, `og:image`) and Twitter Card tags. Without custom preview settings, urlet keeps its redirect behavior and the platform may read metadata from the destination. Configured links serve metadata from the owner's saved preview fields to recognised social crawlers. The platform chooses the footer, layout and refresh timing; there is no arbitrary footer field in these tags.
+
+These endpoints require the link owner's session or API token; another owner's link returns 404. Existing CSRF rules apply to cookie requests. Create a short link first, then configure its optional public preview. The public shortener does not accept uploads or these extra fields.
+
+| Method | Path | Behavior |
+|--------|------|----------|
+| GET | `/api/v1/urls/{id}/preview` | Returns `{title, description, image_url, image_uploaded, enabled}`; an unconfigured preview returns null fields and false flags |
+| PATCH | `/api/v1/urls/{id}/preview` | JSON `{title?, description?, image_url?}`. Omitted fields stay unchanged; null or blank clears the field. Setting/clearing image_url replaces/removes any uploaded image. The response uses the GET shape |
+| POST | `/api/v1/urls/{id}/preview/image` | Multipart field `image`; replaces the image while preserving text, returns the GET shape |
+| DELETE | `/api/v1/urls/{id}/preview` | Clears all custom preview data and image bytes, returns 204 |
+
+```bash
+curl -X PATCH "$BASE/api/v1/urls/42/preview" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"title":"Read this","description":"A custom summary","image_url":"https://example.com/card.png"}'
+curl "$BASE/api/v1/urls/42/preview/image" \
+  -H "Authorization: Bearer $TOKEN" -F 'image=@card.png'
+```
+
+Title: 200 characters; description: 1000 characters. Image URLs must be absolute HTTPS, at most 2048 characters, without credentials/whitespace. Uploads: PNG/JPEG/GIF/WebP, at most 2 MiB and 4096 × 4096 pixels. MIME is detected from validated bytes, not the filename. Stored images use opaque public `/assets/link-previews/{key}` URLs; replacing/removing the image revokes old keys. Invalid fields return 422; malformed/oversized multipart requests return a 4xx error without changing stored data. Uploads share a per-account rate budget.
+
+Configured text/images are public even on password-protected links. A blank preview title uses the site name; private link title/notes and the destination are never used as fallbacks. No external metadata or image fetch occurs on the server. Known social crawlers (including Discord, X/Twitter, Meta, Telegram, Slack, LinkedIn and LINE markers) receive OG/Twitter HTML; unknown agents retain normal link behavior. Link lifecycle checks apply to both metadata and uploaded images. Custom preview fetches do not count as clicks. Third-party caches and layout are controlled by the platforms; changing settings does not guarantee an immediate refreshed card.

@@ -188,7 +188,7 @@ bash scripts/smoke.sh      # end-to-end acceptance run against the real binary (
 bash scripts/demo.sh       # build a demo site and write screenshots to .tmp/demo/shots
 ```
 
-Rust 1.80 or newer is required. Integration tests use their own temporary SQLite database
+Rust 1.80.1 or newer is required. Integration tests use their own temporary SQLite database
 and never touch your development data.
 
 The first four commands also run in CI on every pull request — see
@@ -251,3 +251,7 @@ Chinese translations of these documents live under `docs/zh-TW/`.
 ## License
 
 MIT, see [`LICENSE`](LICENSE).
+
+### Custom SNS previews
+
+Open a link in the dashboard and use **SNS preview** to set its public card title, description and either an HTTPS image URL or a PNG/JPEG/GIF/WebP upload (up to 2 MiB, 4096 × 4096 pixels). Clear all three to restore existing link behavior. Administrators choose no images, HTTPS URLs only, uploads only or both at **Admin → Settings → SNS preview images** (default: both). Disallowed existing images are hidden and retained for later re-enabling. Uploaded images stay in SQLite. Preview content is public even on password links; normal browser redirects are unchanged. See [the API reference](docs/API.md#sns-preview-configuration) for automation. Social platforms control their own card layout and cache refresh.

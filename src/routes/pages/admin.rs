@@ -809,6 +809,7 @@ pub struct SettingsValues {
     pub invite_period: String,
     pub default_redirect_type: i64,
     pub analytics_enabled: bool,
+    pub preview_image_policy: String,
     pub url_cleaning_enabled: bool,
     pub url_cleaning_rules: String,
     pub url_cleaning_error: bool,
@@ -1235,6 +1236,8 @@ pub struct SettingsForm {
     pub default_redirect_type: String,
     #[serde(default)]
     pub analytics_enabled: Option<String>,
+    #[serde(default)]
+    pub preview_image_policy: Option<String>,
     #[serde(default)]
     pub url_cleaning_enabled: Option<String>,
     #[serde(default)]
@@ -2535,6 +2538,9 @@ pub async fn update_settings(
     if let Some(value) = payload.max_api_tokens_per_user {
         values.push(("max_api_tokens_per_user".to_string(), value));
     }
+    if let Some(value) = payload.preview_image_policy {
+        values.push(("preview_image_policy".to_string(), value));
+    }
     // 文字框存在時才更新這組設定，舊版頁面送出不會重設新開關。
     if let Some(rules) = payload.url_cleaning_rules {
         values.push(("url_cleaning_rules".to_string(), rules));
@@ -3380,6 +3386,7 @@ pub fn settings_values(settings: &Settings) -> SettingsValues {
         invite_period: settings.invite_period().as_str().to_string(),
         default_redirect_type: settings.default_redirect_type(),
         analytics_enabled: settings.analytics_enabled(),
+        preview_image_policy: settings.preview_image_policy().as_str().to_string(),
         url_cleaning_enabled: settings.url_cleaning_enabled(),
         url_cleaning_rules: settings.url_cleaning_rules(),
         url_cleaning_error: false,

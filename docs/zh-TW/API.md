@@ -610,6 +610,7 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 `max_invites_per_period`（0 = 無限，預設 0）、`invite_period`（`day`/`week`/`month`，預設
 `month`）、
 `default_redirect_type`（301/302/307/308）、`analytics_enabled`、
+`preview_image_policy`（`none`/`url`/`upload`/`both`，預設 `both`）、
 `click_retention_days`（0 = 永久保留），以及防機器人驗證的
 `captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、
 `captcha_on_login`、`captcha_on_create`、`captcha_allowed_hostnames`。secret key 為唯寫：
@@ -700,3 +701,32 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 
 登入的 IP 來源：`URLET_TRUST_PROXY=true` 時優先採用 `X-Real-IP`，
 其次取 `X-Forwarded-For` 最右側的位址。
+
+
+## SNS 預覽設定
+
+管理員可在 `/app/admin/settings` 或以 `PUT /api/v1/admin/settings` 設定 `preview_image_policy`，例如 `{"preview_image_policy":"none"}`。值為 `none`（不允許圖片）、`url`（僅 HTTPS 網址）、`upload`（僅上傳）、`both`（預設皆可）。非法值回 422，整批不寫入。政策同時套用管理員與一般成員；API 設定禁止的來源回 403，瀏覽器表單回保留文字的 422 重試頁。保留／移除圖片與編輯文字仍可使用。不允許的既有圖片仍儲存，但不輸出 metadata 圖片，回應的 `image_url` 為 null；`image_uploaded` 仍表示已儲存的來源。禁止上傳時，上傳圖片網址回 404 與 no-store；重新允許後恢復。第三方已複製或快取的公開圖片無法撤回。啟動時只補入缺少的設定，舊設定表單缺少此欄位時保留原政策。
+
+
+社群平台抓取網頁的 Open Graph（`og:title`、`og:description`、`og:image`）及 Twitter Card 標籤來產生預覽。未自訂時，urlet 沿用轉址行為，平台可能從目標網站取得 metadata；自訂後，已知社群爬蟲取得的是擁有者儲存的預覽欄位。Footer、版型與更新時間由平台決定，這些標籤沒有任意 footer 欄位。
+
+端點要求短網址擁有者的 session 或 API token；其他人的連結回傳 404。Cookie 請求沿用既有 CSRF 規則。先建立短網址，再設定選填的公開預覽；公開短網址工具不接受圖片上傳或這些額外欄位。
+
+| 方法 | 路徑 | 行為 |
+|------|------|------|
+| GET | `/api/v1/urls/{id}/preview` | 回傳 `{title, description, image_url, image_uploaded, enabled}`；未設定時各欄位為 null，旗標為 false |
+| PATCH | `/api/v1/urls/{id}/preview` | JSON `{title?, description?, image_url?}`；省略則保留，null 或空白則清除。設定／清除 image_url 會替換／移除上傳圖片；回傳格式同 GET |
+| POST | `/api/v1/urls/{id}/preview/image` | Multipart 欄位 `image`；替換圖片並保留文字，回傳格式同 GET |
+| DELETE | `/api/v1/urls/{id}/preview` | 清除所有自訂預覽與圖片資料，回傳 204 |
+
+```bash
+curl -X PATCH "$BASE/api/v1/urls/42/preview" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"title":"閱讀內容","description":"自訂摘要","image_url":"https://example.com/card.png"}'
+curl "$BASE/api/v1/urls/42/preview/image" \
+  -H "Authorization: Bearer $TOKEN" -F 'image=@card.png'
+```
+
+標題上限 200 字，內容上限 1000 字。圖片網址須為完整 HTTPS，上限 2048 字，不含帳號密碼或空白。上傳支援 PNG、JPEG、GIF、WebP，上限 2 MiB、4096 × 4096 像素；依驗證後的檔案內容決定 MIME，不相信檔名。圖片存於 SQLite，以不透明的公開 `/assets/link-previews/{key}` 網址提供；替換／移除後舊網址失效。欄位無效回傳 422；格式錯誤或過大的 multipart 回傳 4xx，既有資料不變。上傳套用每帳號速率限制。
+
+預覽文字與圖片即使在密碼保護連結也會公開。預覽標題留空時使用站台名稱；管理用標題、備註與目標網址不作預設內容。伺服器不抓取外部 metadata 或圖片。已知社群爬蟲（含 Discord、X／Twitter、Meta、Telegram、Slack、LinkedIn、LINE 標記）會取得 OG／Twitter HTML；未知 agent 保留一般轉址行為。Metadata 與上傳圖片都遵循連結生命週期；自訂預覽抓取不計點擊。第三方快取與版型由平台決定，修改後不保證立即更新卡片。
