@@ -1429,6 +1429,17 @@ async fn custom_theme_uploads_are_validated_and_never_reach_the_volume() {
         .iter()
         .all(|theme| theme["custom"] == false));
 
+    // A body the multipart reader cannot parse still belongs on the upload
+    // form: the list page no longer carries one.
+    let response = app
+        .send(post_form_as("/app/admin/themes/custom", "name=x", &cookie))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some("/app/admin/themes/new?err=theme_upload")
+    );
+
     // A missing upload answers the same not-found redirect as an unknown id.
     let response = app
         .send(post_form_as(

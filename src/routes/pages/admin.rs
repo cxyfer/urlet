@@ -2060,14 +2060,18 @@ pub async fn create_custom_theme(
     let Some(current) = admin_user(current)? else {
         return Ok(redirect_to_login(Some("/app/admin/themes/new")).into_response());
     };
+    // A body the multipart reader cannot parse still belongs on the upload
+    // form: the list page no longer carries one.
     let Ok(multipart) = multipart else {
-        return Ok(redirect_err("/app/admin/themes", "theme_upload").into_response());
+        return Ok(redirect_err("/app/admin/themes/new", "theme_upload").into_response());
     };
     let fields = match read_theme_form(multipart).await {
         Ok(fields) => fields,
         Err(err) => {
             log_theme_error(&err, "upload");
-            return Ok(redirect_err("/app/admin/themes", theme_error_code(&err)).into_response());
+            return Ok(
+                redirect_err("/app/admin/themes/new", theme_error_code(&err)).into_response(),
+            );
         }
     };
     let form = match fields.validated(true) {
@@ -2080,7 +2084,7 @@ pub async fn create_custom_theme(
                 flash_from_query(None, Some(theme_error_code(&err))),
                 None,
                 Some(&fields),
-                StatusCode::UNPROCESSABLE_ENTITY,
+                err.status(),
             )
             .await;
         }
@@ -2088,7 +2092,7 @@ pub async fn create_custom_theme(
     let Some(css) = form.css.as_deref() else {
         // `validated(true)` already enforces this on create; a missing file
         // means the request was rejected above, so this is unreachable.
-        return Ok(redirect_err("/app/admin/themes", "theme_css").into_response());
+        return Ok(redirect_err("/app/admin/themes/new", "theme_css").into_response());
     };
     let filename = form.filename.as_deref().unwrap_or("theme.css");
 
@@ -2129,7 +2133,7 @@ pub async fn create_custom_theme(
                 flash_from_query(None, Some(theme_error_code(&err))),
                 None,
                 Some(&fields),
-                StatusCode::UNPROCESSABLE_ENTITY,
+                err.status(),
             )
             .await
         }
@@ -2213,7 +2217,7 @@ pub async fn update_custom_theme(
                 flash_from_query(None, Some(theme_error_code(&err))),
                 Some(id),
                 Some(&fields),
-                StatusCode::UNPROCESSABLE_ENTITY,
+                err.status(),
             )
             .await;
         }
@@ -2259,7 +2263,7 @@ pub async fn update_custom_theme(
                 flash_from_query(None, Some(theme_error_code(&err))),
                 Some(id),
                 Some(&fields),
-                StatusCode::UNPROCESSABLE_ENTITY,
+                err.status(),
             )
             .await
         }

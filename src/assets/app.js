@@ -224,7 +224,8 @@
            stylesheet would have to be picked again after a rejected upload. */
         function restoreFiles(root, files) {
             if (!files || !files.length) { return; }
-            var input = root.querySelector('input[type="file"]');
+            var form = root.querySelector(config.form);
+            var input = form ? form.querySelector('input[type="file"]') : null;
             if (!input) { return; }
             try {
                 var transfer = new DataTransfer();
@@ -301,6 +302,10 @@
         }
 
         function submit(form) {
+            // A submit supersedes a load still in flight, and its own response
+            // is dropped if the dialog is closed or reopened while it runs.
+            sequence += 1;
+            var ticket = sequence;
             var data;
             if (config.multipart) {
                 // The upload routes read a multipart body, so the FormData is
@@ -335,20 +340,28 @@
                 credentials: "same-origin"
             }).then(function (response) {
                 if (response.redirected) {
+                    // The submission changed something, so show the result even
+                    // if the dialog moved on while the request was in flight.
                     window.location.assign(response.url);
                     return null;
                 }
+                if (ticket !== sequence) { return null; }
                 return response.text();
             }).then(function (html) {
-                if (html === null || !dialog.open) { return; }
+                if (ticket !== sequence || html === null || !dialog.open) { return; }
                 if (!render(html, chosen)) {
-                    window.location.assign(form.getAttribute("action"));
+                    // The server answered with something other than the shared
+                    // form (a body limit rejection, for example). Its submit URL
+                    // is POST-only and cannot be loaded as a page, so keep the
+                    // form that is still on screen and report it in place.
+                    if (submitButton) { submitButton.disabled = false; }
+                    showError(false);
                     return;
                 }
                 setBusy(false);
                 if (submitButton) { submitButton.disabled = false; }
             }).catch(function () {
-                if (!dialog.open) { return; }
+                if (ticket !== sequence || !dialog.open) { return; }
                 if (submitButton) { submitButton.disabled = false; }
                 showError(false);
             });
