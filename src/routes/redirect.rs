@@ -161,6 +161,7 @@ async fn redirect_inner(
                         image_url: crate::services::url_preview::public_image_url(
                             preview,
                             &state.config.base_url,
+                            state.settings.preview_image_policy(),
                         )
                         .unwrap_or_default(),
                         short_url: format!(

@@ -15,3 +15,9 @@ Validated task worktree: .worktrees/social-previews, branch feat/social-previews
 - GitHub API confirmed cxyfer/urlet, ADMIN permission and master 5a0646b2bf2959e1f16b3331cd694eb97621600f. The authorised task worktree, branch and PR #35 were created. No merge into master or deployment was performed.
 
 Logs and browser screenshots are temporary local artifacts, not product files. Actual third-party card layout, image acceptance and cache refresh remain unverified. Minimum declared Rust version is 1.80.1; checks used the installed toolchain rather than an MSRV toolchain. Incremental compilation was disabled to reduce build artifacts, trading later recompilation speed for disk space. SQLite can reuse deleted image pages but does not automatically shrink its file.
+
+## Administrator image policy verification
+
+After adding preview_image_policy=none/url/upload/both, fresh checks passed on the task worktree: fmt, Clippy with warnings denied, 562 Cargo tests (zero failed, two existing ignored), build, 177 smoke checks and 42 group/domain checks. All 17 preview integration tests passed. The existing checksum-protected migrations were unchanged by this follow-up; startup seeds the new setting only when missing.
+
+Browser evidence: the administrator form saved none, the owner editor exposed only the permitted source options in all four modes, active source fields had correct visibility/disabled state, and a 390px Traditional Chinese viewport had no overflow. Screenshots and checks are under /tmp/urlet-preview-policy-ui. An independent HTTP/SQLite harness checked all four policies across API/form writes, OG metadata, asset status/no-store, DTO behavior and unchanged stored image data after switching. No remaining actionable review findings. The existing soft-delete thread PRRT_kwDOVLtob86vW_AP was replied to with a244478 evidence and resolved; actual third-party SNS cache/rendering and MSRV remain outside verification.

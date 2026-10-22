@@ -664,6 +664,7 @@ Editable setting keys: `site_name`, `registration_mode` (`open`/`invite`/`closed
 `max_api_tokens_per_user` (0 = unlimited, default 20),
 `max_invites_per_period` (0 = unlimited, default 0), `invite_period` (`day`/`week`/`month`,
 default `month`), `default_redirect_type` (301/302/307/308), `analytics_enabled`,
+`preview_image_policy` (`none`/`url`/`upload`/`both`, default `both`),
 `click_retention_days` (0 = keep forever), plus the bot verification keys
 `captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`,
 `captcha_on_login`, `captcha_on_create` and `captcha_allowed_hostnames`. The secret key is
@@ -734,6 +735,9 @@ rightmost address in `X-Forwarded-For`.
 
 
 ## SNS preview configuration
+
+Administrators control `preview_image_policy` at `/app/admin/settings` or with `PUT /api/v1/admin/settings`: `{"preview_image_policy":"none"}`. Values: `none` (no images), `url` (HTTPS URLs only), `upload` (uploads only), `both` (default). Invalid values return 422 without partial updates. The policy applies to administrators and members alike; API attempts to set a prohibited source return 403, and browser forms return a 422 retry page retaining text. Keeping/removing an image and editing text remain allowed. Existing disallowed images stay stored but are omitted from metadata and the response `image_url`; `image_uploaded` still describes the stored source. Uploaded-image URLs return 404 with no-store while uploads are disabled. Re-enabling restores delivery. Third-party copies/caches of previously public images cannot be revoked. Startup seeds only missing settings, and old settings forms that omit this field preserve the existing policy.
+
 
 Social platforms build link cards from the fetched page's Open Graph (`og:title`, `og:description`, `og:image`) and Twitter Card tags. Without custom preview settings, urlet keeps its redirect behavior and the platform may read metadata from the destination. Configured links serve metadata from the owner's saved preview fields to recognised social crawlers. The platform chooses the footer, layout and refresh timing; there is no arbitrary footer field in these tags.
 

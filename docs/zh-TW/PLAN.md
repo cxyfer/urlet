@@ -347,4 +347,4 @@ RSS 8.7 MB、冷啟動約 0.1 秒、完整測試套件）請見 `docs/SPEC.md` �
 
 ## SNS 分享預覽
 
-每條短網址可選擇設定標題、內容與 HTTPS／上傳圖片。以 SQLite 儲存，提供擁有者表單與 API、限定 SNS 爬蟲的 metadata 輸出，驗證生命週期與隱私邊界。[實作計畫](aegis/plans/2026-10-23-social-previews.md)。
+每條短網址可選擇設定標題、內容與 HTTPS／上傳圖片，管理員可設定四種圖片來源政策。以 SQLite 儲存，提供擁有者表單與 API、限定 SNS 爬蟲的 metadata 輸出，驗證生命週期與隱私邊界。[實作計畫](aegis/plans/2026-10-23-social-previews.md)。

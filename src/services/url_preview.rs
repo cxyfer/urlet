@@ -11,6 +11,7 @@ use crate::db::{
     urls,
 };
 use crate::error::{AppError, Result};
+use crate::services::settings::PreviewImagePolicy;
 use crate::services::{secret, target};
 
 pub const MAX_IMAGE_BYTES: usize = 2 * 1024 * 1024;
@@ -170,10 +171,32 @@ pub fn image_path(key: &str) -> String {
     format!("/assets/link-previews/{key}")
 }
 
-pub fn public_image_url(preview: &Preview, base_url: &str) -> Option<String> {
-    preview
-        .image_key
-        .as_deref()
-        .map(|key| format!("{}{}", base_url.trim_end_matches('/'), image_path(key)))
-        .or_else(|| preview.image_url.clone())
+pub fn require_image_source(policy: PreviewImagePolicy, uploaded: bool) -> Result<()> {
+    if (uploaded && policy.allows_upload()) || (!uploaded && policy.allows_url()) {
+        Ok(())
+    } else {
+        Err(AppError::forbidden(
+            "this preview image source is disabled by the administrator",
+        ))
+    }
+}
+
+pub fn public_image_url(
+    preview: &Preview,
+    base_url: &str,
+    policy: PreviewImagePolicy,
+) -> Option<String> {
+    if policy.allows_upload() {
+        if let Some(key) = preview.image_key.as_deref() {
+            return Some(format!(
+                "{}{}",
+                base_url.trim_end_matches('/'),
+                image_path(key)
+            ));
+        }
+    }
+    policy
+        .allows_url()
+        .then(|| preview.image_url.clone())
+        .flatten()
 }

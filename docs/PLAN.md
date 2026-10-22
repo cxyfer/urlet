@@ -345,4 +345,4 @@ them there rather than quoting this table.
 
 ## SNS preview cards
 
-Opt-in per-link title/description plus HTTPS or uploaded raster image, SQLite storage, owner-only form/API, narrow social crawler metadata output, lifecycle/privacy boundaries and tests. Implementation plan: [SNS preview plan](aegis/plans/2026-10-23-social-previews.md).
+Opt-in per-link title/description plus HTTPS or uploaded raster image, a four-mode administrator image policy, SQLite storage, owner-only form/API, narrow social crawler metadata output, lifecycle/privacy boundaries and tests. Implementation plan: [SNS preview plan](aegis/plans/2026-10-23-social-previews.md).

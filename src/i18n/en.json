@@ -857,5 +857,14 @@
   "preview.error_title": "Use at most 200 characters for the title, without control characters.",
   "preview.error_description": "Use at most 1000 characters for the description.",
   "preview.error_url": "Enter an absolute HTTPS image URL without credentials or whitespace.",
-  "preview.error_image": "Check the selected image source and upload. Use a valid PNG, JPEG, GIF or WebP up to 2 MiB and 4096 × 4096 pixels; re-select your file if needed."
+  "preview.error_image": "Check the selected image source and upload. Use a valid PNG, JPEG, GIF or WebP up to 2 MiB and 4096 × 4096 pixels; re-select your file if needed.",
+  "admin.settings.preview_image_policy": "SNS preview images",
+  "admin.settings.preview_image_policy_hint": "Controls image sources for every link owner, including administrators. Disallowed images stop appearing in previews; stored data is retained and reappears when permitted again. Title and description remain available.",
+  "preview.policy.none": "Images disabled",
+  "preview.policy.url": "HTTPS URLs only",
+  "preview.policy.upload": "Uploads only",
+  "preview.policy.both": "HTTPS URLs and uploads",
+  "preview.policy_label": "Allowed image sources:",
+  "preview.image_suppressed": "The stored image is currently hidden by the administrator’s policy. Keep it to restore it when allowed, or remove it.",
+  "preview.error_policy": "This image source is no longer allowed. Your text was kept. Choose an available source, keep the stored image, or remove it."
 }

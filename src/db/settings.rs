@@ -18,6 +18,7 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("invite_period", "month"),
     ("default_redirect_type", "302"),
     ("analytics_enabled", "true"),
+    ("preview_image_policy", "both"),
     ("url_cleaning_enabled", "false"),
     ("url_cleaning_rules", ""),
     ("click_retention_days", "0"),

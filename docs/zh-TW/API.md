@@ -608,6 +608,7 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 `max_invites_per_period`（0 = 無限，預設 0）、`invite_period`（`day`/`week`/`month`，預設
 `month`）、
 `default_redirect_type`（301/302/307/308）、`analytics_enabled`、
+`preview_image_policy`（`none`/`url`/`upload`/`both`，預設 `both`）、
 `click_retention_days`（0 = 永久保留），以及防機器人驗證的
 `captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、
 `captcha_on_login`、`captcha_on_create`、`captcha_allowed_hostnames`。secret key 為唯寫：
@@ -677,6 +678,9 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 
 
 ## SNS 預覽設定
+
+管理員可在 `/app/admin/settings` 或以 `PUT /api/v1/admin/settings` 設定 `preview_image_policy`，例如 `{"preview_image_policy":"none"}`。值為 `none`（不允許圖片）、`url`（僅 HTTPS 網址）、`upload`（僅上傳）、`both`（預設皆可）。非法值回 422，整批不寫入。政策同時套用管理員與一般成員；API 設定禁止的來源回 403，瀏覽器表單回保留文字的 422 重試頁。保留／移除圖片與編輯文字仍可使用。不允許的既有圖片仍儲存，但不輸出 metadata 圖片，回應的 `image_url` 為 null；`image_uploaded` 仍表示已儲存的來源。禁止上傳時，上傳圖片網址回 404 與 no-store；重新允許後恢復。第三方已複製或快取的公開圖片無法撤回。啟動時只補入缺少的設定，舊設定表單缺少此欄位時保留原政策。
+
 
 社群平台抓取網頁的 Open Graph（`og:title`、`og:description`、`og:image`）及 Twitter Card 標籤來產生預覽。未自訂時，urlet 沿用轉址行為，平台可能從目標網站取得 metadata；自訂後，已知社群爬蟲取得的是擁有者儲存的預覽欄位。Footer、版型與更新時間由平台決定，這些標籤沒有任意 footer 欄位。
 

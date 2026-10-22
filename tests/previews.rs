@@ -5,7 +5,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use common::{delete_as, patch_json_as, TestApp, TestResponse};
+use common::{delete_as, patch_json_as, post_form_as, put_json_as, TestApp, TestResponse};
 use serde_json::{json, Value};
 use std::io::Cursor;
 
@@ -44,6 +44,333 @@ fn png() -> Vec<u8> {
         .write_to(&mut out, image::ImageFormat::Png)
         .unwrap();
     out.into_inner()
+}
+
+async fn configure_images(app: &TestApp, admin: &str, policy: &str) {
+    let response = app
+        .send(put_json_as(
+            "/api/v1/admin/settings",
+            json!({"preview_image_policy":policy}),
+            admin,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::OK, "{}", response.body);
+}
+
+#[tokio::test]
+async fn image_policy_settings_require_admin_validate_atomically_and_persist() {
+    let (app, admin, _) = setup().await;
+    let (member, _) = app.register("member@example.com", "supersecret").await;
+    let uri = "/api/v1/admin/settings";
+    assert_eq!(
+        app.get_as(uri, &admin).await.json()["preview_image_policy"],
+        "both"
+    );
+    assert_eq!(
+        app.send(put_json_as(
+            uri,
+            json!({"preview_image_policy":"none"}),
+            &member
+        ))
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.send(put_json_as(uri, json!({"preview_image_policy":"none"}), ""))
+            .await
+            .status,
+        StatusCode::UNAUTHORIZED
+    );
+    configure_images(&app, &admin, "UPLOAD").await;
+    for invalid in ["", "typo", "all", "true"] {
+        let response = app
+            .send(put_json_as(
+                uri,
+                json!({"preview_image_policy":invalid, "site_name":"must not save"}),
+                &admin,
+            ))
+            .await;
+        assert_eq!(response.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(app.state.settings.site_name(), "urlet");
+        assert_eq!(app.state.settings.preview_image_policy().as_str(), "upload");
+    }
+    let old_form = "site_name=urlet&registration_mode=open&default_slug_length=7&max_urls_per_user=1000&default_redirect_type=302&click_retention_days=0";
+    assert_eq!(
+        app.send(post_form_as("/app/admin/settings", old_form, &admin))
+            .await
+            .status,
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(app.state.settings.preview_image_policy().as_str(), "upload");
+    let form = format!("{old_form}&preview_image_policy=url");
+    assert_eq!(
+        app.send(post_form_as("/app/admin/settings", &form, &admin))
+            .await
+            .status,
+        StatusCode::SEE_OTHER
+    );
+    let reloaded = urlet::services::settings::Settings::load(&app.state.db, &app.state.config)
+        .await
+        .unwrap();
+    assert_eq!(reloaded.preview_image_policy().as_str(), "url");
+    sqlx::query("DELETE FROM settings WHERE key='preview_image_policy'")
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    let reloaded = urlet::services::settings::Settings::load(&app.state.db, &app.state.config)
+        .await
+        .unwrap();
+    assert_eq!(reloaded.preview_image_policy().as_str(), "both");
+    assert_eq!(
+        urlet::services::settings::PreviewImagePolicy::parse("corrupt"),
+        urlet::services::settings::PreviewImagePolicy::None
+    );
+}
+
+#[tokio::test]
+async fn all_four_image_policies_gate_api_and_form_writes_without_blocking_text_or_clear() {
+    let (app, admin, id) = setup().await;
+    let api = format!("/api/v1/urls/{id}/preview/image");
+    let form = format!("/app/urls/{id}/preview");
+    for (policy, allow_url, allow_upload) in [
+        ("none", false, false),
+        ("url", true, false),
+        ("upload", false, true),
+        ("both", true, true),
+    ] {
+        configure_images(&app, &admin, policy).await;
+        assert_eq!(
+            patch(
+                &app,
+                &admin,
+                id,
+                json!({"title":"Before", "image_url":null})
+            )
+            .await
+            .status,
+            StatusCode::OK
+        );
+        let response = patch(&app, &admin, id, json!({"title":"External", "image_url":"https://images.example/signed.png?signature=keep"})).await;
+        assert_eq!(
+            response.status,
+            if allow_url {
+                StatusCode::OK
+            } else {
+                StatusCode::FORBIDDEN
+            },
+            "{policy}: {}",
+            response.body
+        );
+        if !allow_url {
+            assert_eq!(
+                urlet::db::url_previews::find(&app.state.db, id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .title
+                    .as_deref(),
+                Some("Before")
+            );
+        }
+        // 禁止上傳時，連無效圖片都先回政策錯誤，不進解碼器。
+        let bytes = if allow_upload {
+            png()
+        } else {
+            b"invalid image".to_vec()
+        };
+        let response = app.send(multipart(&api, &admin, &[], Some(&bytes))).await;
+        assert_eq!(
+            response.status,
+            if allow_upload {
+                StatusCode::OK
+            } else {
+                StatusCode::FORBIDDEN
+            },
+            "{policy}: {}",
+            response.body
+        );
+        for (mode, permitted) in [("url", allow_url), ("upload", allow_upload)] {
+            patch(&app, &admin, id, json!({"title":"Before"})).await;
+            let response = app
+                .send(multipart(
+                    &form,
+                    &admin,
+                    &[
+                        ("title", "Retain this text"),
+                        ("image_mode", mode),
+                        ("image_url", "https://images.example/new.png"),
+                    ],
+                    Some(&png()),
+                ))
+                .await;
+            assert_eq!(
+                response.status,
+                if permitted {
+                    StatusCode::SEE_OTHER
+                } else {
+                    StatusCode::UNPROCESSABLE_ENTITY
+                },
+                "{policy} {mode}: {}",
+                response.body
+            );
+            if !permitted {
+                assert!(response.body.contains("Retain this text"));
+                assert!(response
+                    .body
+                    .contains("This image source is no longer allowed"));
+                assert_eq!(
+                    urlet::db::url_previews::find(&app.state.db, id)
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .title
+                        .as_deref(),
+                    Some("Before")
+                );
+            }
+        }
+        for mode in ["keep", "none"] {
+            let response = app
+                .send(multipart(
+                    &form,
+                    &admin,
+                    &[("title", "Text only"), ("image_mode", mode)],
+                    None,
+                ))
+                .await;
+            assert_eq!(
+                response.status,
+                StatusCode::SEE_OTHER,
+                "{policy} {mode}: {}",
+                response.body
+            );
+        }
+        assert_eq!(
+            app.send(delete_as(&format!("/api/v1/urls/{id}/preview"), &admin))
+                .await
+                .status,
+            StatusCode::NO_CONTENT
+        );
+    }
+}
+
+#[tokio::test]
+async fn policy_changes_suspend_existing_images_and_restore_them_without_data_loss() {
+    let (app, admin, id) = setup().await;
+    for uploaded in [false, true] {
+        configure_images(&app, &admin, "both").await;
+        patch(
+            &app,
+            &admin,
+            id,
+            json!({"title":"Public title", "image_url":"https://images.example/a.png"}),
+        )
+        .await;
+        if uploaded {
+            assert_eq!(
+                app.send(multipart(
+                    &format!("/api/v1/urls/{id}/preview/image"),
+                    &admin,
+                    &[],
+                    Some(&png())
+                ))
+                .await
+                .status,
+                StatusCode::OK
+            );
+        }
+        let before = urlet::db::url_previews::find(&app.state.db, id)
+            .await
+            .unwrap()
+            .unwrap();
+        for (policy, permits) in [
+            ("none", false),
+            ("url", !uploaded),
+            ("upload", uploaded),
+            ("both", true),
+        ] {
+            configure_images(&app, &admin, policy).await;
+            let response = crawl(&app, "Discordbot").await;
+            assert_eq!(response.status, StatusCode::OK);
+            assert!(response.body.contains("Public title"));
+            assert_eq!(
+                response.body.contains("property=\"og:image\""),
+                permits,
+                "{policy} uploaded={uploaded}"
+            );
+            let dto = app
+                .get_as(&format!("/api/v1/urls/{id}/preview"), &admin)
+                .await
+                .json();
+            assert_eq!(dto["image_url"].is_null(), !permits);
+            assert_eq!(dto["image_uploaded"], uploaded);
+            if let Some(key) = before.image_key.as_deref() {
+                let media = app
+                    .get(&urlet::services::url_preview::image_path(key))
+                    .await;
+                assert_eq!(
+                    media.status,
+                    if permits {
+                        StatusCode::OK
+                    } else {
+                        StatusCode::NOT_FOUND
+                    }
+                );
+                assert_eq!(media.header("cache-control").as_deref(), Some("no-store"));
+            }
+            let stored = urlet::db::url_previews::find(&app.state.db, id)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(stored.image_key, before.image_key);
+            assert_eq!(stored.image_url, before.image_url);
+        }
+        configure_images(&app, &admin, "none").await;
+        assert_eq!(
+            patch(&app, &admin, id, json!({"image_url":null}))
+                .await
+                .status,
+            StatusCode::OK
+        );
+        let stored = urlet::db::url_previews::find(&app.state.db, id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(stored.image_key.is_none() && stored.image_url.is_none());
+    }
+}
+
+#[tokio::test]
+async fn image_policy_controls_render_for_every_theme_locale_and_policy() {
+    let (app, admin, id) = setup().await;
+    for (policy, allow_url, allow_upload) in [
+        ("none", false, false),
+        ("url", true, false),
+        ("upload", false, true),
+        ("both", true, true),
+    ] {
+        configure_images(&app, &admin, policy).await;
+        for theme in urlet::services::theme::ALL {
+            for locale in ["en", "zh-Hant", "zh-Hans"] {
+                let cookie = format!("{admin}; urlet_theme={}; urlet_lang={locale}", theme.key());
+                let editor = app.get_as(&format!("/app/urls/{id}"), &cookie).await;
+                assert_eq!(editor.status, StatusCode::OK);
+                assert_eq!(editor.body.contains("id=\"preview-image-url\""), allow_url);
+                assert_eq!(editor.body.contains("id=\"preview-image\""), allow_upload);
+                assert!(!editor.body.contains("preview.policy."));
+                let settings = app.get_as("/app/admin/settings", &cookie).await;
+                assert_eq!(settings.status, StatusCode::OK);
+                assert!(settings.body.contains("name=\"preview_image_policy\""));
+                assert!(settings
+                    .body
+                    .contains(&format!("value=\"{policy}\" selected")));
+                assert!(!settings
+                    .body
+                    .contains("admin.settings.preview_image_policy"));
+            }
+        }
+    }
 }
 
 fn multipart(

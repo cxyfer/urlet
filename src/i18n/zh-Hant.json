@@ -857,5 +857,14 @@
   "preview.error_title": "標題限 200 字，不可包含控制字元。",
   "preview.error_description": "預覽內容限 1000 字。",
   "preview.error_url": "請輸入完整 HTTPS 圖片網址，不可包含帳號密碼或空白。",
-  "preview.error_image": "請檢查圖片來源與檔案。支援有效的 PNG、JPEG、GIF、WebP，上限 2 MiB、4096 × 4096 像素；必要時請重新選取檔案。"
+  "preview.error_image": "請檢查圖片來源與檔案。支援有效的 PNG、JPEG、GIF、WebP，上限 2 MiB、4096 × 4096 像素；必要時請重新選取檔案。",
+  "admin.settings.preview_image_policy": "SNS 預覽圖片",
+  "admin.settings.preview_image_policy_hint": "適用所有連結擁有者，包含管理員。不允許的圖片會暫停顯示，資料仍保留，重新允許即可恢復。標題與內容仍可設定。",
+  "preview.policy.none": "不允許圖片",
+  "preview.policy.url": "只能使用 HTTPS 網址",
+  "preview.policy.upload": "只能上傳圖片",
+  "preview.policy.both": "網址與上傳皆可",
+  "preview.policy_label": "允許的圖片來源：",
+  "preview.image_suppressed": "管理員的政策目前隱藏了已儲存的圖片。可保留圖片，待重新允許後恢復，或選擇移除。",
+  "preview.error_policy": "目前已不允許此圖片來源。已保留輸入的文字，請選擇可用來源、保留既有圖片，或移除圖片。"
 }

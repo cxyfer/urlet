@@ -20,6 +20,7 @@ use crate::{
     services::{
         audit::{action, Audit},
         ratelimit::limits,
+        settings::PreviewImagePolicy,
         url_preview as service,
     },
     state::AppState,
@@ -85,7 +86,11 @@ fn dto(row: Option<Preview>, state: &AppState) -> PreviewDto {
     let enabled = row.is_some();
     let row = row.unwrap_or_default();
     PreviewDto {
-        image_url: service::public_image_url(&row, &state.config.base_url),
+        image_url: service::public_image_url(
+            &row,
+            &state.config.base_url,
+            state.settings.preview_image_policy(),
+        ),
         image_uploaded: row.image_key.is_some(),
         title: row.title,
         description: row.description,
@@ -151,6 +156,15 @@ async fn save(
     id: i64,
     changes: Changes,
 ) -> Result<Option<Preview>, AppError> {
+    if let Some(image) = changes.image.as_ref() {
+        let policy = state.settings.preview_image_policy();
+        if image.url.is_some() {
+            service::require_image_source(policy, false)?;
+        }
+        if image.key.is_some() {
+            service::require_image_source(policy, true)?;
+        }
+    }
     let row = service::save(&state.db, user.user.id, id, changes).await?;
     Audit::new(action::URL_UPDATED)
         .actor(user.user.id, &user.user.role)
@@ -225,6 +239,7 @@ pub async fn upload_api(
     multipart: Result<Multipart, axum::extract::multipart::MultipartRejection>,
 ) -> Result<Json<PreviewDto>, ApiError> {
     service::owned(&state.db, user.user.id, id).await?;
+    service::require_image_source(state.settings.preview_image_policy(), true)?;
     upload_limit(&state, user.user.id)?;
     let fields =
         read_form(multipart.map_err(|_| AppError::bad_request("invalid image upload"))?).await?;
@@ -257,13 +272,21 @@ pub struct FormView {
     pub image_mode: String,
     pub current_image: String,
     pub error: String,
+    pub allow_url: bool,
+    pub allow_upload: bool,
+    pub policy_key: String,
+    pub image_suppressed: bool,
 }
 
 impl FormView {
     pub fn new(id: i64, row: Option<Preview>, state: &AppState) -> Self {
+        let policy = state.settings.preview_image_policy();
+        let has_image = row
+            .as_ref()
+            .is_some_and(|p| p.image_key.is_some() || p.image_url.is_some());
         let current_image = row
             .as_ref()
-            .and_then(|p| service::public_image_url(p, &state.config.base_url))
+            .and_then(|p| service::public_image_url(p, &state.config.base_url, policy))
             .unwrap_or_default();
         let row = row.unwrap_or_default();
         Self {
@@ -271,14 +294,13 @@ impl FormView {
             title: row.title.unwrap_or_default(),
             description: row.description.unwrap_or_default(),
             image_url: row.image_url.unwrap_or_default(),
-            image_mode: if current_image.is_empty() {
-                "none"
-            } else {
-                "keep"
-            }
-            .into(),
+            image_mode: if !has_image { "none" } else { "keep" }.into(),
+            image_suppressed: has_image && current_image.is_empty(),
             current_image,
             error: String::new(),
+            allow_url: policy.allows_url(),
+            allow_upload: policy.allows_upload(),
+            policy_key: format!("preview.policy.{}", policy.as_str()),
         }
     }
 }
@@ -323,7 +345,7 @@ pub async fn save_form(
                     view.image_url = fields.image_url.clone();
                 }
                 view.image_mode = fields.image_mode.clone();
-                form_changes(fields).await
+                form_changes(fields, state.settings.preview_image_policy()).await
             }
         },
     };
@@ -333,8 +355,14 @@ pub async fn save_form(
     };
     match result {
         Ok(()) => Ok(redirect_ok(&format!("/app/urls/{id}"), "saved").into_response()),
-        Err(err) if matches!(err, AppError::Validation { .. } | AppError::BadRequest(_)) => {
+        Err(err)
+            if matches!(
+                err,
+                AppError::Validation { .. } | AppError::BadRequest(_) | AppError::Forbidden(_)
+            ) =>
+        {
             view.error = match err {
+                AppError::Forbidden(_) => "preview.error_policy",
                 AppError::Validation { field: "title", .. } => "preview.error_title",
                 AppError::Validation {
                     field: "description",
@@ -346,6 +374,11 @@ pub async fn save_form(
                 _ => "preview.error_image",
             }
             .into();
+            if (view.image_mode == "url" && !view.allow_url)
+                || (view.image_mode == "upload" && !view.allow_upload)
+            {
+                view.image_mode = "keep".into();
+            }
             let page = EditPage {
                 site_name: state.settings.site_name(),
                 chrome: Chrome::new(&state, &user.user, "dashboard", None),
@@ -360,13 +393,14 @@ pub async fn save_form(
     }
 }
 
-async fn form_changes(fields: Fields) -> Result<Changes, AppError> {
+async fn form_changes(fields: Fields, policy: PreviewImagePolicy) -> Result<Changes, AppError> {
     let title = service::text(&fields.title, "title", service::MAX_TITLE)?;
     let description = service::text(&fields.description, "description", service::MAX_DESCRIPTION)?;
     let image = match fields.image_mode.as_str() {
         "keep" => None,
         "none" => Some(Image::default()),
         "url" => {
+            service::require_image_source(policy, false)?;
             let url = service::image_url(&fields.image_url)?;
             if url.is_none() {
                 return Err(AppError::validation(
@@ -379,14 +413,17 @@ async fn form_changes(fields: Fields) -> Result<Changes, AppError> {
                 ..Default::default()
             })
         }
-        "upload" => Some(
-            service::upload(
-                fields
-                    .image
-                    .ok_or_else(|| AppError::validation("image", "choose an image"))?,
+        "upload" => {
+            service::require_image_source(policy, true)?;
+            Some(
+                service::upload(
+                    fields
+                        .image
+                        .ok_or_else(|| AppError::validation("image", "choose an image"))?,
+                )
+                .await?,
             )
-            .await?,
-        ),
+        }
         _ => return Err(AppError::validation("image", "choose an image source")),
     };
     Ok(Changes {
@@ -401,6 +438,9 @@ pub async fn public_image(State(state): State<AppState>, Path(key): Path<String>
 }
 
 async fn public_image_inner(state: &AppState, key: &str) -> Result<Response, AppError> {
+    if !state.settings.preview_image_policy().allows_upload() {
+        return Err(AppError::not_found());
+    }
     if key.len() != 32
         || !key
             .bytes()

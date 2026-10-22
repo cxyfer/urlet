@@ -412,6 +412,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | FR-PREVIEW-4 | 公開與隱私 | 使用者設定的預覽文字與上傳圖片會公開，即使連結有密碼；編輯介面明確提示。預覽 HTML 不輸出目標網址、管理用標題或備註。過期、點擊上限、停用／刪除與無效網域優先於預覽及圖片輸出 |
 | FR-PREVIEW-5 | 統計與快取 | 自訂預覽抓取不記錄點擊，不消耗點擊上限。短網址回應包含 Vary: User-Agent，自訂預覽與圖片使用 no-store。第三方平台仍可能保留自己的快取，無法保證卡片版型或即時更新 |
 | FR-PREVIEW-6 | 錯誤與權限 | 文字與圖片修改具原子性，限擁有者並遵循既有 CSRF 規則。上傳限制請求大小與速率。無效圖片不覆寫既有設定；重試表單保留文字，檔案依瀏覽器限制需重新選取 |
+| FR-PREVIEW-7 | 圖片政策 | 管理員在設定頁或設定 API 選擇 `preview_image_policy=none/url/upload/both`（預設 `both`）。政策套用所有擁有者、表單／API 寫入、metadata 圖片與上傳圖片回應。編輯器隱藏禁止的來源，伺服器同樣拒絕；保留／移除與僅編輯文字仍可使用。不允許的既有圖片會保留但暫停輸出，重新允許後恢復；第三方已複製的外部內容無法撤回 |
 
 ---
 
@@ -577,6 +578,7 @@ v1.6 只新增 `users.is_system` 欄位與其部分唯一索引（沒有新表�
 
 ### 6.5 預設資料 (seed)
 
+- SNS 圖片：`preview_image_policy=both`；允許值為 `none`、`url`、`upload`、`both`。
 - 網址清理：`url_cleaning_enabled=false`、`url_cleaning_rules=`（空白）；啟動時只補入缺少的鍵並保留現值。
 
 - `settings`：`site_name=urlet`、`registration_mode=open`、`default_slug_length=7`、

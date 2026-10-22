@@ -15,3 +15,9 @@
 - GitHub API 確認 cxyfer/urlet、ADMIN 權限及 master 5a0646b2bf2959e1f16b3331cd694eb97621600f。已建立授權的專用 worktree、分支與 PR #35。未合併到 master 或部署。
 
 日誌與瀏覽器截圖為本地暫存產物，不屬產品檔案。第三方卡片版型、圖片接受情況與快取更新尚未驗收。宣告最低 Rust 版本為 1.80.1；檢查使用已安裝工具鏈，未使用 MSRV 工具鏈。本次關閉增量編譯以減少建置產物，代價是後續重編可能較慢。SQLite 可重用刪除圖片釋放的頁面，但資料庫檔案不會自動縮小。
+
+## 管理員圖片政策驗證
+
+新增 preview_image_policy=none/url/upload/both 後，在專用 worktree 重新檢查通過：格式、Clippy warnings denied、562 個 Cargo 測試（0 失敗、2 個既有略過）、建置、177 個 smoke、42 個群組／網域檢查。17 個預覽整合測試全數通過。本次後續未修改既有 checksum-protected migration；啟動時僅補入缺少的新設定。
+
+瀏覽器證據：管理員表單成功儲存 none，擁有者編輯器在四模式只提供允許的來源，啟用來源欄位的顯示／disabled 狀態正確，390px 繁中畫面無水平溢出。截圖與檢查結果位於 /tmp/urlet-preview-policy-ui。獨立 HTTP／SQLite harness 驗證四政策下的 API／表單寫入、OG metadata、圖片狀態／no-store、DTO，以及切換後儲存圖片資料不變。沒有剩餘可採取審核問題。既有軟刪除討論 PRRT_kwDOVLtob86vW_AP 已以 a244478 證據回覆並 resolve；實際第三方 SNS 快取／呈現與 MSRV 仍未驗證。

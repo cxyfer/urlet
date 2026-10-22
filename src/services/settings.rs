@@ -44,6 +44,43 @@ impl RegistrationMode {
     }
 }
 
+/// 站台共用的 SNS 圖片政策；未知值採最嚴格模式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewImagePolicy {
+    None,
+    Url,
+    Upload,
+    Both,
+}
+
+impl PreviewImagePolicy {
+    pub fn parse(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "url" => Self::Url,
+            "upload" => Self::Upload,
+            "both" => Self::Both,
+            _ => Self::None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Url => "url",
+            Self::Upload => "upload",
+            Self::Both => "both",
+        }
+    }
+
+    pub fn allows_url(self) -> bool {
+        matches!(self, Self::Url | Self::Both)
+    }
+
+    pub fn allows_upload(self) -> bool {
+        matches!(self, Self::Upload | Self::Both)
+    }
+}
+
 /// Settings keys that administrators may change through the API.
 pub const EDITABLE_KEYS: &[&str] = &[
     "site_name",
@@ -55,6 +92,7 @@ pub const EDITABLE_KEYS: &[&str] = &[
     "invite_period",
     "default_redirect_type",
     "analytics_enabled",
+    "preview_image_policy",
     "url_cleaning_enabled",
     "url_cleaning_rules",
     "click_retention_days",
@@ -308,6 +346,14 @@ impl Settings {
 
     pub fn url_cleaning_enabled(&self) -> bool {
         self.raw_bool("url_cleaning_enabled", false)
+    }
+
+    pub fn preview_image_policy(&self) -> PreviewImagePolicy {
+        PreviewImagePolicy::parse(
+            self.raw("preview_image_policy")
+                .as_deref()
+                .unwrap_or("both"),
+        )
     }
 
     pub fn url_cleaning_rules(&self) -> String {
@@ -664,6 +710,12 @@ fn validate_value(key: &str, value: &str) -> Result<String> {
             "1" | "true" | "yes" | "on" => Ok("true".to_string()),
             "0" | "false" | "no" | "off" => Ok("false".to_string()),
             _ => Err(invalid("URL cleanup must be true or false")),
+        },
+        "preview_image_policy" => match value.to_ascii_lowercase().as_str() {
+            "none" | "url" | "upload" | "both" => Ok(value.to_ascii_lowercase()),
+            _ => Err(invalid(
+                "preview image policy must be none, url, upload or both",
+            )),
         },
         "click_retention_days" => {
             let parsed: i64 = value

@@ -426,6 +426,7 @@ The built-in rule source is `src/rules/url-cleaning.txt`, maintained separately 
 | FR-PREVIEW-4 | Public/private boundary | Configured metadata and uploaded images are public, including on password-protected links; the editor explains this. Preview HTML never publishes the destination, private management title or notes. Expiry, click cap, disabled/deleted links and inactive domains take precedence over metadata/image delivery |
 | FR-PREVIEW-5 | Accounting and caches | Custom preview fetches do not record clicks or consume the click cap. Short-link responses vary on User-Agent; custom previews and their images use no-store. Third-party platforms can retain their own cached cards; exact layout and instant refresh are not guaranteed |
 | FR-PREVIEW-6 | Recovery and permission | Metadata/image changes are atomic, owner-only and subject to existing CSRF protection. Upload routes have bounded bodies and rate limits. Invalid uploads preserve stored data and retry forms retain entered text; browsers require file reselection |
+| FR-PREVIEW-7 | Image policy | Administrators choose `preview_image_policy=none/url/upload/both` (default `both`) in settings or the settings API. The policy applies to all owners, form/API writes, metadata images and uploaded-image delivery. Prohibited sources are hidden in the editor and rejected server-side; keep/clear and text-only edits remain available. Disallowed existing images are retained but not served until allowed again; external content already copied by third parties cannot be revoked |
 
 ---
 
@@ -596,6 +597,7 @@ index (no new table), for **19 tables and 36 indexes**.
 
 ### 6.5 Seed Data
 
+- SNS images: `preview_image_policy=both`; accepted values are `none`, `url`, `upload`, `both`.
 - URL cleanup: `url_cleaning_enabled=false`, `url_cleaning_rules=` (empty); startup seeds absent keys and preserves existing values.
 
 - `settings`: `site_name=urlet`, `registration_mode=open`, `default_slug_length=7`,
