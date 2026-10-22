@@ -31,6 +31,7 @@ use crate::themed_page;
 
 #[derive(Debug)]
 pub struct UrlDetailPage {
+    pub preview: crate::routes::previews::FormView,
     pub site_name: String,
     pub chrome: Chrome,
     pub url: UrlRow,
@@ -431,7 +432,9 @@ pub async fn detail(
     let mode_known = matches!(url.redirect_mode.as_str(), "direct" | "splash");
     let current_mode = crate::services::redirect_mode::RedirectMode::from_db(&url.redirect_mode);
     let daily_total: i64 = daily.iter().map(|point| point.clicks).sum();
+    let preview = crate::db::url_previews::find(&state.db, url.id).await?;
     let page = UrlDetailPage {
+        preview: crate::routes::previews::FormView::new(url.id, preview, &state),
         site_name: state.settings.site_name(),
         chrome: Chrome::new(
             &state,

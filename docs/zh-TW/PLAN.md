@@ -294,7 +294,7 @@
 7. `templates/partials/shorten.html` 與六個導覽首頁模板的 include；當建立權保留給管理員時，
    儀表板顯示提示
 8. 管理設定區塊、三份語言目錄、`tests/public_urls.rs`、`scripts/smoke.sh` 與雙語文件
-9. 遊客配額後續：migration `0016_public_creation_quota.sql` 持久化原子自然週期計數；兩組額度各自選擇分鐘／時／日／週／月，依伺服器時區計算並跨重啟保留。登入用戶維持分組額度與既有帳號防濫用機制；只有開放遊客才展開相關設定，隱藏時保留值，並驗證時區、日光節約時間與自然邊界。
+9. 遊客配額後續：migration `0017_public_creation_quota.sql` 持久化原子自然週期計數；兩組額度各自選擇分鐘／時／日／週／月，依伺服器時區計算並跨重啟保留。登入用戶維持分組額度與既有帳號防濫用機制；只有開放遊客才展開相關設定，隱藏時保留值，並驗證時區、日光節約時間與自然邊界。
 
 **驗收**：`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`、
 `scripts/smoke.sh` 與 `scripts/merge-check.sh` 全綠；升級後公開表單維持關閉，直到管理員開啟。
@@ -369,3 +369,7 @@
 
 上表為 v1.0 的歷史紀錄；v1.1 的最新數字（二進位 5.7 MB glibc／5.8 MB musl、映像 14.8 MB、
 RSS 8.7 MB、冷啟動約 0.1 秒、完整測試套件）請見 `docs/SPEC.md` §3.3，不要直接引用上表。
+
+## SNS 分享預覽
+
+每條短網址可選擇設定標題、內容與 HTTPS／上傳圖片，管理員可設定四種圖片來源政策。以 SQLite 儲存，提供擁有者表單與 API、限定 SNS 爬蟲的 metadata 輸出，驗證生命週期與隱私邊界。[實作計畫](aegis/plans/2026-10-23-social-previews.md)。

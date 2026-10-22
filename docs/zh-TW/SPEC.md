@@ -33,7 +33,7 @@ v1.6 起新增**公開短網址工具**：導覽首頁可提供免帳號訪客�
 | P4 | Docker Compose 部署 | 單一 `docker-compose.yml`（app + named volume），可選 Caddy TLS overlay |
 | P5 | 盡可能輕量化 | 單一二進位、SQLite（無 MySQL/Redis）、SSR 模板（無 Node 建置）、映像檔 < 40 MB |
 | P6 | Rust 實作 | Rust 2021 + Axum 0.8 + Tokio + sqlx(SQLite) |
-| P7 | 完善的資料表設計 | 20 張表、37 個索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
+| P7 | 完善的資料表設計 | 21 張表、37 個索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
 | P8 | 適度添加功能 | 標籤、點擊分析、API Token、邀請碼、管理後台、稽核日誌、每日彙總、三語介面、可選防機器人驗證、配額／功能開關使用者群組、可切換與可上傳主題、中轉頁、供訪客使用的公開短網址工具 |
 
 ### 1.2 與先前半成品 (OURLS / OURLS2) 的關係
@@ -404,6 +404,20 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 
 ---
 
+### 4.18 SNS 分享預覽 (FR-PREVIEW)
+
+| ID | 需求 | 說明 |
+|----|------|------|
+| FR-PREVIEW-1 | 擁有者設定 | 登入使用者可在短網址詳情頁或已認證 API 編輯選填的預覽標題（200 字）、內容（1000 字）與圖片，與管理用標題、備註及中繼頁文字分開。預覽標題留空時使用站台名稱；清空所有欄位即可移除自訂預覽 |
+| FR-PREVIEW-2 | 圖片來源 | 支援完整 HTTPS 圖片網址（上限 2048 字，不含帳號密碼或空白），或上傳 PNG、JPEG、GIF、WebP（上限 2 MiB、4096 × 4096 像素，以受限解碼驗證）。上傳圖片存於 SQLite。明確選擇保留、替換或移除；替換／移除後舊圖片網址失效。伺服器不抓取外部圖片或目標網站資料 |
+| FR-PREVIEW-3 | 輸出 | 有自訂設定的有效連結向已知 SNS 預覽爬蟲回傳 200 HTML，包含 HTML 跳脫後的 Open Graph／Twitter metadata。一般瀏覽器沿用直接轉址、中繼頁與密碼頁；未設定自訂預覽時行為不變。統計用機器人辨識與 SNS 預覽分類分開；User-Agent 僅決定呈現，不作認證 |
+| FR-PREVIEW-4 | 公開與隱私 | 使用者設定的預覽文字與上傳圖片會公開，即使連結有密碼；編輯介面明確提示。預覽 HTML 不輸出目標網址、管理用標題或備註。過期、點擊上限、停用／刪除與無效網域優先於預覽及圖片輸出 |
+| FR-PREVIEW-5 | 統計與快取 | 自訂預覽抓取不記錄點擊，不消耗點擊上限。短網址回應包含 Vary: User-Agent，自訂預覽與圖片使用 no-store。第三方平台仍可能保留自己的快取，無法保證卡片版型或即時更新 |
+| FR-PREVIEW-6 | 錯誤與權限 | 文字與圖片修改具原子性，限擁有者並遵循既有 CSRF 規則。上傳限制請求大小與速率。無效圖片不覆寫既有設定；重試表單保留文字，檔案依瀏覽器限制需重新選取 |
+| FR-PREVIEW-7 | 圖片政策 | 管理員在設定頁或設定 API 選擇 `preview_image_policy=none/url/upload/both`（預設 `both`）。政策套用所有擁有者、表單／API 寫入、metadata 圖片與上傳圖片回應。編輯器隱藏禁止的來源，伺服器同樣拒絕；保留／移除與僅編輯文字仍可使用。不允許的既有圖片會保留但暫停輸出，重新允許後恢復；第三方已複製的外部內容無法撤回 |
+
+---
+
 ## 5. 非功能需求
 
 ### 5.1 安全性 (NFR-SEC)
@@ -434,7 +448,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 
 | ID | 需求 |
 |----|------|
-| NFR-PERF-1 | 轉址路徑：單次 `SELECT`（命中索引）+ 佇列化寫入；P95 < 10 ms（實測 0.74 ms） |
+| NFR-PERF-1 | 轉址路徑：以索引查詢 URL 與選填預覽 + 佇列化寫入；目標 P95 < 10 ms（歷史轉址基準 0.74 ms；新增預覽查詢尚未測速） |
 | NFR-PERF-2 | SQLite：`journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000` |
 | NFR-PERF-3 | 連線池：`max_connections=8`；點擊寫入由單一背景 writer 序列化（避免 WAL 因並發寫入無法 checkpoint 而無限成長） |
 | NFR-PERF-4 | 列表查詢一律分頁（預設 20，上限 100） |
@@ -506,7 +520,7 @@ login_attempts (稽核用)
 
 ### 6.3 DDL（migration 摘要）
 
-> 完整真實來源為 `migrations/` 目錄（`0001_init.sql` 至 `0016_public_creation_quota.sql`）：`0003_multi_domain.sql` 重建網域 schema，`0004_user_groups.sql`–`0007_member_invites.sql` 新增群組與邀請碼配額，`0010`／`0012`／`0013` 新增主題，`0011_splash_pages.sql` 新增轉址中繼頁，`0014_invite_issuance_released.sql` 新增邀請碼退還欄位，`0015_public_shorten.sql` 新增 `users.is_system`、保留的訪客帳號與公開短網址工具設定；`0016_public_creation_quota.sql` 新增遊客自然週期計數與週期設定；以下為結構摘要。
+> 完整真實來源為 `migrations/` 目錄（`0001_init.sql` 至 `0017_public_creation_quota.sql`）：`0003_multi_domain.sql` 重建網域 schema，`0004_user_groups.sql`–`0007_member_invites.sql` 新增群組與邀請碼配額，`0010`／`0012`／`0013` 新增主題，`0011_splash_pages.sql` 新增轉址中繼頁，`0014_invite_issuance_released.sql` 新增邀請碼退還欄位，`0015_public_shorten.sql` 新增 `users.is_system`、保留的訪客帳號與公開短網址工具設定；`0016_url_previews.sql` 新增 SNS 預覽資料與圖片；`0017_public_creation_quota.sql` 新增遊客自然週期計數與週期設定；以下為結構摘要。
 
 | 表 | 主要欄位 | 用途 |
 |----|----------|------|
@@ -525,6 +539,7 @@ login_attempts (稽核用)
 | `themes` | id, key(UNIQUE), is_enabled, is_default, sort_order, created_at, updated_at | 管理員對所有主題的選擇；上傳主題註冊時會建立對應資料列；以 partial unique index 確保唯一預設 |
 | `custom_themes` | id, key(UNIQUE), name, description, appearance, is_dark_only（舊版）, css_version, css_size, original_filename, created_by, created_at, updated_at | 管理員上傳樣式表的中介資料，含 `auto`／`light`／`dark` 外觀；檔案位於 `URLET_THEMES_DIR` |
 | `invite_issuance` | id, group_id, actor_id, invite_id, created_at, released_at | 各群組邀請碼發行帳本；未被兌換即撤銷的資料列（`released_at`）不再計入配額 |
+| `url_previews` | url_id(PK, FK), title, description, image_url, image_key(UNIQUE), image_mime, image_data | 選填的公開 SNS 卡片與上傳圖片；metadata 查詢不載入 BLOB |
 | `public_creation_quota` | scope(雜湊), period, window_start, window_end, used (PK: scope+period+window_start) | 遊客自然週期用量；重啟保留並原子扣抵 |
 | `settings` | key(PK), value, updated_at, updated_by | 全站設定 |
 | `invite_codes` | id, code_hash(UNIQUE), code_prefix, code_sealed, note, group_id, created_by, max_uses, used_count, expires_at, status, created_at | 邀請碼；`code_sealed` 為可再次顯示邀請碼的加密封存 |
@@ -562,10 +577,11 @@ v1.5 新增 `urls` 的中轉頁欄位與 `user_groups.redirect_mode_policy`（�
 可上傳主題再新增 `custom_themes` 與其建立者索引，共 **19 張表、35 個索引**。
 邀請碼退還額度工作新增可空的 `invite_issuance.released_at` 欄位，表／索引數量維持 19/35。
 升級後首次啟動時，也會釋放「已撤銷且從未兌換」的既有邀請碼，因此 `invites_used` 可能一次下降。
-v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表、36 個索引**；自然週期配額再新增 `public_creation_quota` 與到期索引，目前為 **20 張表、37 個索引**。
+v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表、36 個索引**；SNS 預覽新增 `url_previews` 且不增加明確定義的索引；自然週期配額再新增 `public_creation_quota` 與到期索引，目前為 **21 張表、37 個索引**。
 
 ### 6.5 預設資料 (seed)
 
+- SNS 圖片：`preview_image_policy=both`；允許值為 `none`、`url`、`upload`、`both`。
 - 網址清理：`url_cleaning_enabled=false`、`url_cleaning_rules=`（空白）；啟動時只補入缺少的鍵並保留現值。
 
 - `settings`：`site_name=urlet`、`registration_mode=open`、`default_slug_length=7`、
@@ -740,7 +756,7 @@ urlet/
 ├── docker-compose.tls.yml        # 可選：Caddy 自動 HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_splash_pages.sql 0012_custom_themes.sql 0013_custom_theme_appearance.sql 0014_invite_issuance_released.sql 0015_public_shorten.sql 0016_public_creation_quota.sql
+├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_splash_pages.sql 0012_custom_themes.sql 0013_custom_theme_appearance.sql 0014_invite_issuance_released.sql 0015_public_shorten.sql 0016_url_previews.sql 0017_public_creation_quota.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama 模板（base、app_base、landing.html + 各頁面 + admin/）
@@ -880,3 +896,5 @@ v1.2 新增項目（本批次）：
 | GeoIP 國家統計 | `clicks.country_code` 已存在，只需加入解析器 |
 | 點擊明細匯出 / CSV | `clicks` 完整欄位 + 索引 |
 | 稽核合規 | `audit_logs.metadata` JSON 保留完整上下文 |
+
+遷移 `0016_url_previews.sql` 新增 `url_previews`（每條短網址至多一筆），在遊客自然週期計數遷移前，schema 共 20 張表、36 個明確定義的索引；加入計數表後，目前為 21 張表、37 個明確定義的索引。一般 metadata 查詢不載入圖片 BLOB；備份仍以資料庫為單位。Trigger 會在所屬連結被軟刪除時移除預覽資料與圖片，包含帳號刪除；停用或過期則保留預覽。SQLite 可重用釋放的頁面，資料庫檔案不會自動縮小。
