@@ -464,6 +464,14 @@ async fn every_theme_offers_the_picker_to_a_visitor() {
             "{key} must load the picker stylesheet where it renders the picker"
         );
 
+        let register = app.get_as("/app/register", &cookie).await;
+        assert_eq!(register.status, StatusCode::OK, "{key} registration");
+        assert_eq!(
+            register.body.matches("data-theme-switcher").count(),
+            1,
+            "{key} must offer exactly one picker on the registration page"
+        );
+
         let link = app.get_as("/definitely-not-a-slug", &cookie).await;
         assert_eq!(link.status, StatusCode::NOT_FOUND, "{key} link page");
         assert!(
@@ -510,6 +518,77 @@ async fn a_visitor_keeps_the_default_while_the_policy_is_admin() {
         .cookie_named("urlet_theme")
         .expect("theme cookie")
         .contains("urlet_theme=paper"));
+}
+
+#[tokio::test]
+async fn a_visitor_cannot_reach_the_administrator_preview() {
+    let app = TestApp::spawn().await;
+
+    // Preview may name a disabled theme, so it stays administrator-only even
+    // though `all` lets a visitor switch. A refused request must leave neither
+    // cookie behind.
+    let refused = app.get("/app/theme/aurora?preview=1").await;
+    assert_eq!(refused.status, StatusCode::FORBIDDEN);
+    assert!(refused.cookie_named("urlet_theme_preview").is_none());
+    assert!(refused.cookie_named("urlet_theme").is_none());
+
+    // Under `admin` the plain switch and the site-default reset are closed too.
+    let cookie = admin(&app).await;
+    app.send(put_json_as(
+        "/api/v1/admin/themes",
+        json!({ "switching": "admin" }),
+        &cookie,
+    ))
+    .await;
+
+    for uri in ["/app/theme/paper", "/app/theme/default"] {
+        let response = app.get(uri).await;
+        assert_eq!(response.status, StatusCode::SEE_OTHER, "{uri}");
+        let location = response.header("location").expect("location");
+        assert!(
+            location.starts_with("/app/login?next="),
+            "{uri}: {location}"
+        );
+        assert!(response.cookie_named("urlet_theme").is_none(), "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn a_visitor_switch_never_leaves_the_site() {
+    let app = TestApp::spawn().await;
+
+    // The anonymous path is new, so re-check that a hostile `next` cannot turn
+    // the switch into an open redirect: each rejected value falls back to `/`.
+    for next in [
+        "https%3A%2F%2Fevil.example%2Fx",
+        "%2F%2Fevil.example",
+        "%2F%5Cevil.example",
+        "%0A%2F%2Fevil.example",
+    ] {
+        let response = app.get(&format!("/app/theme/paper?next={next}")).await;
+        assert_eq!(response.status, StatusCode::FOUND, "next={next}");
+        assert_eq!(
+            response.header("location").as_deref(),
+            Some("/"),
+            "next={next} must not become an open redirect"
+        );
+    }
+
+    // A same-site `next` is still honoured.
+    let kept = app.get("/app/theme/paper?next=%2Fapp%2Faccount").await;
+    assert_eq!(kept.header("location").as_deref(), Some("/app/account"));
+
+    // An off-site referer is ignored the same way.
+    let request = Request::builder()
+        .method("GET")
+        .uri("/app/theme/paper")
+        .header(header::HOST, "localhost:8080")
+        .header(header::REFERER, "https://evil.example/app")
+        .body(Body::empty())
+        .expect("request");
+    let response = app.send(request).await;
+    assert_eq!(response.status, StatusCode::FOUND);
+    assert_eq!(response.header("location").as_deref(), Some("/"));
 }
 
 #[tokio::test]
@@ -756,6 +835,13 @@ async fn every_theme_renders_the_extra_domain_landing() {
         assert!(response.body.contains(&css), "{key} missing {css}");
         assert!(response.body.contains(&format!("data-theme-key=\"{key}\"")));
         assert!(response.body.contains("noindex"));
+        // The redirect-only landing page is a public page too, so a visitor can
+        // switch from it under the default `all` policy.
+        assert_eq!(
+            response.body.matches("data-theme-switcher").count(),
+            1,
+            "{key} must offer exactly one picker on the extra-domain landing"
+        );
     }
 }
 

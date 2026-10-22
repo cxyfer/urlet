@@ -180,7 +180,11 @@ stylesheet URL.
 3. Add the catalogue strings to the three `src/i18n/*.json` files.
 4. Create `templates/themes/<key>/` with at least `base.html`, `app_base.html`,
    `landing.html`, the auth/link/splash/error pages, the admin tabs and the app pages.
-   Reuse the content macros for the dense app pages.
+   Reuse the content macros for the dense app pages. Render the picker exactly once per
+   page: in the top bar of `landing.html` and `app_base.html`, and through
+   `partials/site_tools.html` (picker plus language switcher) wherever the design keeps
+   its footer tools. A design that empties `footer_lang` for its own top bar must put the
+   picker there instead, as Swiss's auth pages do.
 5. Add `templates/themes/<key>/...` paths to every `themed_page!` call. Keep the
    `Verdant` entry in each invocation: it is also the fallback used when a page
    has not listed a newly added theme yet.

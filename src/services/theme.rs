@@ -443,16 +443,6 @@ pub fn for_user(settings: &Settings, user: &User) -> ThemeView {
     current().with_can_switch(can_switch(settings, user))
 }
 
-/// Build the view for an anonymous visitor.
-///
-/// The cookie still selects the look. Whether the picker is offered was already
-/// decided by the theme middleware, which owns the request task local: it is
-/// `true` on the pages that carry site chrome under the `all` policy, and
-/// `false` on the redirect surface, which deliberately stays minimal.
-pub fn for_anonymous() -> ThemeView {
-    current()
-}
-
 /// In-memory cache of the catalogue rows and the uploaded theme metadata.
 #[derive(Debug)]
 pub struct ThemeRegistry {

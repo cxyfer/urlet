@@ -24,7 +24,7 @@ service, no frontend build step.
 | ✉️ Invite links | Every invite code has a registration link that prefills the code; the code stays viewable for history and the link is returned while the code is usable |
 | 🌐 Multi-domain | Add extra domains in the admin panel; each domain has its own slug namespace and serves redirects only |
 | 👥 User groups | Per-group link, API-token and invite quotas (per day/week/month), feature toggles, redirect-mode policy (direct only, splash only or member's choice), default domains and domain allowlists; members can issue their own invite codes when the group allows it |
-| 🎨 Themes | Six compiled-in designs (Verdant, Aurora, Paper, Signal, Gilded, Swiss) plus administrator-uploaded CSS themes; choose which are offered, the default and who may switch (members only, or everyone including signed-out visitors). Uploads persist in the `urlet-themes` volume |
+| 🎨 Themes | Six compiled-in designs (Verdant, Aurora, Paper, Signal, Gilded, Swiss) plus administrator-uploaded CSS themes; choose which are offered, the default and who may switch (administrators only, or everyone including signed-out visitors). Uploads persist in the `urlet-themes` volume |
 | 🛠 Admin panel | User management, user groups, all site links, domains, invite codes, themes, site settings, audit log |
 | 🌐 Localized UI | English, Traditional Chinese, and Simplified Chinese; the first visit follows the browser's `Accept-Language` header and falls back to English |
 | 🤖 Bot protection | Cloudflare Turnstile or Google reCAPTCHA v2, enabled through environment variables or the admin panel; applies to the registration, sign-in and link creation forms |

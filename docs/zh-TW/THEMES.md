@@ -148,7 +148,10 @@ Verdant 包裝，只替換樣式表 URL。
 3. 在三個 `src/i18n/*.json` 加入目錄字串。
 4. 建立 `templates/themes/<key>/`，至少包含 `base.html`、`app_base.html`、
    `landing.html`、登入／註冊／連結中轉頁／錯誤頁、管理 tabs 與應用頁面；密集頁面可重用
-   content macro。
+   content macro。每個頁面只能渲染一次切換器：`landing.html` 與 `app_base.html` 放在頂端
+   工具列，其餘頁面在設計保留 footer 工具時透過 `partials/site_tools.html`（切換器加語言
+   切換器）渲染。若某個設計為了自己的頂端列而清空 `footer_lang`，就必須改在那裡放入切換器，
+   例如 Swiss 的登入頁。
 5. 在每個 `themed_page!` 呼叫加入 `templates/themes/<key>/...` 路徑。每個呼叫都要保留
    `Verdant` 項目，它也是頁面尚未列出新主題時的回退。
 6. 將主題加入 `ALL`、migration 種子與管理測試；既有資料庫在啟動時也可依賴
