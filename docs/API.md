@@ -412,7 +412,7 @@ The link id is deliberately not returned: the caller has no account to manage th
 ### `GET /health`
 
 ```json
-{ "status": "ok", "version": "1.4.0-rc.1", "database": "ok", "uptime_seconds": 42 }
+{ "status": "ok", "version": "1.4.0-rc.2", "database": "ok", "uptime_seconds": 42 }
 ```
 
 When the database cannot be queried the response is `503` with `status` set to `degraded`.
