@@ -352,7 +352,7 @@ dashboard.
 ### `GET /health`
 
 ```json
-{ "status": "ok", "version": "1.3.0-rc.5", "database": "ok", "uptime_seconds": 42 }
+{ "status": "ok", "version": "1.3.0", "database": "ok", "uptime_seconds": 42 }
 ```
 
 When the database cannot be queried the response is `503` with `status` set to `degraded`.

@@ -38,7 +38,9 @@ publishes to its own namespace.
 
 1. **The tag must equal the `Cargo.toml` version.** `v1.2.3` requires `version = "1.2.3"`; the
    workflow fails before building otherwise.
-2. **Refresh `Cargo.lock` after bumping.** The [Dockerfile](Dockerfile) runs
+2. **Bump three files together.** The version lives in `Cargo.toml`, `Cargo.lock` and the
+   `image:` tag in [docker-compose.yml](docker-compose.yml); all three must end up on the release
+   version. Refresh the lockfile after editing `Cargo.toml` — the [Dockerfile](Dockerfile) runs
    `cargo build --locked`, so a stale root-package version breaks the image build:
    ```bash
    cargo update -p urlet
@@ -68,8 +70,11 @@ publishes to its own namespace.
 10. **GHCR visibility is a repository setting.** A private repository produces a private package.
     Authenticate with `docker login ghcr.io` (token scope `read:packages`) or make the package
     public.
-11. **The `image:` value in [docker-compose.yml](docker-compose.yml) is only a local build tag.**
-    Updating it is cosmetic; published images always come from the workflow.
+11. **The `image:` value in [docker-compose.yml](docker-compose.yml) is a local build tag, but it
+    must still carry the release version.** It publishes nothing — every released image comes from
+    the workflow — yet leaving it behind makes `docker compose up --build` label a local build with
+    an older version, which is how `v1.3.0-rc.6` shipped a Compose file still naming
+    `v1.3.0-rc.5`. Keep it in step with `Cargo.toml` and `Cargo.lock`.
 
 ## Release checklist
 
@@ -90,10 +95,22 @@ There is currently no CI that runs these checks, so this step is the quality gat
 
 ### 2. Bump the version
 
-Edit [`Cargo.toml`](Cargo.toml):
+The version appears in three files and all three change together:
+
+| File | What changes |
+|------|--------------|
+| [`Cargo.toml`](Cargo.toml) | `version = "1.2.3"` |
+| [`Cargo.lock`](Cargo.lock) | the `urlet` package entry, refreshed by `cargo update -p urlet` |
+| [`docker-compose.yml`](docker-compose.yml) | `image: urlet:v1.2.3` |
 
 ```toml
+# Cargo.toml
 version = "1.2.3"
+```
+
+```yaml
+# docker-compose.yml
+image: urlet:v1.2.3
 ```
 
 Refresh the lockfile and verify it is current:
@@ -103,15 +120,23 @@ cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
 ```
 
-Commit both files:
+Commit all three files:
 
 ```bash
-git add Cargo.toml Cargo.lock
+git add Cargo.toml Cargo.lock docker-compose.yml
 git commit -m "🔖 release: v1.2.3"
 git push origin master
 ```
 
 The repository uses gitmoji-style subjects; `🔖 release: vX.Y.Z` matches the existing history.
+
+Check that all three agree before you tag:
+
+```bash
+grep -m1 '^version' Cargo.toml
+grep -m1 -A2 '^name = "urlet"' Cargo.lock
+grep -m1 'image: urlet:' docker-compose.yml
+```
 
 ### 3. Tag and push
 
@@ -200,14 +225,19 @@ version's bare tags disappear with it.
 VERSION=1.2.3
 
 sed -i "s/^version = \".*\"$/version = \"$VERSION\"/" Cargo.toml
+sed -i "s/^\(    image: urlet:v\).*$/\1$VERSION/" docker-compose.yml
 cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
+
+grep -m1 '^version' Cargo.toml            # 1.2.3
+grep -m1 -A2 '^name = "urlet"' Cargo.lock # 1.2.3
+grep -m1 'image: urlet:' docker-compose.yml  # urlet:v1.2.3
 
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 
-git add Cargo.toml Cargo.lock
+git add Cargo.toml Cargo.lock docker-compose.yml
 git commit -m "🔖 release: v$VERSION"
 git push origin master
 git tag -a "v$VERSION" -m "v$VERSION"

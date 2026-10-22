@@ -36,7 +36,9 @@
 
 1. **標籤必須等於 `Cargo.toml` 的版本。** `v1.2.3` 要求 `version = "1.2.3"`，否則 workflow
    會在建置前直接失敗。
-2. **升版後必須更新 `Cargo.lock`。** [Dockerfile](../../Dockerfile) 使用
+2. **三個檔案要一起升版。** 版本號存在於 `Cargo.toml`、`Cargo.lock` 與
+   [docker-compose.yml](../../docker-compose.yml) 的 `image:` 標籤，三處都必須是發布版本。
+   改完 `Cargo.toml` 後要更新 lockfile——[Dockerfile](../../Dockerfile) 使用
    `cargo build --locked`，根套件版本不同步會讓映像建置失敗：
    ```bash
    cargo update -p urlet
@@ -60,8 +62,10 @@
    ——並用 [`scripts/release-notes-lint.sh`](../../scripts/release-notes-lint.sh) 檢查草稿。
 10. **GHCR 可見性是儲存庫設定。** 私有儲存庫會產生私有套件；請執行
     `docker login ghcr.io`（token 需要 `read:packages`），或把套件設為公開。
-11. **[docker-compose.yml](../../docker-compose.yml) 的 `image:` 只是本機建置標籤。** 更新它
-    只是為了可讀性；正式發布的映像一律來自 workflow。
+11. **[docker-compose.yml](../../docker-compose.yml) 的 `image:` 是本機建置標籤，但仍必須帶上發布版本。**
+    它不會發布任何東西——正式映像一律來自 workflow——但漏改會讓 `docker compose up --build`
+    把本機建置標成舊版本，`v1.3.0-rc.6` 就是這樣留下仍寫著 `v1.3.0-rc.5` 的 Compose 檔。
+    請讓它與 `Cargo.toml`、`Cargo.lock` 保持一致。
 
 ## 發布檢查清單
 
@@ -82,10 +86,22 @@ bash scripts/smoke.sh       # 建議執行：會建置並實際操作二進位�
 
 ### 2. 升版
 
-編輯 [`Cargo.toml`](../../Cargo.toml)：
+版本號會出現在三個檔案，三處必須一起改：
+
+| 檔案 | 要改的地方 |
+|------|-----------|
+| [`Cargo.toml`](../../Cargo.toml) | `version = "1.2.3"` |
+| [`Cargo.lock`](../../Cargo.lock) | `urlet` 套件那一筆，由 `cargo update -p urlet` 更新 |
+| [`docker-compose.yml`](../../docker-compose.yml) | `image: urlet:v1.2.3` |
 
 ```toml
+# Cargo.toml
 version = "1.2.3"
+```
+
+```yaml
+# docker-compose.yml
+image: urlet:v1.2.3
 ```
 
 更新 lockfile 並確認它是最新的：
@@ -95,15 +111,22 @@ cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
 ```
 
-提交兩個檔案：
+提交三個檔案：
 
 ```bash
-git add Cargo.toml Cargo.lock
+git add Cargo.toml Cargo.lock docker-compose.yml
 git commit -m "🔖 release: v1.2.3"
 git push origin master
 ```
 
 本專案使用 gitmoji 風格的主旨；`🔖 release: vX.Y.Z` 與現有歷史一致。
+建立標籤前先確認三處一致：
+
+```bash
+grep -m1 '^version' Cargo.toml
+grep -m1 -A2 '^name = "urlet"' Cargo.lock
+grep -m1 'image: urlet:' docker-compose.yml
+```
 
 ### 3. 建立並推送標籤
 
@@ -190,14 +213,19 @@ GitHub 會把 release body 內的一個換行渲染成強制換行，因此原�
 VERSION=1.2.3
 
 sed -i "s/^version = \".*\"$/version = \"$VERSION\"/" Cargo.toml
+sed -i "s/^\(    image: urlet:v\).*$/\1$VERSION/" docker-compose.yml
 cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
+
+grep -m1 '^version' Cargo.toml            # 1.2.3
+grep -m1 -A2 '^name = "urlet"' Cargo.lock # 1.2.3
+grep -m1 'image: urlet:' docker-compose.yml  # urlet:v1.2.3
 
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 
-git add Cargo.toml Cargo.lock
+git add Cargo.toml Cargo.lock docker-compose.yml
 git commit -m "🔖 release: v$VERSION"
 git push origin master
 git tag -a "v$VERSION" -m "v$VERSION"
