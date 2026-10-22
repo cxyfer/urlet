@@ -56,6 +56,8 @@ pub struct ShortenView {
     pub fields: PublicFields,
     /// Domains offered by the form; empty unless the domain switch is on.
     pub domains: Vec<DomainOption>,
+    /// 僅對受限的未登入訪客顯示，避免提交前猜測允許哪些目標。
+    pub guest_allowlist: Option<Vec<String>>,
 }
 
 /// `templates/landing.html`
@@ -203,6 +205,14 @@ pub async fn home(
             result,
             fields,
             domains,
+            guest_allowlist: (anonymous && state.settings.guest_allowlist_enabled()).then(|| {
+                state
+                    .settings
+                    .guest_allowlist()
+                    .lines()
+                    .map(str::to_string)
+                    .collect()
+            }),
         },
     }
     .themed();

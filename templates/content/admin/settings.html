@@ -199,6 +199,19 @@
                 </label>
             </div>
 
+            <h3 class="mt">{{ lang.t("admin.settings.guest_allowlist_heading") }}</h3>
+            <label class="checkbox">
+                <input type="checkbox" id="guest_allowlist_enabled" name="guest_allowlist_enabled" value="on"
+                       {% if values.guest_allowlist_enabled %}checked{% endif %}>
+                {{ lang.t("admin.settings.guest_allowlist_enabled") }}
+            </label>
+            <div class="field mt">
+                <label class="label" for="guest_allowlist">{{ lang.t("admin.settings.guest_allowlist_label") }}</label>
+                <textarea class="textarea" id="guest_allowlist" name="guest_allowlist" rows="10" maxlength="16384"
+                          aria-describedby="guest_allowlist_hint">{{ values.guest_allowlist }}</textarea>
+                <span class="hint" id="guest_allowlist_hint">{{ lang.t("admin.settings.guest_allowlist_hint") }}</span>
+            </div>
+
             <p class="hint mt">{{ lang.t("admin.settings.public_fields_hint") }}</p>
             <div class="check-cluster">
                 <label class="checkbox">

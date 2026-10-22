@@ -364,7 +364,7 @@ only. It accepts `target_url` (required) plus the optional inputs the administra
 
 A successful submission is `303` to `/?shortened=<slug>&domain=<hostname>`. A failure is `303` to
 `/?err=<code>`, where `<code>` is one of `denied` (below the access level, or a disabled field),
-`rate_limited`, `captcha`, `quota` (the `public_max_urls` budget of the Guest account is full),
+`guest_allowlist` (anonymous destination not allowed), `rate_limited`, `captcha`, `quota` (the `public_max_urls` budget of the Guest account is full),
 `conflict`, `slug`, `target`, `expiry`, `tags`, `password_rules`, `domain`, `mode_denied` or
 `invalid`. A non-numeric `max_clicks` or `splash_delay_seconds` is reported as `invalid` rather
 than silently dropped.
@@ -377,9 +377,11 @@ The same operation as JSON, for scripts. No credential is required when `public_
 `guest`; a session cookie or a Bearer token may be supplied instead, and the link is then owned by
 that account.
 
+Anonymous requests must also match the enabled guest destination allowlist; the example below is included in the built-in rules. Signed-in sessions and Bearer tokens use their existing account permissions.
+
 ```json
 {
-  "target_url": "https://example.com/launch",
+  "target_url": "https://github.com/cxyfer/urlet",
   "slug": "launch",
   "title": "Launch day",
   "captcha_token": "0.abc..."
@@ -393,7 +395,7 @@ that account.
   "domain": "s.example.com",
   "slug": "launch",
   "short_url": "https://s.example.com/launch",
-  "target_url": "https://example.com/launch",
+  "target_url": "https://github.com/cxyfer/urlet",
   "created_at": "2026-10-22T12:00:00.000Z"
 }
 ```
@@ -401,7 +403,7 @@ that account.
 The link id is deliberately not returned: the caller has no account to manage the link with.
 
 - `403` `forbidden` — the caller is below the access level, or submitted a field the administrator
-  disabled
+  disabled, or an anonymous destination is not on the enabled guest allowlist
 - `400` `captcha_failed` — the bot protection check failed (fail closed)
 - `429` `rate_limited` — the per-address or the shared visitor budget is exhausted (`Retry-After`)
 - `409` `conflict` — the requested slug is already taken
@@ -676,6 +678,19 @@ unlimited), `public_max_urls` (total links the reserved Guest account may own, d
 unlimited; separate from `max_urls_per_user`) and the field switches `public_allow_slug`, `public_allow_title` (both default `true`)
 plus `public_allow_tags`, `public_allow_password`, `public_allow_expiry`, `public_allow_max_clicks`,
 `public_allow_redirect` and `public_allow_domain` (all default `false`).
+
+The guest destination policy adds two string settings:
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `guest_allowlist_enabled` | `"true"` | Restrict only anonymous creation; `"false"` explicitly disables the policy |
+| `guest_allowlist` | Built-in known-site rules | One exact ASCII hostname per line, optionally followed by a case-sensitive ASCII path, for example `example.com/articles/` |
+
+Use `PUT /api/v1/admin/settings` to edit either key. Hostnames are lowercased, blank lines and duplicates removed. No scheme, port, credentials, wildcard, query, fragment, encoded rule path or dot segment is accepted. A bare host allows any path; `/articles` allows that path and its descendants, while `/articles/` requires the trailing slash. Query strings and fragments do not contribute to a match. Target paths with encoded separators or nested encoding are refused for path-scoped rules. Only HTTP/HTTPS with their standard ports are allowed. Each subdomain needs its own entry. The limits are 200 rules and 16 KiB; invalid edits return `422` and leave the entire settings batch unchanged.
+
+An enabled empty list denies all anonymous destinations. Disabling the policy preserves its list. Updates take effect immediately and persist across restarts; upgrades seed only missing keys. Existing guest links continue to redirect. The admin form offers the same controls and preserves these settings when an older form omits them. Visitors can inspect the current allowed destinations on the landing page; refused forms use `?err=guest_allowlist`.
+
+The built-in list covers YouTube, Wikipedia, GitHub, Stack Overflow, PTT, Dcard, Bahamut, CNA and Bilibili, with specific content paths where practical. It is a starting policy, not a safety certification: known hosts can carry user content or redirects. There is no reputation API, target fetch or redirect-chain inspection.
 
 ---
 

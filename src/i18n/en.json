@@ -829,5 +829,14 @@
   "dashboard.create_disabled": "An administrator has reserved link creation for themselves, so the form is hidden here. Existing links are unaffected.",
   "admin.settings.public_max_urls": "Links visitors may create in total",
   "admin.settings.public_max_urls_hint": "The budget of the reserved Guest account that owns anonymous links, separate from the per-user quota. 0 means unlimited. Once it is full, visitors get a quota error until those links are deleted; a full budget is reported in the log by the maintenance pass.",
-  "public.more_options": "More options"
+  "public.more_options": "More options",
+  "admin.settings.guest_allowlist_heading": "Guest destination allowlist",
+  "admin.settings.guest_allowlist_enabled": "Restrict anonymous visitors to the allowed destinations",
+  "admin.settings.guest_allowlist_label": "Allowed destination hosts and paths",
+  "admin.settings.guest_allowlist_hint": "One exact hostname per line, optionally followed by a case-sensitive path: example.com or example.com/articles/. Subdomains must be listed separately. Use ASCII hostnames and paths; no scheme, port, wildcard, query or fragment. Up to 200 rules / 16 KiB. An empty enabled list blocks all guest submissions. Signed-in accounts are unaffected. The built-in sites are starting suggestions, not a safety certification.",
+  "public.guest_allowlist_hint": "Guests can shorten only the destinations listed below. Hostnames must match exactly; some entries also restrict the path.",
+  "public.guest_allowlist_show": "View allowed destinations",
+  "public.guest_allowlist_empty": "No destinations are currently allowed for guests.",
+  "flash.err.guest_allowlist": "This destination is not allowed for guests. Check the allowed destinations below or sign in to use your account’s permissions.",
+  "flash.err.guest_allowlist_rules": "The allowlist was not saved. Use one exact ASCII hostname per line, optionally followed by a path such as example.com/articles/. No scheme, port, wildcard, query, fragment or dot segments; up to 200 rules / 16 KiB."
 }

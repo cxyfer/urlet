@@ -30,6 +30,9 @@
     {% endmatch %}
 
     {% if shorten.show %}
+    {% if shorten.guest_allowlist.is_some() %}
+    <p class="hint">{{ lang.t("public.guest_allowlist_hint") }}</p>
+    {% endif %}
     <form method="post" action="/">
         <div class="form-grid">
             <div class="field">
@@ -141,6 +144,20 @@
         <p class="hint">{{ lang.t("public.guest_note") }}</p>
         {% endif %}
     </form>
+    {% match shorten.guest_allowlist %}
+    {% when Some with (rules) %}
+    <details class="advanced">
+        <summary>{{ lang.t("public.guest_allowlist_show") }}</summary>
+        <div class="advanced-body">
+            {% if rules.is_empty() %}
+            <p class="hint">{{ lang.t("public.guest_allowlist_empty") }}</p>
+            {% else %}
+            <ul>{% for rule in rules %}<li><code>{{ rule }}</code></li>{% endfor %}</ul>
+            {% endif %}
+        </div>
+    </details>
+    {% when None %}
+    {% endmatch %}
     {% endif %}
 </section>
 {% endif %}

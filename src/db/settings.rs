@@ -39,6 +39,11 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     // optional inputs the public form offers (the target URL is always
     // required, and the switches are enforced server side).
     ("public_create_access", "user"),
+    ("guest_allowlist_enabled", "true"),
+    (
+        "guest_allowlist",
+        crate::services::guest_allowlist::DEFAULT_RULES,
+    ),
     ("public_captcha", "true"),
     ("public_rate_limit_per_ip", "20"),
     ("public_rate_limit_global", "500"),

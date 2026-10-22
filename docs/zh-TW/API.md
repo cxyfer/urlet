@@ -335,7 +335,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 送出成功為 `303` 轉往 `/?shortened=<slug>&domain=<hostname>`。失敗則為 `303` 轉往
 `/?err=<code>`，其中 `<code>` 為 `denied`（低於存取層級，或填了被停用的欄位）、
-`rate_limited`、`captcha`、`quota`（訪客帳號的 `public_max_urls` 額度已滿）、
+`guest_allowlist`（匿名目標未命中白名單）、`rate_limited`、`captcha`、`quota`（訪客帳號的 `public_max_urls` 額度已滿）、
 `conflict`、`slug`、`target`、`expiry`、`tags`、`password_rules`、`domain`、`mode_denied` 或
 `invalid`。非數值的 `max_clicks` 或 `splash_delay_seconds` 會回報為 `invalid`，而不是默默丟棄。
 
@@ -346,9 +346,11 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 與表單相同的操作，以 JSON 提供給指令稿使用。當 `public_create_access` 為 `guest` 時不需要任何
 憑證；也可改帶 Session cookie 或 Bearer Token，此時連結由該帳號擁有。
 
+匿名請求還必須命中已啟用的訪客目標白名單，下方範例已包含在內建規則中。登入 Session 與 Bearer Token 維持原有帳號權限。
+
 ```json
 {
-  "target_url": "https://example.com/launch",
+  "target_url": "https://github.com/cxyfer/urlet",
   "slug": "launch",
   "title": "Launch day",
   "captcha_token": "0.abc..."
@@ -362,14 +364,14 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
   "domain": "s.example.com",
   "slug": "launch",
   "short_url": "https://s.example.com/launch",
-  "target_url": "https://example.com/launch",
+  "target_url": "https://github.com/cxyfer/urlet",
   "created_at": "2026-10-22T12:00:00.000Z"
 }
 ```
 
 刻意不回傳連結 id：呼叫者沒有帳號可以管理該連結。
 
-- `403` `forbidden` —— 呼叫者低於存取層級，或送出了管理員停用的欄位
+- `403` `forbidden` —— 呼叫者低於存取層級、送出了管理員停用的欄位，或匿名目標未命中已啟用的訪客白名單
 - `400` `captcha_failed` —— 防機器人驗證失敗（fail closed）
 - `429` `rate_limited` —— 每來源位址或全體訪客的額度用盡（`Retry-After`）
 - `409` `conflict` —— 要求的 slug 已被使用
@@ -620,6 +622,19 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 `max_urls_per_user` 分開），以及欄位開關 `public_allow_slug`、`public_allow_title`（兩者預設 `true`），
 再加上 `public_allow_tags`、`public_allow_password`、`public_allow_expiry`、
 `public_allow_max_clicks`、`public_allow_redirect` 與 `public_allow_domain`（皆預設 `false`）。
+
+訪客目標政策新增兩項字串設定：
+
+| Key | 預設值 | 意義 |
+|-----|--------|------|
+| `guest_allowlist_enabled` | `"true"` | 僅限制匿名建立；`"false"` 明確關閉此政策 |
+| `guest_allowlist` | 內建知名網站規則 | 每行一個精確 ASCII 主機名稱，可加上區分大小寫的 ASCII 路徑，例如 `example.com/articles/` |
+
+透過 `PUT /api/v1/admin/settings` 編輯任一項。主機名稱轉為小寫，移除空行與重複項目。不接受協定、連接埠、帳密、萬用字元、查詢、片段、編碼規則路徑或點路徑。只有主機名稱時允許所有路徑；`/articles` 允許該路徑與子路徑，`/articles/` 則要求尾端斜線。查詢及片段不參與比對。限定路徑的規則拒絕目標中的編碼分隔符與巢狀編碼。僅允許 HTTP／HTTPS 及各自的標準連接埠。子網域須分別列出。上限為 200 條規則與 16 KiB；無效更新回傳 `422`，整批設定維持原值。
+
+啟用且清單為空時拒絕全部匿名目標；關閉政策會保留清單。更新立即生效且重啟保留，升級僅補齊缺少的 key。既有訪客連結仍可轉址。管理表單提供相同控制項，舊版表單省略新欄位時保留設定。訪客可在首頁查看目前允許的目標；表單遭拒時使用 `?err=guest_allowlist`。
+
+內建清單涵蓋 YouTube、Wikipedia、GitHub、Stack Overflow、PTT、Dcard、巴哈姆特、中央社與 Bilibili，適合時限定內容路徑。這是初始政策，不是安全認證：知名網站仍可能包含使用者內容或轉址。沒有可信度 API、目標內容抓取或轉址鏈檢查。
 
 ---
 

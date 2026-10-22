@@ -4,7 +4,7 @@
 
 > Version: 1.6
 > Status: Approved for implementation
-> Last updated: 2026-10-22
+> Last updated: 2026-10-23
 
 ---
 
@@ -397,6 +397,7 @@ the create/edit dialogs shared by the group and theme forms).
 | FR-PUB-7 | Rate limits | Two in-memory token buckets guard anonymous creation: `public_rate_limit_per_ip` (creations per hour from one client address, default 20) and `public_rate_limit_global` (a budget every anonymous visitor shares, default 500). `0` disables either limit. A signed-in caller keeps the per-account bucket, and the per-address bucket always applies. Both per-caller budgets are charged before the provider call; the shared budget is charged only after bot protection succeeded, so a submission that fails the check cannot drain what legitimate visitors need. A refused request is `429` with `Retry-After` (the form redirects with `?err=rate_limited`) |
 | FR-PUB-8 | API | `POST /api/v1/public/urls` accepts the same payload as the form (plus `captcha_token`) and answers `201` with `domain`, `slug`, `short_url`, `target_url` and `created_at`. It deliberately omits the link id: the caller has no account to manage the link with |
 | FR-PUB-9 | Audit and quota | A guest creation is audited like any other (`url.created`, actor = the Guest account) and counts against `public_max_urls` (default 1000, `0` = unlimited), the total the Guest account may own. It is deliberately not `max_urls_per_user`: a flood of anonymous links must not consume the quota an administrator set for real accounts. Once the budget is full every visitor gets a quota error until those links are deleted (the admin link list can filter by owner), and the maintenance pass logs a warning so the operator notices |
+| FR-PUB-10 | Guest destination allowlist | `guest_allowlist_enabled` defaults to `true`; `guest_allowlist` starts with an editable list of known sites (YouTube, Wikipedia, GitHub, Stack Overflow, PTT, Dcard, Bahamut, CNA and Bilibili). Anonymous HTML/API creation must match one exact host and any configured case-sensitive path prefix; subdomains are explicit, path prefixes respect segment boundaries, and credentials/nonstandard ports are refused. Checks happen after the per-address budget but before captcha and the shared guest budget. Rules are editable through admin settings/API (at most 200 rules / 16 KiB), apply immediately and persist across restarts; empty enabled lists deny all guest targets. Signed-in sessions/tokens and existing redirects are unaffected. Insert-if-missing defaults never overwrite edited/empty lists. The landing form shows allowed targets and a specific refusal message. This is local policy, not reputation analysis or a safety guarantee; no target is fetched |
 
 ---
 

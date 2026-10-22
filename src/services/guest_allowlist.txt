@@ -1,0 +1,17 @@
+www.youtube.com/watch
+www.youtube.com/shorts/
+www.youtube.com/live/
+youtube.com/watch
+m.youtube.com/watch
+zh.wikipedia.org/wiki/
+en.wikipedia.org/wiki/
+ja.wikipedia.org/wiki/
+github.com
+stackoverflow.com/questions/
+www.ptt.cc/bbs/
+www.dcard.tw/f/
+forum.gamer.com.tw
+home.gamer.com.tw
+www.cna.com.tw/news/
+www.bilibili.com/video/
+m.bilibili.com/video/

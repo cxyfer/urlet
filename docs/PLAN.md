@@ -297,6 +297,26 @@ until an administrator opens it.
 
 ---
 
+## P16 — Editable Guest Destination Allowlist
+
+**Goal**: anonymous visitors may shorten only explicitly allowed destinations; administrators can edit the built-in list without restarting. Scope: local allowlist only, with no reputation API, blocklists, group overrides or redirect-time enforcement.
+
+**Architecture / baseline**: reuse SQLite settings and the atomic, audited admin API/form (`docs/SPEC.md` §4.16). Add one focused matcher shared by public HTML/JSON creation. The existing domain policy governs short-link hosts and cannot restrict destinations, so source changes are necessary. Parse with `url::Url`, already in the dependency graph. No schema change is needed; seed missing settings through the existing defaults owner.
+
+**Compatibility**: default `guest_allowlist_enabled=true`; never overwrite edited or empty lists. Empty enabled lists deny all guest targets. Enforce before captcha and the shared guest budget. Signed-in callers and existing redirects keep their behavior. Old settings forms that omit the new controls preserve them. Keep matching logic out of the large admin/settings handlers; those receive wiring only.
+
+**Tasks**
+
+1. Add `src/services/guest_allowlist.rs` and a compiled-in list of known hosts, using restricted content paths where appropriate. Support exact ASCII DNS hosts and optional case-sensitive path prefixes with segment boundaries, without implicit subdomains, credentials or nonstandard ports. Bound and validate edits; handle dot segments and reject ambiguous encoded separators for scoped paths. Unit tests cover spoofed hosts, paths, empty lists and defaults.
+2. Wire `guest_allowlist_enabled` / `guest_allowlist` into `src/db/settings.rs`, `src/services/settings.rs`, and `src/services/public_urls.rs`. Test anonymous form/API enforcement, immediate edits, disabled/empty states, signed-in session/token exemption, and persistence after settings reload.
+3. Extend the existing admin settings view/form and shared landing partial. Add all three locales, a specific refusal message and a guest-visible list of allowed destinations. Test authorization, atomic invalid edits, old forms and every compiled-in theme.
+4. Update the spec, API docs, this plan and their Traditional Chinese mirrors; extend `scripts/smoke.sh` with default enforcement and editable rules over real HTTP.
+5. Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `bash scripts/smoke.sh`, `bash scripts/merge-check.sh`; review, commit, push `feat/guest-allowlist` and open a PR against `cxyfer/urlet:master` without merging. No strict TDD route is requested; commit the completed business change after verification.
+
+**Risks / retirement**: known sites can host user content and redirects; the built-in list is an editable policy, not a safety certification. Do not fetch targets. Preserve the existing settings/rate-limit owners; no legacy path is retired. Verify real router paths and settings reload, beyond isolated matcher tests.
+
+---
+
 ## Risks and Mitigations
 
 | Risk | Impact | Mitigation |
