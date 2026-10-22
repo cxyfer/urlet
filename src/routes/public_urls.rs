@@ -180,7 +180,7 @@ pub async fn create_form(
     };
     // Access level, field switches and rate limits first: only a request that
     // passed them is allowed to spend a provider call.
-    let authorized = match public_urls::authorize(&state, &client, current.as_ref(), &input) {
+    let authorized = match public_urls::authorize(&state, &client, current.as_ref(), &input).await {
         Ok(authorized) => authorized,
         Err(err) => {
             return Ok(
@@ -212,7 +212,7 @@ pub async fn create_form(
 
     // The shared visitor budget is charged only now, so an attempt that failed
     // bot protection cannot drain it for everybody else.
-    let authorized = match public_urls::admit(&state, current.as_ref(), authorized) {
+    let authorized = match public_urls::admit(&state, current.as_ref(), authorized).await {
         Ok(authorized) => authorized,
         Err(err) => {
             return Ok(
@@ -254,7 +254,7 @@ pub async fn create_api(
     let input = payload.into_input();
     // Access level, field switches and rate limits first: only a request that
     // passed them is allowed to spend a provider call.
-    let authorized = public_urls::authorize(&state, &client, current.as_ref(), &input)?;
+    let authorized = public_urls::authorize(&state, &client, current.as_ref(), &input).await?;
 
     let anonymous = current.is_none();
     let via_token = current
@@ -269,7 +269,7 @@ pub async fn create_api(
 
     // The shared visitor budget is charged only now, so an attempt that failed
     // bot protection cannot drain it for everybody else.
-    let authorized = public_urls::admit(&state, current.as_ref(), authorized)?;
+    let authorized = public_urls::admit(&state, current.as_ref(), authorized).await?;
 
     let url = public_urls::create(&state, &client, current.as_ref(), input, authorized).await?;
     let domain = state.domain_hostname(url.domain_id);

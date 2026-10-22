@@ -61,7 +61,8 @@ COPY --from=builder /urlet /usr/local/bin/urlet
 
 USER 10001:10001
 
-ENV URLET_BIND=0.0.0.0:8080 \
+ENV TZ=UTC \
+    URLET_BIND=0.0.0.0:8080 \
     URLET_DATABASE_URL="sqlite:///data/urlet.db?mode=rwc" \
     URLET_DATA_DIR=/data \
     URLET_THEMES_DIR=/data/themes \

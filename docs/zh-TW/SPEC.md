@@ -4,7 +4,7 @@
 
 > 版本：1.6
 > 狀態：Approved for implementation
-> 最後更新：2026-10-22
+> 最後更新：2026-10-23
 
 ---
 
@@ -33,7 +33,7 @@ v1.6 起新增**公開短網址工具**：導覽首頁可提供免帳號訪客�
 | P4 | Docker Compose 部署 | 單一 `docker-compose.yml`（app + named volume），可選 Caddy TLS overlay |
 | P5 | 盡可能輕量化 | 單一二進位、SQLite（無 MySQL/Redis）、SSR 模板（無 Node 建置）、映像檔 < 40 MB |
 | P6 | Rust 實作 | Rust 2021 + Axum 0.8 + Tokio + sqlx(SQLite) |
-| P7 | 完善的資料表設計 | 19 張表、36 個索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
+| P7 | 完善的資料表設計 | 20 張表、37 個索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
 | P8 | 適度添加功能 | 標籤、點擊分析、API Token、邀請碼、管理後台、稽核日誌、每日彙總、三語介面、可選防機器人驗證、配額／功能開關使用者群組、可切換與可上傳主題、中轉頁、供訪客使用的公開短網址工具 |
 
 ### 1.2 與先前半成品 (OURLS / OURLS2) 的關係
@@ -132,7 +132,7 @@ Browser / curl          │                                                 │
 | 密碼 | `argon2` (Argon2id) | 業界標準，抗 GPU 暴力破解 |
 | Session/Token | 自製 `sha2` 雜湊 + 隨機 `getrandom` | 不引入 JWT 相依；伺服器端可即時撤銷 |
 | 日誌 | `tracing` + `tracing-subscriber` | 結構化日誌、`RUST_LOG` 控制 |
-| 時間 | `time` 0.3 | 較 `chrono` 輕，格式化 ISO-8601 足夠 |
+| 時間 | `time` 0.3 + `jiff` 0.2 | UTC 儲存與格式化，加上支援日光節約時間的伺服器自然週期配額 |
 
 **刻意避免的相依**：Redis、MySQL client、jsonwebtoken、MaxMind/GeoIP、React/Node 工具鏈。
 系統不會對外抓取目標網址（同時消除 SSRF 風險）；唯一的對外 HTTP 呼叫是可選的驗證碼
@@ -380,9 +380,10 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | FR-PUB-4 | 訪客所有權 | 匿名訪客建立的連結由保留的訪客帳號擁有（`users.is_system = 1`），因為 `urls.user_id` 是必填外鍵。該帳號由 migration 建立、沒有群組（因此由公開開關而非群組決定訪客能做什麼）、無法登入（`status = suspended`、無法解析的密碼雜湊），也不能編輯或刪除；它不會出現在使用者列表與任何使用者計數中，管理員的網址列表則把它的連結標為 `Guest` |
 | FR-PUB-5 | 欄位開關 | 管理員可啟用公開表單提供的選填欄位：自訂 slug 與標題（預設開啟）、標籤、連結密碼、過期、點擊上限、含中轉頁文案的轉址方式，以及網域選擇（預設關閉）。目標網址一律必填。送出時若填了被停用的欄位，會在進行任何工作前以 `403` 拒絕，因此隱藏欄位永遠不是唯一的防線 |
 | FR-PUB-6 | 防機器人驗證 | 公開表單由設定的供應商透過專用的 `public_captcha` 開關保護（預設開啟，未設供應商時不生效）。匿名訪客以公開流程驗證；已登入的瀏覽器 Session 則改依 `captcha_on_create`，因此公開端點不能被用來繞過它；`Bearer` API Token 如同其他建立路徑一樣豁免。失敗一律關閉並回應 `?err=captcha` / `400` |
-| FR-PUB-7 | 速率限制 | 兩個記憶體權杖桶守護匿名建立：`public_rate_limit_per_ip`（單一來源位址每小時的建立次數，預設 20）與 `public_rate_limit_global`（所有匿名訪客共用的額度，預設 500）。`0` 會停用任一限制。已登入的呼叫者維持每個帳號的桶，而每個來源位址的桶一律套用。兩道依呼叫者計算的額度都在呼叫供應商前扣抵；共用額度則只在防機器人驗證成功後扣抵，因此未通過驗證的提交無法耗盡合法訪客所需的額度。被拒絕的請求回 `429` 並附 `Retry-After`（表單則以 `?err=rate_limited` 轉址） |
+| FR-PUB-7 | 遊客自然週期配額 | `public_rate_limit_per_ip`（預設 20）與 `public_rate_limit_global`（預設 500）**只套用於未登入遊客**。兩者各有 `_period` 設定：`minute`、`hour`（預設）、`day`、`week`、`month`。計數依服務進程時區（`TZ`，未設定則採系統時區）的自然邊界重設：每週從週一 00:00 開始，每月從 1 日 00:00 開始，並正確處理日光節約時間。用量以原子操作存入 SQLite，重啟後保留；維護時清理已結束的週期。`0` 停用任一限制。登入用戶使用分組的有效連結額度與原有帳號防濫用機制，不消耗遊客配額。單一來源配額在防機器人驗證前扣抵，共用配額只在驗證成功後扣抵。拒絕時回 `429`，`Retry-After` 指向下個自然邊界（表單以 `?err=rate_limited` 轉址） |
 | FR-PUB-8 | API | `POST /api/v1/public/urls` 接受與表單相同的內容（外加 `captcha_token`），並回 `201` 與 `domain`、`slug`、`short_url`、`target_url` 與 `created_at`。它刻意不提供連結 id：呼叫者沒有帳號可以管理該連結 |
 | FR-PUB-9 | 稽核與配額 | 訪客建立與其他建立一樣都會寫入稽核（`url.created`，actor = 訪客帳號），並計入 `public_max_urls`（預設 1000，`0` = 無限制），也就是訪客帳號可擁有的連結總數。這刻意不是 `max_urls_per_user`：匿名連結的洪水不應耗用管理員為真實帳號設定的配額。配額用滿後，除非刪除那些連結，否則所有訪客都會取得配額錯誤（管理員的網址列表可依擁有者篩選），且維護任務會記錄一筆警告，讓管理者察覺 |
+| FR-PUB-10 | 後台顯示 | 只有允許遊客建立時才顯示遊客速率、週期、連結總額度與驗證設定；切換時即時更新，隱藏後仍保留值。無 JavaScript 時儲存權限後顯示。登入用戶的分組額度說明與共用首頁欄位開關維持可見，計數時區顯示於遊客區塊 |
 
 ---
 
@@ -400,7 +401,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | NFR-SEC-6 | 保留字防護：`api`、`app`、`assets`、`health`、`static`、`favicon.ico` 等不得作為 Slug |
 | NFR-SEC-7 | 錯誤訊息不洩漏內部細節；登入失敗統一回應「Email 或密碼錯誤」 |
 | NFR-SEC-8 | 使用者列舉防護：註冊重複 Email 回 409（可接受，屬常見取捨）；登入統一錯誤訊息 |
-| NFR-SEC-9 | 速率限制：登入 10 次/5 分鐘/(IP,email) **加** 40 次/5 分鐘/IP、註冊 5 次/小時/IP、解鎖 10 次/5 分鐘/(slug,IP)、建立短網址 120 次/小時/使用者、改密碼 10 次/小時/使用者、公開建立 20 次/小時/來源位址 **加** 所有匿名訪客共用的 500 次/小時（`0` 會停用任一額度） |
+| NFR-SEC-9 | 速率限制：登入 10 次/5 分鐘/(IP,email) **加** 40 次/5 分鐘/IP、註冊 5 次/小時/IP、解鎖 10 次/5 分鐘/(slug,IP)、建立短網址 120 次/小時/使用者、改密碼 10 次/小時/使用者、匿名建立預設每自然小時每來源 20 次 **加** 全部遊客 500 次，週期可獨立選擇分鐘／時／日／週／月；登入用戶不受遊客配額限制（`0` 會停用任一額度） |
 | NFR-SEC-9b | 帳號鎖定：同一 email 15 分鐘內累積 30 次失敗即暫時拒絕登入（回 429），由 `login_attempts` 表持久化，重啟不重置；記憶體速率限制器的 key 以 SHA-256 儲存並有 5 萬筆上限 |
 | NFR-SEC-10 | SQL 一律參數化（sqlx bind），無字串拼接（`src/db/` 之外不得出現 SQL） |
 | NFR-SEC-11 | 稽核日誌涵蓋所有敏感操作 |
@@ -488,7 +489,7 @@ login_attempts (稽核用)
 
 ### 6.3 DDL（migration 摘要）
 
-> 完整真實來源為 `migrations/` 目錄（`0001_init.sql` 至 `0015_public_shorten.sql`）：`0003_multi_domain.sql` 重建網域 schema，`0004_user_groups.sql`–`0007_member_invites.sql` 新增群組與邀請碼配額，`0010`／`0012`／`0013` 新增主題，`0011_splash_pages.sql` 新增轉址中繼頁，`0014_invite_issuance_released.sql` 新增邀請碼退還欄位，`0015_public_shorten.sql` 新增 `users.is_system`、保留的訪客帳號與公開短網址工具設定；以下為結構摘要。
+> 完整真實來源為 `migrations/` 目錄（`0001_init.sql` 至 `0016_public_creation_quota.sql`）：`0003_multi_domain.sql` 重建網域 schema，`0004_user_groups.sql`–`0007_member_invites.sql` 新增群組與邀請碼配額，`0010`／`0012`／`0013` 新增主題，`0011_splash_pages.sql` 新增轉址中繼頁，`0014_invite_issuance_released.sql` 新增邀請碼退還欄位，`0015_public_shorten.sql` 新增 `users.is_system`、保留的訪客帳號與公開短網址工具設定；`0016_public_creation_quota.sql` 新增遊客自然週期計數與週期設定；以下為結構摘要。
 
 | 表 | 主要欄位 | 用途 |
 |----|----------|------|
@@ -507,6 +508,7 @@ login_attempts (稽核用)
 | `themes` | id, key(UNIQUE), is_enabled, is_default, sort_order, created_at, updated_at | 管理員對所有主題的選擇；上傳主題註冊時會建立對應資料列；以 partial unique index 確保唯一預設 |
 | `custom_themes` | id, key(UNIQUE), name, description, appearance, is_dark_only（舊版）, css_version, css_size, original_filename, created_by, created_at, updated_at | 管理員上傳樣式表的中介資料，含 `auto`／`light`／`dark` 外觀；檔案位於 `URLET_THEMES_DIR` |
 | `invite_issuance` | id, group_id, actor_id, invite_id, created_at, released_at | 各群組邀請碼發行帳本；未被兌換即撤銷的資料列（`released_at`）不再計入配額 |
+| `public_creation_quota` | scope(雜湊), period, window_start, window_end, used (PK: scope+period+window_start) | 遊客自然週期用量；重啟保留並原子扣抵 |
 | `settings` | key(PK), value, updated_at, updated_by | 全站設定 |
 | `invite_codes` | id, code_hash(UNIQUE), code_prefix, code_sealed, note, group_id, created_by, max_uses, used_count, expires_at, status, created_at | 邀請碼；`code_sealed` 為可再次顯示邀請碼的加密封存 |
 | `invite_redemptions` | id, invite_id, user_id, redeemed_at, UNIQUE(invite_id,user_id) | 邀請碼使用紀錄 |
@@ -543,7 +545,7 @@ v1.5 新增 `urls` 的中轉頁欄位與 `user_groups.redirect_mode_policy`（�
 可上傳主題再新增 `custom_themes` 與其建立者索引，共 **19 張表、35 個索引**。
 邀請碼退還額度工作新增可空的 `invite_issuance.released_at` 欄位，表／索引數量維持 19/35。
 升級後首次啟動時，也會釋放「已撤銷且從未兌換」的既有邀請碼，因此 `invites_used` 可能一次下降。
-v1.6 只新增 `users.is_system` 欄位與其部分唯一索引（沒有新表），共 **19 張表、36 個索引**。
+v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表、36 個索引**；自然週期配額再新增 `public_creation_quota` 與到期索引，目前為 **20 張表、37 個索引**。
 
 ### 6.5 預設資料 (seed)
 
@@ -563,7 +565,8 @@ v1.6 只新增 `users.is_system` 欄位與其部分唯一索引（沒有新表�
   且沒有自訂文案，既有群組則為 `redirect_mode_policy = choice`，因此升級後行為不變。
 - `group_domains`：不種任何資料；沒有資料列的既有或新群組可使用所有 active 網域。
 - 公開短網址工具（v1.6）：`public_create_access=user`（升級後維持原有行為）、
-  `public_captcha=true`、`public_rate_limit_per_ip=20`、`public_rate_limit_global=500`、
+  `public_captcha=true`、`public_rate_limit_per_ip=20`、`public_rate_limit_per_ip_period=hour`、
+  `public_rate_limit_global=500`、`public_rate_limit_global_period=hour`、
   `public_max_urls=1000`、
   `public_allow_slug=true`、`public_allow_title=true`，而 `public_allow_tags`、
   `public_allow_password`、`public_allow_expiry`、`public_allow_max_clicks`、
@@ -674,6 +677,7 @@ v1.6 只新增 `users.is_system` 欄位與其部分唯一索引（沒有新表�
 
 | 變數 | 預設 | 說明 |
 |------|------|------|
+| `TZ` | 系統時區；Docker 預設 `UTC` | 遊客自然週期配額使用的服務進程時區，例如 `Asia/Taipei`；啟動時讀取 |
 | `URLET_BIND` | `0.0.0.0:8080` | 監聽位址 |
 | `URLET_BASE_URL` | `http://localhost:8080` | Canonical 對外網址（用於產生短網址、CSRF 同源檢查、Cookie Secure 判斷） |
 | `URLET_DOMAINS` | 空 | 額外網域（僅轉址），逗號分隔；第一次啟動插入為 `active`，不覆寫既有資料 |
@@ -717,7 +721,7 @@ urlet/
 ├── docker-compose.tls.yml        # 可選：Caddy 自動 HTTPS
 ├── deploy/Caddyfile
 ├── .env.example
-├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_splash_pages.sql 0012_custom_themes.sql 0013_custom_theme_appearance.sql 0014_invite_issuance_released.sql 0015_public_shorten.sql
+├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_splash_pages.sql 0012_custom_themes.sql 0013_custom_theme_appearance.sql 0014_invite_issuance_released.sql 0015_public_shorten.sql 0016_public_creation_quota.sql
 ├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
 ├── scripts/{smoke.sh,demo.sh,screenshot.py}
 ├── templates/                    # Askama 模板（base、app_base、landing.html + 各頁面 + admin/）
@@ -812,7 +816,7 @@ v1.6 新增項目（本批次）：
 - [x] 保留的訪客帳號（`users.is_system = 1`，19 張表／36 個索引）擁有匿名連結；它不會出現在使用者列表與任何計數中，在管理員的網址列表標為 `Guest`，無法登入，也不能編輯或刪除
 - [x] `public_allow_*` 開關決定公開表單提供哪些選填欄位；送出時填了被停用的欄位會回 `403`
 - [x] `public_captcha` 保護匿名流程，已登入的 Session 依 `captcha_on_create`，Bearer Token 則維持豁免
-- [x] `public_rate_limit_per_ip`（20 次/小時）與 `public_rate_limit_global`（500 次/小時）限制匿名建立，`0` 會停用任一項，被拒絕時回 `429` / `?err=rate_limited`
+- [x] `public_rate_limit_per_ip` 與 `public_rate_limit_global` 只限制匿名建立，週期可各自選擇分鐘／時／日／週／月（預設每自然小時 20／500 次），`0` 會停用任一項，被拒絕時回 `429` / `?err=rate_limited`
 - [x] `POST /api/v1/public/urls` 回 `201 {domain, slug, short_url, target_url, created_at}`，且不提供連結 id
 - [x] `?shortened=<slug>` 以資料庫解析，因此結果框永不逐字印出查詢字串的值，也永不洩漏目的地
 - [x] 三份語言目錄與六個導覽首頁模板都帶有新字串與共用的表單 partial

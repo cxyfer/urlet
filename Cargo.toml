@@ -47,6 +47,8 @@ chacha20poly1305 = "0.10"
 
 # Time / misc
 time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
+# 僅補足系統時區與 DST 轉換；日期運算仍沿用 time。
+jiff = "0.2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 thiserror = "1"

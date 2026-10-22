@@ -11,6 +11,7 @@ pub mod invite_issuance;
 pub mod invites;
 pub mod login_attempts;
 pub mod migrate;
+pub mod public_quota;
 pub mod sessions;
 pub mod settings;
 pub mod tags;

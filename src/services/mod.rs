@@ -16,6 +16,7 @@ pub mod invite_quota;
 pub mod invites;
 pub mod limits;
 pub mod password;
+pub mod public_quota;
 pub mod public_urls;
 pub mod ratelimit;
 pub mod redirect_mode;

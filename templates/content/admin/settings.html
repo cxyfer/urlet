@@ -164,39 +164,66 @@
             <div class="form-grid mt">
                 <div class="field">
                     <label class="label" for="public_create_access">{{ lang.t("admin.settings.public_access") }}</label>
-                    <select class="select" id="public_create_access" name="public_create_access">
+                    <select class="select" id="public_create_access" name="public_create_access" aria-controls="public-guest-settings">
                         <option value="guest" {% if values.public_create_access == "guest" %}selected{% endif %}>{{ lang.t("admin.settings.public_access.guest") }}</option>
                         <option value="user" {% if values.public_create_access == "user" %}selected{% endif %}>{{ lang.t("admin.settings.public_access.user") }}</option>
                         <option value="admin" {% if values.public_create_access == "admin" %}selected{% endif %}>{{ lang.t("admin.settings.public_access.admin") }}</option>
                     </select>
                     <span class="hint">{{ lang.t("admin.settings.public_access_hint") }}</span>
                 </div>
-                <div class="field">
-                    <label class="label" for="public_rate_limit_per_ip">{{ lang.t("admin.settings.public_rate_per_ip") }}</label>
-                    <input class="input" type="number" id="public_rate_limit_per_ip" name="public_rate_limit_per_ip"
-                           min="0" max="1000000" step="1" value="{{ values.public_rate_limit_per_ip }}">
-                    <span class="hint">{{ lang.t("admin.settings.public_rate_per_ip_hint") }}</span>
-                </div>
-                <div class="field">
-                    <label class="label" for="public_rate_limit_global">{{ lang.t("admin.settings.public_rate_global") }}</label>
-                    <input class="input" type="number" id="public_rate_limit_global" name="public_rate_limit_global"
-                           min="0" max="1000000" step="1" value="{{ values.public_rate_limit_global }}">
-                    <span class="hint">{{ lang.t("admin.settings.public_rate_global_hint") }}</span>
-                </div>
-                <div class="field">
-                    <label class="label" for="public_max_urls">{{ lang.t("admin.settings.public_max_urls") }}</label>
-                    <input class="input" type="number" id="public_max_urls" name="public_max_urls"
-                           min="0" max="1000000" step="1" value="{{ values.public_max_urls }}">
-                    <span class="hint">{{ lang.t("admin.settings.public_max_urls_hint") }}</span>
-                </div>
             </div>
 
-            <div class="check-cluster">
-                <label class="checkbox">
-                    <input type="checkbox" name="public_captcha" value="on"
-                           {% if values.public_captcha %}checked{% endif %}>
-                    {{ lang.t("admin.settings.public_captcha") }}
-                </label>
+            <div id="public-guest-settings" {% if values.public_create_access != "guest" %}hidden{% endif %}>
+                <h3 class="mt" id="public-guest-heading">{{ lang.t("admin.settings.public_guest_settings") }}</h3>
+                <p class="hint">{{ lang.t("admin.settings.public_guest_settings_hint") }}</p>
+                <p class="hint">{{ lang.t("admin.settings.public_period_hint") }} {{ values.public_quota_timezone }}</p>
+                <div class="form-grid mt">
+                    <div class="field">
+                        <label class="label" for="public_rate_limit_per_ip">{{ lang.t("admin.settings.public_rate_per_ip") }}</label>
+                        <input class="input" type="number" id="public_rate_limit_per_ip" name="public_rate_limit_per_ip"
+                               min="0" max="1000000" step="1" value="{{ values.public_rate_limit_per_ip }}">
+                        <span class="hint">{{ lang.t("admin.settings.public_rate_per_ip_hint") }}</span>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="public_rate_limit_per_ip_period">{{ lang.t("admin.settings.public_rate_per_ip_period") }}</label>
+                        <select class="select" id="public_rate_limit_per_ip_period" name="public_rate_limit_per_ip_period">
+                            <option value="minute" {% if values.public_rate_limit_per_ip_period == "minute" %}selected{% endif %}>{{ lang.t("admin.settings.public_period.minute") }}</option>
+                            <option value="hour" {% if values.public_rate_limit_per_ip_period == "hour" %}selected{% endif %}>{{ lang.t("admin.settings.public_period.hour") }}</option>
+                            <option value="day" {% if values.public_rate_limit_per_ip_period == "day" %}selected{% endif %}>{{ lang.t("admin.settings.public_period.day") }}</option>
+                            <option value="week" {% if values.public_rate_limit_per_ip_period == "week" %}selected{% endif %}>{{ lang.t("admin.settings.public_period.week") }}</option>
+                            <option value="month" {% if values.public_rate_limit_per_ip_period == "month" %}selected{% endif %}>{{ lang.t("admin.settings.public_period.month") }}</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="public_rate_limit_global">{{ lang.t("admin.settings.public_rate_global") }}</label>
+                        <input class="input" type="number" id="public_rate_limit_global" name="public_rate_limit_global"
+                               min="0" max="1000000" step="1" value="{{ values.public_rate_limit_global }}">
+                        <span class="hint">{{ lang.t("admin.settings.public_rate_global_hint") }}</span>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="public_rate_limit_global_period">{{ lang.t("admin.settings.public_rate_global_period") }}</label>
+                        <select class="select" id="public_rate_limit_global_period" name="public_rate_limit_global_period">
+                            <option value="minute" {% if values.public_rate_limit_global_period == "minute" %}selected{% endif %}>{{ lang.t("admin.settings.public_period.minute") }}</option>
+                            <option value="hour" {% if values.public_rate_limit_global_period == "hour" %}selected{% endif %}>{{ lang.t("admin.settings.public_period.hour") }}</option>
+                            <option value="day" {% if values.public_rate_limit_global_period == "day" %}selected{% endif %}>{{ lang.t("admin.settings.public_period.day") }}</option>
+                            <option value="week" {% if values.public_rate_limit_global_period == "week" %}selected{% endif %}>{{ lang.t("admin.settings.public_period.week") }}</option>
+                            <option value="month" {% if values.public_rate_limit_global_period == "month" %}selected{% endif %}>{{ lang.t("admin.settings.public_period.month") }}</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="public_max_urls">{{ lang.t("admin.settings.public_max_urls") }}</label>
+                        <input class="input" type="number" id="public_max_urls" name="public_max_urls"
+                               min="0" max="1000000" step="1" value="{{ values.public_max_urls }}">
+                        <span class="hint">{{ lang.t("admin.settings.public_max_urls_hint") }}</span>
+                    </div>
+                </div>
+                <div class="check-cluster">
+                    <label class="checkbox">
+                        <input type="checkbox" name="public_captcha" value="on"
+                               {% if values.public_captcha %}checked{% endif %}>
+                        {{ lang.t("admin.settings.public_captcha") }}
+                    </label>
+                </div>
             </div>
 
             <p class="hint mt">{{ lang.t("admin.settings.public_fields_hint") }}</p>

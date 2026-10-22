@@ -825,9 +825,12 @@ pub struct SettingsValues {
     /// Public shortener: `guest`, `user` or `admin`.
     pub public_create_access: String,
     pub public_captcha: bool,
-    /// Creations per hour; `0` is unlimited.
+    /// 遊客在所選自然週期的建立額度；`0` 表示不限。
     pub public_rate_limit_per_ip: i64,
+    pub public_rate_limit_per_ip_period: String,
     pub public_rate_limit_global: i64,
+    pub public_rate_limit_global_period: String,
+    pub public_quota_timezone: String,
     /// Total links the reserved Guest account may own; `0` is unlimited.
     pub public_max_urls: i64,
     pub public_allow_slug: bool,
@@ -1257,7 +1260,11 @@ pub struct SettingsForm {
     #[serde(default)]
     pub public_rate_limit_per_ip: Option<String>,
     #[serde(default)]
+    pub public_rate_limit_per_ip_period: Option<String>,
+    #[serde(default)]
     pub public_rate_limit_global: Option<String>,
+    #[serde(default)]
+    pub public_rate_limit_global_period: Option<String>,
     #[serde(default)]
     pub public_max_urls: Option<String>,
     #[serde(default)]
@@ -2553,7 +2560,15 @@ pub async fn update_settings(
     }
     for (key, value) in [
         ("public_rate_limit_per_ip", payload.public_rate_limit_per_ip),
+        (
+            "public_rate_limit_per_ip_period",
+            payload.public_rate_limit_per_ip_period,
+        ),
         ("public_rate_limit_global", payload.public_rate_limit_global),
+        (
+            "public_rate_limit_global_period",
+            payload.public_rate_limit_global_period,
+        ),
         ("public_max_urls", payload.public_max_urls),
     ] {
         if let Some(value) = value.filter(|value| !value.trim().is_empty()) {
@@ -3278,6 +3293,12 @@ fn render_settings(
 ) -> Result<Response, AppError> {
     let lang = i18n::current();
     let mut values = settings_values(&state.settings);
+    let local = jiff::Timestamp::now().to_zoned(state.config.timezone.clone());
+    values.public_quota_timezone = format!(
+        "{} ({})",
+        state.config.timezone.iana_name().unwrap_or("TZ"),
+        local.offset()
+    );
     values.captcha_state = captcha_state(&state.settings, lang);
     render(
         SettingsPage {
@@ -3342,7 +3363,16 @@ pub fn settings_values(settings: &Settings) -> SettingsValues {
         public_create_access: settings.public_create_access().as_str().to_string(),
         public_captcha: settings.public_captcha(),
         public_rate_limit_per_ip: settings.public_rate_limit_per_ip(),
+        public_rate_limit_per_ip_period: settings
+            .public_rate_limit_per_ip_period()
+            .as_str()
+            .to_string(),
         public_rate_limit_global: settings.public_rate_limit_global(),
+        public_rate_limit_global_period: settings
+            .public_rate_limit_global_period()
+            .as_str()
+            .to_string(),
+        public_quota_timezone: String::new(),
         public_max_urls: settings.public_max_urls(),
         public_allow_slug: settings.public_fields().slug,
         public_allow_title: settings.public_fields().title,

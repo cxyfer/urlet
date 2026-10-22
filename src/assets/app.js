@@ -114,6 +114,18 @@
         if (target) { target.hidden = !toggle.checked; }
     });
 
+    /* 遊客設定只在允許遊客時顯示；隱藏時仍提交原值，避免遺失設定。
+       無 JavaScript 時儲存權限後重新載入，即可顯示對應設定。 */
+    var publicAccess = document.getElementById("public_create_access");
+    var guestSettings = document.getElementById("public-guest-settings");
+    if (publicAccess && guestSettings) {
+        function refreshGuestSettings() {
+            guestSettings.hidden = publicAccess.value !== "guest";
+        }
+        publicAccess.addEventListener("change", refreshGuestSettings);
+        refreshGuestSettings();
+    }
+
     /* Group form: count the capabilities and offer the bulk switches. Both stay
        hidden until here, so a form without JavaScript is not left with dead
        buttons; the checkboxes themselves work either way. The initializer is
