@@ -809,6 +809,10 @@ pub struct SettingsValues {
     pub invite_period: String,
     pub default_redirect_type: i64,
     pub analytics_enabled: bool,
+    pub url_cleaning_enabled: bool,
+    pub url_cleaning_rules: String,
+    pub url_cleaning_error: bool,
+    pub url_cleaning_builtins: &'static str,
     pub click_retention_days: i64,
     pub captcha_provider: String,
     pub captcha_site_key: String,
@@ -1229,6 +1233,10 @@ pub struct SettingsForm {
     pub default_redirect_type: String,
     #[serde(default)]
     pub analytics_enabled: Option<String>,
+    #[serde(default)]
+    pub url_cleaning_enabled: Option<String>,
+    #[serde(default)]
+    pub url_cleaning_rules: Option<String>,
     pub click_retention_days: String,
     // Bot protection. All optional so a form from an older page, or a partial
     // submission, never fails to deserialize.
@@ -2470,6 +2478,27 @@ pub async fn update_settings(
         return Ok(redirect_err("/app/admin/settings", "invalid").into_response());
     };
 
+    // 規則錯誤時保留輸入，讓管理員可以直接修正；所有設定維持原值。
+    if let Some(rules) = payload.url_cleaning_rules.as_deref() {
+        if crate::services::url_cleaning::parse_rules(rules).is_err() {
+            let mut values = settings_values(&state.settings);
+            values.url_cleaning_enabled = payload.url_cleaning_enabled.is_some();
+            values.url_cleaning_rules = rules.to_string();
+            values.url_cleaning_error = true;
+            values.captcha_state = captcha_state(&state.settings, i18n::current());
+            return render(
+                SettingsPage {
+                    section: "settings",
+                    site_name: state.settings.site_name(),
+                    chrome: Chrome::new(&state, &current.user, "admin", None),
+                    values,
+                    lang: i18n::current(),
+                },
+                StatusCode::UNPROCESSABLE_ENTITY,
+            );
+        }
+    }
+
     let mut values = vec![
         ("site_name".to_string(), payload.site_name),
         ("registration_mode".to_string(), payload.registration_mode),
@@ -2499,6 +2528,14 @@ pub async fn update_settings(
 
     if let Some(value) = payload.max_api_tokens_per_user {
         values.push(("max_api_tokens_per_user".to_string(), value));
+    }
+    // 文字框存在時才更新這組設定，舊版頁面送出不會重設新開關。
+    if let Some(rules) = payload.url_cleaning_rules {
+        values.push(("url_cleaning_rules".to_string(), rules));
+        values.push((
+            "url_cleaning_enabled".to_string(),
+            payload.url_cleaning_enabled.is_some().to_string(),
+        ));
     }
     if let Some(value) = payload.max_invites_per_period {
         values.push(("max_invites_per_period".to_string(), value));
@@ -3329,6 +3366,10 @@ pub fn settings_values(settings: &Settings) -> SettingsValues {
         invite_period: settings.invite_period().as_str().to_string(),
         default_redirect_type: settings.default_redirect_type(),
         analytics_enabled: settings.analytics_enabled(),
+        url_cleaning_enabled: settings.url_cleaning_enabled(),
+        url_cleaning_rules: settings.url_cleaning_rules(),
+        url_cleaning_error: false,
+        url_cleaning_builtins: crate::services::url_cleaning::BUILTIN_RULES,
         click_retention_days: settings.click_retention_days(),
         captcha_provider: settings.captcha_provider().as_str().to_string(),
         captcha_site_key: settings.captcha_site_key(),
