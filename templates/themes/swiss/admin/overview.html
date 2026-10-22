@@ -6,9 +6,9 @@
 {% include "themes/swiss/admin/tabs.html" %}
 
 <header class="sec-head">
-    <span class="sec-num" aria-hidden="true">01</span>
+    <span class="sec-num" aria-hidden="true">{{ self.tab_index() }}</span>
     <div class="sec-title">
-        <p class="sec-kicker" aria-hidden="true">/// — 06</p>
+        <p class="sec-kicker" aria-hidden="true">/// — {{ self.tab_count() }}</p>
         <h1>{{ lang.t("admin.overview.heading") }}</h1>
     </div>
     <div class="sec-meta">

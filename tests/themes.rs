@@ -777,6 +777,88 @@ async fn every_theme_renders_every_page() {
 }
 
 #[tokio::test]
+async fn the_admin_tab_marker_follows_the_active_section() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+
+    // Every themed page derives the position from the same list. Verdant and
+    // Signal print the "current / total" marker in their admin rail, so check
+    // all nine destinations rather than only the first one.
+    let sections = [
+        ("/app/admin", "01"),
+        ("/app/admin/users", "02"),
+        ("/app/admin/groups", "03"),
+        ("/app/admin/urls", "04"),
+        ("/app/admin/invites", "05"),
+        ("/app/admin/domains", "06"),
+        ("/app/admin/themes", "07"),
+        ("/app/admin/settings", "08"),
+        ("/app/admin/audit", "09"),
+    ];
+
+    for (uri, number) in sections {
+        let verdant = app.get_as(uri, &cookie).await;
+        assert_eq!(verdant.status, StatusCode::OK, "{uri}");
+        assert!(
+            verdant.body.contains(&format!("SYS · {number} / 09")),
+            "{uri} must show tab {number} / 09: {}",
+            verdant.body
+        );
+
+        let signal = app
+            .get_as(uri, &format!("{cookie}; urlet_theme=signal"))
+            .await;
+        assert_eq!(signal.status, StatusCode::OK, "{uri}");
+        assert!(
+            signal.body.contains(&format!(
+                "<span class=\"console-code\">{number} / 09</span>"
+            )),
+            "{uri} must show tab {number} / 09 in the Signal rail"
+        );
+    }
+
+    // The three pages with their own header also print the page number there;
+    // those copies used to keep the old six-tab positions.
+    for (uri, number) in [
+        ("/app/admin", "01"),
+        ("/app/admin/urls", "04"),
+        ("/app/admin/audit", "09"),
+    ] {
+        let signal = app
+            .get_as(uri, &format!("{cookie}; urlet_theme=signal"))
+            .await;
+        assert!(
+            signal
+                .body
+                .contains(&format!("<span class=\"k-index\">{number}</span>")),
+            "{uri} has a stale Signal page header"
+        );
+
+        let gilded = app
+            .get_as(uri, &format!("{cookie}; urlet_theme=gilded"))
+            .await;
+        assert!(
+            gilded.body.contains(&format!("№ {number} · MMXXVI")),
+            "{uri} has a stale Gilded page header"
+        );
+
+        let swiss = app
+            .get_as(uri, &format!("{cookie}; urlet_theme=swiss"))
+            .await;
+        assert!(
+            swiss.body.contains(&format!(
+                "<span class=\"sec-num\" aria-hidden=\"true\">{number}</span>"
+            )),
+            "{uri} has a stale Swiss page header"
+        );
+        assert!(
+            swiss.body.contains("/// — 09"),
+            "{uri} must show the current nine-section total"
+        );
+    }
+}
+
+#[tokio::test]
 async fn every_theme_renders_the_public_pages() {
     let app = TestApp::spawn().await;
     for theme in urlet::services::theme::ALL {
