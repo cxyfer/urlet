@@ -1,0 +1,2 @@
+Synthetic 8 x 8 WebP fixtures generated with Pillow/libwebp for decoder regression tests. Animated files have two 100 ms frames with transparency; extended.webp includes EXIF metadata. No external source images or private metadata.
+Synthetic GIF fixtures generated with Pillow: animated.gif has two 8 x 8 red/green frames at 100 ms. Invalid fixtures deliberately set the first frame to 5000 x 1 inside a 1 x 1 screen, or the second frame to 9 x 8 / 5000 x 1 inside an 8 x 8 screen. They test descriptor bounds without decoding large images.

@@ -326,3 +326,7 @@
 
 上表為 v1.0 的歷史紀錄；v1.1 的最新數字（二進位 5.7 MB glibc／5.8 MB musl、映像 14.8 MB、
 RSS 8.7 MB、冷啟動約 0.1 秒、完整測試套件）請見 `docs/SPEC.md` §3.3，不要直接引用上表。
+
+## SNS 分享預覽
+
+每條短網址可選擇設定標題、內容與 HTTPS／上傳圖片。以 SQLite 儲存，提供擁有者表單與 API、限定 SNS 爬蟲的 metadata 輸出，驗證生命週期與隱私邊界。[實作計畫](aegis/plans/2026-10-23-social-previews.md)。

@@ -179,6 +179,30 @@ pub fn referrer_host(referrer: Option<&str>, own_hosts: &[&str]) -> Option<Strin
     Some(host)
 }
 
+/// 僅辨識社群分享抓取器；統計用 is_bot 也包含 curl、監控與搜尋引擎。
+/// 此判斷不提供認證：自訂 metadata 本來就是公開資料。
+pub fn is_social_preview(user_agent: Option<&str>) -> bool {
+    let lower = user_agent.unwrap_or_default().to_ascii_lowercase();
+    [
+        "discordbot",
+        "twitterbot",
+        "facebookexternalhit",
+        "facebot",
+        "telegrambot",
+        "slackbot",
+        "linkedinbot",
+        "whatsapp",
+        "line-poker",
+        "linebot",
+        "vkshare",
+        "pinterestbot",
+        "skypeuripreview",
+        "embedly",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,0 +1,6 @@
+{% extends "themes/paper/app_base.html" %}
+{% block title %}{{ lang.t("preview.heading") }} — {{ site_name }}{% endblock %}
+{% block content %}
+<p><a href="/app/urls/{{ preview.url_id }}">{{ lang.t("preview.back") }}</a></p>
+{% include "partials/preview_form.html" %}
+{% endblock %}

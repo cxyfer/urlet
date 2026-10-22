@@ -710,3 +710,29 @@ past.
 
 The IP used for login comes from `X-Real-IP` when `URLET_TRUST_PROXY=true`, falling back to the
 rightmost address in `X-Forwarded-For`.
+
+
+## SNS preview configuration
+
+Social platforms build link cards from the fetched page's Open Graph (`og:title`, `og:description`, `og:image`) and Twitter Card tags. Without custom preview settings, urlet keeps its redirect behavior and the platform may read metadata from the destination. Configured links serve metadata from the owner's saved preview fields to recognised social crawlers. The platform chooses the footer, layout and refresh timing; there is no arbitrary footer field in these tags.
+
+These endpoints require the link owner's session or API token; another owner's link returns 404. Existing CSRF rules apply to cookie requests. Create a short link first, then configure its optional public preview. The public shortener does not accept uploads or these extra fields.
+
+| Method | Path | Behavior |
+|--------|------|----------|
+| GET | `/api/v1/urls/{id}/preview` | Returns `{title, description, image_url, image_uploaded, enabled}`; an unconfigured preview returns null fields and false flags |
+| PATCH | `/api/v1/urls/{id}/preview` | JSON `{title?, description?, image_url?}`. Omitted fields stay unchanged; null or blank clears the field. Setting/clearing image_url replaces/removes any uploaded image. The response uses the GET shape |
+| POST | `/api/v1/urls/{id}/preview/image` | Multipart field `image`; replaces the image while preserving text, returns the GET shape |
+| DELETE | `/api/v1/urls/{id}/preview` | Clears all custom preview data and image bytes, returns 204 |
+
+```bash
+curl -X PATCH "$BASE/api/v1/urls/42/preview" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"title":"Read this","description":"A custom summary","image_url":"https://example.com/card.png"}'
+curl "$BASE/api/v1/urls/42/preview/image" \
+  -H "Authorization: Bearer $TOKEN" -F 'image=@card.png'
+```
+
+Title: 200 characters; description: 1000 characters. Image URLs must be absolute HTTPS, at most 2048 characters, without credentials/whitespace. Uploads: PNG/JPEG/GIF/WebP, at most 2 MiB and 4096 × 4096 pixels. MIME is detected from validated bytes, not the filename. Stored images use opaque public `/assets/link-previews/{key}` URLs; replacing/removing the image revokes old keys. Invalid fields return 422; malformed/oversized multipart requests return a 4xx error without changing stored data. Uploads share a per-account rate budget.
+
+Configured text/images are public even on password-protected links. A blank preview title uses the site name; private link title/notes and the destination are never used as fallbacks. No external metadata or image fetch occurs on the server. Known social crawlers (including Discord, X/Twitter, Meta, Telegram, Slack, LinkedIn and LINE markers) receive OG/Twitter HTML; unknown agents retain normal link behavior. Link lifecycle checks apply to both metadata and uploaded images. Custom preview fetches do not count as clicks. Third-party caches and layout are controlled by the platforms; changing settings does not guarantee an immediate refreshed card.

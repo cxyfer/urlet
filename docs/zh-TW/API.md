@@ -653,3 +653,29 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 
 登入的 IP 來源：`URLET_TRUST_PROXY=true` 時優先採用 `X-Real-IP`，
 其次取 `X-Forwarded-For` 最右側的位址。
+
+
+## SNS 預覽設定
+
+社群平台抓取網頁的 Open Graph（`og:title`、`og:description`、`og:image`）及 Twitter Card 標籤來產生預覽。未自訂時，urlet 沿用轉址行為，平台可能從目標網站取得 metadata；自訂後，已知社群爬蟲取得的是擁有者儲存的預覽欄位。Footer、版型與更新時間由平台決定，這些標籤沒有任意 footer 欄位。
+
+端點要求短網址擁有者的 session 或 API token；其他人的連結回傳 404。Cookie 請求沿用既有 CSRF 規則。先建立短網址，再設定選填的公開預覽；公開短網址工具不接受圖片上傳或這些額外欄位。
+
+| 方法 | 路徑 | 行為 |
+|------|------|------|
+| GET | `/api/v1/urls/{id}/preview` | 回傳 `{title, description, image_url, image_uploaded, enabled}`；未設定時各欄位為 null，旗標為 false |
+| PATCH | `/api/v1/urls/{id}/preview` | JSON `{title?, description?, image_url?}`；省略則保留，null 或空白則清除。設定／清除 image_url 會替換／移除上傳圖片；回傳格式同 GET |
+| POST | `/api/v1/urls/{id}/preview/image` | Multipart 欄位 `image`；替換圖片並保留文字，回傳格式同 GET |
+| DELETE | `/api/v1/urls/{id}/preview` | 清除所有自訂預覽與圖片資料，回傳 204 |
+
+```bash
+curl -X PATCH "$BASE/api/v1/urls/42/preview" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"title":"閱讀內容","description":"自訂摘要","image_url":"https://example.com/card.png"}'
+curl "$BASE/api/v1/urls/42/preview/image" \
+  -H "Authorization: Bearer $TOKEN" -F 'image=@card.png'
+```
+
+標題上限 200 字，內容上限 1000 字。圖片網址須為完整 HTTPS，上限 2048 字，不含帳號密碼或空白。上傳支援 PNG、JPEG、GIF、WebP，上限 2 MiB、4096 × 4096 像素；依驗證後的檔案內容決定 MIME，不相信檔名。圖片存於 SQLite，以不透明的公開 `/assets/link-previews/{key}` 網址提供；替換／移除後舊網址失效。欄位無效回傳 422；格式錯誤或過大的 multipart 回傳 4xx，既有資料不變。上傳套用每帳號速率限制。
+
+預覽文字與圖片即使在密碼保護連結也會公開。預覽標題留空時使用站台名稱；管理用標題、備註與目標網址不作預設內容。伺服器不抓取外部 metadata 或圖片。已知社群爬蟲（含 Discord、X／Twitter、Meta、Telegram、Slack、LinkedIn、LINE 標記）會取得 OG／Twitter HTML；未知 agent 保留一般轉址行為。Metadata 與上傳圖片都遵循連結生命週期；自訂預覽抓取不計點擊。第三方快取與版型由平台決定，修改後不保證立即更新卡片。

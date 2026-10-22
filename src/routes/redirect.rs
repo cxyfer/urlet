@@ -98,8 +98,32 @@ pub struct UnlockResponse {
     pub redirect: String,
 }
 
-/// `GET /{slug}`
+#[derive(Template)]
+#[template(path = "link_preview.html")]
+struct SocialPreviewPage {
+    title: String,
+    description: String,
+    image_url: String,
+    short_url: String,
+    site_name: String,
+}
+
+/// 讓快取分開處理爬蟲與真人回應，避免 HTML 與 HTTP redirect 混用。
 pub async fn redirect(
+    state: State<AppState>,
+    client: ClientInfo,
+    host: Extension<HostContext>,
+    slug: Path<String>,
+) -> Result<Response> {
+    let mut response = redirect_inner(state, client, host, slug).await?;
+    response
+        .headers_mut()
+        .append(header::VARY, HeaderValue::from_static("User-Agent"));
+    Ok(response)
+}
+
+/// `GET /{slug}`
+async fn redirect_inner(
     State(state): State<AppState>,
     client: ClientInfo,
     Extension(host): Extension<HostContext>,
@@ -125,6 +149,32 @@ pub async fn redirect(
             "link.limit.message",
         )),
         UrlState::Active => {
+            let preview = crate::db::url_previews::find(&state.db, url.id).await?;
+            if crate::services::ua::is_social_preview(client.user_agent.as_deref()) {
+                if let Some(preview) = preview.as_ref() {
+                    let page = SocialPreviewPage {
+                        title: preview
+                            .title
+                            .clone()
+                            .unwrap_or_else(|| state.settings.site_name()),
+                        description: preview.description.clone().unwrap_or_default(),
+                        image_url: crate::services::url_preview::public_image_url(
+                            preview,
+                            &state.config.base_url,
+                        )
+                        .unwrap_or_default(),
+                        short_url: format!(
+                            "{}://{}/{}",
+                            state.config.base_scheme, domain.hostname, url.slug
+                        ),
+                        site_name: state.settings.site_name(),
+                    };
+                    let html = page.render().map_err(AppError::internal)?;
+                    return Ok(crate::routes::no_store(
+                        (StatusCode::OK, Html(html)).into_response(),
+                    ));
+                }
+            }
             let has_password = url.has_password();
             if has_password && !is_unlocked(&state, &client, &domain.hostname, &url.slug) {
                 return Ok(password_page(&state, &url.slug, None, StatusCode::OK));
@@ -133,12 +183,22 @@ pub async fn redirect(
             // A password page is the only interstitial a protected link shows:
             // after a successful unlock the visitor goes straight to the target.
             if has_password {
-                return Ok(redirect_response(&url));
+                let response = redirect_response(&url);
+                return Ok(if preview.is_some() {
+                    crate::routes::no_store(response)
+                } else {
+                    response
+                });
             }
-            match RedirectMode::from_db(&url.redirect_mode) {
-                RedirectMode::Splash => Ok(splash_page(&state, &url)),
-                RedirectMode::Direct => Ok(redirect_response(&url)),
-            }
+            let response = match RedirectMode::from_db(&url.redirect_mode) {
+                RedirectMode::Splash => splash_page(&state, &url),
+                RedirectMode::Direct => redirect_response(&url),
+            };
+            Ok(if preview.is_some() {
+                crate::routes::no_store(response)
+            } else {
+                response
+            })
         }
     }
 }

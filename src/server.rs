@@ -30,6 +30,10 @@ pub fn build_router(state: AppState) -> Router {
             "/assets/custom-themes/{key}",
             get(routes::assets::custom_theme_css),
         )
+        .route(
+            "/assets/link-previews/{key}",
+            get(routes::previews::public_image),
+        )
         .route("/assets/favicon.svg", get(routes::assets::favicon))
         .route("/favicon.ico", get(routes::assets::favicon_ico))
         .route(

@@ -324,3 +324,7 @@ until an administrator opens it.
 The table above is the v1.0 record; the current v1.1 numbers (5.7 MB glibc / 5.8 MB musl binary,
 14.8 MB image, 8.7 MB RSS, ~0.1 s cold start, the full test suite) are tracked in `docs/SPEC.md` §3.3 — read
 them there rather than quoting this table.
+
+## SNS preview cards
+
+Opt-in per-link title/description plus HTTPS or uploaded raster image, SQLite storage, owner-only form/API, narrow social crawler metadata output, lifecycle/privacy boundaries and tests. Implementation plan: [SNS preview plan](aegis/plans/2026-10-23-social-previews.md).
