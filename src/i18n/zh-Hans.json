@@ -838,5 +838,14 @@
   "dashboard.create_disabled": "管理员已将创建链接的权限保留给自己，因此这里不显示表单。已有链接不受影响。",
   "admin.settings.public_max_urls": "访客可创建的链接总数",
   "admin.settings.public_max_urls_hint": "由拥有访客链接的保留 Guest 账号使用的额度，与每位用户的配额分开计算。0 表示不限。额度用完后，访客会收到配额错误，直到删除这些链接为止；额度用尽时维护排程会在日志中报告。",
-  "public.more_options": "更多选项"
+  "public.more_options": "更多选项",
+  "admin.settings.guest_allowlist_heading": "访客目标网址白名单",
+  "admin.settings.guest_allowlist_enabled": "未登录访客只能缩短白名单内的目标网址",
+  "admin.settings.guest_allowlist_label": "允许的目标主机名与路径",
+  "admin.settings.guest_allowlist_hint": "每行一个主机名，可加上区分大小写的路径，例如 example.com 或 example.com/articles/。开头的 *. 允许所有层级的子域名，例如 *.example.com；不包含 example.com，根域名须另外列出。使用 ASCII 主机名与路径，不含协议、端口、其他通配符、查询或片段。最多 200 条规则／16 KiB。启用且列表为空时拒绝所有访客提交，登录账号不受影响。内置网站仅供初始设置参考，不代表安全认证。",
+  "public.guest_allowlist_hint": "访客只能缩短下列允许的目标。开头的 *. 允许所有子域名，不含根域名；未添加时主机名必须完全匹配。规则也可限制路径。",
+  "public.guest_allowlist_show": "查看允许的目标网址",
+  "public.guest_allowlist_empty": "目前未开放任何访客可缩短的目标。",
+  "flash.err.guest_allowlist": "访客无法缩短此目标网址。请查看下方允许的目标，或登录后按账号权限操作。",
+  "flash.err.guest_allowlist_rules": "白名单未保存。请每行填写一个 ASCII 主机名，可在开头加上 *. 允许子域名，也可加上路径，例如 *.example.com/articles/。不含协议、端口、其他通配符、查询、片段或点路径；最多 200 条规则／16 KiB。"
 }

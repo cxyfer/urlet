@@ -67,6 +67,8 @@ pub const EDITABLE_KEYS: &[&str] = &[
     "captcha_on_create",
     "theme_switching",
     "public_create_access",
+    "guest_allowlist_enabled",
+    "guest_allowlist",
     "public_captcha",
     "public_rate_limit_per_ip",
     "public_rate_limit_global",
@@ -407,6 +409,23 @@ impl Settings {
         PublicCreateAccess::parse(&self.raw("public_create_access").unwrap_or_default())
     }
 
+    /// 僅限制未登入訪客；不明的儲存值維持限制，避免意外放行。
+    pub fn guest_allowlist_enabled(&self) -> bool {
+        !matches!(
+            self.raw("guest_allowlist_enabled").as_deref(),
+            Some("false")
+        )
+    }
+
+    /// 刻意清空的清單必須保留，不可回退至內建值。
+    pub fn guest_allowlist(&self) -> String {
+        self.raw("guest_allowlist").unwrap_or_else(|| {
+            crate::services::guest_allowlist::DEFAULT_RULES
+                .trim_end()
+                .to_string()
+        })
+    }
+
     /// True when the public form is protected by bot protection. Only takes
     /// effect once a provider, a site key and a secret key are configured.
     pub fn public_captcha(&self) -> bool {
@@ -712,6 +731,13 @@ fn validate_value(key: &str, value: &str) -> Result<String> {
                 "public creation must be allowed for 'guest', 'user' or 'admin'",
             )),
         },
+        "guest_allowlist_enabled" => match value.to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => Ok("true".to_string()),
+            "0" | "false" | "no" | "off" => Ok("false".to_string()),
+            _ => Err(invalid("guest allowlist enabled must be true or false")),
+        },
+        "guest_allowlist" => crate::services::guest_allowlist::normalize(value)
+            .map_err(|message| AppError::validation("guest_allowlist", message)),
         "public_captcha" => Ok(matches!(
             value.to_ascii_lowercase().as_str(),
             "1" | "true" | "yes" | "on"

@@ -25,6 +25,8 @@ async fn set(app: &TestApp, key: &str, value: &str) {
 
 async fn open_to_guests(app: &TestApp) {
     set(app, "public_create_access", "guest").await;
+    // 既有流程測試使用保留的 example.com；仍保留白名單檢查。
+    set(app, "guest_allowlist", "example.com").await;
 }
 
 /// Register the first account, which the instance promotes to administrator.
