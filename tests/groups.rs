@@ -1786,7 +1786,7 @@ async fn group_create_and_edit_share_one_form() {
     assert!(list_page
         .body
         .contains(&format!("/app/admin/groups/{group_id}/edit")));
-    assert!(list_page.body.contains("<dialog class=\"group-dialog\""));
+    assert!(list_page.body.contains("<dialog class=\"form-dialog\""));
     assert!(list_page.body.contains("data-group-dialog-root"));
     assert!(list_page.body.contains("data-group-dialog"));
 

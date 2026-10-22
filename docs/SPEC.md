@@ -294,15 +294,17 @@ target is still met.
 | `/app/theme/{key}` | Theme switch | Requires the switch permission — a session, or an anonymous visitor under the `all` policy; sets the `urlet_theme` cookie and redirects to a same-site `next` (or the `Referer`, or `/app` for a signed-in account and `/` for a visitor). Under `admin` a visitor is sent to the sign-in screen instead. `?preview=1` sets the administrator-only preview cookie, including for a disabled theme |
 | `/app/theme/default` | Site default | Clears the explicit and preview cookies and follows the administrator's default; same permission as the switch |
 | `/app/theme/preview/stop` | Stop preview | Clears the administrator preview cookie |
-| `/app/admin/themes` | Theme management | Enable/disable compiled-in and uploaded themes, upload a custom stylesheet, choose the default and the `theme_switching` policy |
+| `/app/admin/themes` | Theme management | Enable/disable compiled-in and uploaded themes, choose the default and the `theme_switching` policy; links to the create and edit forms |
+| `/app/admin/themes/new` | New custom theme | Upload form for name, description, appearance and stylesheet; the same template the edit page renders |
 | `/app/admin/themes/custom` | Custom theme upload | `POST` multipart upload (name, description, appearance, CSS); administrator only |
-| `/app/admin/themes/custom/{id}` | Custom theme edit | `GET` the edit form, `POST` metadata and optional stylesheet replacement |
+| `/app/admin/themes/custom/{id}` | Custom theme edit | `GET` the shared form prefilled with the stored values, `POST` metadata and optional stylesheet replacement |
 | `/app/admin/themes/custom/{id}/delete` | Custom theme delete | `POST` removes the catalogue row and the CSS file; the default cannot be deleted |
 | `/{slug}` | Redirect / password page / splash page / 410 / 404 | Public |
 | Extra domain | Redirect-only | `/` shows a small landing page, `/{slug}` redirects, `/app` 308s to canonical, `/api` is 404 |
 
 **UI technology**: Askama templates + hand-written CSS (including `prefers-color-scheme` dark mode) +
-roughly 150 lines of vanilla JS (copy to clipboard, confirmation dialogs, form enhancements).
+roughly 500 lines of vanilla JS (copy to clipboard, confirmation dialogs, form enhancements,
+the create/edit dialogs shared by the group and theme forms).
 **No** frontend framework or CDN resource is used (so the CSP can be restricted to `'self'`).
 
 ### 4.11 Multilingual UI (FR-I18N)
