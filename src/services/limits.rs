@@ -137,6 +137,9 @@ pub mod blocked {
     pub const REDIRECT_SPLASH: &str = "your group only allows direct redirects";
     pub const INVITES: &str = "your group does not allow invite codes";
     pub const NO_GROUP: &str = "your account has no group that can issue invite codes";
+    /// The site-wide access level (`public_create_access`) excludes this caller.
+    /// It is not a group rule, but it is reported the same way.
+    pub const CREATE_DISABLED: &str = "creating links is not open to this visitor";
 }
 
 #[cfg(test)]

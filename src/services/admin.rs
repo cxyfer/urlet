@@ -72,6 +72,13 @@ impl AdminContext<'_> {
             .await
             .map_err(AppError::from)?
             .ok_or_else(AppError::not_found)?;
+        // The reserved Guest account owns every anonymous link; editing it would
+        // change what a visitor may do and who owns the links they created.
+        if user.is_system {
+            return Err(AppError::forbidden(
+                "the reserved system account cannot be modified",
+            ));
+        }
 
         // Keep the request's own options: the write must not replay values that
         // were only read to resolve guard rails.
@@ -236,6 +243,11 @@ impl AdminContext<'_> {
             .await
             .map_err(AppError::from)?
             .ok_or_else(AppError::not_found)?;
+        if user.is_system {
+            return Err(AppError::forbidden(
+                "the reserved system account cannot be deleted",
+            ));
+        }
         if user.id == self.actor.id {
             return Err(AppError::validation(
                 "id",

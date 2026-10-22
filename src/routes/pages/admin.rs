@@ -822,6 +822,20 @@ pub struct SettingsValues {
     /// Localised note telling the administrator whether the configuration is
     /// actually in effect: a ticked box with a missing key does nothing.
     pub captcha_state: Option<String>,
+    /// Public shortener: `guest`, `user` or `admin`.
+    pub public_create_access: String,
+    pub public_captcha: bool,
+    /// Creations per hour; `0` is unlimited.
+    pub public_rate_limit_per_ip: i64,
+    pub public_rate_limit_global: i64,
+    pub public_allow_slug: bool,
+    pub public_allow_title: bool,
+    pub public_allow_tags: bool,
+    pub public_allow_password: bool,
+    pub public_allow_expiry: bool,
+    pub public_allow_max_clicks: bool,
+    pub public_allow_redirect: bool,
+    pub public_allow_domain: bool,
 }
 
 /// Themes page: enable/disable the compiled-in designs and choose the default.
@@ -1232,6 +1246,32 @@ pub struct SettingsForm {
     pub captcha_on_login: Option<String>,
     #[serde(default)]
     pub captcha_on_create: Option<String>,
+    // Public shortener. Optional for the same reason as the captcha fields: a
+    // page rendered before the feature existed must still submit.
+    #[serde(default)]
+    pub public_create_access: Option<String>,
+    #[serde(default)]
+    pub public_captcha: Option<String>,
+    #[serde(default)]
+    pub public_rate_limit_per_ip: Option<String>,
+    #[serde(default)]
+    pub public_rate_limit_global: Option<String>,
+    #[serde(default)]
+    pub public_allow_slug: Option<String>,
+    #[serde(default)]
+    pub public_allow_title: Option<String>,
+    #[serde(default)]
+    pub public_allow_tags: Option<String>,
+    #[serde(default)]
+    pub public_allow_password: Option<String>,
+    #[serde(default)]
+    pub public_allow_expiry: Option<String>,
+    #[serde(default)]
+    pub public_allow_max_clicks: Option<String>,
+    #[serde(default)]
+    pub public_allow_redirect: Option<String>,
+    #[serde(default)]
+    pub public_allow_domain: Option<String>,
 }
 
 /// `GET /app/admin`
@@ -1438,10 +1478,18 @@ pub async fn urls_page(
         let owner = match owners.iter().find(|(id, _)| *id == row.user_id) {
             Some((_, email)) => email.clone(),
             None => {
+                // The reserved Guest account owns every link an anonymous
+                // visitor created; its internal address is not shown.
                 let email = users::find_by_id(&state.db, row.user_id)
                     .await
                     .map_err(AppError::from)?
-                    .map(|user| user.email)
+                    .map(|user| {
+                        if user.is_system {
+                            lang.t("admin.urls.guest_user").to_string()
+                        } else {
+                            user.email
+                        }
+                    })
                     .unwrap_or_else(|| lang.t("admin.urls.deleted_user").to_string());
                 owners.push((row.user_id, email.clone()));
                 email
@@ -2491,6 +2539,48 @@ pub async fn update_settings(
         ));
     }
 
+    // Public shortener. The access level and the two budgets are echoed back, so
+    // an empty value would be a validation error rather than a silent reset.
+    if let Some(access) = payload
+        .public_create_access
+        .filter(|value| !value.trim().is_empty())
+    {
+        values.push(("public_create_access".to_string(), access));
+    }
+    for (key, value) in [
+        ("public_rate_limit_per_ip", payload.public_rate_limit_per_ip),
+        ("public_rate_limit_global", payload.public_rate_limit_global),
+    ] {
+        if let Some(value) = value.filter(|value| !value.trim().is_empty()) {
+            values.push((key.to_string(), value));
+        }
+    }
+    for (key, checked) in [
+        ("public_captcha", payload.public_captcha.is_some()),
+        ("public_allow_slug", payload.public_allow_slug.is_some()),
+        ("public_allow_title", payload.public_allow_title.is_some()),
+        ("public_allow_tags", payload.public_allow_tags.is_some()),
+        (
+            "public_allow_password",
+            payload.public_allow_password.is_some(),
+        ),
+        ("public_allow_expiry", payload.public_allow_expiry.is_some()),
+        (
+            "public_allow_max_clicks",
+            payload.public_allow_max_clicks.is_some(),
+        ),
+        (
+            "public_allow_redirect",
+            payload.public_allow_redirect.is_some(),
+        ),
+        ("public_allow_domain", payload.public_allow_domain.is_some()),
+    ] {
+        values.push((
+            key.to_string(),
+            if checked { "true" } else { "false" }.to_string(),
+        ));
+    }
+
     Ok(
         match context(&state, &client, &current.user)
             .update_settings(&values)
@@ -3209,7 +3299,8 @@ fn captcha_state(settings: &Settings, lang: Lang) -> Option<String> {
     let has_secret = settings.captcha_secret_configured();
     let any_flow = settings.captcha_on_register()
         || settings.captcha_on_login()
-        || settings.captcha_on_create();
+        || settings.captcha_on_create()
+        || settings.public_captcha();
 
     let key = match (has_site_key, has_secret) {
         (false, false) => "admin.settings.captcha_state.missing_keys",
@@ -3243,6 +3334,18 @@ pub fn settings_values(settings: &Settings) -> SettingsValues {
         captcha_on_create: settings.captcha_on_create(),
         // Filled in by `render_settings`, which knows the language.
         captcha_state: None,
+        public_create_access: settings.public_create_access().as_str().to_string(),
+        public_captcha: settings.public_captcha(),
+        public_rate_limit_per_ip: settings.public_rate_limit_per_ip(),
+        public_rate_limit_global: settings.public_rate_limit_global(),
+        public_allow_slug: settings.public_fields().slug,
+        public_allow_title: settings.public_fields().title,
+        public_allow_tags: settings.public_fields().tags,
+        public_allow_password: settings.public_fields().password,
+        public_allow_expiry: settings.public_fields().expiry,
+        public_allow_max_clicks: settings.public_fields().max_clicks,
+        public_allow_redirect: settings.public_fields().redirect,
+        public_allow_domain: settings.public_fields().domain,
     }
 }
 

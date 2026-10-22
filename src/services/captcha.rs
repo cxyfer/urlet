@@ -156,6 +156,8 @@ pub enum CaptchaFlow {
     Register,
     Login,
     Create,
+    /// The public form on the landing page, used by anonymous visitors.
+    Public,
 }
 
 /// Everything a template needs to render the provider widget.
@@ -278,6 +280,7 @@ impl CaptchaGuard {
             CaptchaFlow::Register => settings.captcha_on_register(),
             CaptchaFlow::Login => settings.captcha_on_login(),
             CaptchaFlow::Create => settings.captcha_on_create(),
+            CaptchaFlow::Public => settings.public_captcha(),
         };
         let provider = settings.captcha_provider();
         let site_key = settings.captcha_site_key();

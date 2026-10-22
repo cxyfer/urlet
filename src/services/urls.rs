@@ -246,6 +246,17 @@ pub fn prepare_password(raw: Option<&str>) -> Result<Option<String>> {
 impl UrlContext<'_> {
     /// Create a short link for the current actor.
     pub async fn create(&self, input: CreateInput) -> Result<Url> {
+        // The access level is site wide and gates *every* creation path, not
+        // only the public form: an administrator who restricts creation to
+        // themselves means the dashboard and the API as well.
+        if !self
+            .settings
+            .public_create_access()
+            .allows(Some(self.actor))
+        {
+            return Err(AppError::forbidden(blocked::CREATE_DISABLED));
+        }
+
         let target = target_url::validate(&input.target_url)?;
         let limits = limits::effective(self.pool, self.settings, self.actor).await?;
 

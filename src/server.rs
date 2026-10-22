@@ -12,7 +12,7 @@ use crate::db::users::NewUser;
 use crate::error::{AppError, Result};
 use crate::middleware;
 use crate::routes;
-use crate::services::settings::Settings;
+use crate::services::settings::{PublicCreateAccess, Settings};
 use crate::services::{auth, password};
 use crate::state::AppState;
 
@@ -32,7 +32,10 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/assets/favicon.svg", get(routes::assets::favicon))
         .route("/favicon.ico", get(routes::assets::favicon_ico))
-        .route("/", get(routes::pages::home::home))
+        .route(
+            "/",
+            get(routes::pages::home::home).post(routes::public_urls::create_form),
+        )
         .nest("/app", routes::pages::router())
         .route("/{slug}", get(routes::redirect::redirect))
         .route(
@@ -166,6 +169,12 @@ async fn bootstrap_admin(state: &AppState) -> Result<()> {
         .map_err(AppError::from)?
     {
         Some(existing) => {
+            // The reserved Guest account can never sign in, so promoting it would
+            // lock the operator out of the account they configured.
+            if existing.is_system {
+                tracing::error!("URLET_ADMIN_EMAIL names the reserved system account; ignoring it");
+                return Ok(());
+            }
             if !existing.is_admin() || existing.status != "active" {
                 db::users::set_role_status(&state.db, existing.id, "admin", "active")
                     .await
@@ -213,6 +222,22 @@ async fn warn_about_first_user(state: &AppState) -> Result<()> {
             mode = state.settings.registration_mode().as_str(),
             "no accounts exist and registration is not open; set URLET_ADMIN_EMAIL and \
              URLET_ADMIN_PASSWORD or open registration"
+        );
+    }
+
+    // The public form can only create a link when the reserved Guest account
+    // exists. Migration 15 skips creating it in the pathological case where the
+    // address already belongs to somebody, so report it rather than letting
+    // every visitor run into a 500.
+    if state.settings.public_create_access() == PublicCreateAccess::Guest
+        && db::users::find_system(&state.db)
+            .await
+            .map_err(AppError::from)?
+            .is_none()
+    {
+        tracing::error!(
+            "the public shortener is open to visitors but the reserved Guest account is \
+             missing; anonymous creation will fail"
         );
     }
     Ok(())

@@ -5,7 +5,7 @@ use axum::Router;
 
 use crate::routes::{
     api_admin, api_auth, api_domains, api_invites, api_not_found, api_public, api_stats, api_tags,
-    api_tokens, api_urls,
+    api_tokens, api_urls, public_urls,
 };
 use crate::state::AppState;
 
@@ -40,6 +40,8 @@ pub fn router() -> Router<AppState> {
         .route("/tags/{id}", delete(api_tags::delete))
         // public metadata
         .route("/public/urls/{slug}", get(api_public::show))
+        // the public shortener (unauthenticated when the access level allows it)
+        .route("/public/urls", post(public_urls::create_api))
         // api tokens
         .route("/tokens", get(api_tokens::list).post(api_tokens::create))
         .route("/tokens/{id}", delete(api_tokens::revoke))

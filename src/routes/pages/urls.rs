@@ -225,8 +225,8 @@ pub struct UpdateForm {
     pub status: Option<String>,
 }
 
-/// Split a comma separated tag field.
-fn split_tags(raw: &Option<String>) -> Vec<String> {
+/// Split a comma separated tag field. Shared with the public form.
+pub(crate) fn split_tags(raw: &Option<String>) -> Vec<String> {
     raw.as_deref()
         .unwrap_or_default()
         .split(',')
@@ -236,7 +236,8 @@ fn split_tags(raw: &Option<String>) -> Vec<String> {
         .collect()
 }
 
-fn optional_number(raw: &Option<String>) -> Option<i64> {
+/// Parse an optional numeric form field. Shared with the public form.
+pub(crate) fn optional_number(raw: &Option<String>) -> Option<i64> {
     raw.as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())

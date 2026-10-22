@@ -838,16 +838,18 @@ async fn maintenance_prunes_stale_rows() {
 #[tokio::test]
 async fn admin_api_requires_json_errors_not_html() {
     let app = TestApp::spawn().await;
-    let (cookie, _) = admin(&app).await;
+    let (cookie, admin_id) = admin(&app).await;
     let response = app
         .send(delete_as("/api/v1/admin/users/9999", &cookie))
         .await;
     assert_eq!(response.status, StatusCode::NOT_FOUND);
     assert_eq!(response.json()["error"]["code"], "not_found");
 
+    // Addressed by id rather than a hard-coded 1: the reserved Guest account
+    // holds id 1 and refuses every edit with a 403 before validation runs.
     let bad_status = app
         .send(patch_json_as(
-            "/api/v1/admin/users/1",
+            &format!("/api/v1/admin/users/{admin_id}"),
             json!({ "status": "nonsense" }),
             &cookie,
         ))
