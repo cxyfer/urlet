@@ -3355,6 +3355,76 @@ pub fn settings_values(settings: &Settings) -> SettingsValues {
     }
 }
 
+/// The admin rail, in display order: `section` key and two-digit position.
+///
+/// Every theme's tab bar and page header derives its "01 / 09" marker from
+/// this one list, so adding or reordering a tab cannot leave a stale number
+/// behind in a template.
+const ADMIN_TABS: [(&str, &str); 9] = [
+    ("overview", "01"),
+    ("users", "02"),
+    ("groups", "03"),
+    ("urls", "04"),
+    ("invites", "05"),
+    ("domains", "06"),
+    ("themes", "07"),
+    ("settings", "08"),
+    ("audit", "09"),
+];
+
+/// Number of tabs, derived from the rail so it cannot drift from the list.
+const ADMIN_TAB_COUNT: usize = ADMIN_TABS.len();
+
+fn admin_tab_number(section: &str) -> &'static str {
+    ADMIN_TABS
+        .iter()
+        .find(|(key, _)| *key == section)
+        .map(|(_, number)| *number)
+        // A visible sentinel rather than a plausible number: the integration
+        // test renders every admin page, so an unknown `section` cannot ship
+        // unnoticed.
+        .unwrap_or("??")
+}
+
+/// Expose the position to templates through the page context. The
+/// `themed_page!` wrappers dereference to these types, so an included tab
+/// template can call `self.tab_index()` like any other page field.
+macro_rules! admin_tab_position {
+    ($($page:ty),+ $(,)?) => {
+        $(
+            impl $page {
+                pub fn tab_index(&self) -> &'static str {
+                    admin_tab_number(self.section)
+                }
+
+                /// Position of any tab, for a rail that prints the whole
+                /// list instead of only the active entry.
+                pub fn tab_number_for(&self, section: &str) -> &'static str {
+                    admin_tab_number(section)
+                }
+
+                pub fn tab_count(&self) -> String {
+                    format!("{:02}", ADMIN_TAB_COUNT)
+                }
+            }
+        )+
+    };
+}
+
+admin_tab_position!(
+    OverviewPage,
+    UsersPage,
+    AdminUrlsPage,
+    DomainsPage,
+    InvitesPage,
+    GroupsPage,
+    GroupFormPage,
+    SettingsPage,
+    ThemesPage,
+    CustomThemeFormPage,
+    AuditPage,
+);
+
 fn render<T: ThemedContext>(template: T, status: StatusCode) -> Result<Response, AppError> {
     match template.themed().render() {
         Ok(html) => Ok((status, Html(html)).into_response()),
@@ -3393,6 +3463,18 @@ fn human_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn admin_tabs_are_numbered_in_display_order() {
+        assert_eq!(ADMIN_TABS.len(), 9);
+        for (position, (section, number)) in ADMIN_TABS.iter().enumerate() {
+            assert_eq!(format!("{:02}", position + 1), *number, "{section}");
+            assert_eq!(admin_tab_number(section), *number);
+        }
+        assert_eq!(ADMIN_TAB_COUNT, 9);
+        assert_eq!(format!("{:02}", ADMIN_TAB_COUNT), "09");
+        assert_eq!(admin_tab_number("not-a-section"), "??");
+    }
 
     #[test]
     fn shows_an_inherited_unlimited_quota_as_unlimited() {

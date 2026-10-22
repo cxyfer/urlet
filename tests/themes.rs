@@ -777,6 +777,146 @@ async fn every_theme_renders_every_page() {
 }
 
 #[tokio::test]
+async fn the_admin_tab_marker_follows_the_active_section() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+
+    // Verdant and Signal print the "current / total" marker in their admin
+    // rail, so check every destination plus the two form pages that reuse the
+    // groups and themes sections.
+    let sections = [
+        ("/app/admin", "01"),
+        ("/app/admin/users", "02"),
+        ("/app/admin/groups", "03"),
+        ("/app/admin/urls", "04"),
+        ("/app/admin/invites", "05"),
+        ("/app/admin/domains", "06"),
+        ("/app/admin/themes", "07"),
+        ("/app/admin/settings", "08"),
+        ("/app/admin/audit", "09"),
+        ("/app/admin/groups/new", "03"),
+        ("/app/admin/themes/new", "07"),
+    ];
+
+    for (uri, number) in sections {
+        let verdant = app.get_as(uri, &cookie).await;
+        assert_eq!(verdant.status, StatusCode::OK, "{uri}");
+        assert!(
+            verdant.body.contains(&format!("SYS · {number} / 09")),
+            "{uri} must show tab {number} / 09: {}",
+            verdant.body
+        );
+        assert_eq!(
+            verdant.body.matches("SYS · ").count(),
+            1,
+            "{uri} must print exactly one Verdant tab marker"
+        );
+
+        let signal = app
+            .get_as(uri, &format!("{cookie}; urlet_theme=signal"))
+            .await;
+        assert_eq!(signal.status, StatusCode::OK, "{uri}");
+        assert!(
+            signal.body.contains(&format!(
+                "<span class=\"console-code\">{number} / 09</span>"
+            )),
+            "{uri} must show tab {number} / 09 in the Signal rail"
+        );
+        assert_eq!(
+            signal.body.matches("<span class=\"console-code\">").count(),
+            1,
+            "{uri} must print exactly one Signal tab marker"
+        );
+    }
+
+    // Swiss prints a number on every link, not just the active one.
+    let swiss = app
+        .get_as("/app/admin", &format!("{cookie}; urlet_theme=swiss"))
+        .await;
+    for number in ["01", "02", "03", "04", "05", "06", "07", "08", "09"] {
+        assert!(
+            swiss.body.contains(&format!(
+                "<span class=\"tab-n\" aria-hidden=\"true\">{number}</span>"
+            )),
+            "the Swiss rail is missing tab {number}"
+        );
+    }
+
+    // The three pages with their own header also print the page number there;
+    // those copies used to keep the old six-tab positions.
+    for (uri, number) in [
+        ("/app/admin", "01"),
+        ("/app/admin/urls", "04"),
+        ("/app/admin/audit", "09"),
+    ] {
+        let signal = app
+            .get_as(uri, &format!("{cookie}; urlet_theme=signal"))
+            .await;
+        assert!(
+            signal
+                .body
+                .contains(&format!("<span class=\"k-index\">{number}</span>")),
+            "{uri} has a stale Signal page header"
+        );
+        assert_eq!(
+            signal.body.matches("class=\"k-index\"").count(),
+            1,
+            "{uri} must print exactly one Signal page header"
+        );
+
+        let gilded = app
+            .get_as(uri, &format!("{cookie}; urlet_theme=gilded"))
+            .await;
+        assert!(
+            gilded.body.contains(&format!("№ {number} · MMXXVI")),
+            "{uri} has a stale Gilded page header"
+        );
+        assert_eq!(
+            gilded.body.matches("№ ").count(),
+            1,
+            "{uri} must print exactly one Gilded page number"
+        );
+
+        let paper = app
+            .get_as(uri, &format!("{cookie}; urlet_theme=paper"))
+            .await;
+        assert!(
+            paper
+                .body
+                .contains(&format!("<span aria-hidden=\"true\">№ {number}</span>")),
+            "{uri} has a stale Paper page header"
+        );
+        assert_eq!(
+            paper.body.matches("№ ").count(),
+            1,
+            "{uri} must print exactly one Paper page number"
+        );
+
+        let swiss = app
+            .get_as(uri, &format!("{cookie}; urlet_theme=swiss"))
+            .await;
+        assert!(
+            swiss.body.contains(&format!(
+                "<span class=\"sec-num\" aria-hidden=\"true\">{number}</span>"
+            )),
+            "{uri} has a stale Swiss page header"
+        );
+        assert!(
+            swiss.body.contains("/// — 09"),
+            "{uri} must show the current nine-section total"
+        );
+        assert_eq!(
+            swiss.body.matches("class=\"sec-num\"").count(),
+            1,
+            "{uri} must print exactly one Swiss page number"
+        );
+    }
+
+    // Aurora has no page number in its admin header by design; the existing
+    // `every_theme_renders_every_page` test still renders it for every URI.
+}
+
+#[tokio::test]
 async fn every_theme_renders_the_public_pages() {
     let app = TestApp::spawn().await;
     for theme in urlet::services::theme::ALL {
