@@ -21,7 +21,7 @@
         <span class="footer-mark">{{ site_name }}<span>.</span></span>
         <span class="site-tagline">{{ lang.t("footer.tagline") }}</span>
         <span class="site-index" aria-hidden="true">/// 00 — 06</span>
-        {% block footer_lang %}{% include "partials/lang_switcher.html" %}{% endblock %}
+        {% block footer_lang %}{% include "partials/site_tools.html" %}{% endblock %}
     </div>
 </footer>
 <script src="/assets/app.js?v={{ self.asset_version() }}" defer></script>

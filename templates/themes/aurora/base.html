@@ -18,7 +18,7 @@
 {% endblock %}
 <footer class="site">
     <span class="footer-tagline">{{ site_name }} — {{ lang.t("footer.tagline") }}</span>
-    {% block footer_lang %}{% include "partials/lang_switcher.html" %}{% endblock %}
+    {% block footer_lang %}{% include "partials/site_tools.html" %}{% endblock %}
 </footer>
 <script src="/assets/app.js?v={{ self.asset_version() }}" defer></script>
 </body>

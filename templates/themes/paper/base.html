@@ -24,7 +24,7 @@
             <span class="colophon-rule" aria-hidden="true"></span>
             <span class="colophon-tagline">{{ lang.t("footer.tagline") }}</span>
         </p>
-        {% block footer_lang %}{% include "partials/lang_switcher.html" %}{% endblock %}
+        {% block footer_lang %}{% include "partials/site_tools.html" %}{% endblock %}
     </div>
 </footer>
 <script src="/assets/app.js?v={{ self.asset_version() }}" defer></script>

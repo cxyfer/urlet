@@ -293,6 +293,17 @@ async fn the_theme_picker_menu_paints_its_own_text_and_background() {
     assert!(rule.contains("background:"), "{rule}");
     assert!(rule.contains("color:"), "{rule}");
     assert!(!rule.contains("color: inherit"), "{rule}");
+
+    // The picker also sits in the page footer, where a downward menu would open
+    // past the end of the document.
+    assert!(
+        response.body.contains("footer.site .theme-menu"),
+        "the footer menu must be told to open upward"
+    );
+    assert!(
+        response.body.contains("footer.colophon .theme-menu"),
+        "Paper calls its footer `colophon`"
+    );
 }
 
 #[tokio::test]
@@ -387,6 +398,79 @@ async fn a_visitor_can_pick_a_theme_while_the_policy_is_all() {
     // even to a visitor who may switch on the landing page.
     let missing = app.get("/definitely-not-a-slug").await;
     assert!(!missing.body.contains("data-theme-switcher"));
+}
+
+#[tokio::test]
+async fn a_slug_beginning_with_app_stays_on_the_redirect_surface() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+
+    // `app` is reserved, but a slug that merely begins with it is an ordinary
+    // link. It must not be mistaken for the `/app` shell: that would give a
+    // visitor the picker on a link page under `all`, and cost the redirect hot
+    // path the session lookup it is meant to avoid.
+    let created = app
+        .post_json_as(
+            "/api/v1/urls",
+            json!({
+                "target_url": "https://example.com/apple",
+                "slug": "apple",
+                "password": "secret123"
+            }),
+            &cookie,
+        )
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+
+    // The cookie is still honoured; only the picker is withheld.
+    let page = app.get_as("/apple", "urlet_theme=paper").await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    assert!(page.body.contains("/assets/themes/paper"));
+    assert!(!page.body.contains("data-theme-switcher"));
+
+    // The same visitor is offered the picker on the landing page.
+    let landing = app.get_as("/", "urlet_theme=paper").await;
+    assert!(landing.body.contains("data-theme-switcher"));
+}
+
+#[tokio::test]
+async fn every_theme_offers_the_picker_to_a_visitor() {
+    let app = TestApp::spawn().await;
+
+    // Every design must behave the same for a visitor without a session: the
+    // landing page and the sign-in page carry the shared tools, the redirect
+    // surface stays minimal, and the picker is never rendered twice.
+    for theme in urlet::services::theme::ALL {
+        let key = theme.key();
+        let cookie = format!("urlet_theme={key}");
+
+        let landing = app.get_as("/", &cookie).await;
+        assert_eq!(landing.status, StatusCode::OK, "{key} landing");
+        assert_eq!(
+            landing.body.matches("data-theme-switcher").count(),
+            1,
+            "{key} must offer exactly one picker on the landing page"
+        );
+
+        let login = app.get_as("/app/login", &cookie).await;
+        assert_eq!(login.status, StatusCode::OK, "{key} sign-in");
+        assert_eq!(
+            login.body.matches("data-theme-switcher").count(),
+            1,
+            "{key} must offer exactly one picker on the sign-in page"
+        );
+        assert!(
+            login.body.contains("/assets/theme-ui.css"),
+            "{key} must load the picker stylesheet where it renders the picker"
+        );
+
+        let link = app.get_as("/definitely-not-a-slug", &cookie).await;
+        assert_eq!(link.status, StatusCode::NOT_FOUND, "{key} link page");
+        assert!(
+            !link.body.contains("data-theme-switcher"),
+            "{key} must keep the link page free of the picker"
+        );
+    }
 }
 
 #[tokio::test]

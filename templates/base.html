@@ -1,4 +1,3 @@
-{%- import "partials/theme_switcher.html" as theme_switcher -%}
 <!DOCTYPE html>
 <html lang="{{ lang.html_lang() }}"{% if self.theme_is_light_only() %} data-theme="light"{% endif %}{% if self.theme_is_dark_only() %} data-theme="dark"{% endif %}{% if self.theme_has_lock() %} data-theme-lock="{{ self.theme_lock() }}"{% endif %}>
 <head>
@@ -26,11 +25,10 @@
     {% block footer_tools %}
     {# The pages that keep their controls in a top bar (landing, app shell)
        override this block; the rest — sign-in, registration, error pages —
-       offer the same picker here. #}
+       offer the same tools here. #}
     <div class="footer-tools">
         {% if self.theme_allows_toggle() %}{% include "partials/theme_toggle.html" %}{% endif %}
-        {% call theme_switcher::switcher(self.theme_view(), lang) %}
-        {% include "partials/lang_switcher.html" %}
+        {% include "partials/site_tools.html" %}
     </div>
     {% endblock %}
 </footer>
