@@ -179,10 +179,10 @@ urlet/
 ## Development
 
 ```bash
-cargo test                 # unit + integration tests (524)
+cargo test                 # unit + integration tests (530)
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-bash scripts/smoke.sh      # end-to-end acceptance run against the real binary (172 checks)
+bash scripts/smoke.sh      # end-to-end acceptance run against the real binary (177 checks)
 bash scripts/demo.sh       # build a demo site and write screenshots to .tmp/demo/shots
 ```
 
