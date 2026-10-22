@@ -13,10 +13,15 @@ on:
   push:
     branches: [master]
 
-# A new push makes the previous pull request run obsolete, so cancel it. Runs
-# for the default branch are never cancelled: they are the record of what landed.
+# A new push makes the previous pull request run obsolete, so cancel it. A push
+# to the default branch instead gets a group of its own. Sharing one group per
+# branch would not be enough: `cancel-in-progress: false` protects only the run
+# that is already going, while the next push still replaces the queued run — so
+# a second push arriving mid-run would leave the first commit with no CI result.
+# (`queue: max` would preserve the queue, but it cannot be combined with the
+# conditional `cancel-in-progress` below.)
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'push' && github.run_id || 'pull-request' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
