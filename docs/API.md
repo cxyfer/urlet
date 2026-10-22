@@ -690,7 +690,18 @@ Use `PUT /api/v1/admin/settings` to edit either key. Hostnames are lowercased, b
 
 An enabled empty list denies all anonymous destinations. Disabling the policy preserves its list. Updates take effect immediately and persist across restarts; upgrades seed only missing keys. Existing guest links continue to redirect. The admin form offers the same controls and preserves these settings when an older form omits them. Visitors can inspect the current allowed destinations on the landing page; refused forms use `?err=guest_allowlist`.
 
-The built-in list covers YouTube, Wikipedia, GitHub, Stack Overflow, PTT, Dcard, Bahamut, CNA and Bilibili, with specific content paths where practical. YouTube uses only `*.youtube.com` and `youtube.com`, allowing all paths on those hosts; Wikipedia uses `*.wikipedia.org/wiki/` for article paths across all subdomains. It is a starting policy, not a safety certification: known hosts can carry user content or redirects. There is no reputation API, target fetch or redirect-chain inspection.
+The built-in list has 43 host rules across 24 established services. These entries allow all paths on the listed hosts; administrators can still add optional path restrictions to their own rules. Root domains and subdomains are listed separately where needed. The default scope is:
+
+| Area | Services and allowed hosts |
+|------|----------------------------|
+| Knowledge and development | Wikipedia (`wikipedia.org`, `*.wikipedia.org`), GitHub (`github.com`), GitLab (`gitlab.com`), Stack Overflow (`stackoverflow.com`, `*.stackoverflow.com`), Stack Exchange (`stackexchange.com`, `*.stackexchange.com`), MDN (`developer.mozilla.org`), Python documentation (`docs.python.org`), Rust documentation (`doc.rust-lang.org`) |
+| Taiwan discussion | PTT (`ptt.cc`, `www.ptt.cc`), Dcard (`dcard.tw`, `www.dcard.tw`), Bahamut (`gamer.com.tw`, `*.gamer.com.tw`) |
+| Video and music | YouTube (`*.youtube.com`, `youtube.com`), Bilibili (`bilibili.com`, `*.bilibili.com`), Twitch (`twitch.tv`, `*.twitch.tv`), Spotify (`spotify.com`, `*.spotify.com`) |
+| Social | Reddit (`reddit.com`, `*.reddit.com`), Instagram (`instagram.com`, `www.instagram.com`), Facebook (`facebook.com`, `*.facebook.com`), X (`x.com`, `www.x.com`) |
+| News | CNA (`cna.com.tw`, `www.cna.com.tw`), BBC (`bbc.com`, `www.bbc.com`, `bbc.co.uk`, `www.bbc.co.uk`), Reuters (`reuters.com`, `www.reuters.com`) |
+| Product support | Apple (`support.apple.com`), Microsoft (`support.microsoft.com`) |
+
+Public website hosting domains such as `*.github.io`, `*.gitlab.io` and `sites.google.com` are not included. GitHub and GitLab document that users can publish their own sites on their Pages domains; allowing the main service does not imply allowing those separate hosting domains. See the official [GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages) and [GitLab Pages](https://docs.gitlab.com/user/project/pages/) documentation. This is a starting policy, not a safety certification: known hosts can carry user content or redirects. There is no reputation API, target fetch or redirect-chain inspection.
 
 ---
 

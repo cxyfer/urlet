@@ -634,7 +634,18 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 
 啟用且清單為空時拒絕全部匿名目標；關閉政策會保留清單。更新立即生效且重啟保留，升級僅補齊缺少的 key。既有訪客連結仍可轉址。管理表單提供相同控制項，舊版表單省略新欄位時保留設定。訪客可在首頁查看目前允許的目標；表單遭拒時使用 `?err=guest_allowlist`。
 
-內建清單涵蓋 YouTube、Wikipedia、GitHub、Stack Overflow、PTT、Dcard、巴哈姆特、中央社與 Bilibili，適合時限定內容路徑。YouTube 僅使用 `*.youtube.com` 與 `youtube.com`，允許這些主機的所有路徑；Wikipedia 使用 `*.wikipedia.org/wiki/`，涵蓋所有子網域的條目路徑。這是初始政策，不是安全認證：知名網站仍可能包含使用者內容或轉址。沒有可信度 API、目標內容抓取或轉址鏈檢查。
+內建清單包含 24 個常見服務、43 條主機規則。這些項目允許所列主機的所有路徑；管理員仍可在自訂規則中加上路徑限制。需要時分別列出根網域與子網域，預設範圍如下：
+
+| 類別 | 服務與允許的主機 |
+|------|------------------|
+| 知識與開發 | Wikipedia（`wikipedia.org`、`*.wikipedia.org`）、GitHub（`github.com`）、GitLab（`gitlab.com`）、Stack Overflow（`stackoverflow.com`、`*.stackoverflow.com`）、Stack Exchange（`stackexchange.com`、`*.stackexchange.com`）、MDN（`developer.mozilla.org`）、Python 文件（`docs.python.org`）、Rust 文件（`doc.rust-lang.org`） |
+| 台灣討論區 | PTT（`ptt.cc`、`www.ptt.cc`）、Dcard（`dcard.tw`、`www.dcard.tw`）、巴哈姆特（`gamer.com.tw`、`*.gamer.com.tw`） |
+| 影音與音樂 | YouTube（`*.youtube.com`、`youtube.com`）、Bilibili（`bilibili.com`、`*.bilibili.com`）、Twitch（`twitch.tv`、`*.twitch.tv`）、Spotify（`spotify.com`、`*.spotify.com`） |
+| 社群 | Reddit（`reddit.com`、`*.reddit.com`）、Instagram（`instagram.com`、`www.instagram.com`）、Facebook（`facebook.com`、`*.facebook.com`）、X（`x.com`、`www.x.com`） |
+| 新聞 | 中央社（`cna.com.tw`、`www.cna.com.tw`）、BBC（`bbc.com`、`www.bbc.com`、`bbc.co.uk`、`www.bbc.co.uk`）、Reuters（`reuters.com`、`www.reuters.com`） |
+| 產品支援 | Apple（`support.apple.com`）、Microsoft（`support.microsoft.com`） |
+
+未內建 `*.github.io`、`*.gitlab.io`、`sites.google.com` 等公開網站代管網域。GitHub 與 GitLab 官方文件說明使用者可在 Pages 網域發布自己的網站，因此允許主站不代表連同這些獨立的代管網域一起允許，參見官方 [GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages) 與 [GitLab Pages](https://docs.gitlab.com/user/project/pages/) 文件。這是初始政策，不是安全認證：知名網站仍可能包含使用者內容或轉址。沒有可信度 API、目標內容抓取或轉址鏈檢查。
 
 ---
 

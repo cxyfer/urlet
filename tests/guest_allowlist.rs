@@ -55,7 +55,7 @@ async fn defaults_restrict_both_anonymous_endpoints_and_explain_recovery() {
         .contains("This destination is not allowed for guests"));
     assert!(page.body.contains("View allowed destinations"));
     assert!(page.body.contains("*.youtube.com"));
-    assert!(page.body.contains("*.wikipedia.org/wiki/"));
+    assert!(page.body.contains("<code>*.wikipedia.org</code>"));
 
     let accepted = create(&app, "www.youtube.com/watch?v=123").await;
     assert_eq!(accepted.status, StatusCode::CREATED, "{}", accepted.body);
@@ -63,6 +63,30 @@ async fn defaults_restrict_both_anonymous_endpoints_and_explain_recovery() {
         accepted.json()["target_url"],
         "https://www.youtube.com/watch?v=123"
     );
+    for target in [
+        "https://en.wikipedia.org/w/index.php",
+        "https://stackoverflow.com/users/1",
+        "https://www.cna.com.tw/",
+        "https://gitlab.com/gitlab-org/gitlab",
+        "https://developer.mozilla.org/en-US/docs/Web",
+        "https://open.spotify.com/track/example",
+        "https://www.reuters.com/world/",
+    ] {
+        let response = create(&app, target).await;
+        assert_eq!(
+            response.status,
+            StatusCode::CREATED,
+            "{target}: {}",
+            response.body
+        );
+    }
+    for target in ["https://user.github.io/", "https://user.gitlab.io/"] {
+        assert_eq!(
+            create(&app, target).await.status,
+            StatusCode::FORBIDDEN,
+            "{target}"
+        );
+    }
     let form = app
         .send(post_form(
             "/",

@@ -497,6 +497,15 @@ check "the YouTube root is allowed without a content-path restriction" "201" \
 check "the Wikipedia wildcard accepts nested subdomains" "201" \
     "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/public/urls" \
         -H 'content-type: application/json' -d '{"target_url":"https://de.m.wikipedia.org/wiki/Rust"}')"
+check "trusted Wikipedia hosts allow paths outside articles" "201" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/public/urls" \
+        -H 'content-type: application/json' -d '{"target_url":"https://en.wikipedia.org/w/index.php"}')"
+check "the expanded allowlist accepts developer documentation" "201" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/public/urls" \
+        -H 'content-type: application/json' -d '{"target_url":"https://developer.mozilla.org/en-US/docs/Web"}')"
+check "public website hosting domains remain outside the default allowlist" "403" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/public/urls" \
+        -H 'content-type: application/json' -d '{"target_url":"https://user.github.io/"}')"
 check "a wildcard does not accept a spoofed host suffix" "403" \
     "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/public/urls" \
         -H 'content-type: application/json' -d '{"target_url":"https://www.youtube.com.evil.test/watch?v=smoke"}')"

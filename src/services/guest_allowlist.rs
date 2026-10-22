@@ -281,7 +281,7 @@ mod tests {
     }
 
     #[test]
-    fn builtins_allow_youtube_hosts_and_keep_other_content_paths_scoped() {
+    fn builtins_allow_known_service_hosts_without_path_restrictions() {
         assert_eq!(normalize(DEFAULT_RULES).unwrap(), DEFAULT_RULES.trim_end());
         for target in [
             "https://www.youtube.com/watch?v=123",
@@ -291,16 +291,47 @@ mod tests {
             "https://www.youtube.com/redirect?q=https://evil.test",
             "https://zh.wikipedia.org/wiki/Rust",
             "https://de.m.wikipedia.org/wiki/Rust",
+            "https://en.wikipedia.org/w/index.php",
+            "https://wikipedia.org/",
             "https://github.com/cxyfer/urlet",
+            "https://gitlab.com/gitlab-org/gitlab",
+            "https://stackoverflow.com/users/1",
+            "https://meta.stackoverflow.com/",
+            "https://unix.stackexchange.com/",
+            "https://developer.mozilla.org/en-US/docs/Web",
+            "https://docs.python.org/3/",
+            "https://doc.rust-lang.org/book/",
             "https://www.ptt.cc/bbs/Rust/index.html",
+            "https://www.ptt.cc/about.html",
+            "https://www.dcard.tw/",
+            "https://forum.gamer.com.tw/",
+            "https://www.cna.com.tw/",
+            "https://m.bilibili.com/",
+            "https://old.reddit.com/r/rust/",
+            "https://clips.twitch.tv/example",
+            "https://open.spotify.com/track/example",
+            "https://www.instagram.com/example/",
+            "https://m.facebook.com/example",
+            "https://x.com/example",
+            "https://www.bbc.com/",
+            "https://www.bbc.co.uk/",
+            "https://www.reuters.com/world/",
+            "https://support.apple.com/zh-tw",
+            "https://support.microsoft.com/zh-tw",
         ] {
             assert!(allows(DEFAULT_RULES, target), "{target}");
         }
         for target in [
-            "https://en.wikipedia.org/w/index.php",
             "https://youtube.com.evil.test/watch?v=123",
             "https://evilyoutube.com/watch?v=123",
             "https://youtu.be/123",
+            "https://user.github.io/",
+            "https://user.gitlab.io/",
+            "https://sites.google.com/view/example",
+            "https://notreddit.com/",
+            "https://open.spotify.com.evil.test/",
+            "https://support.apple.com.evil.test/",
+            "https://unlisted.example/",
         ] {
             assert!(!allows(DEFAULT_RULES, target), "{target}");
         }
