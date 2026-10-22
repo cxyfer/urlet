@@ -3372,15 +3372,18 @@ const ADMIN_TABS: [(&str, &str); 9] = [
     ("audit", "09"),
 ];
 
-/// Total number of tabs, two-digit, for the `/ 09` half of the marker.
-const ADMIN_TAB_COUNT: &str = "09";
+/// Number of tabs, derived from the rail so it cannot drift from the list.
+const ADMIN_TAB_COUNT: usize = ADMIN_TABS.len();
 
 fn admin_tab_number(section: &str) -> &'static str {
     ADMIN_TABS
         .iter()
         .find(|(key, _)| *key == section)
         .map(|(_, number)| *number)
-        .unwrap_or("00")
+        // A visible sentinel rather than a plausible number: the integration
+        // test renders every admin page, so an unknown `section` cannot ship
+        // unnoticed.
+        .unwrap_or("??")
 }
 
 /// Expose the position to templates through the page context. The
@@ -3394,8 +3397,14 @@ macro_rules! admin_tab_position {
                     admin_tab_number(self.section)
                 }
 
-                pub fn tab_count(&self) -> &'static str {
-                    ADMIN_TAB_COUNT
+                /// Position of any tab, for a rail that prints the whole
+                /// list instead of only the active entry.
+                pub fn tab_number_for(&self, section: &str) -> &'static str {
+                    admin_tab_number(section)
+                }
+
+                pub fn tab_count(&self) -> String {
+                    format!("{:02}", ADMIN_TAB_COUNT)
                 }
             }
         )+
@@ -3462,8 +3471,9 @@ mod tests {
             assert_eq!(format!("{:02}", position + 1), *number, "{section}");
             assert_eq!(admin_tab_number(section), *number);
         }
-        assert_eq!(ADMIN_TAB_COUNT, "09");
-        assert_eq!(admin_tab_number("not-a-section"), "00");
+        assert_eq!(ADMIN_TAB_COUNT, 9);
+        assert_eq!(format!("{:02}", ADMIN_TAB_COUNT), "09");
+        assert_eq!(admin_tab_number("not-a-section"), "??");
     }
 
     #[test]

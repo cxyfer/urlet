@@ -5,7 +5,7 @@
 {% block content %}
 <header class="folio">
     <div class="folio-main">
-        <p class="folio-issue"><span class="folio-tick" aria-hidden="true"></span><span aria-hidden="true">№ 06</span></p>
+        <p class="folio-issue"><span class="folio-tick" aria-hidden="true"></span><span aria-hidden="true">№ {{ self.tab_index() }}</span></p>
         <h1>{{ lang.t("admin.urls.heading") }}</h1>
     </div>
     <p class="folio-note mono">{{ count_label }}</p>

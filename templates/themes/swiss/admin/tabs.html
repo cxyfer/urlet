@@ -6,14 +6,14 @@
 </div>
 <div class="admin-tabs-wrap">
     <nav class="tabs" aria-label="{{ lang.t("nav.admin") }}">
-        <a href="/app/admin" {% if section == "overview" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">01</span><span>{{ lang.t("admin.tabs.overview") }}</span></a>
-        <a href="/app/admin/users" {% if section == "users" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">02</span><span>{{ lang.t("admin.tabs.users") }}</span></a>
-        <a href="/app/admin/groups" {% if section == "groups" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">03</span><span>{{ lang.t("admin.tabs.groups") }}</span></a>
-        <a href="/app/admin/urls" {% if section == "urls" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">04</span><span>{{ lang.t("admin.tabs.links") }}</span></a>
-        <a href="/app/admin/invites" {% if section == "invites" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">05</span><span>{{ lang.t("admin.tabs.invites") }}</span></a>
-        <a href="/app/admin/domains" {% if section == "domains" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">06</span><span>{{ lang.t("admin.tabs.domains") }}</span></a>
-        <a href="/app/admin/themes" {% if section == "themes" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">07</span><span>{{ lang.t("admin.tabs.themes") }}</span></a>
-        <a href="/app/admin/settings" {% if section == "settings" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">08</span><span>{{ lang.t("admin.tabs.settings") }}</span></a>
-        <a href="/app/admin/audit" {% if section == "audit" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">09</span><span>{{ lang.t("admin.tabs.audit") }}</span></a>
+        <a href="/app/admin" {% if section == "overview" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">{{ self.tab_number_for("overview") }}</span><span>{{ lang.t("admin.tabs.overview") }}</span></a>
+        <a href="/app/admin/users" {% if section == "users" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">{{ self.tab_number_for("users") }}</span><span>{{ lang.t("admin.tabs.users") }}</span></a>
+        <a href="/app/admin/groups" {% if section == "groups" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">{{ self.tab_number_for("groups") }}</span><span>{{ lang.t("admin.tabs.groups") }}</span></a>
+        <a href="/app/admin/urls" {% if section == "urls" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">{{ self.tab_number_for("urls") }}</span><span>{{ lang.t("admin.tabs.links") }}</span></a>
+        <a href="/app/admin/invites" {% if section == "invites" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">{{ self.tab_number_for("invites") }}</span><span>{{ lang.t("admin.tabs.invites") }}</span></a>
+        <a href="/app/admin/domains" {% if section == "domains" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">{{ self.tab_number_for("domains") }}</span><span>{{ lang.t("admin.tabs.domains") }}</span></a>
+        <a href="/app/admin/themes" {% if section == "themes" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">{{ self.tab_number_for("themes") }}</span><span>{{ lang.t("admin.tabs.themes") }}</span></a>
+        <a href="/app/admin/settings" {% if section == "settings" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">{{ self.tab_number_for("settings") }}</span><span>{{ lang.t("admin.tabs.settings") }}</span></a>
+        <a href="/app/admin/audit" {% if section == "audit" %}class="active"{% endif %}><span class="tab-n" aria-hidden="true">{{ self.tab_number_for("audit") }}</span><span>{{ lang.t("admin.tabs.audit") }}</span></a>
     </nav>
 </div>
