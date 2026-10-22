@@ -1,9 +1,16 @@
 name: CI
 
 # Everything a pull request has to pass before it can merge: formatting, lints,
-# the test suite and the end-to-end smoke run. The same jobs also run on pushes
-# to the default branch, so a direct push cannot quietly skip the gate and the
-# branch always shows whether `master` itself is green.
+# the test suite and the end-to-end smoke run.
+#
+# The same jobs run on every push to the default branch, with one exception:
+# when the push is the merge commit of a pull request whose checks already
+# passed, the suite is skipped. The pull request ran it against the merged tree
+# and the merge commit keeps that tree, so repeating it adds nothing.
+#
+# Nothing else is skipped. Direct pushes (release bumps, docs commits), force
+# pushes, rebase merges and merges of a pull request that is red or has no
+# checks still run in full. The gate is fail-open — see scripts/ci-push-gate.sh.
 #
 # The commands mirror "Before you call a change done" in AGENTS.md. When a check
 # is added or dropped there, update this file too.
@@ -24,18 +31,50 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'push' && github.run_id || 'pull-request' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# `pull-requests`, `checks` and `statuses` are read by the gate below. They stay
+# read-only: this workflow never writes anything back to the repository.
 permissions:
   contents: read
+  pull-requests: read
+  checks: read
+  statuses: read
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
 
 jobs:
+  # --------------------------------------------------------------------- gate
+  # One cheap job decides whether the three real jobs have to run. On pull
+  # requests it always answers "run"; only pushes can answer "false".
+  gate:
+    name: Decide whether CI is needed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check whether this commit was already tested
+        id: decide
+        # The three jobs below run on `always()` and skip only on an explicit
+        # "false", so a crashed or timed-out gate still runs the suite instead
+        # of silently skipping it. A gate failure stays visible as a red job.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          BEFORE: ${{ github.event.before }}
+          FORCED: ${{ github.event.forced }}
+        run: bash scripts/ci-push-gate.sh
+
   # --------------------------------------------------------------- formatting
   # No build is needed, so this job finishes in seconds and fails first.
   fmt:
     name: Formatting
+    needs: gate
+    if: always() && needs.gate.outputs.run != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -56,6 +95,8 @@ jobs:
   # compiles with `--locked` too.
   lint-and-test:
     name: Lints and tests
+    needs: gate
+    if: always() && needs.gate.outputs.run != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -74,6 +115,8 @@ jobs:
   # curl and sqlite3, both of which ship with the GitHub-hosted runner image.
   smoke:
     name: Smoke test
+    needs: gate
+    if: always() && needs.gate.outputs.run != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
