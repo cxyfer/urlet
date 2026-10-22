@@ -2,7 +2,7 @@
 
 # urlet — 輕量化多用戶短網址系統規格書 (Spec)
 
-> 版本：1.6
+> 版本：1.7
 > 狀態：Approved for implementation
 > 最後更新：2026-10-23
 
@@ -387,6 +387,22 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 
 ---
 
+### 4.17 追蹤參數清理 (FR-CLEAN)
+
+| ID | 需求 | 說明 |
+|----|------|------|
+| FR-CLEAN-1 | 選擇啟用 | `url_cleaning_enabled=false` 為預設。管理員可在 `/app/admin/settings` 或既有設定 API 啟用，套用於網頁表單、登入 API（含 API Token）及公開 API 新建立的連結 |
+| FR-CLEAN-2 | 保守內建規則 | 在 Facebook、Instagram、Threads、X/Twitter、YouTube、TikTok 及 Bilibili 移除 `utm_*` 與明確列出的平台追蹤參數。其他網域除非符合自訂規則，否則保持原樣。內建規則保留影片 ID、播放清單與播放時間 |
+| FR-CLEAN-3 | 自訂規則 | `url_cleaning_rules` 為預設空白的文字設定。每個非空白、非註解行為 `網域 參數 [參數 ...]`，例如 `example.com utm_* ref`。網域以點號邊界涵蓋子網域；參數名稱解碼後忽略 ASCII 大小寫，尾端 `*` 表示前綴。去除行首空白後以 `#` 開頭者為註解。自訂規則與內建規則合併，清空自訂規則仍保留內建規則 |
+| FR-CLEAN-4 | 驗證 | 上限 8192 bytes、100 條規則，每條 32 個參數，每個參數 64 bytes（含 `*`）。網域為 ASCII hostname，至少兩個非空分段，總長最多 253 bytes、每段 63 bytes；每段限英文字母、數字及連字號，且不能以連字號開頭或結尾。不接受 scheme、port、路徑、帳密或萬用網域。參數名稱限英文字母、數字、`_`、`-` 或 `.`，尾端可加一個 `*`，拒絕單獨 `*` 及正規表示式。非法批次不寫入資料庫或快取 |
+| FR-CLEAN-5 | 網址保留 | 先驗證原始目標，只移除符合規則的 query 元件（含重複者），保留其餘元件原始編碼、順序、值、路徑及 fragment。移除後 query 為空時不保留問號。不展開分享短鏈、不讀取目標、不改寫網域／路徑，也不在重新導向時清理 |
+| FR-CLEAN-6 | 相容性 | 僅建立時清理並儲存／回傳清理後目標。既有連結與明確的目標網址編輯不受後續設定改變影響。停用功能仍保存自訂規則，供日後重新啟用。不新增資料表或 migration，啟動時只補入缺少的設定，不覆寫現值 |
+| FR-CLEAN-7 | 管理介面 | 六個主題共用開關、規則文字框、格式／上限／風險提示及可展開的內建規則，支援三語。非法規則送出後回傳 422 頁面，保留經 HTML 跳脫的輸入及本地化錯誤，不儲存任何設定 |
+
+內建規則唯一來源為 `src/rules/url-cleaning.txt`，以與自訂規則相同的格式獨立於 Rust 邏輯維護。透過 `include_str!` 在編譯時嵌入執行檔，清理器與管理介面共用此清單；更新內建規則需修改清單並重新建置，部署時無需額外規則檔。自訂規則可能移除必要參數，因此介面提醒管理員只移除已知追蹤名稱。
+
+---
+
 ## 5. 非功能需求
 
 ### 5.1 安全性 (NFR-SEC)
@@ -548,6 +564,8 @@ v1.5 新增 `urls` 的中轉頁欄位與 `user_groups.redirect_mode_policy`（�
 v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表、36 個索引**；自然週期配額再新增 `public_creation_quota` 與到期索引，目前為 **20 張表、37 個索引**。
 
 ### 6.5 預設資料 (seed)
+
+- 網址清理：`url_cleaning_enabled=false`、`url_cleaning_rules=`（空白）；啟動時只補入缺少的鍵並保留現值。
 
 - `settings`：`site_name=urlet`、`registration_mode=open`、`default_slug_length=7`、
   `max_urls_per_user=1000`、`default_redirect_type=302`、`analytics_enabled=true`、`click_retention_days=0`。

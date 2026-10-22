@@ -56,6 +56,8 @@ pub const EDITABLE_KEYS: &[&str] = &[
     "invite_period",
     "default_redirect_type",
     "analytics_enabled",
+    "url_cleaning_enabled",
+    "url_cleaning_rules",
     "click_retention_days",
     "captcha_provider",
     "captcha_site_key",
@@ -305,6 +307,32 @@ impl Settings {
         self.raw(key)
             .and_then(|value| value.trim().parse().ok())
             .unwrap_or(fallback)
+    }
+
+    pub fn url_cleaning_enabled(&self) -> bool {
+        self.raw_bool("url_cleaning_enabled", false)
+    }
+
+    pub fn url_cleaning_rules(&self) -> String {
+        self.raw("url_cleaning_rules").unwrap_or_default()
+    }
+
+    /// 同一讀鎖取得開關與規則，避免套用不同設定批次的組合。
+    pub fn clean_target(&self, target: String) -> Result<String> {
+        let values = self
+            .values
+            .read()
+            .map_err(|_| AppError::internal("cannot read URL cleanup settings"))?;
+        if values.get("url_cleaning_enabled").map(String::as_str) != Some("true") {
+            return Ok(target);
+        }
+        let rules = super::url_cleaning::parse_rules(
+            values
+                .get("url_cleaning_rules")
+                .map(String::as_str)
+                .unwrap_or_default(),
+        )?;
+        Ok(super::url_cleaning::clean(&target, &rules))
     }
 
     fn raw_bool(&self, key: &str, fallback: bool) -> bool {
@@ -599,6 +627,10 @@ impl Settings {
 
 /// Validate and canonicalise a setting value.
 fn validate_value(key: &str, value: &str) -> Result<String> {
+    if key == "url_cleaning_rules" {
+        super::url_cleaning::parse_rules(value)?;
+        return Ok(value.trim().to_string());
+    }
     let value = value.trim();
     let invalid = |message: &str| AppError::validation("value", message.to_string());
     match key {
@@ -646,6 +678,11 @@ fn validate_value(key: &str, value: &str) -> Result<String> {
             "1" | "true" | "yes" | "on"
         )
         .to_string()),
+        "url_cleaning_enabled" => match value.to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => Ok("true".to_string()),
+            "0" | "false" | "no" | "off" => Ok("false".to_string()),
+            _ => Err(invalid("URL cleanup must be true or false")),
+        },
         "click_retention_days" => {
             let parsed: i64 = value
                 .parse()

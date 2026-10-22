@@ -50,24 +50,36 @@ impl PublicRatePeriod {
         let local = now.to_zoned(zone.clone());
         let offset = UtcOffset::from_whole_seconds(local.offset().seconds())
             .map_err(|err| AppError::internal(err.to_string()))?;
-        let date = OffsetDateTime::from_unix_timestamp(now.as_second())
+        let calendar = OffsetDateTime::from_unix_timestamp(now.as_second())
             .map_err(|err| AppError::internal(err.to_string()))?
-            .to_offset(offset)
-            .date();
+            .to_offset(offset);
+        let date = calendar.date();
         let (start, end) = match self {
             Self::Minute | Self::Hour => {
-                let minute = if self == Self::Minute {
-                    local.minute()
-                } else {
-                    0
-                };
-                let start = clock_boundary(&local, local.hour(), minute)?;
+                let elapsed = Duration::seconds(i64::from(calendar.second()))
+                    + if self == Self::Hour {
+                        Duration::minutes(i64::from(calendar.minute()))
+                    } else {
+                        Duration::ZERO
+                    };
+                let mut start = (calendar - elapsed).unix_timestamp();
                 let length = if self == Self::Minute {
                     Duration::minutes(1)
                 } else {
                     Duration::hours(1)
                 };
-                (start, start + length.whole_seconds())
+                let mut end = start + length.whole_seconds();
+                // 時區可能回撥或跳過半小時；週期不可跨越 offset 切換點。
+                let inclusive_now = now
+                    .checked_add(jiff::SignedDuration::from_nanos(1))
+                    .map_err(|err| AppError::internal(err.to_string()))?;
+                if let Some(previous) = zone.preceding(inclusive_now).next() {
+                    start = start.max(previous.timestamp().as_second());
+                }
+                if let Some(next) = zone.following(now).next() {
+                    end = end.min(next.timestamp().as_second());
+                }
+                (start, end)
             }
             Self::Day => (
                 midnight(date, zone)?,
@@ -92,19 +104,6 @@ impl PublicRatePeriod {
         };
         Ok(Window { start, end })
     }
-}
-
-/// 保留當下 offset 偏好，正確區分回撥時重複的小時。
-fn clock_boundary(local: &jiff::Zoned, hour: i8, minute: i8) -> Result<i64> {
-    local
-        .with()
-        .hour(hour)
-        .minute(minute)
-        .second(0)
-        .subsec_nanosecond(0)
-        .build()
-        .map(|zoned| zoned.timestamp().as_second())
-        .map_err(|err| AppError::internal(err.to_string()))
 }
 
 /// 僅將 time 算出的日期交給時區庫解析；重複的午夜取較早者，缺少時向前移。
@@ -308,5 +307,41 @@ mod tests {
             "2026-11-01T01:00:00-05:00",
             "2026-11-01T02:00:00-05:00",
         );
+    }
+
+    #[test]
+    fn half_hour_dst_transitions_keep_clock_hour_boundaries() {
+        for (now, start, end) in [
+            (
+                "2026-10-04T02:45:00+11:00",
+                "2026-10-04T02:30:00+11:00",
+                "2026-10-04T03:00:00+11:00",
+            ),
+            (
+                "2026-04-05T01:45:00+11:00",
+                "2026-04-05T01:00:00+11:00",
+                "2026-04-05T01:30:00+10:30",
+            ),
+            (
+                "2026-04-05T01:45:00+10:30",
+                "2026-04-05T01:30:00+10:30",
+                "2026-04-05T02:00:00+10:30",
+            ),
+        ] {
+            check(
+                PublicRatePeriod::Hour,
+                "Australia/Lord_Howe",
+                now,
+                start,
+                end,
+            );
+            check(
+                PublicRatePeriod::Hour,
+                "Australia/Lord_Howe",
+                start,
+                start,
+                end,
+            );
+        }
     }
 }
