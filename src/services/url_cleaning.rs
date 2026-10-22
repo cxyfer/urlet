@@ -11,16 +11,7 @@ const MAX_PARAMETERS: usize = 32;
 const MAX_PARAMETER_LEN: usize = 64;
 
 /// 與管理介面顯示的規則共用同一份定義；不移除內容 ID 或播放時間。
-pub const BUILTIN_RULES: &str = "facebook.com utm_* fbclid mibextid\n\
-instagram.com utm_* igshid igsh\n\
-threads.net utm_* igshid igsh\n\
-threads.com utm_* igshid igsh\n\
-x.com utm_* s t ref_src ref_url\n\
-twitter.com utm_* s t ref_src ref_url\n\
-youtube.com utm_* si feature\n\
-youtu.be utm_* si feature\n\
-tiktok.com utm_* _t _r share_app_name share_iid\n\
-bilibili.com utm_* spm_id_from vd_source share_source share_medium share_plat share_session_id share_tag";
+pub const BUILTIN_RULES: &str = include_str!("../rules/url-cleaning.txt");
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Rule {
@@ -272,6 +263,6 @@ mod tests {
         assert!(parse_rules(&format!("{}.com ref", "a".repeat(64))).is_err());
         assert!(parse_rules(&" ".repeat(MAX_RULE_BYTES + 1)).is_err());
         assert!(parse_rules("").unwrap().is_empty());
-        assert_eq!(parse_rules(BUILTIN_RULES).unwrap().len(), 10);
+        assert!(!parse_rules(BUILTIN_RULES).unwrap().is_empty());
     }
 }

@@ -412,7 +412,7 @@ the create/edit dialogs shared by the group and theme forms).
 | FR-CLEAN-6 | Compatibility | Only creation cleans the stored and returned target. Existing links and explicit target edits are unchanged, regardless of later setting changes. Disabling cleanup keeps custom rules stored for future reuse. No new table or migration is required: startup seeds absent settings without overwriting existing values |
 | FR-CLEAN-7 | Admin experience | All six themes share the switch, rule textarea, visible format/limits/warning and built-in rule disclosure; all three locales are supported. Invalid submitted cleanup rules return a 422 page with the escaped input and localized error retained; no settings are saved |
 
-The built-in rule source is `src/services/url_cleaning.rs::BUILTIN_RULES`, also displayed in the administrator UI. Custom rules may remove meaningful parameters; the UI warns administrators to remove only known tracking names.
+The built-in rule source is `src/rules/url-cleaning.txt`, maintained separately from Rust logic in the same format as custom rules. `include_str!` embeds it in the binary at compile time; the cleaner and administrator UI share that embedded list. Update the list and rebuild to change built-ins; deployments need no external rules file. Custom rules may remove meaningful parameters; the UI warns administrators to remove only known tracking names.
 
 ---
 

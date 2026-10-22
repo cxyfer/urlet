@@ -1,0 +1,10 @@
+facebook.com utm_* fbclid mibextid
+instagram.com utm_* igshid igsh
+threads.net utm_* igshid igsh
+threads.com utm_* igshid igsh
+x.com utm_* s t ref_src ref_url
+twitter.com utm_* s t ref_src ref_url
+youtube.com utm_* si feature
+youtu.be utm_* si feature
+tiktok.com utm_* _t _r share_app_name share_iid
+bilibili.com utm_* spm_id_from vd_source share_source share_medium share_plat share_session_id share_tag
