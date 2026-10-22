@@ -21,8 +21,10 @@ bash scripts/merge-check.sh  # the merged group and domain flows
 ```
 
 The first four run on every pull request — see
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml). `merge-check.sh` stays a post-merge
-check for the group and domain flows.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) — and on every push to `master` that a
+green pull request did not already cover. A push that merges a passing pull request is skipped;
+direct pushes, force pushes and merges of untested changes still run in full. `merge-check.sh`
+stays a post-merge check for the group and domain flows.
 
 Schema changes go in `migrations/` and run at startup. Migrations are additive and
 checksum-protected: never edit one that has already been released, add a new file instead.
