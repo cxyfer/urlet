@@ -937,6 +937,18 @@ async fn every_theme_renders_the_public_pages() {
             );
             assert!(response.body.contains(&css), "{key} {uri} missing {css}");
             assert!(response.body.contains(&format!("data-theme-key=\"{key}\"")));
+            // Every design links the upstream repository from its footer, and
+            // the mark is inline: the CSP allows no remote image or icon font.
+            assert!(
+                response
+                    .body
+                    .contains(&format!("href=\"{}\"", urlet::REPOSITORY)),
+                "{key} {uri} is missing the repository link"
+            );
+            assert!(
+                response.body.contains("class=\"footer-repo-icon\""),
+                "{key} {uri} is missing the inline repository mark"
+            );
         }
         // The public shell still carries exactly one language switcher and the
         // sign-in form even when a non-default theme is active.
@@ -976,6 +988,14 @@ async fn every_theme_renders_the_extra_domain_landing() {
         assert!(response.body.contains(&css), "{key} missing {css}");
         assert!(response.body.contains(&format!("data-theme-key=\"{key}\"")));
         assert!(response.body.contains("noindex"));
+        // The short landing keeps the shared footer, so the repository link is
+        // there even though the page drops the sign-in shell.
+        assert!(
+            response
+                .body
+                .contains(&format!("href=\"{}\"", urlet::REPOSITORY)),
+            "{key} short landing is missing the repository link"
+        );
         // The redirect-only landing page is a public page too, so a visitor can
         // switch from it under the default `all` policy.
         assert_eq!(

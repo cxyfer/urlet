@@ -796,6 +796,7 @@ mod tests {
         "Turnstile",
         "reCAPTCHA",
         "Google",
+        "GitHub",
         "Chrome",
         "Safari",
         "Firefox",

@@ -5,6 +5,7 @@ edition = "2021"
 rust-version = "1.80.1"
 description = "Lightweight multi-user URL shortener with password protection, expiry and multi-domain support"
 license = "MIT"
+repository = "https://github.com/cxyfer/urlet"
 default-run = "urlet"
 
 [lib]

@@ -23,6 +23,7 @@
             <span class="colophon-name">{{ site_name }}</span>
             <span class="colophon-rule" aria-hidden="true"></span>
             <span class="colophon-tagline">{{ lang.t("footer.tagline") }}</span>
+            {% include "partials/repo_link.html" %}
         </p>
         {% block footer_lang %}{% include "partials/site_tools.html" %}{% endblock %}
     </div>

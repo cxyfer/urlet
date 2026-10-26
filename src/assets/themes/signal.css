@@ -3110,6 +3110,14 @@ footer.site {
     line-height: 1.4;
 }
 
+/* 深色條沒有設定頁尾字級，所以 repo 連結跟隨旁邊的 tag，而不是 body 級距。 */
+footer.site .footer-repo {
+    color: var(--bar-muted);
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .04em;
+}
+
 .site-meta {
     display: inline-flex;
     align-items: center;

@@ -855,3 +855,24 @@ footer.colophon .theme-menu {
 [data-preview-input][hidden] {
   display: none;
 }
+
+/* ---------------------------------------------------------------------------
+   頁尾的上游 repo 連結。每個設計都納入同一份 partial，所以共用規則放在這裡，
+   各主題只調整擺放位置與字級。連結繼承頁尾的顏色與字級：各設計的色盤差異太大
+   （Verdant 的灰、Signal 的深色條、Swiss 的黑底），硬寫一組顏色無法都看得清楚。 */
+.footer-repo {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    color: inherit;
+    line-height: 1;
+    text-decoration: none;
+    white-space: nowrap;
+}
+/* 用底線而非變色作為 hover 提示：在 Signal 深色條、Swiss 黑底與 Aurora 夜間模式
+   上，--ink 會與背景糊在一起。 */
+.footer-repo:hover,
+.footer-repo:focus-visible { text-decoration: underline; text-underline-offset: .18em; }
+.footer-repo-icon { flex: none; opacity: .75; transition: opacity .18s ease; }
+.footer-repo:hover .footer-repo-icon,
+.footer-repo:focus-visible .footer-repo-icon { opacity: 1; }

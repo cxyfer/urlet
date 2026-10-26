@@ -1710,6 +1710,7 @@ dl.meta.spec dd {
 
 .landing-footer .brand { font-size: 1rem; }
 .landing-footer p { margin: 0; font-family: var(--font-display); font-size: .95rem; }
+.landing-footer .footer-repo { font-size: .78rem; letter-spacing: .06em; }
 .landing-footer .footer-glyphs {
     color: var(--gold);
     font-family: var(--font-mono);

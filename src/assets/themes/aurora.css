@@ -2078,6 +2078,10 @@ footer.site {
 footer.site .lang-switcher { border-color: rgba(255, 255, 255, .07); }
 footer.site .lang-switcher a { font-size: .7rem; }
 
+/* Aurora 的頁尾用 `space-between` 撐開；repo 連結要跟 tagline 放在一起，
+   而不是浮在整列的中間。 */
+footer.site .footer-repo { margin-right: auto; }
+
 body.page-app footer.site {
     width: auto;
     max-width: none;

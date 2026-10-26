@@ -1,5 +1,7 @@
 {
   "footer.tagline": "lightweight multi-user URL shortener",
+  "footer.repo": "GitHub",
+  "footer.repo_label": "View the source code on GitHub",
   "nav.links": "Links",
   "nav.account": "Account",
   "nav.admin": "Admin",
