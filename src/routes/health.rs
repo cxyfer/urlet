@@ -1,9 +1,9 @@
 //! Health endpoint used by docker health checks and uptime probes.
 
+use crate::routes::extract::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde::Serialize;
 
 use crate::state::AppState;

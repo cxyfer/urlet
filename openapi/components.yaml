@@ -1,0 +1,2515 @@
+# urlet OpenAPI 3.1 — shared components.
+#
+# Ownership and rules for this file:
+#   * It is the single source of truth for every reusable schema, response and security
+#     scheme in the urlet OpenAPI contract.
+#   * openapi/en.yaml and openapi/zh-TW.yaml reference these entries
+#     (`$ref: 'components.yaml#/schemas/...'`, `'components.yaml#/responses/...'`) and the
+#     generator rewrites each one to the document-local `#/components/...` form before
+#     publishing. Use that exact shape: the prefix is what the generator recognises, and a
+#     reference it does not recognise either fails the build or, worse, points nowhere.
+#     Nothing here may contain language-specific prose: every description and example stays
+#     English and identical in both language files.
+#   * It is deliberately NOT a complete OpenAPI document. `openapi`, `info`, `paths` and
+#     `servers` belong to the language files and must not be added here.
+#   * Schemas mirror the Rust DTOs field for field and in declaration order, so a reviewer
+#     can diff them side by side: the shared DTOs live in src/routes/dto.rs and the
+#     per-endpoint ones in their own src/routes/api_*.rs module. Optional Rust fields are
+#     expressed with JSON Schema 2020-12 type unions (`type: [<type>, 'null']`), never with
+#     the obsolete nullable keyword.
+#   * Every field of a serialized DTO is always present, so nullable fields are still
+#     `required`; `null` is their value, not their absence. Request bodies (Rust
+#     `Deserialize`-only structs) are part of the contract too: they are included and say
+#     "Request body of ..." in their description.
+#   * Query-string structs (`AdminUsersQuery`, `AdminUrlsQuery`, `AdminAuditQuery`,
+#     `AdminGroupsQuery`, `DeleteGroupQuery`, `ListQuery`, `StatsQuery`, `ClicksQuery`,
+#     `PublicQuery`, `Pagination`) are never serialized; the language files describe them as
+#     query parameters instead of schemas.
+#
+# Pagination: one generic `Page` base schema is defined, and the concrete page schemas
+# (`UrlPage`, `ClickList`, `AdminUserPage`) `allOf`-extend it while narrowing `items` to a
+# concrete DTO. Lists that are not paginated (`TagList`, `TokenList`, `SessionList`,
+# `InviteList`) are plain `{ items }` objects, and `MemberInviteList` carries its own page
+# counters because it has no `total_pages`. Language files therefore only ever reference a
+# concrete list schema and never rebuild one inline.
+
+schemas:
+  # --- src/routes/dto.rs -------------------------------------------------------------
+
+  UserDto:
+    type: object
+    description: Public representation of a user. Never contains a password hash.
+    properties:
+      id:
+        type: integer
+        format: int64
+        description: Unique numeric user id.
+        example: 7
+      email:
+        type: string
+        format: email
+        description: Login address of the account.
+        example: ada@example.com
+      display_name:
+        type: [string, 'null']
+        description: Display name, or `null` when the account has none.
+        example: Ada
+      role:
+        type: string
+        enum: [user, admin]
+        description: Account role. `admin` unlocks the `/api/v1/admin/**` endpoints.
+        example: user
+      status:
+        type: string
+        enum: [active, suspended]
+        description: Account status. A `suspended` account cannot sign in.
+        example: active
+      group_id:
+        type: [integer, 'null']
+        format: int64
+        description: Id of the user group that supplies the account quotas, or `null` when ungrouped.
+        example: 2
+      created_at:
+        type: string
+        format: date-time
+        description: ISO-8601 UTC timestamp of when the account was created.
+        example: '2026-01-15T08:30:00.000Z'
+      last_login_at:
+        type: [string, 'null']
+        format: date-time
+        description: ISO-8601 UTC timestamp of the last successful sign-in, or `null` if never.
+        example: '2030-01-31T12:00:00.000Z'
+    required: [id, email, display_name, role, status, group_id, created_at, last_login_at]
+
+  GroupRefDto:
+    type: object
+    description: Group reference embedded in `/api/v1/auth/me`.
+    properties:
+      id:
+        type: integer
+        format: int64
+        description: Unique numeric group id.
+        example: 2
+      name:
+        type: string
+        description: Human-readable group name.
+        example: Pro
+    required: [id, name]
+
+  LimitsDto:
+    type: object
+    description: >
+      Effective quotas and feature toggles of the current user. The object is already
+      resolved: a group overrides a site-wide value only when its own value is not `NULL`,
+      and a quota of `0` means unlimited.
+    properties:
+      max_urls:
+        type: integer
+        format: int64
+        description: Maximum number of short links the account may own; `0` means unlimited.
+        example: 500
+      max_api_tokens:
+        type: integer
+        format: int64
+        description: Maximum number of usable API tokens the account may hold; `0` means unlimited.
+        example: 5
+      allow_custom_slug:
+        type: boolean
+        description: Whether the account may submit its own `slug` when creating a link.
+        example: true
+      allow_password:
+        type: boolean
+        description: Whether the account may password-protect a link.
+        example: true
+      allow_expiry:
+        type: boolean
+        description: Whether the account may set `expires_at` on a link.
+        example: true
+      allow_max_clicks:
+        type: boolean
+        description: Whether the account may set `max_clicks` on a link.
+        example: true
+      allow_tags:
+        type: boolean
+        description: Whether the account may attach tags to a link.
+        example: true
+      allow_api_tokens:
+        type: boolean
+        description: Whether the account may create API tokens at all.
+        example: true
+      allow_domain_selection:
+        type: boolean
+        description: >
+          Whether the account may pick a domain other than the effective default. When
+          `false`, only `default_domain` is accepted for new links or moves.
+        example: true
+      redirect_mode_policy:
+        type: string
+        enum: [direct, splash, choice]
+        description: >
+          Which redirect modes the account may use for new links. `choice` allows both
+          `direct` and `splash`; the policy never rewrites existing links. An ungrouped
+          account gets `choice`.
+        example: choice
+      default_domain:
+        type: [string, 'null']
+        description: >
+          Effective default domain hostname for new links, falling back to the site
+          default when the group default is missing or disabled.
+        example: go.example.com
+      allowed_domains:
+        type: array
+        description: Effective selection list of active domain hostnames the account may use.
+        items:
+          type: string
+          example: links.example.com
+        example: [links.example.com, go.example.com]
+    required:
+      - max_urls
+      - max_api_tokens
+      - allow_custom_slug
+      - allow_password
+      - allow_expiry
+      - allow_max_clicks
+      - allow_tags
+      - allow_api_tokens
+      - allow_domain_selection
+      - redirect_mode_policy
+      - default_domain
+      - allowed_domains
+
+  MeDto:
+    type: object
+    description: '`GET /api/v1/auth/me`: the user plus the rules that apply to them.'
+    properties:
+      user:
+        $ref: '#/components/schemas/UserDto'
+      group:
+        description: Group the account belongs to, or `null` for an ungrouped account.
+        oneOf:
+          - $ref: '#/components/schemas/GroupRefDto'
+          - type: 'null'
+      limits:
+        $ref: '#/components/schemas/LimitsDto'
+    required: [user, group, limits]
+
+  SessionDto:
+    type: object
+    description: Public representation of a session.
+    properties:
+      id:
+        type: integer
+        format: int64
+        description: Unique numeric session id.
+        example: 12
+      user_agent:
+        type: [string, 'null']
+        description: User agent recorded when the session was created, or `null` when the client sent none.
+        example: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)
+      created_at:
+        type: string
+        format: date-time
+        description: ISO-8601 UTC timestamp of when the session was created.
+        example: '2026-02-01T09:00:00.000Z'
+      last_seen_at:
+        type: string
+        format: date-time
+        description: ISO-8601 UTC timestamp of the most recent activity, written at most once per minute.
+        example: '2030-01-31T12:00:00.000Z'
+      expires_at:
+        type: string
+        format: date-time
+        description: >
+          ISO-8601 UTC timestamp when the session expires. Sessions slide: activity pushes
+          this forward and re-issues the cookie, so continuous use never expires.
+        example: '2030-02-28T12:00:00.000Z'
+      current:
+        type: boolean
+        description: Whether this is the session that authenticated the request.
+        example: true
+      revoked:
+        type: boolean
+        description: Whether the session has been revoked and can no longer authenticate.
+        example: false
+    required: [id, user_agent, created_at, last_seen_at, expires_at, current, revoked]
+
+  Page:
+    type: object
+    description: >
+      Standard pagination envelope. Concrete page schemas `allOf`-extend this one and
+      narrow `items` to a specific DTO; language files reference the concrete schema.
+    properties:
+      items:
+        type: array
+        description: Rows on the requested page.
+        items:
+          type: object
+          additionalProperties: true
+      page:
+        type: integer
+        format: int64
+        description: 1-based page number that was returned.
+        example: 1
+      per_page:
+        type: integer
+        format: int64
+        description: Rows per page. Defaults to 20 and is capped at 100.
+        example: 20
+      total:
+        type: integer
+        format: int64
+        description: Total number of rows across every page.
+        example: 42
+      total_pages:
+        type: integer
+        format: int64
+        description: Total number of pages; never less than 1, even when `total` is 0.
+        example: 3
+    required: [items, page, per_page, total, total_pages]
+
+  # `Pagination` (src/routes/dto.rs) is intentionally absent: it is a `Deserialize`-only
+  # query-string struct, never serialized, so the language files describe it as `page` /
+  # `per_page` query parameters instead of a schema.
+
+  OkResponse:
+    type: object
+    description: Simple success envelope for mutations that return nothing meaningful.
+    properties:
+      ok:
+        type: boolean
+        description: Always `true` on success.
+        example: true
+    required: [ok]
+
+  UrlDto:
+    type: object
+    description: Public representation of a short link.
+    properties:
+      id:
+        type: integer
+        format: int64
+        description: Unique numeric short link id.
+        example: 1
+      domain:
+        type: string
+        description: Hostname of the domain the link lives on. The slug namespace is per domain.
+        example: go.example.com
+      slug:
+        type: string
+        description: Short code of the link; a generated 7-character base62 slug unless it was custom.
+        example: launch
+      short_url:
+        type: string
+        format: uri
+        description: Ready-to-share short URL, built from the request scheme and the link domain.
+        example: https://go.example.com/launch
+      target_url:
+        type: string
+        format: uri
+        description: Destination the link redirects to.
+        example: https://example.com/landing
+      title:
+        type: [string, 'null']
+        description: Optional human-readable title, or `null` when unset.
+        example: Launch
+      notes:
+        type: [string, 'null']
+        description: Private notes of the owner, or `null` when unset. Never shown publicly.
+        example: internal note
+      tags:
+        type: array
+        description: Tag names attached to the link.
+        items:
+          type: string
+        example: [campaign, docs]
+      has_password:
+        type: boolean
+        description: Whether the link is password protected. The password itself is never returned.
+        example: false
+      expires_at:
+        type: [string, 'null']
+        format: date-time
+        description: ISO-8601 UTC expiry timestamp, or `null` when the link never expires.
+        example: '2030-06-30T12:00:00.000Z'
+      expires_in:
+        type: [string, 'null']
+        description: Humanized remaining time until `expires_at` (for example `in 52 months`), or `null`.
+        example: in 52 months
+      max_clicks:
+        type: [integer, 'null']
+        format: int64
+        description: Click budget of the link, or `null` when it has none. The value is at least 1.
+        example: 500
+      click_count:
+        type: integer
+        format: int64
+        description: Total number of recorded clicks, including automated traffic.
+        example: 42
+      unique_click_count:
+        type: integer
+        format: int64
+        description: Number of clicks classified as unique visitors.
+        example: 3
+      redirect_type:
+        type: integer
+        format: int64
+        enum: [301, 302, 307, 308]
+        description: HTTP status code used for the redirect.
+        example: 302
+      redirect_mode:
+        type: string
+        enum: [direct, splash]
+        description: '`direct` (immediate redirect) or `splash` (interstitial first).'
+        example: direct
+      splash_delay_seconds:
+        type: integer
+        format: int64
+        description: Countdown of the splash page, 1-60 (default 5). Stored even while the link is direct.
+        example: 5
+      splash_title:
+        type: [string, 'null']
+        description: Custom splash headline (at most 120 characters), or `null` for the built-in copy.
+        example: Launch day
+      splash_message:
+        type: [string, 'null']
+        description: Custom splash message (at most 500 characters), or `null` for the built-in copy.
+        example: Welcome aboard
+      status:
+        type: string
+        enum: [active, disabled]
+        description: Stored link status. `disabled` stops redirects without deleting the link.
+        example: active
+      is_expired:
+        type: boolean
+        description: >
+          `true` when the link no longer redirects because it expired or reached its
+          click limit.
+        example: false
+      state:
+        type: string
+        enum: [active, expired, limit_reached, disabled, deleted]
+        description: Derived lifecycle state, combining `status`, the expiry and the click budget.
+        example: active
+      is_custom_slug:
+        type: boolean
+        description: Whether the slug was supplied by the caller instead of generated.
+        example: true
+      last_clicked_at:
+        type: [string, 'null']
+        format: date-time
+        description: ISO-8601 UTC timestamp of the most recent click, or `null` if never clicked.
+        example: '2030-01-31T12:00:00.000Z'
+      created_at:
+        type: string
+        format: date-time
+        description: ISO-8601 UTC timestamp of when the link was created.
+        example: '2026-02-01T09:00:00.000Z'
+      updated_at:
+        type: string
+        format: date-time
+        description: ISO-8601 UTC timestamp of the last modification.
+        example: '2026-02-11T09:00:00.000Z'
+    required:
+      - id
+      - domain
+      - slug
+      - short_url
+      - target_url
+      - title
+      - notes
+      - tags
+      - has_password
+      - expires_at
+      - expires_in
+      - max_clicks
+      - click_count
+      - unique_click_count
+      - redirect_type
+      - redirect_mode
+      - splash_delay_seconds
+      - splash_title
+      - splash_message
+      - status
+      - is_expired
+      - state
+      - is_custom_slug
+      - last_clicked_at
+      - created_at
+      - updated_at
+
+  TagDto:
+    type: object
+    description: Public representation of a tag.
+    properties:
+      id:
+        type: integer
+        format: int64
+        description: Unique numeric tag id.
+        example: 4
+      name:
+        type: string
+        description: Tag name, unique per owner.
+        example: campaign
+      color:
+        type: [string, 'null']
+        description: Optional display colour of the tag, or `null` when unset.
+        example: '#3b82f6'
+      url_count:
+        type: integer
+        format: int64
+        description: Number of short links that carry this tag.
+        example: 4
+    required: [id, name, color, url_count]
+
+  StatsSummaryDto:
+    type: object
+    description: Summary numbers for one link or one account.
+    properties:
+      total_clicks:
+        type: integer
+        format: int64
+        description: All recorded clicks in the reporting window, including automated traffic.
+        example: 42
+      human_clicks:
+        type: integer
+        format: int64
+        description: Clicks that were not classified as automated traffic.
+        example: 41
+      unique_clicks:
+        type: integer
+        format: int64
+        description: Clicks from unique visitors.
+        example: 3
+      bot_clicks:
+        type: integer
+        format: int64
+        description: Clicks classified as automated traffic.
+        example: 1
+      first_click_at:
+        type: [string, 'null']
+        format: date-time
+        description: ISO-8601 UTC timestamp of the first click, or `null` when there were none.
+        example: '2030-01-01T08:00:00.000Z'
+      last_click_at:
+        type: [string, 'null']
+        format: date-time
+        description: ISO-8601 UTC timestamp of the most recent click, or `null` when there were none.
+        example: '2030-01-31T12:00:00.000Z'
+    required: [total_clicks, human_clicks, unique_clicks, bot_clicks, first_click_at, last_click_at]
+
+  DailyPointDto:
+    type: object
+    description: One day of the trend chart.
+    properties:
+      day:
+        type: string
+        format: date
+        description: Calendar day in UTC.
+        example: '2030-01-31'
+      clicks:
+        type: integer
+        format: int64
+        description: All clicks recorded on that day.
+        example: 5
+      unique_clicks:
+        type: integer
+        format: int64
+        description: Unique-visitor clicks recorded on that day.
+        example: 2
+      bot_clicks:
+        type: integer
+        format: int64
+        description: Automated clicks recorded on that day.
+        example: 0
+    required: [day, clicks, unique_clicks, bot_clicks]
+
+  DimensionDto:
+    type: object
+    description: A label/count pair (referrer, device, browser, OS).
+    properties:
+      label:
+        type: string
+        description: Value of the dimension, for example a referrer host or a device name.
+        example: news.example.com
+      count:
+        type: integer
+        format: int64
+        description: Number of clicks that carried this label.
+        example: 34
+    required: [label, count]
+
+  ClickDto:
+    type: object
+    description: One recorded click. Deliberately free of IP addresses and visitor hashes.
+    properties:
+      clicked_at:
+        type: string
+        format: date-time
+        description: ISO-8601 UTC timestamp of the click.
+        example: '2030-01-31T12:00:00.000Z'
+      referrer_host:
+        type: [string, 'null']
+        description: Hostname of the referrer, or `null` for a direct visit.
+        example: news.example.com
+      country_code:
+        type: [string, 'null']
+        description: Two-letter country code derived from the request, or `null` when it is unknown.
+        example: TW
+      device_type:
+        type: [string, 'null']
+        description: Parsed device class, for example `Desktop`, or `null` when it cannot be parsed.
+        example: Desktop
+      browser:
+        type: [string, 'null']
+        description: Parsed browser name, or `null` when it cannot be parsed.
+        example: Chrome
+      os:
+        type: [string, 'null']
+        description: Parsed operating system, or `null` when it cannot be parsed.
+        example: Windows
+      is_bot:
+        type: boolean
+        description: Whether the click was classified as automated traffic.
+        example: false
+      is_unique:
+        type: boolean
+        description: Whether the click counted as a unique visitor.
+        example: true
+      password_protected:
+        type: boolean
+        description: Whether the click happened on a password-protected link.
+        example: false
+    required:
+      - clicked_at
+      - referrer_host
+      - country_code
+      - device_type
+      - browser
+      - os
+      - is_bot
+      - is_unique
+      - password_protected
+
+  UrlStatsDto:
+    type: object
+    description: Full statistics payload for one link.
+    properties:
+      url:
+        $ref: '#/components/schemas/UrlDto'
+      summary:
+        $ref: '#/components/schemas/StatsSummaryDto'
+      daily:
+        type: array
+        description: One point per day in the window, padded with the days that had no clicks.
+        items:
+          $ref: '#/components/schemas/DailyPointDto'
+      referrers:
+        type: array
+        description: Clicks grouped by referrer host.
+        items:
+          $ref: '#/components/schemas/DimensionDto'
+      devices:
+        type: array
+        description: Clicks grouped by device type.
+        items:
+          $ref: '#/components/schemas/DimensionDto'
+      browsers:
+        type: array
+        description: Clicks grouped by browser.
+        items:
+          $ref: '#/components/schemas/DimensionDto'
+      operating_systems:
+        type: array
+        description: Clicks grouped by operating system.
+        items:
+          $ref: '#/components/schemas/DimensionDto'
+    required: [url, summary, daily, referrers, devices, browsers, operating_systems]
+
+  OverviewDto:
+    type: object
+    description: Account level overview used by the dashboard.
+    properties:
+      links:
+        type: integer
+        format: int64
+        description: Total number of short links owned by the account.
+        example: 120
+      active_links:
+        type: integer
+        format: int64
+        description: Number of links that currently redirect.
+        example: 110
+      expired_links:
+        type: integer
+        format: int64
+        description: Number of links that expired or reached their click limit.
+        example: 10
+      total_clicks:
+        type: integer
+        format: int64
+        description: All clicks across the account, including automated traffic.
+        example: 4210
+      unique_clicks:
+        type: integer
+        format: int64
+        description: Unique-visitor clicks across the account.
+        example: 3120
+      bot_clicks:
+        type: integer
+        format: int64
+        description: Automated clicks across the account.
+        example: 1090
+      bot_share:
+        type: integer
+        format: int64
+        description: Percentage of clicks classified as automated traffic (0-100).
+        example: 26
+      clicks_7d:
+        type: integer
+        format: int64
+        description: Clicks recorded in the last 7 days.
+        example: 240
+      clicks_30d:
+        type: integer
+        format: int64
+        description: Clicks recorded in the last 30 days.
+        example: 980
+      daily:
+        type: array
+        description: Trend points used by the overview chart.
+        items:
+          $ref: '#/components/schemas/DailyPointDto'
+      top_links:
+        type: array
+        description: Best performing links of the account.
+        items:
+          $ref: '#/components/schemas/TopLinkDto'
+    required:
+      - links
+      - active_links
+      - expired_links
+      - total_clicks
+      - unique_clicks
+      - bot_clicks
+      - bot_share
+      - clicks_7d
+      - clicks_30d
+      - daily
+      - top_links
+
+  TopLinkDto:
+    type: object
+    description: Best performing link.
+    properties:
+      id:
+        type: integer
+        format: int64
+        description: Unique numeric short link id.
+        example: 1
+      slug:
+        type: string
+        description: Short code of the link.
+        example: launch
+      target_url:
+        type: string
+        format: uri
+        description: Destination the link redirects to.
+        example: https://example.com/landing
+      click_count:
+        type: integer
+        format: int64
+        description: Total number of recorded clicks, including automated traffic.
+        example: 42
+    required: [id, slug, target_url, click_count]
+
+  # --- src/routes/api_auth.rs --------------------------------------------------------
+
+  UserEnvelope:
+    type: object
+    description: >
+      `{ "user": ... }` envelope returned by `POST /api/v1/auth/register`,
+      `POST /api/v1/auth/login` and `PATCH /api/v1/auth/me`.
+    properties:
+      user:
+        $ref: '#/components/schemas/UserDto'
+    required: [user]
+
+  SessionList:
+    type: object
+    description: >
+      Response of `GET /api/v1/auth/sessions`. The list is not paginated: it always carries
+      every session of the account, so it has no page counters.
+    properties:
+      items:
+        type: array
+        description: Sessions of the current account, newest first.
+        items:
+          $ref: '#/components/schemas/SessionDto'
+    required: [items]
+
+  RegisterPayload:
+    type: object
+    description: >
+      Request body of `POST /api/v1/auth/register`. Registering signs the new account in and
+      sets a session cookie.
+    properties:
+      email:
+        type: string
+        format: email
+        description: Address the account is created with; a duplicate is a `409` conflict.
+        example: user@example.com
+      password:
+        type: string
+        format: password
+        description: Account password; it must satisfy the instance password policy.
+        example: at-least-8-chars
+      invite_code:
+        type: [string, 'null']
+        description: >
+          Invite code. Mandatory in `invite` registration mode; in `open` mode it is optional
+          but validated when supplied, and its group wins over the default group.
+        example: RW6MF6C6JG
+      display_name:
+        type: [string, 'null']
+        description: Optional display name for the new account.
+        example: Ada
+      captcha_token:
+        type: [string, 'null']
+        description: >
+          Widget token from the web CAPTCHA. Only checked when bot verification is enabled
+          for registration; otherwise the field is ignored.
+        example: 0.abc...
+    required: [email, password]
+
+  LoginPayload:
+    type: object
+    description: >
+      Request body of `POST /api/v1/auth/login`. A success sets the `urlet_session` cookie.
+    properties:
+      email:
+        type: string
+        format: email
+        description: Login address of the account.
+        example: ada@example.com
+      password:
+        type: string
+        format: password
+        description: >
+          Account password. Wrong credentials return `401` with a fixed message that does not
+          reveal whether the account exists.
+        example: at-least-8-chars
+      captcha_token:
+        type: [string, 'null']
+        description: >
+          Widget token from the web CAPTCHA. Only checked when bot verification is enabled
+          for sign-in; otherwise the field is ignored.
+        example: 0.abc...
+    required: [email, password]
+
+  UpdateProfilePayload:
+    type: object
+    description: Request body of `PATCH /api/v1/auth/me`.
+    properties:
+      display_name:
+        type: [string, 'null']
+        description: New display name; an omitted field, `null` or an empty string clears it.
+        example: Ada
+
+  ChangePasswordPayload:
+    type: object
+    description: >
+      Request body of `POST /api/v1/auth/password`. On success every other session is revoked
+      and all API tokens of the account are revoked; the current session survives.
+    properties:
+      current_password:
+        type: string
+        format: password
+        description: Current password; a mismatch returns `401`.
+        example: old-password
+      new_password:
+        type: string
+        format: password
+        description: >
+          Replacement password; it must satisfy the instance password policy or the request
+          returns `422`.
+        example: new-password
+    required: [current_password, new_password]
+
+  # --- src/routes/api_urls.rs --------------------------------------------------------
+
+  CreatePayload:
+    type: object
+    description: Request body of `POST /api/v1/urls`.
+    properties:
+      target_url:
+        type: string
+        description: >
+          Destination URL. Required; only `http`/`https` are accepted, and a bare domain
+          without a scheme is given an `https://` prefix.
+        example: example.com/path
+      domain:
+        type: [string, 'null']
+        description: >
+          Hostname to create the link on. Omitted uses the effective group default; a hostname
+          that is not an active domain fails with `422`, and one outside the group policy
+          fails with `403`.
+        example: go.example.com
+      slug:
+        type: [string, 'null']
+        description: >
+          Requested slug. Omitted generates a 7-character base62 slug; only `[A-Za-z0-9_-]` is
+          allowed, length 1-64, reserved words are rejected, and a slug already used on the
+          selected domain returns `409`.
+        example: launch
+      title:
+        type: [string, 'null']
+        description: Optional human-readable title.
+        example: Launch
+      notes:
+        type: [string, 'null']
+        description: Optional private notes of the owner; never shown publicly.
+        example: internal note
+      tags:
+        type: array
+        description: Tag names to attach; an omitted field means no tags.
+        items:
+          type: string
+        example: [campaign, docs]
+      password:
+        type: [string, 'null']
+        description: Optional link password; the plaintext value is never returned again.
+        example: linkpass
+      expires_at:
+        type: [string, 'null']
+        description: >
+          Expiry timestamp; it must be in the future. Responses use ISO-8601 UTC, and relaxed
+          input forms such as `2030-06-30 12:00` are accepted.
+        example: '2030-06-30 12:00'
+      max_clicks:
+        type: [integer, 'null']
+        format: int64
+        description: Click budget of the link; at least 1.
+        example: 500
+      redirect_type:
+        type: [integer, 'null']
+        format: int64
+        enum: [301, 302, 307, 308, null]
+        description: HTTP status code used for the redirect; omitted uses the instance default.
+        example: 302
+      redirect_mode:
+        type: [string, 'null']
+        enum: [direct, splash, null]
+        description: >
+          `direct` or `splash`. Omitted takes the group policy's default mode (splash under a
+          splash-only policy, otherwise direct); a mode the group blocks returns `403`.
+        example: splash
+      splash_delay_seconds:
+        type: [integer, 'null']
+        format: int64
+        description: Splash countdown, 1-60 seconds (default 5).
+        example: 7
+      splash_title:
+        type: [string, 'null']
+        description: >
+          Splash headline, at most 120 characters; empty or omitted uses the localised
+          built-in copy.
+        example: Launch day
+      splash_message:
+        type: [string, 'null']
+        description: >
+          Splash message, at most 500 characters; empty or omitted uses the localised
+          built-in copy.
+        example: Welcome aboard
+      captcha_token:
+        type: [string, 'null']
+        description: >
+          Widget token. Only read when the request authenticates with a session cookie and bot
+          verification is enabled for link creation; a Bearer token call ignores it.
+        example: 0.abc...
+    required: [target_url]
+
+  UpdatePayload:
+    type: object
+    description: >
+      Request body of `PATCH /api/v1/urls/{id}`. Partial update: a field that is absent stays
+      unchanged, while an explicit `null` clears it. An empty object returns `400`.
+    properties:
+      target_url:
+        type: [string, 'null']
+        description: New destination URL; absent or `null` keeps the current value.
+        example: https://example.com/new-landing
+      domain:
+        type: [string, 'null']
+        description: >
+          New hostname; absent or `null` keeps the current one. Moving a link must satisfy the
+          group policy and re-checks the slug there (`409` on a collision).
+        example: links.example.com
+      slug:
+        type: [string, 'null']
+        description: New slug; absent or `null` keeps the current one.
+        example: promo
+      title:
+        type: [string, 'null']
+        description: New title; absent keeps the current value and `null` clears it.
+        example: New title
+      notes:
+        type: [string, 'null']
+        description: New notes; absent keeps the current value and `null` clears them.
+        example: updated note
+      tags:
+        type: [array, 'null']
+        description: Replacement tag list; absent keeps the current tags and `null` clears them.
+        items:
+          type: string
+        example: [new]
+      password:
+        type: [string, 'null']
+        description: >
+          New link password; absent keeps the current one and `null` removes it. A non-empty
+          value counts as a new password and is refused while passwords are blocked.
+        example: linkpass
+      expires_at:
+        type: [string, 'null']
+        description: New expiry timestamp; absent keeps the current one and `null` clears it.
+        example: '2030-12-31T23:59:00.000Z'
+      max_clicks:
+        type: [integer, 'null']
+        format: int64
+        description: New click budget; absent keeps the current one and `null` removes it.
+        example: 1000
+      redirect_type:
+        type: [integer, 'null']
+        format: int64
+        enum: [301, 302, 307, 308, null]
+        description: New redirect status code; absent or `null` keeps the current one.
+        example: 307
+      redirect_mode:
+        type: [string, 'null']
+        enum: [direct, splash, null]
+        description: >
+          New redirect mode; absent or `null` keeps the current one. Switching to a mode the
+          group blocks returns `403`.
+        example: direct
+      splash_delay_seconds:
+        type: [integer, 'null']
+        format: int64
+        description: New splash countdown, 1-60 seconds; absent or `null` keeps the current one.
+        example: 10
+      splash_title:
+        type: [string, 'null']
+        description: New splash headline; absent keeps the current value and `null` clears it.
+        example: Launch day
+      splash_message:
+        type: [string, 'null']
+        description: New splash message; absent keeps the current value and `null` clears it.
+        example: Welcome aboard
+      status:
+        type: [string, 'null']
+        enum: [active, disabled, null]
+        description: >
+          Stored link status; absent or `null` keeps the current one. `disabled` stops
+          redirects without deleting the link.
+        example: disabled
+
+  # --- src/routes/api_tokens.rs ------------------------------------------------------
+
+  ApiTokenDto:
+    type: object
+    description: >
+      Public representation of an API token. The plaintext value is shown only by the create
+      call and never returned here.
+    properties:
+      id:
+        type: integer
+        format: int64
+        description: Unique numeric token id.
+        example: 1
+      name:
+        type: string
+        description: Label given by the owner, at most 60 characters.
+        example: ci pipeline
+      prefix:
+        type: string
+        description: Displayable prefix kept in clear for identification.
+        example: ur_abc12345
+      scopes:
+        type: string
+        description: >
+          JSON-encoded scope list stored with the token; new tokens get
+          `["urls:read","urls:write"]`.
+        example: '["urls:read","urls:write"]'
+      created_at:
+        type: string
+        format: date-time
+        description: ISO-8601 UTC timestamp of when the token was created.
+        example: '2026-03-01T10:00:00.000Z'
+      last_used_at:
+        type: [string, 'null']
+        format: date-time
+        description: ISO-8601 UTC timestamp of the last authenticated use, or `null` if never used.
+        example: '2030-01-31T12:00:00.000Z'
+      expires_at:
+        type: [string, 'null']
+        format: date-time
+        description: ISO-8601 UTC expiry timestamp, or `null` when the token never expires.
+        example: '2030-01-01T00:00:00.000Z'
+      revoked:
+        type: boolean
+        description: Whether the owner revoked the token; revocation frees a quota slot immediately.
+        example: false
+      active:
+        type: boolean
+        description: Whether the token can still authenticate (not revoked and not expired).
+        example: true
+    required: [id, name, prefix, scopes, created_at, last_used_at, expires_at, revoked, active]
+
+  TokenList:
+    type: object
+    description: >
+      Response of `GET /api/v1/tokens`. The list is not paginated: it always carries every
+      token of the account.
+    properties:
+      items:
+        type: array
+        description: API tokens of the current account, newest first.
+        items:
+          $ref: '#/components/schemas/ApiTokenDto'
+    required: [items]
+
+  CreateTokenPayload:
+    type: object
+    description: Request body of `POST /api/v1/tokens`.
+    properties:
+      name:
+        type: string
+        description: Label for the token, at most 60 characters.
+        example: ci pipeline
+      expires_at:
+        type: [string, 'null']
+        description: Optional expiry timestamp; omitted or `null` creates a token that never expires.
+        example: '2030-01-01'
+    required: [name]
+
+  CreatedTokenResponse:
+    type: object
+    description: >
+      Response of `POST /api/v1/tokens`. The plaintext `token` is shown this one time only and
+      cannot be retrieved again.
+    properties:
+      token:
+        type: string
+        description: Plaintext token value; store it now, it is never returned again.
+        example: ur_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+      api_token:
+        $ref: '#/components/schemas/ApiTokenDto'
+    required: [token, api_token]
+
+  # --- src/routes/api_invites.rs -----------------------------------------------------
+
+  MemberInviteDto:
+    type: object
+    description: Public representation of one invite code issued by a member.
+    properties:
+      id:
+        type: integer
+        format: int64
+        description: Unique numeric invite id.
+        example: 4
+      prefix:
+        type: string
+        description: Displayable prefix of the code; always present.
+        example: RW6M
+      code:
+        type: [string, 'null']
+        description: >
+          Displayable code, or `null` for codes created before sealed storage or after
+          `URLET_SECRET` changed.
+        example: RW6MF6C6JG
+      link:
+        type: [string, 'null']
+        description: >
+          Registration link prefilled with `code`, or `null` when `code` is `null` or the
+          invite is revoked, exhausted or expired.
+        example: https://s.example.com/app/register?invite=RW6MF6C6JG
+      note:
+        type: [string, 'null']
+        description: Free-form note of the issuer, or `null` when unset.
+        example: team
+      group_id:
+        type: [integer, 'null']
+        format: int64
+        description: Id of the group the code is pinned to, or `null` when it uses the default group.
+        example: 4
+      max_uses:
+        type: integer
+        format: int64
+        description: Maximum number of redemptions; member codes accept 1-10.
+        example: 2
+      used_count:
+        type: integer
+        format: int64
+        description: Number of redemptions so far.
+        example: 1
+      remaining:
+        type: integer
+        format: int64
+        description: Redemptions left before the code is exhausted.
+        example: 1
+      expires_at:
+        type: [string, 'null']
+        format: date-time
+        description: ISO-8601 UTC expiry timestamp, or `null` when the code never expires.
+        example: '2030-01-31T12:00:00.000Z'
+      status:
+        type: string
+        enum: [active, revoked]
+        description: Stored invite status.
+        example: active
+      usable:
+        type: boolean
+        description: Whether the code can still be redeemed right now.
+        example: true
+      created_at:
+        type: string
+        format: date-time
+        description: ISO-8601 UTC timestamp of when the code was created.
+        example: '2026-03-18T10:00:00.000Z'
+    required:
+      - id
+      - prefix
+      - code
+      - link
+      - note
+      - group_id
+      - max_uses
+      - used_count
+      - remaining
+      - expires_at
+      - status
+      - usable
+      - created_at
+
+  MemberQuotaDto:
+    type: object
+    description: Effective invite quota of the account, shared with administrator-issued codes.
+    properties:
+      group_id:
+        type: [integer, 'null']
+        format: int64
+        description: Id of the group the quota belongs to, or `null` when it falls back to the site quota.
+        example: 4
+      group_name:
+        type: [string, 'null']
+        description: Name of that group, or `null` when there is none.
+        example: Invite Team
+      allowed:
+        type: boolean
+        description: >
+          Whether this account may issue codes right now. `false` means the group does not
+          enable member invites and creation returns `403`.
+        example: true
+      limit:
+        type: integer
+        format: int64
+        description: Issuance limit for the period; `0` means unlimited.
+        example: 5
+      period:
+        type: string
+        enum: [day, week, month]
+        description: Calendar period of the quota, evaluated in UTC with Monday-based weeks.
+        example: month
+      used:
+        type: integer
+        format: int64
+        description: Codes issued in the current period.
+        example: 1
+      remaining:
+        type: [integer, 'null']
+        format: int64
+        description: Slots left in the current period, or `null` when the limit is unlimited.
+        example: 4
+    required: [group_id, group_name, allowed, limit, period, used, remaining]
+
+  MemberInviteList:
+    type: object
+    description: >
+      Paginated response of `GET /api/v1/invites`. Unlike the shared `Page` envelope it
+      carries `page`, `per_page` and `total` but no `total_pages`, and it adds the effective
+      member `quota`.
+    properties:
+      items:
+        type: array
+        description: Invite codes of the current account, newest first.
+        items:
+          $ref: '#/components/schemas/MemberInviteDto'
+      page:
+        type: integer
+        format: int64
+        description: 1-based page number that was returned.
+        example: 1
+      per_page:
+        type: integer
+        format: int64
+        description: Rows per page. Defaults to 20 and is capped at 100.
+        example: 20
+      total:
+        type: integer
+        format: int64
+        description: Total number of codes across every page.
+        example: 1
+      quota:
+        $ref: '#/components/schemas/MemberQuotaDto'
+    required: [items, page, per_page, total, quota]
+
+  CreateMemberInvitePayload:
+    type: object
+    description: Request body of `POST /api/v1/invites`.
+    properties:
+      note:
+        type: [string, 'null']
+        description: Optional free-form note for the new code.
+        example: team
+      max_uses:
+        type: [integer, 'null']
+        format: int64
+        description: Maximum number of redemptions, between 1 and 10 for member codes.
+        example: 2
+
+  CreatedMemberInvite:
+    type: object
+    description: >
+      Response of `POST /api/v1/invites`. The code and link are also available from
+      `GET /api/v1/invites`, so they are not lost when the response is dismissed.
+    properties:
+      code:
+        type: string
+        description: Plaintext code of the new invite.
+        example: RW6MF6C6JG
+      link:
+        type: [string, 'null']
+        description: >
+          Registration link that prefills `code`, or `null` when the new code is already
+          unusable. It mirrors `invite.link`.
+        example: https://s.example.com/app/register?invite=RW6MF6C6JG
+      invite:
+        $ref: '#/components/schemas/MemberInviteDto'
+      quota:
+        $ref: '#/components/schemas/MemberQuotaDto'
+    required: [code, link, invite, quota]
+
+  # --- src/routes/api_domains.rs -----------------------------------------------------
+
+  DomainChoiceDto:
+    type: object
+    description: >
+      One selectable domain returned by `GET /api/v1/domains`, already filtered by the group
+      policy.
+    properties:
+      id:
+        type: integer
+        format: int64
+        description: Unique numeric domain id.
+        example: 1
+      hostname:
+        type: string
+        description: Hostname of the domain.
+        example: s.example.com
+      is_default:
+        type: boolean
+        description: Whether this is the effective group default.
+        example: true
+    required: [id, hostname, is_default]
+
+  # --- src/routes/api_public.rs ------------------------------------------------------
+
+  PublicUrlDto:
+    type: object
+    description: >
+      Public metadata of a link returned by `GET /api/v1/public/urls/{slug}`; the target URL
+      is never disclosed.
+    properties:
+      domain:
+        type: string
+        description: Hostname of the domain the link lives on.
+        example: go.example.com
+      slug:
+        type: string
+        description: Short code of the link.
+        example: promo
+      title:
+        type: [string, 'null']
+        description: Public title of the link, or `null` when it has none.
+        example: Launch
+      has_password:
+        type: boolean
+        description: Whether the link is password protected.
+        example: true
+      redirect_mode:
+        type: string
+        enum: [direct, splash]
+        description: >
+          `direct` or `splash`: whether following the link renders an interstitial first. The
+          splash copy itself is not exposed.
+        example: splash
+      is_expired:
+        type: boolean
+        description: Whether the link no longer redirects because it expired or reached its click limit.
+        example: false
+      state:
+        type: string
+        enum: [active, expired, limit_reached, disabled, deleted]
+        description: Derived lifecycle state of the link.
+        example: active
+    required: [domain, slug, title, has_password, redirect_mode, is_expired, state]
+
+  # --- src/routes/api_tags.rs --------------------------------------------------------
+
+  TagList:
+    type: object
+    description: >
+      Response of `GET /api/v1/tags`. The list is not paginated: it always carries every tag
+      of the account.
+    properties:
+      items:
+        type: array
+        description: Tags of the current account.
+        items:
+          $ref: '#/components/schemas/TagDto'
+    required: [items]
+
+  # --- src/routes/api_stats.rs -------------------------------------------------------
+  # `ClickList` is the paginated click log; it is defined with the other page schemas at the
+  # end of this file.
+
+  # --- src/routes/api_admin.rs -------------------------------------------------------
+
+  AdminUserDto:
+    description: >
+      User row returned by `GET /api/v1/admin/users`: the public user fields are flattened
+      into the same object, which then adds the administrative counters.
+    allOf:
+      - $ref: '#/components/schemas/UserDto'
+      - type: object
+        properties:
+          link_count:
+            type: integer
+            format: int64
+            description: Number of short links owned by the account.
+            example: 12
+          group_name:
+            type: [string, 'null']
+            description: Name of the account's group, or `null` when the account is ungrouped.
+            example: Pro
+        required: [link_count, group_name]
+
+  GroupDto:
+    type: object
+    description: >
+      User group returned by the `/api/v1/admin/groups` endpoints. Quotas may be null:
+      `null` inherits the site-wide setting and `0` means unlimited. The request field is
+      `domain_ids`; the response uses the `allowed_*` names.
+    properties:
+      id:
+        type: integer
+        format: int64
+        description: Unique numeric group id.
+        example: 2
+      name:
+        type: string
+        description: Human-readable group name.
+        example: Pro
+      description:
+        type: [string, 'null']
+        description: Optional group description, or `null` when unset.
+        example: Paying customers
+      max_urls:
+        type: [integer, 'null']
+        format: int64
+        description: Short links per member; `null` inherits the site-wide quota and `0` means unlimited.
+        example: 500
+      max_api_tokens:
+        type: [integer, 'null']
+        format: int64
+        description: API tokens per member; `null` inherits the site-wide quota and `0` means unlimited.
+        example: 5
+      max_invites:
+        type: [integer, 'null']
+        format: int64
+        description: >
+          Invite codes per `invite_period`; `null` inherits the site setting and `0` means
+          unlimited.
+        example: 20
+      invite_period:
+        type: string
+        enum: [day, week, month]
+        description: Calendar period of the invite quota, evaluated in UTC with Monday-based weeks.
+        example: month
+      allow_invites:
+        type: boolean
+        description: Whether the group's members may issue their own invite codes.
+        example: false
+      invites_used:
+        type: integer
+        format: int64
+        description: Issued invite codes in the current period.
+        example: 3
+      invites_remaining:
+        type: [integer, 'null']
+        format: int64
+        description: Slots left in the current period, or `null` when unlimited.
+        example: 17
+      allow_custom_slug:
+        type: boolean
+        description: Whether members may submit their own `slug`.
+        example: true
+      allow_password:
+        type: boolean
+        description: Whether members may password-protect a link.
+        example: true
+      allow_expiry:
+        type: boolean
+        description: Whether members may set `expires_at`.
+        example: true
+      allow_max_clicks:
+        type: boolean
+        description: Whether members may set `max_clicks`.
+        example: true
+      allow_tags:
+        type: boolean
+        description: Whether members may attach tags.
+        example: true
+      allow_api_tokens:
+        type: boolean
+        description: Whether members may create API tokens.
+        example: true
+      allow_domain_selection:
+        type: boolean
+        description: Whether members may pick a domain other than the group default.
+        example: true
+      redirect_mode_policy:
+        type: string
+        enum: [direct, splash, choice]
+        description: '`direct`, `splash` or `choice` for new links created by members.'
+        example: choice
+      default_domain_id:
+        type: [integer, 'null']
+        format: int64
+        description: Id of the group default domain, or `null` when the site default applies.
+        example: 2
+      default_domain:
+        type: [string, 'null']
+        description: Stored default domain hostname, even when that domain is disabled.
+        example: go.example.com
+      restrict_domains:
+        type: boolean
+        description: Whether members are limited to the `allowed_domains` allowlist.
+        example: false
+      allowed_domain_ids:
+        type: array
+        description: Ids of the domains on the group allowlist; empty when unrestricted.
+        items:
+          type: integer
+          format: int64
+        example: [1, 2]
+      allowed_domains:
+        type: array
+        description: Hostnames of the domains on the group allowlist.
+        items:
+          type: string
+        example: [links.example.com, go.example.com]
+      is_default:
+        type: boolean
+        description: Whether this is the single default group new accounts fall back to.
+        example: false
+      members:
+        type: integer
+        format: int64
+        description: Number of accounts in the group.
+        example: 12
+      created_at:
+        type: string
+        format: date-time
+        description: ISO-8601 UTC timestamp of when the group was created.
+        example: '2026-01-15T08:30:00.000Z'
+      updated_at:
+        type: string
+        format: date-time
+        description: ISO-8601 UTC timestamp of the last modification.
+        example: '2026-02-11T09:00:00.000Z'
+    required:
+      - id
+      - name
+      - description
+      - max_urls
+      - max_api_tokens
+      - max_invites
+      - invite_period
+      - allow_invites
+      - invites_used
+      - invites_remaining
+      - allow_custom_slug
+      - allow_password
+      - allow_expiry
+      - allow_max_clicks
+      - allow_tags
+      - allow_api_tokens
+      - allow_domain_selection
+      - redirect_mode_policy
+      - default_domain_id
+      - default_domain
+      - restrict_domains
+      - allowed_domain_ids
+      - allowed_domains
+      - is_default
+      - members
+      - created_at
+      - updated_at
+
+  InviteDto:
+    type: object
+    description: >
+      Invite code as seen by an administrator. `code` and `link` are `null` for legacy or
+      secret-rotated rows, and `link` is also `null` for revoked, exhausted or expired codes.
+    properties:
+      id:
+        type: integer
+        format: int64
+        description: Unique numeric invite id.
+        example: 4
+      prefix:
+        type: string
+        description: Displayable prefix of the code; always present.
+        example: RW6M
+      code:
+        type: [string, 'null']
+        description: Displayable code, or `null` for legacy or secret-rotated rows.
+        example: RW6MF6C6JG
+      link:
+        type: [string, 'null']
+        description: Registration link prefilled with `code`, or `null` when the code is unusable.
+        example: https://s.example.com/app/register?invite=RW6MF6C6JG
+      note:
+        type: [string, 'null']
+        description: Free-form note of the issuer, or `null` when unset.
+        example: team
+      group_id:
+        type: [integer, 'null']
+        format: int64
+        description: Id of the group the code is pinned to, or `null` for the site-wide quota.
+        example: 4
+      group_name:
+        type: [string, 'null']
+        description: Name of that group, or `null` when there is none.
+        example: Invite Team
+      created_by:
+        type: [integer, 'null']
+        format: int64
+        description: Id of the administrator who created the code, or `null` when unknown.
+        example: 1
+      max_uses:
+        type: integer
+        format: int64
+        description: Maximum number of redemptions.
+        example: 2
+      used_count:
+        type: integer
+        format: int64
+        description: Number of redemptions so far.
+        example: 1
+      remaining:
+        type: integer
+        format: int64
+        description: Redemptions left before the code is exhausted.
+        example: 1
+      expires_at:
+        type: [string, 'null']
+        format: date-time
+        description: ISO-8601 UTC expiry timestamp, or `null` when the code never expires.
+        example: '2030-01-31T12:00:00.000Z'
+      status:
+        type: string
+        enum: [active, revoked]
+        description: Stored invite status.
+        example: active
+      created_at:
+        type: string
+        format: date-time
+        description: ISO-8601 UTC timestamp of when the code was created.
+        example: '2026-03-18T10:00:00.000Z'
+      usable:
+        type: boolean
+        description: Whether the code can still be redeemed right now.
+        example: true
+    required:
+      - id
+      - prefix
+      - code
+      - link
+      - note
+      - group_id
+      - group_name
+      - created_by
+      - max_uses
+      - used_count
+      - remaining
+      - expires_at
+      - status
+      - created_at
+      - usable
+
+  AdminDomainDto:
+    type: object
+    description: >
+      Domain row returned by the `/api/v1/admin/domains` endpoints, with link counts, status
+      and source.
+    properties:
+      id:
+        type: integer
+        format: int64
+        description: Unique numeric domain id.
+        example: 1
+      hostname:
+        type: string
+        description: Hostname of the domain.
+        example: go.example.com
+      status:
+        type: string
+        enum: [pending, active, disabled]
+        description: Lifecycle status. A new domain starts as `pending`; only `active` domains resolve.
+        example: active
+      source:
+        type: string
+        enum: [system, env, ui]
+        description: How the domain was created (canonical host, `URLET_DOMAINS` seed, or admin UI).
+        example: ui
+      is_default:
+        type: boolean
+        description: Whether this is the site default domain.
+        example: true
+      is_verified:
+        type: boolean
+        description: Whether the hostname has been verified.
+        example: true
+      link_count:
+        type: integer
+        format: int64
+        description: Number of short links on the domain.
+        example: 42
+      created_at:
+        type: string
+        format: date-time
+        description: ISO-8601 UTC timestamp of when the domain was created.
+        example: '2026-01-15T08:30:00.000Z'
+      updated_at:
+        type: [string, 'null']
+        format: date-time
+        description: ISO-8601 UTC timestamp of the last modification, or `null` when never updated.
+        example: '2026-02-11T09:00:00.000Z'
+      can_activate:
+        type: boolean
+        description: Whether the administrator may activate the domain now.
+        example: false
+      can_disable:
+        type: boolean
+        description: Whether the administrator may disable the domain now.
+        example: true
+      can_delete:
+        type: boolean
+        description: Whether the administrator may delete the domain now.
+        example: false
+    required:
+      - id
+      - hostname
+      - status
+      - source
+      - is_default
+      - is_verified
+      - link_count
+      - created_at
+      - updated_at
+      - can_activate
+      - can_disable
+      - can_delete
+
+  AuditDto:
+    type: object
+    description: One audit log entry returned by `GET /api/v1/admin/audit`.
+    properties:
+      id:
+        type: integer
+        format: int64
+        description: Unique numeric audit entry id.
+        example: 128
+      actor_user_id:
+        type: [integer, 'null']
+        format: int64
+        description: Id of the acting account, or `null` when the actor is unknown.
+        example: 7
+      actor_role:
+        type: [string, 'null']
+        description: Role of the actor at the time of the action, or `null` when unknown.
+        example: admin
+      action:
+        type: string
+        description: Audit action code, for example `url.created` or `auth.login`.
+        example: url.created
+      target_type:
+        type: [string, 'null']
+        description: Type of the affected object, or `null` when the event has no target.
+        example: url
+      target_id:
+        type: [string, 'null']
+        description: Identifier of the affected object, or `null` when the event has no target.
+        example: '42'
+      metadata:
+        type: [object, 'null']
+        additionalProperties: true
+        description: Parsed JSON metadata of the event, or `null` when the row has none.
+        example:
+          slug: launch
+      created_at:
+        type: string
+        format: date-time
+        description: ISO-8601 UTC timestamp of the action.
+        example: '2030-01-31T12:00:00.000Z'
+    required:
+      - id
+      - actor_user_id
+      - actor_role
+      - action
+      - target_type
+      - target_id
+      - metadata
+      - created_at
+
+  InviteList:
+    type: object
+    description: >
+      Response of `GET /api/v1/admin/invites`. The list is not paginated: it always carries
+      every invite code.
+    properties:
+      items:
+        type: array
+        description: Invite codes, newest first.
+        items:
+          $ref: '#/components/schemas/InviteDto'
+    required: [items]
+
+  CreatedInviteResponse:
+    type: object
+    description: >
+      Response of `POST /api/v1/admin/invites`. `link` mirrors `invite.link` and is `null`
+      when the new code is already unusable.
+    properties:
+      code:
+        type: string
+        description: Plaintext code of the new invite.
+        example: RW6MF6C6JG
+      link:
+        type: [string, 'null']
+        description: Registration link that prefills `code`, or `null` when the code is unusable.
+        example: https://s.example.com/app/register?invite=RW6MF6C6JG
+      invite:
+        $ref: '#/components/schemas/InviteDto'
+    required: [code, link, invite]
+
+  AdminThemeDto:
+    type: object
+    description: One entry of the theme catalogue returned by `GET /api/v1/admin/themes`.
+    properties:
+      key:
+        type: string
+        description: Stable theme key, for example `verdant` or a `custom-...` upload key.
+        example: verdant
+      name:
+        type: string
+        description: Display name of the theme.
+        example: Verdant
+      description:
+        type: string
+        description: Short description shown in the admin UI.
+        example: Calm green default theme
+      enabled:
+        type: boolean
+        description: Whether the theme is currently enabled.
+        example: true
+      default:
+        type: boolean
+        description: Whether this is the default theme.
+        example: true
+      appearance:
+        type: string
+        enum: [auto, light, dark]
+        description: Colour appearance the theme supports.
+        example: auto
+      dark_only:
+        type: boolean
+        description: Whether the theme only offers a dark appearance.
+        example: false
+      light_only:
+        type: boolean
+        description: Whether the theme only offers a light appearance.
+        example: false
+      css_url:
+        type: string
+        description: URL of the stylesheet served for this theme.
+        example: /assets/themes/verdant.css
+      custom:
+        type: boolean
+        description: True for an administrator-uploaded stylesheet.
+        example: false
+    required:
+      - key
+      - name
+      - description
+      - enabled
+      - default
+      - appearance
+      - dark_only
+      - light_only
+      - css_url
+      - custom
+
+  AdminThemesDto:
+    type: object
+    description: Response of `GET /api/v1/admin/themes`.
+    properties:
+      themes:
+        type: array
+        description: Every theme in the catalogue, including administrator uploads.
+        items:
+          $ref: '#/components/schemas/AdminThemeDto'
+      switching:
+        type: string
+        enum: [all, admin]
+        description: Who may switch themes; `admin` restricts the switcher to administrators.
+        example: all
+    required: [themes, switching]
+
+  UpdateThemesPayload:
+    type: object
+    description: >
+      Request body of `PUT /api/v1/admin/themes`. Omitted fields keep their value; at least
+      one enabled theme and an enabled default are required (`422` otherwise).
+    properties:
+      enabled:
+        type: [array, 'null']
+        description: Replacement list of enabled theme keys; entries may name `custom-...` uploads.
+        items:
+          type: string
+        example: [verdant, aurora]
+      default:
+        type: [string, 'null']
+        description: Key of the default theme; it must be one of the enabled themes.
+        example: verdant
+      switching:
+        type: [string, 'null']
+        enum: [all, admin, null]
+        description: Who may switch themes.
+        example: admin
+
+  CreateDomainPayload:
+    type: object
+    description: Request body of `POST /api/v1/admin/domains`. The domain is created as `pending`.
+    properties:
+      hostname:
+        type: string
+        description: Hostname of the new domain; a duplicate hostname is a `409` conflict.
+        example: go.example.com
+    required: [hostname]
+
+  UpdateDomainPayload:
+    type: object
+    description: Request body of `PATCH /api/v1/admin/domains/{id}`.
+    properties:
+      status:
+        type: [string, 'null']
+        enum: [active, disabled, null]
+        description: New lifecycle status; absent or `null` keeps the current one.
+        example: active
+      is_default:
+        type: [boolean, 'null']
+        description: Whether the domain becomes the site default; absent or `null` keeps the current marker.
+        example: true
+
+  CreateInvitePayload:
+    type: object
+    description: Request body of `POST /api/v1/admin/invites`.
+    properties:
+      note:
+        type: [string, 'null']
+        description: Optional free-form note for the new code.
+        example: team
+      group_id:
+        type: [integer, 'null']
+        format: int64
+        description: >
+          Group the code is pinned to. Omitted or `null` consumes the site-wide quota instead.
+        example: 4
+      max_uses:
+        type: [integer, 'null']
+        format: int64
+        description: Maximum number of redemptions.
+        example: 2
+      expires_at:
+        type: [string, 'null']
+        description: Optional expiry timestamp; omitted or `null` creates a code that never expires.
+        example: '2030-01-01'
+
+  UpdateUserPayload:
+    type: object
+    description: >
+      Request body of `PATCH /api/v1/admin/users/{id}`. An administrator cannot change their
+      own role or status, and the instance always keeps at least one active administrator.
+    properties:
+      role:
+        type: [string, 'null']
+        enum: [user, admin, null]
+        description: New role; absent or `null` keeps the current one.
+        example: admin
+      status:
+        type: [string, 'null']
+        enum: [active, suspended, null]
+        description: New status; absent or `null` keeps the current one. Suspension revokes sessions.
+        example: suspended
+      display_name:
+        type: [string, 'null']
+        description: New display name; absent or `null` keeps the current one.
+        example: Ada
+      group_id:
+        type: [integer, 'null']
+        format: int64
+        description: >
+          Group assignment: absent keeps the current group, `null` makes the account ungrouped
+          (site defaults apply), and a value assigns that group.
+        example: 2
+
+  ResetPasswordPayload:
+    type: object
+    description: >
+      Request body of `POST /api/v1/admin/users/{id}/password`. A success revokes every
+      session of that account.
+    properties:
+      new_password:
+        type: string
+        format: password
+        description: Replacement password; it must satisfy the instance password policy.
+        example: new-password
+    required: [new_password]
+
+  UpdateUrlPayload:
+    type: object
+    description: Request body of `PATCH /api/v1/admin/urls/{id}`.
+    properties:
+      status:
+        type: [string, 'null']
+        enum: [active, disabled, null]
+        description: New stored link status; absent or `null` keeps the current one.
+        example: disabled
+      redirect_type:
+        type: [integer, 'null']
+        format: int64
+        enum: [301, 302, 307, 308, null]
+        description: New redirect status code; absent or `null` keeps the current one.
+        example: 301
+
+  GroupPayload:
+    type: object
+    description: >
+      Request body of `POST /api/v1/admin/groups` and `PUT /api/v1/admin/groups/{id}`.
+      `name` is required; other omitted fields keep their current value, quotas set to `null`
+      inherit the site quota, and `description: null` clears it.
+    properties:
+      name:
+        type: string
+        description: Group name; required on create and on update.
+        example: Pro
+      description:
+        type: [string, 'null']
+        description: Group description; absent keeps the current one and `null` clears it.
+        example: Paying customers
+      max_urls:
+        type: [integer, 'null']
+        format: int64
+        description: Short links per member; absent keeps the value and `null` inherits the site quota.
+        example: 500
+      max_api_tokens:
+        type: [integer, 'null']
+        format: int64
+        description: API tokens per member; absent keeps the value and `null` inherits the site quota.
+        example: 5
+      max_invites:
+        type: [integer, 'null']
+        format: int64
+        description: Invite codes per period; absent keeps the value and `null` inherits the site quota.
+        example: 20
+      invite_period:
+        type: [string, 'null']
+        enum: [day, week, month, null]
+        description: '`day`, `week` or `month`; omitted keeps the current period.'
+        example: month
+      allow_invites:
+        type: [boolean, 'null']
+        description: Whether members may issue their own invite codes; opt-in and `false` on create.
+        example: true
+      allow_custom_slug:
+        type: [boolean, 'null']
+        description: Whether members may submit their own `slug`.
+        example: true
+      allow_password:
+        type: [boolean, 'null']
+        description: Whether members may password-protect a link.
+        example: true
+      allow_expiry:
+        type: [boolean, 'null']
+        description: Whether members may set `expires_at`.
+        example: true
+      allow_max_clicks:
+        type: [boolean, 'null']
+        description: Whether members may set `max_clicks`.
+        example: true
+      allow_tags:
+        type: [boolean, 'null']
+        description: Whether members may attach tags.
+        example: true
+      allow_api_tokens:
+        type: [boolean, 'null']
+        description: Whether members may create API tokens.
+        example: true
+      allow_domain_selection:
+        type: [boolean, 'null']
+        description: Whether members may pick a domain other than the group default.
+        example: true
+      redirect_mode_policy:
+        type: [string, 'null']
+        enum: [direct, splash, choice, null]
+        description: '`direct`, `splash` or `choice`; omitted keeps the current policy.'
+        example: choice
+      default_domain_id:
+        type: [integer, 'null']
+        format: int64
+        description: >
+          Id of the group default domain; absent keeps the current value and `null` means the
+          site default. It must reference an active domain.
+        example: 2
+      restrict_domains:
+        type: [boolean, 'null']
+        description: Whether members are limited to the `domain_ids` allowlist.
+        example: false
+      domain_ids:
+        type: [array, 'null']
+        description: >
+          Domain allowlist; absent keeps the current list, while `null` or `[]` clears it.
+          Entries must reference existing domains.
+        items:
+          type: integer
+          format: int64
+        example: [1, 2]
+      is_default:
+        type: [boolean, 'null']
+        description: Whether the group becomes the default group; `true` moves the single default marker.
+        example: false
+    required: [name]
+
+  # --- src/routes/public_urls.rs -----------------------------------------------------
+
+  PublicCreatePayload:
+    type: object
+    description: >
+      Request body of `POST /api/v1/public/urls`. No credential is required when
+      `public_create_access` is `guest`; a session cookie or Bearer token may be supplied
+      instead, and the link is then owned by that account.
+    properties:
+      target_url:
+        type: string
+        description: Destination URL. Required; anonymous callers must also match the guest allowlist.
+        example: https://github.com/cxyfer/urlet
+      domain:
+        type: [string, 'null']
+        description: Hostname to create the link on; omitted uses the effective default domain.
+        example: s.example.com
+      slug:
+        type: [string, 'null']
+        description: Requested slug; omitted generates one, and a taken slug returns `409`.
+        example: launch
+      title:
+        type: [string, 'null']
+        description: Optional human-readable title.
+        example: Launch day
+      tags:
+        type: array
+        description: Tag names to attach; an omitted field means no tags.
+        items:
+          type: string
+        example: [campaign]
+      password:
+        type: [string, 'null']
+        description: Optional link password.
+        example: linkpass
+      expires_at:
+        type: [string, 'null']
+        description: Optional expiry timestamp; it must be in the future.
+        example: '2030-06-30 12:00'
+      max_clicks:
+        type: [integer, 'null']
+        format: int64
+        description: Optional click budget; at least 1.
+        example: 500
+      redirect_mode:
+        type: [string, 'null']
+        enum: [direct, splash, null]
+        description: '`direct` or `splash`; omitted takes the default for the account.'
+        example: direct
+      splash_delay_seconds:
+        type: [integer, 'null']
+        format: int64
+        description: Splash countdown, 1-60 seconds (default 5).
+        example: 5
+      splash_title:
+        type: [string, 'null']
+        description: Splash headline, at most 120 characters.
+        example: Launch day
+      splash_message:
+        type: [string, 'null']
+        description: Splash message, at most 500 characters.
+        example: Welcome aboard
+      captcha_token:
+        type: [string, 'null']
+        description: Bot protection token; only needed for the flows that are protected.
+        example: 0.abc...
+    required: [target_url]
+
+  PublicCreatedDto:
+    type: object
+    description: >
+      Response of `POST /api/v1/public/urls`. The link id is deliberately not returned: the
+      caller has no account to manage the link with.
+    properties:
+      domain:
+        type: string
+        description: Hostname of the domain the link was created on.
+        example: s.example.com
+      slug:
+        type: string
+        description: Short code of the new link.
+        example: launch
+      short_url:
+        type: string
+        format: uri
+        description: Ready-to-share short URL.
+        example: https://s.example.com/launch
+      target_url:
+        type: string
+        format: uri
+        description: Destination the link redirects to.
+        example: https://github.com/cxyfer/urlet
+      created_at:
+        type: string
+        format: date-time
+        description: ISO-8601 UTC timestamp of when the link was created.
+        example: '2026-10-22T12:00:00.000Z'
+    required: [domain, slug, short_url, target_url, created_at]
+
+  # --- src/routes/previews.rs --------------------------------------------------------
+
+  PreviewDto:
+    type: object
+    description: >
+      Saved SNS preview metadata of a link, returned by the `/api/v1/urls/{id}/preview`
+      endpoints. An unconfigured preview returns null fields and false flags.
+    properties:
+      title:
+        type: [string, 'null']
+        description: Custom preview title (at most 200 characters), or `null` when unset.
+        example: Read this
+      description:
+        type: [string, 'null']
+        description: Custom preview description (at most 1000 characters), or `null` when unset.
+        example: A custom summary
+      image_url:
+        type: [string, 'null']
+        format: uri
+        description: >
+          Public image URL served in the preview, or `null` when none is configured or the
+          stored image is suppressed by the current policy.
+        example: https://example.com/card.png
+      image_uploaded:
+        type: boolean
+        description: Whether the stored image came from an upload rather than a URL.
+        example: false
+      enabled:
+        type: boolean
+        description: Whether custom preview metadata is served to recognised social crawlers.
+        example: true
+    required: [title, description, image_url, image_uploaded, enabled]
+
+  Patch:
+    type: object
+    description: >
+      Request body of `PATCH /api/v1/urls/{id}/preview`. A field that is absent stays
+      unchanged; `null` or a blank string clears it. Setting or clearing `image_url` replaces
+      or removes any uploaded image.
+    properties:
+      title:
+        type: [string, 'null']
+        description: New preview title, at most 200 characters; absent keeps it and `null` clears it.
+        example: Read this
+      description:
+        type: [string, 'null']
+        description: New preview description, at most 1000 characters; absent keeps it and `null` clears it.
+        example: A custom summary
+      image_url:
+        type: [string, 'null']
+        format: uri
+        description: >
+          New image URL; it must be absolute HTTPS, at most 2048 characters, without
+          credentials or whitespace. Absent keeps the current image and `null` removes it.
+        example: https://example.com/card.png
+
+  # --- src/routes/health.rs ----------------------------------------------------------
+
+  Health:
+    type: object
+    description: >
+      Response of `GET /health` (and its `/healthz` alias) used by docker health checks and
+      uptime probes. A failing database answers `503` with `status: degraded`.
+    properties:
+      status:
+        type: string
+        enum: [ok, degraded]
+        description: Overall health of the instance.
+        example: ok
+      version:
+        type: string
+        description: Version of the running binary.
+        example: __URLET_VERSION__
+      database:
+        type: string
+        enum: [ok, unavailable]
+        description: Whether the SQLite database answered.
+        example: ok
+      uptime_seconds:
+        type: integer
+        format: int64
+        description: Seconds since the process started.
+        example: 42
+    required: [status, version, database, uptime_seconds]
+
+  # --- src/routes/redirect.rs --------------------------------------------------------
+
+  UnlockPayload:
+    type: object
+    description: >
+      Request body of `POST /{slug}/unlock`, accepted as `application/json` or as
+      `application/x-www-form-urlencoded`.
+    properties:
+      password:
+        type: string
+        format: password
+        description: Password of the protected link. A wrong value returns `401`.
+        example: linkpass
+    required: [password]
+
+  UnlockResponse:
+    type: object
+    description: >
+      JSON response of `POST /{slug}/unlock` on success. A form request is answered with a
+      `303` redirect to `/{slug}` instead.
+    properties:
+      ok:
+        type: boolean
+        description: Always `true` on success.
+        example: true
+      redirect:
+        type: string
+        description: Same-site path the caller should follow next.
+        example: /launch
+    required: [ok, redirect]
+
+  # --- shared envelopes --------------------------------------------------------------
+
+  Error:
+    type: object
+    description: >
+      Error envelope returned by every `/api/v1/**` failure. The HTTP status and the
+      `code` are chosen together; `message` is always English and safe to show, and
+      internal failures never leak their detail (it goes to the log only).
+    properties:
+      error:
+        type: object
+        description: The failure itself.
+        properties:
+          code:
+            type: string
+            enum:
+              - bad_request
+              - captcha_failed
+              - unauthorized
+              - forbidden
+              - not_found
+              - conflict
+              - gone
+              - validation_error
+              - rate_limited
+              - internal_error
+            description: >
+              Machine-readable error code. `captcha_failed` shares HTTP 400 with
+              `bad_request`; `validation_error` is HTTP 422 and names the offending field
+              in `details.field`.
+            example: validation_error
+          message:
+            type: string
+            description: Human-readable English message. It never discloses whether an account exists.
+            example: "slug may only contain letters, digits, '-' and '_'"
+          details:
+            type: [object, 'null']
+            additionalProperties: true
+            description: >
+              Optional structured detail. Validation failures carry `{ "field": "<name>" }`;
+              other errors omit the key entirely (it is not serialized as `null`).
+            example:
+              field: slug
+        required: [code, message]
+    required: [error]
+    example:
+      error:
+        code: validation_error
+        message: "slug may only contain letters, digits, '-' and '_'"
+        details:
+          field: slug
+
+  UrlPage:
+    description: Paginated list of short links (`Page<UrlDto>`).
+    allOf:
+      - $ref: '#/components/schemas/Page'
+      - type: object
+        properties:
+          items:
+            type: array
+            description: Short links on the requested page.
+            items:
+              $ref: '#/components/schemas/UrlDto'
+        required: [items]
+
+  ClickList:
+    description: Paginated click log for one link (`Page<ClickDto>`); no IP addresses or visitor hashes.
+    allOf:
+      - $ref: '#/components/schemas/Page'
+      - type: object
+        properties:
+          items:
+            type: array
+            description: Clicks on the requested page, newest first.
+            items:
+              $ref: '#/components/schemas/ClickDto'
+        required: [items]
+
+  AdminUserPage:
+    description: Paginated user list returned by `GET /api/v1/admin/users` (`Page<AdminUserDto>`).
+    allOf:
+      - $ref: '#/components/schemas/Page'
+      - type: object
+        properties:
+          items:
+            type: array
+            description: User rows on the requested page.
+            items:
+              $ref: '#/components/schemas/AdminUserDto'
+        required: [items]
+
+responses:
+  BadRequest:
+    description: >
+      Malformed request, or nothing to change. Also returned with `code: captcha_failed`
+      when bot verification fails, expires, or is rejected by the provider (registration,
+      sign-in and session-cookie link creation).
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/Error'
+
+  Unauthorized:
+    description: Not authenticated, token revoked, or wrong password.
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/Error'
+
+  Forbidden:
+    description: >
+      Insufficient permission, CSRF rejection, registration closed, or quota exhausted.
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/Error'
+
+  NotFound:
+    description: >
+      Resource does not exist, including resources that belong to someone else.
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/Error'
+
+  Conflict:
+    description: 'Uniqueness conflict: email, slug on a domain, or domain hostname.'
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/Error'
+
+  Gone:
+    description: Short link expired or reached its click limit.
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/Error'
+
+  ValidationError:
+    description: 'Field validation failed; `details.field` names the offending field.'
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/Error'
+
+  RateLimited:
+    description: >
+      Rate limited. The response carries a `Retry-After` header with the number of seconds
+      until the next window boundary.
+    headers:
+      Retry-After:
+        description: Seconds the caller should wait before retrying.
+        schema:
+          type: integer
+          format: int64
+          example: 60
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/Error'
+
+  InternalError:
+    description: Server error. Details go to the log only and are never returned to the caller.
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/Error'
+
+securitySchemes:
+  sessionCookie:
+    type: apiKey
+    in: cookie
+    name: urlet_session
+    description: >
+      Browser session cookie issued by `POST /api/v1/auth/login` (and by registration,
+      which signs the new account in). It slides forward on activity and is cleared by
+      `POST /api/v1/auth/logout`. Cookie-authenticated requests are subject to the CSRF
+      same-origin rule.
+
+  bearerToken:
+    type: http
+    scheme: bearer
+    description: >
+      Personal API token sent as `Authorization: Bearer ur_...`. Tokens are created under
+      `/app/account` or with `POST /api/v1/tokens` and the plaintext value is shown only
+      once. A token is exempt from bot verification on link creation.

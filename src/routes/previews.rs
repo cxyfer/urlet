@@ -4,7 +4,7 @@ use axum::{
     extract::{DefaultBodyLimit, Multipart, Path, State},
     http::{header, StatusCode},
     response::{Html, IntoResponse, Response},
-    Json, Router,
+    Router,
 };
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +13,7 @@ use crate::{
     error::{ApiError, AppError},
     i18n::{self, Lang},
     middleware::auth::{CurrentUser, MaybeUser},
+    routes::extract::Json,
     routes::{
         dto::double_option,
         pages::{redirect_ok, redirect_to_login, Chrome},

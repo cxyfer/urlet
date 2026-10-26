@@ -3148,7 +3148,7 @@ footer.site {
 }
 
 /* 深色條沒有設定頁尾字級，所以 repo 連結跟隨旁邊的 tag，而不是 body 級距。 */
-footer.site .footer-repo {
+footer.site .footer-link {
     color: var(--bar-muted);
     font-family: var(--mono);
     font-size: 10px;

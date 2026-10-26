@@ -50,6 +50,7 @@
 | P13 | 中轉頁與轉址方式政策 (v1.5) | `urls.redirect_mode` 與中轉頁文案、六個主題模板、`user_groups.redirect_mode_policy`、表單/API/`/auth/me`、語言目錄 | 既有連結維持直接跳轉、密碼頁仍是唯一中間頁、政策只把關建立與更新、fmt/clippy/test/smoke 全綠 | `✨ feat(splash): ...` |
 | P14 | 可上傳主題 (v1.5) | `custom_themes` 中介資料、管理主題頁的 CSS 上傳/編輯/刪除、內容雜湊 `/assets/custom-themes/{key}`、`auto`/`light`/`dark` 外觀、驗證與限制、`URLET_THEMES_DIR` + `urlet-themes` volume | 19 張表／35 個索引、重載/重啟後上傳仍在、明暗強制、預設/刪除規則與成員授權皆有測試、fmt/clippy/test/smoke 全綠 | `✨ feat(themes): ...` |
 | P15 | 公開短網址工具 (v1.6) | 導覽首頁的縮網址表單與 `POST /api/v1/public/urls`、擁有匿名連結的保留訪客帳號、`public_create_access`、八個 `public_allow_*` 欄位開關、`public_captcha`、每來源位址與全體訪客共用額度、管理設定區塊、三語字串、六個導覽首頁模板 | 19 張表／36 個索引、升級後訪客仍無法建立、存取層級把關每一條建立路徑、被停用的欄位由伺服器端拒絕、額度與訪客帳號皆有測試、fmt/clippy/test/smoke/merge-check 全綠 | `✨ feat(public): ...` |
+| P16 | API 參考與合約 (v1.6) | `openapi/` 合約（共用元件加每語言一份），由 `scripts/build-openapi.py` 合併成兩份內嵌 spec；Scalar 由 `scripts/update-scalar.sh` 釘住版本；執行檔提供 `/docs`、`/docs/openapi.json` 與 `/docs/openapi.zh-TW.json`；`docs` 列為保留並在啟動時回報被遮蔽的連結；每個設計與語系的頁尾都有入口 | 兩份合約在真實 HTTP 下回應且不發出第三方請求；兩份文件描述同一組操作；產生器具決定性並由 CI 把關；CSP 不需調整；映像維持在 40 MB 以內；每個主題在三個語系都渲染該連結；fmt/clippy/test/smoke 全綠 | `✨ feat(docs): ...` |
 
 ---
 

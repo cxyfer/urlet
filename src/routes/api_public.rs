@@ -1,7 +1,7 @@
 //! Public, unauthenticated metadata endpoint.
 
+use crate::routes::extract::Json;
 use axum::extract::{Path, Query, State};
-use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::db::domains;

@@ -40,6 +40,19 @@ pub async fn theme_ui_css() -> Response {
     asset("text/css; charset=utf-8", assets::THEME_UI_CSS)
 }
 
+/// The vendored Scalar bundle that renders the API reference.
+pub async fn scalar_js() -> Response {
+    asset("application/javascript; charset=utf-8", assets::SCALAR_JS)
+}
+
+/// The small script that mounts the reference from the page's data attributes.
+pub async fn scalar_init_js() -> Response {
+    asset(
+        "application/javascript; charset=utf-8",
+        assets::SCALAR_INIT_JS,
+    )
+}
+
 /// One compiled-in theme stylesheet.
 ///
 /// The key is matched against the fixed [`crate::services::theme::ThemeKey`]

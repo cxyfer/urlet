@@ -46,6 +46,12 @@ publishes to its own namespace.
    cargo update -p urlet
    cargo metadata --locked --format-version 1 >/dev/null
    ```
+   The embedded API reference carries the same version, in `info.version` and in the health
+   example, so regenerate the contracts in the same commit. The CI `contracts` job fails when
+   they are stale:
+   ```bash
+   python3 scripts/build-openapi.py
+   ```
 3. **Tag only merged commits.** The workflow file must exist on the tagged commit, so push
    `master` before the tag.
 4. **Never move or reuse a published tag.** The tag is the immutable identity of an image.

@@ -1,9 +1,9 @@
 //! `/api/v1/auth/**` — registration, login, sessions, profile.
 
+use crate::routes::extract::Json;
 use axum::extract::{Path, State};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::db::{sessions, users};

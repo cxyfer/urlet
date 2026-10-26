@@ -44,6 +44,11 @@
    cargo update -p urlet
    cargo metadata --locked --format-version 1 >/dev/null
    ```
+   內嵌的 API 參考也帶有同一個版本（`info.version` 與 health 範例），因此要在同一個 commit
+   重新產生合約。CI 的 `contracts` job 會在合約過期時失敗：
+   ```bash
+   python3 scripts/build-openapi.py
+   ```
 3. **只能標記已合併的 commit。** workflow 檔案必須存在於被標記的 commit 上，因此請先推送
    `master`，再推送標籤。
 4. **不要移動或重複使用已發布的標籤。** 標籤是映像的不可變身分；修正請發布新的 patch 版本。

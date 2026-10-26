@@ -11,6 +11,7 @@ pub mod api_tags;
 pub mod api_tokens;
 pub mod api_urls;
 pub mod assets;
+pub mod docs;
 pub mod dto;
 pub mod extract;
 pub mod health;

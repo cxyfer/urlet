@@ -466,6 +466,20 @@ pub async fn count_for_user(pool: &SqlitePool, user_id: i64) -> Result<i64, sqlx
         .await
 }
 
+/// Live links holding one slug, across every domain and owner.
+///
+/// The reference page owns `/docs`, so a link created before that release can
+/// no longer be reached through the catch-all route. Startup reports how many
+/// rows are affected instead of renaming or deleting them: the slug column is
+/// `COLLATE NOCASE`, so a differently cased slug is reported too, and the owner
+/// decides what to do with their own link.
+pub async fn count_live_with_slug(pool: &SqlitePool, slug: &str) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE slug = ? AND deleted_at IS NULL")
+        .bind(slug)
+        .fetch_one(pool)
+        .await
+}
+
 /// Live links of a user that are expired or have reached their click limit.
 pub async fn count_expired_for_user(
     pool: &SqlitePool,

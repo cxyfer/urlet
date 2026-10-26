@@ -154,15 +154,23 @@ configures a provider, it times out after **5 seconds**, and any failure rejects
 
 ### 3.3 Binary and Image Size Targets
 
-| Item | Target | v1.0 | v1.1 |
-|------|--------|------|------|
-| Release binary (stripped, LTO, `opt-level=z`) | ≤ 15 MB | 4.2 MB (glibc) / 4.5 MB (musl) | **5.7 MB** (glibc, local) / **5.8 MB** (musl, in container) |
-| Runtime image (`alpine` + binary + CA certificates) | ≤ 40 MB | 13.2 MB | **14.8 MB** |
-| Idle / under-load memory | ≤ 30 MB RSS | 6.8 MB (after 500 requests) | **8.7 MB** (after 500 requests) |
-| Cold start to serving | ≤ 1 second | ~0.2 s (including migrations) | **~0.1 s** (fresh database, including migrations) |
+| Item | Target | v1.0 | v1.1 | v1.6 |
+|------|--------|------|------|------|
+| Release binary (stripped, LTO, `opt-level=z`) | ≤ 15 MB | 4.2 MB (glibc) / 4.5 MB (musl) | **5.7 MB** (glibc, local) / **5.8 MB** (musl, in container) | **15.7 MB** (musl, in container) |
+| Runtime image (`alpine` + binary + CA certificates) | ≤ 40 MB | 13.2 MB | **14.8 MB** | **37.2 MB** (35.5 MiB) |
+| Idle / under-load memory | ≤ 30 MB RSS | 6.8 MB (after 500 requests) | **8.7 MB** (after 500 requests) | not re-measured |
+| Cold start to serving | ≤ 1 second | ~0.2 s (including migrations) | **~0.1 s** (fresh database, including migrations) | not re-measured |
 
 The v1.1 column includes the embedded locale catalogs and the rustls-based captcha client. Every
 target is still met.
+
+The v1.6 column is measured on `master` plus the embedded API reference. Most of the growth since
+v1.1 is the features added in between — SNS preview images, the public shortener and the theme
+system — not the reference itself: the same tree without it measures 30.4 MB. The reference adds
+6.5 MiB, of which the vendored Scalar bundle is 4.9 MB and the two OpenAPI contracts are 0.4 MB.
+The binary target is still met, but the image now uses most of its budget; if it needs to come
+down, the vendored bundle is the lever — it compresses to about 1.3 MB and a smaller renderer such
+as RapiDoc is 0.5 MB, at the cost of the localised interface chrome.
 
 ---
 
@@ -281,6 +289,33 @@ target is still met.
 - Pagination format: `{ "items": [...], "page": 1, "per_page": 20, "total": 42, "total_pages": 3 }`
 - Authentication: session cookie **or** `Authorization: Bearer <api_token>`.
 - **All JSON API responses are English** and are not affected by the request language or the `urlet_lang` cookie.
+- The instance serves its own browsable reference, embedded in the binary so an instance with no
+  outbound network still has one:
+  - `GET /docs` renders the reference in the visitor's interface language.
+  - `GET /docs/openapi.json` and `GET /docs/openapi.zh-TW.json` serve the OpenAPI 3.1 contract.
+    Both are generated from `openapi/` by `scripts/build-openapi.py` and committed, because the
+    binary embeds them with `include_str!`; a CI job regenerates them and fails on any diff.
+  - The two contracts must document the same operations, and every operation must reference a
+    group the document declares. Group names are translated with the rest of the prose, so the
+    reference sidebar reads in the visitor's language. Simplified Chinese visitors get the
+    English contract, because the prose documentation is bilingual.
+  - Scalar is vendored in `src/assets/scalar.js`, pinned by version and digest by
+    `scripts/update-scalar.sh`. The page makes no third-party request and needs no CSP exception:
+    the mount element avoids the ids Scalar auto-detects, so the options passed to it apply.
+  - The contract names the configured base URL as its server, and the reference lives on that
+    host. The footer links it from every design, including the extra-domain short landing, but on
+    an extra domain `/docs` and `/docs/*` answer `308` to the canonical host rather than serving
+    the page: the reference's Test Request calls the canonical base URL, the CSP allows
+    `connect-src 'self'` only, and there is no CORS layer, so an interactive reference served from
+    an extra domain would have every request blocked by the browser. The base URL is deployment
+    configuration, so the generator leaves a placeholder in the committed contract and the
+    response substitutes it; the value does not depend on the request, so the cached body is the
+    same for every host.
+  - `POST /{slug}/unlock` is the exception: every active domain serves it and the slug resolves on
+    the domain the request arrived on, so the operation names the link's own origin as a server
+    variable rather than inheriting the canonical API server.
+  - `/docs` is a reserved slug: no short link may claim it. A live link that already holds it is
+    reported at startup and left untouched for its owner to rename.
 - See §7 for the endpoint list.
 
 ### 4.10 Web Interface (FR-UI)
@@ -371,7 +406,8 @@ the create/edit dialogs shared by the group and theme forms).
 | FR-THEME-8 | Appearance | Every compiled-in design except Aurora ships both palettes and the persisted light/dark control: it follows `prefers-color-scheme` until the visitor picks a mode, then honours `data-theme` in both directions, so a saved light choice also beats a dark operating system. Aurora is dark-only, marks `<html data-theme="dark" data-theme-lock="dark">` and hides the control rather than shipping a dead one. The catalogue derives `appearance` and the light-only/dark-only badges from one `ThemeKey` policy, never from a hardcoded flag. An uploaded theme has an administrator-selected appearance: `auto` keeps the light/dark control, while `light` and `dark` force the palette through `data-theme`/`data-theme-lock`, hide the control and cannot be overridden by a saved browser preference |
 | FR-THEME-9 | Persistence | The choice is a cookie, not a per-user database column. A disabled theme is rejected on the next request, and the administrator can always change the default for visitors without a preference. Upload metadata lives in `custom_themes`, the stylesheet in `URLET_THEMES_DIR` on the persistent volume, and the catalogue row in `themes`, so a restart keeps the upload available. No link, user or click data is touched by a theme change |
 | FR-THEME-10 | Uploads | Upload, edit and delete are administrator-only. An upload is one UTF-8 `.css` file of at most 256 KiB, a name of 1-60 characters, a description of at most 200 characters and an appearance (`auto`, `light` or `dark`); at most 32 uploads are stored. CSS is served as `text/css` with `nosniff`, after the Verdant base stylesheet, and may not use external `url(...)`, `@import`, `expression(...)` or legacy `behavior`. Replacing a stylesheet changes its content-hash URL, and deleting a theme removes its file; the default theme cannot be deleted |
-| FR-THEME-11 | Footer attribution | Every design's footer links the upstream repository, so a self-hosted instance names the project it was built from. The URL is the `repository` field of `Cargo.toml`, exposed as `urlet::REPOSITORY` and rendered by `templates/partials/repo_link.html`, which each base template includes — including Gilded's separate landing footer and the extra-domain short landing. The label is the `GitHub` brand name, kept verbatim in every catalogue, and the mark is inline SVG because the CSP allows no remote image and the project ships no icon font. The link opens in a new tab with `rel="noopener"`; the shared `.footer-repo` rules live in `/assets/theme-ui.css`, with per-theme placement and type scale next to each design's footer rules |
+| FR-THEME-11 | Footer attribution | Every design's footer links the upstream repository, so a self-hosted instance names the project it was built from. The URL is the `repository` field of `Cargo.toml`, exposed as `urlet::REPOSITORY` and rendered by `templates/partials/repo_link.html`, which each base template includes — including Gilded's separate landing footer and the extra-domain short landing. The label is the `GitHub` brand name, kept verbatim in every catalogue, and the mark is inline SVG because the CSP allows no remote image and the project ships no icon font. The link opens in a new tab with `rel="noopener"`; the shared `.footer-link` rules live in `/assets/theme-ui.css` (`.footer-repo` is kept as an alias so uploaded stylesheets that target it keep working), with per-theme placement and type scale next to each design's footer rules |
+| FR-THEME-12 | Reference entry point | Every design's footer also links the embedded API reference at `/docs`, through `templates/partials/api_docs_link.html`, immediately before the repository link so the attribution stays last. The visible label is `API` in every catalogue and the accessible name is translated (`footer.api_label`), so the accessible name still contains the visible label. The link carries no icon: the project ships no icon font and a second inline mark would be another owner to keep in sync. It uses the shared `.footer-link` rules, so per-theme footer typography applies to it unchanged |
 
 ### 4.15 Splash Pages (FR-SPLASH)
 

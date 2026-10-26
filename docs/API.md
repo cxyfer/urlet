@@ -12,6 +12,16 @@
 - JSON responses are always English, whatever UI language the visitor selected
   (see [UI language](#ui-language))
 
+This file is the narrative reference. Every instance also serves a browsable version of the same
+API, built from the OpenAPI contract in [`openapi/`](../openapi):
+
+- `GET /docs` — the interactive reference (Scalar), following the visitor's interface language
+- `GET /docs/openapi.json` — the English OpenAPI 3.1 contract
+- `GET /docs/openapi.zh-TW.json` — the Traditional Chinese contract
+
+The reference is embedded in the binary, so it works on an instance with no outbound network.
+`/docs` is a reserved path: no short link may use the slug `docs`.
+
 ## Error format
 
 ```json

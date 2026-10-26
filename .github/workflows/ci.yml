@@ -1,7 +1,7 @@
 name: CI
 
 # Everything a pull request has to pass before it can merge: formatting, lints,
-# the test suite and the end-to-end smoke run.
+# the test suite, the end-to-end smoke run and the OpenAPI contracts.
 #
 # The same jobs run on every push to the default branch, with one exception:
 # when the push is the merge commit of a pull request whose checks already
@@ -45,7 +45,7 @@ env:
 
 jobs:
   # --------------------------------------------------------------------- gate
-  # One cheap job decides whether the three real jobs have to run. On pull
+  # One cheap job decides whether the four real jobs have to run. On pull
   # requests it always answers "run"; only pushes can answer "false".
   gate:
     name: Decide whether CI is needed
@@ -57,7 +57,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check whether this commit was already tested
         id: decide
-        # The three jobs below run on `always()` and skip only on an explicit
+        # The four jobs below run on `always()` and skip only on an explicit
         # "false", so a crashed or timed-out gate still runs the suite instead
         # of silently skipping it. A gate failure stays visible as a red job.
         env:
@@ -69,9 +69,11 @@ jobs:
           FORCED: ${{ github.event.forced }}
           # The jobs whose work the gate is allowed to skip. The gate verifies
           # that every one of them ran on the pull request and passed, so keep
-          # this in step with the `name:` of the three jobs below — a pull
-          # request that drops or renames one must not look tested.
-          REQUIRED: Formatting, Lints and tests, Smoke test
+          # this in step with the `name:` of the four jobs below — a pull
+          # request that drops or renames one must not look tested. Adding a job
+          # means adding its name here, or a pull request that dropped it would
+          # still look tested and the push run would skip a suite that never ran.
+          REQUIRED: Formatting, Lints and tests, Smoke test, OpenAPI contracts
         run: bash scripts/ci-push-gate.sh
 
   # --------------------------------------------------------------- formatting
@@ -130,3 +132,31 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: bash scripts/smoke.sh
         run: bash scripts/smoke.sh
+
+  # ------------------------------------------------------- contract freshness
+  # The OpenAPI contracts are generated from openapi/ and committed, because
+  # `src/assets.rs` embeds them with `include_str!`. Regenerating them here means
+  # a contract edit that forgot to run the generator fails CI instead of
+  # shipping a reference that disagrees with the source files.
+  #
+  # `actions/setup-python` is used rather than the runner's system Python: on
+  # recent Ubuntu images a bare `pip install` is refused by PEP 668.
+  #
+  # Like the other three, it hangs off the gate: `always()` and an explicit
+  # "false" keep a crashed gate from skipping it, and its name is in the gate's
+  # `REQUIRED` list so a pull request cannot drop it and still look tested.
+  contracts:
+    name: OpenAPI contracts
+    needs: gate
+    if: always() && needs.gate.outputs.run != 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: python3 -m pip install pyyaml
+        run: python3 -m pip install --disable-pip-version-check pyyaml
+      - name: python3 scripts/build-openapi.py --check
+        run: python3 scripts/build-openapi.py --check

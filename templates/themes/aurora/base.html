@@ -18,6 +18,7 @@
 {% endblock %}
 <footer class="site">
     <span class="footer-tagline">{{ site_name }} — {{ lang.t("footer.tagline") }}</span>
+    {% include "partials/api_docs_link.html" %}
     {% include "partials/repo_link.html" %}
     {% block footer_lang %}{% include "partials/site_tools.html" %}{% endblock %}
 </footer>

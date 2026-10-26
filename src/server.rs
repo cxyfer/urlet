@@ -36,6 +36,17 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/assets/favicon.svg", get(routes::assets::favicon))
         .route("/favicon.ico", get(routes::assets::favicon_ico))
+        // The API reference the instance serves about itself. `/docs` is a
+        // static segment, so axum matches it before the `/{slug}` catch-all;
+        // `services::slug::RESERVED` keeps a short link from claiming it.
+        .route("/docs", get(routes::docs::page))
+        .route("/docs/openapi.json", get(routes::docs::spec_en))
+        .route("/docs/openapi.zh-TW.json", get(routes::docs::spec_zh_tw))
+        .route("/assets/scalar.js", get(routes::assets::scalar_js))
+        .route(
+            "/assets/scalar-init.js",
+            get(routes::assets::scalar_init_js),
+        )
         .route(
             "/",
             get(routes::pages::home::home).post(routes::public_urls::create_form),
@@ -153,6 +164,7 @@ pub async fn bootstrap(state: &AppState) -> Result<()> {
 
     bootstrap_admin(state).await?;
     warn_about_first_user(state).await?;
+    warn_about_shadowed_reference_slug(state).await?;
     Ok(())
 }
 
@@ -209,6 +221,26 @@ async fn bootstrap_admin(state: &AppState) -> Result<()> {
             .map_err(AppError::from)?;
             tracing::info!(user_id, email = %email, "bootstrap administrator created");
         }
+    }
+    Ok(())
+}
+
+/// Report short links that the API reference page now shadows.
+///
+/// `/docs` is a static segment and therefore matches before the `/{slug}`
+/// catch-all, so a link created before this release can no longer be reached
+/// through its short URL. Nothing is renamed or deleted here: the row belongs to
+/// its owner, and only the owner can decide what to do with it.
+async fn warn_about_shadowed_reference_slug(state: &AppState) -> Result<()> {
+    let shadowed = db::urls::count_live_with_slug(&state.db, "docs")
+        .await
+        .map_err(AppError::from)?;
+    if shadowed > 0 {
+        tracing::warn!(
+            links = shadowed,
+            "live short links use the slug 'docs', which the API reference page now serves; \
+             those links stay unreachable until their owners rename them"
+        );
     }
     Ok(())
 }

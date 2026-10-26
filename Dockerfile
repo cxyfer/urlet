@@ -42,6 +42,10 @@ RUN sed -i 's/^version = ".*"/version = "0.0.0"/' Cargo.toml \
 COPY migrations ./migrations
 COPY templates ./templates
 COPY src ./src
+# `src/assets.rs` embeds the generated OpenAPI contracts with `include_str!`, so
+# the build fails without them. Only `openapi/` is copied: the docs site under
+# `docs-site/` never enters the image.
+COPY openapi ./openapi
 COPY Cargo.toml Cargo.lock ./
 RUN cargo build --release --locked \
     && strip target/release/urlet \

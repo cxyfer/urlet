@@ -1,8 +1,10 @@
 {# 上游 repo 連結，由每個設計的 footer 共用。
    圖示是 inline SVG：`default-src 'self'` 的 CSP 不允許遠端圖片，專案也沒有
    圖示字型或建置步驟。文字標籤用 lang.t("footer.repo")，那是品牌名，在每份
-   catalogue 都保持原文。 #}
-<a class="footer-repo" href="{{ self.repo_url() }}" target="_blank" rel="noopener"
+   catalogue 都保持原文。
+   排版與 hover 來自共用的 .footer-link；footer-repo 保留給各主題的擺放規則，
+   以及已經上傳、針對舊類別名稱寫的樣式。 #}
+<a class="footer-link footer-repo" href="{{ self.repo_url() }}" target="_blank" rel="noopener"
    aria-label="{{ lang.t("footer.repo_label") }}">
     <svg class="footer-repo-icon" width="15" height="15" viewBox="0 0 16 16"
          fill="currentColor" aria-hidden="true" focusable="false">

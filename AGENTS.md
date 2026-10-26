@@ -26,6 +26,16 @@ green pull request did not already cover. A push that merges a passing pull requ
 direct pushes, force pushes and merges of untested changes still run in full. `merge-check.sh`
 stays a post-merge check for the group and domain flows.
 
+A fifth job covers the OpenAPI contracts. Changing anything under `openapi/` means regenerating
+them with `python3 scripts/build-openapi.py` — it needs PyYAML — and committing the result; the
+job reruns the same script with `--check`, which fails when the committed documents are stale,
+and lints both with Redocly. The contract-to-router tests in `tests/contract.rs` run with
+`cargo test` like any other.
+
+Adding a job to `ci.yml` means adding its `name:` to the gate's `REQUIRED` list.
+`tests/ci_workflow.rs` checks that the two agree, so `cargo test` fails rather than letting a pull
+request drop a job and still look tested.
+
 Schema changes go in `migrations/` and run at startup. Migrations are additive and
 checksum-protected: never edit one that has already been released, add a new file instead.
 
