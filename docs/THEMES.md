@@ -32,6 +32,12 @@ light/dark control would be a lie — the test
 `every_dual_palette_design_serves_the_system_and_the_explicit_palette` catches
 that.
 
+The browser chrome is the one surface CSS cannot reach: a `theme-color` meta tag
+is selected by a media query, and a media query cannot see `data-theme`. A design
+that paints the chrome (Signal) therefore marks its two tags with
+`data-theme-mode="light"`/`"dark"`; the media queries stay the no-JavaScript
+path, and `theme.js` switches the matching tag on once the mode is resolved.
+
 ## Administrator workflow
 
 1. Open **Admin → Themes** (`/app/admin/themes`).

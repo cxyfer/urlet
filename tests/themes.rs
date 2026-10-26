@@ -337,6 +337,33 @@ async fn every_dual_palette_design_serves_the_system_and_the_explicit_palette() 
 }
 
 #[tokio::test]
+async fn a_design_that_paints_the_browser_chrome_follows_the_resolved_mode() {
+    let app = TestApp::spawn().await;
+
+    // `theme-color` can only be selected by a media query, never by
+    // `data-theme`, so Signal marks its two tags with the mode they belong to
+    // and the resolved mode turns the matching one on.
+    let landing = app.get_as("/", "urlet_theme=signal").await;
+    assert_eq!(landing.status, StatusCode::OK);
+    for mode in ["light", "dark"] {
+        // The marker has to agree with the media query it sits next to, or the
+        // no-JavaScript path and the script would disagree about the mode.
+        let tag = format!("media=\"(prefers-color-scheme: {mode})\" data-theme-mode=\"{mode}\"");
+        assert!(landing.body.contains(&tag), "missing {tag}");
+    }
+
+    // The shared script is what flips them, so it must know the marker.
+    let script = app.get("/assets/theme.js").await;
+    assert_eq!(script.status, StatusCode::OK);
+    assert!(
+        script
+            .body
+            .contains("meta[name=\"theme-color\"][data-theme-mode]"),
+        "theme.js must select the marked theme-color tags"
+    );
+}
+
+#[tokio::test]
 async fn embedded_asset_urls_are_versioned() {
     let app = TestApp::spawn().await;
     let version = urlet::VERSION;

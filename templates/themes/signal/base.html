@@ -3,8 +3,11 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f4f0e6" media="(prefers-color-scheme: light)">
-    <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+    {# The browser chrome cannot be selected by `data-theme`, so the two tags are
+       marked with the mode they belong to and theme.js turns the matching one
+       on; the media queries remain the no-JavaScript path. #}
+    <meta name="theme-color" content="#f4f0e6" media="(prefers-color-scheme: light)" data-theme-mode="light">
+    <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)" data-theme-mode="dark">
     <title>{% block title %}{{ site_name }}{% endblock %}</title>
     <script src="/assets/theme.js?v={{ self.asset_version() }}"></script>
     <link rel="stylesheet" href="{{ self.theme_css_url() }}?v={{ self.asset_version() }}">

@@ -46,6 +46,7 @@
 
     function updateButtons() {
         var mode = currentMode();
+        updateThemeColor(mode);
         document.querySelectorAll("[data-theme-toggle]").forEach(function (button) {
             // A light-only or dark-only theme locks the palette; there is
             // nothing for the visitor to toggle.
@@ -57,6 +58,22 @@
             button.setAttribute("data-mode", mode);
             button.setAttribute("aria-pressed", mode === "dark" ? "true" : "false");
         });
+    }
+
+    // A browser paints its chrome from `theme-color`, and that meta can only be
+    // selected by a media query — never by `data-theme`. A design that pins the
+    // chrome (Signal) marks its tags with the mode they belong to, and the
+    // resolved mode turns the matching one on; the two media queries above stay
+    // the no-JavaScript path.
+    function updateThemeColor(mode) {
+        document
+            .querySelectorAll('meta[name="theme-color"][data-theme-mode]')
+            .forEach(function (meta) {
+                meta.setAttribute(
+                    "media",
+                    meta.getAttribute("data-theme-mode") === mode ? "all" : "not all"
+                );
+            });
     }
 
     function toggle() {
@@ -75,6 +92,9 @@
     } else if (saved) {
         root.setAttribute("data-theme", saved);
     }
+    // The marked meta tags sit above this script, so the chrome colour can be
+    // corrected before the first paint instead of at DOMContentLoaded.
+    updateThemeColor(currentMode());
 
     document.addEventListener("click", function (event) {
         var button = event.target.closest("[data-theme-toggle]");

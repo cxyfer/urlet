@@ -28,6 +28,11 @@ CSS 檔。**上傳主題**則是存放於持久化 volume 的 CSS 檔；由於 A
 `every_dual_palette_design_serves_the_system_and_the_explicit_palette`
 會抓到這件事。
 
+瀏覽器外框是 CSS 唯一構不到的表面：`theme-color` meta 標籤由媒體查詢決定，
+而媒體查詢看不到 `data-theme`。因此會替瀏覽器外框上色的設計（Signal）在兩個
+標籤上標記 `data-theme-mode="light"`／`"dark"`；媒體查詢仍是無 JavaScript 時的
+路徑，`theme.js` 則在解析出模式後打開對應的那一個。
+
 ## 管理員操作流程
 
 1. 開啟 **管理 → 主題**（`/app/admin/themes`）。
