@@ -464,7 +464,7 @@ The built-in rule source is `src/rules/url-cleaning.txt`, maintained separately 
 | ID | Requirement |
 |----|-------------|
 | NFR-PERF-1 | Redirect path: indexed URL and optional-preview lookups plus a queued write; target P95 < 10 ms (historical redirect baseline 0.74 ms; the new preview lookup is not benchmarked) |
-| NFR-PERF-2 | SQLite: `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=5000` |
+| NFR-PERF-2 | SQLite: `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=5000`; every write transaction opens with `BEGIN IMMEDIATE`, so a transaction that reads before it writes holds the write lock from the start instead of losing its WAL snapshot to `SQLITE_BUSY_SNAPSHOT`, an error the busy handler never absorbs and `busy_timeout` therefore cannot cover |
 | NFR-PERF-3 | Connection pool: `max_connections=8`; click writes are serialized through a single background writer (so the WAL cannot grow without bound because concurrent writes prevent checkpointing) |
 | NFR-PERF-4 | List queries are always paginated (default 20, maximum 100) |
 | NFR-PERF-5 | Analytics queries use `url_daily_stats` and indexes to avoid full table scans |

@@ -115,7 +115,7 @@ pub async fn keys(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
 /// Register an upload and its `themes` catalogue row in one transaction.
 pub async fn create(pool: &SqlitePool, new: &NewCustomTheme) -> Result<i64, sqlx::Error> {
     let now = now_iso();
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     sqlx::query(
         "INSERT INTO themes
@@ -166,7 +166,7 @@ pub async fn update(
     appearance: ThemeAppearance,
     replaced_css: Option<(&str, i64, &str)>,
 ) -> Result<(), sqlx::Error> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     sqlx::query(
         "UPDATE custom_themes
             SET name = ?, description = ?, appearance = ?, updated_at = ?
@@ -199,7 +199,7 @@ pub async fn update(
 
 /// Delete the upload and its catalogue row in one transaction.
 pub async fn delete(pool: &SqlitePool, id: i64, key: &str) -> Result<(), sqlx::Error> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     sqlx::query("DELETE FROM custom_themes WHERE id = ?")
         .bind(id)
         .execute(&mut *tx)

@@ -136,7 +136,7 @@ pub async fn set_for_url(
     url_id: i64,
     tag_ids: &[i64],
 ) -> Result<(), sqlx::Error> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     sqlx::query("DELETE FROM url_tags WHERE url_id = ?")
         .bind(url_id)
         .execute(&mut *tx)

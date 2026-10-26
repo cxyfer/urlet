@@ -301,7 +301,7 @@ pub async fn apply_admin_update(
     update: &AdminUserUpdate<'_>,
 ) -> Result<bool, sqlx::Error> {
     let now = now_iso();
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     let result = sqlx::query(
         "UPDATE users
             SET role = COALESCE(?1, role),
@@ -358,7 +358,7 @@ pub async fn apply_admin_update(
 /// pre-check and leave the instance without one.
 pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error> {
     let now = now_iso();
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     let result = sqlx::query(
         "UPDATE users SET deleted_at = ?, updated_at = ?
           WHERE id = ?

@@ -117,7 +117,7 @@ pub async fn set_many(
     updated_by: Option<i64>,
 ) -> Result<(), sqlx::Error> {
     let now = now_iso();
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     for (key, value) in values {
         sqlx::query(
             "INSERT INTO settings (key, value, updated_at, updated_by)

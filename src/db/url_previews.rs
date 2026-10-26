@@ -39,7 +39,7 @@ pub async fn save(
 ) -> Result<bool, sqlx::Error> {
     let empty_image = Image::default();
     let image = changes.image.as_ref().unwrap_or(&empty_image);
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     let result = sqlx::query(
         "INSERT INTO url_previews (url_id, title, description, image_url, image_key, image_mime, image_data)
          SELECT id, ?, ?, ?, ?, ?, ? FROM urls WHERE id = ? AND user_id = ? AND deleted_at IS NULL

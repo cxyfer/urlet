@@ -112,7 +112,7 @@ pub async fn redeem(
     user_id: i64,
     now: &str,
 ) -> Result<bool, sqlx::Error> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     let updated = sqlx::query(
         "UPDATE invite_codes SET used_count = used_count + 1
          WHERE id = ? AND status = 'active' AND used_count < max_uses
@@ -200,7 +200,7 @@ pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
 /// revoked, or `Some(released)` where `released` reports whether the quota slot
 /// was actually returned.
 pub async fn revoke(pool: &SqlitePool, id: i64) -> Result<Option<bool>, sqlx::Error> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     let result = sqlx::query(
         "UPDATE invite_codes SET status = 'revoked' WHERE id = ? AND status = 'active'",
     )

@@ -171,7 +171,9 @@ impl Issuer<'_> {
         // both rows together means a cancelled or crashed request cannot leave
         // an orphan reservation consuming the group's budget.
         let quota = InviteQuota::resolve(self.settings, group.as_ref());
-        let mut tx = self.pool.begin().await.map_err(AppError::from)?;
+        let mut tx = crate::db::begin_write(self.pool)
+            .await
+            .map_err(AppError::from)?;
         let issuance_id = quota
             .reserve(&mut tx, group_id, Some(self.actor.id), time::now())
             .await?
