@@ -1,8 +1,8 @@
-/* Shared chrome for the in-product theme picker.
+/* Shared chrome for the in-product theme picker and the light/dark switch.
  *
  * Deliberately theme-neutral: it relies on the CSS custom properties each theme
  * defines, with plain fallbacks for the older designs. Keeping this out of every
- * theme stylesheet means a new theme cannot forget the picker.
+ * theme stylesheet means a new theme cannot forget the picker or the switch.
  *
  * The trigger inherits the surrounding bar's colour and tints itself with that
  * same colour, so it stays legible on light and inverted bars alike. The open
@@ -98,6 +98,42 @@ footer.colophon .theme-menu {
     .theme-current { max-width: 6.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .theme-menu { right: 0; left: auto; max-width: calc(100vw - 1.5rem); }
 }
+
+/* Light/dark switch, shared like the picker so a new design cannot forget it.
+   It inherits the surrounding bar's colour and tints itself with that same
+   colour, so it stays legible on light and inverted bars alike. theme.js keeps
+   it hidden until the mode is resolved, and hides it for a forced palette. */
+.theme-toggle {
+    display: inline-grid;
+    place-items: center;
+    width: 2.05rem;
+    height: 2.05rem;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid currentColor;
+    background: transparent;
+    background: color-mix(in srgb, currentColor 8%, transparent);
+    color: inherit;
+    cursor: pointer;
+    flex: none;
+    transition: background .18s ease, color .18s ease, border-color .18s ease, transform .18s ease;
+}
+.theme-toggle[hidden] { display: none; }
+.theme-toggle:hover {
+    border-color: var(--accent, currentColor);
+    background: color-mix(in srgb, currentColor 14%, transparent);
+    transform: translateY(-1px);
+}
+.theme-toggle:active { transform: none; }
+.theme-toggle-icon {
+    display: none;
+    align-items: center;
+    justify-content: center;
+}
+.theme-toggle-icon svg { display: block; }
+.theme-toggle[data-mode="light"] .theme-toggle-moon { display: inline-flex; }
+.theme-toggle[data-mode="dark"] .theme-toggle-sun { display: inline-flex; }
+
 /* Long explanatory notes wrap instead of widening the page on phones. */
 :where(.page-note-wrap) { white-space: normal; max-width: 42rem; }
 

@@ -16,6 +16,7 @@
             <a href="/app/admin" {% if chrome.active == "admin" %}class="active" aria-current="page"{% endif %}>{{ lang.t("nav.admin") }}</a>
             {% endif %}
             <span class="nav-sep" aria-hidden="true"></span>
+            {% if self.theme_allows_toggle() %}{% include "partials/theme_toggle.html" %}{% endif %}
             {% call theme_switcher::switcher(chrome.theme, lang) %}
             {% include "partials/lang_switcher.html" %}
             <span class="nav-user">{{ chrome.email }}</span>

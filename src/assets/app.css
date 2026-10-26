@@ -1143,40 +1143,6 @@ table.table details > summary:hover { background: var(--surface-2); }
     flex-wrap: wrap;
 }
 
-.theme-toggle {
-    display: inline-grid;
-    place-items: center;
-    width: 2.05rem;
-    height: 2.05rem;
-    padding: 0;
-    border-radius: 50%;
-    border: 1px solid var(--hairline);
-    background: color-mix(in srgb, var(--surface-2) 55%, transparent);
-    color: var(--muted);
-    cursor: pointer;
-    flex: none;
-    transition: background .18s ease, color .18s ease, border-color .18s ease, transform .18s ease;
-}
-.theme-toggle[hidden] { display: none; }
-.theme-toggle:hover {
-    background: var(--surface);
-    color: var(--ink);
-    border-color: var(--hairline-strong);
-    transform: translateY(-1px);
-}
-.theme-toggle:active { transform: none; }
-.theme-toggle-icon {
-    display: none;
-    align-items: center;
-    justify-content: center;
-}
-.theme-toggle-icon svg { display: block; }
-.theme-toggle[data-mode="light"] .theme-toggle-moon { display: inline-flex; }
-.theme-toggle[data-mode="dark"] .theme-toggle-sun { display: inline-flex; }
-@supports not (background: color-mix(in srgb, red 50%, transparent)) {
-    .theme-toggle { background: var(--surface-2); }
-}
-
 .lang-switcher {
     position: relative;
     display: inline-flex;

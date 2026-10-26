@@ -49,8 +49,11 @@
     --gap-block: clamp(1.5rem, 2.6vw, 2.1rem);
 }
 
+/* 深色調色盤。媒體查詢跟隨作業系統，直到訪客自己選了模式；`:not([data-theme="light"])`
+   讓「淺色」這個明確選擇勝過系統偏好，下面的屬性選擇器則提供同一份調色盤的
+   明確深色入口，因此明暗切換兩個方向都有效。兩份值必須一致。 */
 @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
         color-scheme: dark;
 
         --paper: #171410;
@@ -75,6 +78,32 @@
         --danger: #ef8571;
         --danger-wash: rgba(239, 133, 113, .12);
     }
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --paper: #171410;
+    --paper-2: #201c17;
+    --paper-3: #262119;
+    --ink: #f0e8da;
+    --muted: #a99d8b;
+    --hairline: #3a342c;
+    --rule: #4b4438;
+    --rule-strong: #5d5546;
+
+    --vermilion: #e26854;
+    --vermilion-wash: rgba(226, 104, 84, .13);
+    --olive: #9aa886;
+    --olive-wash: rgba(154, 168, 134, .13);
+    --ochre: #d8ae5c;
+
+    --ok: #9ab88f;
+    --ok-wash: rgba(154, 184, 143, .12);
+    --warn: #d8ae5c;
+    --warn-wash: rgba(216, 174, 92, .12);
+    --danger: #ef8571;
+    --danger-wash: rgba(239, 133, 113, .12);
 }
 
 /* -------------------------------------------------------------- 2. elements */

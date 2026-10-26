@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ lang.html_lang() }}">
+<html lang="{{ lang.html_lang() }}"{% if self.theme_is_light_only() %} data-theme="light"{% endif %}{% if self.theme_is_dark_only() %} data-theme="dark"{% endif %}{% if self.theme_has_lock() %} data-theme-lock="{{ self.theme_lock() }}"{% endif %}>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">

@@ -42,8 +42,10 @@
     --speed: 120ms;
 }
 
+/* 深色調色盤。媒體查詢跟隨作業系統，`:not([data-theme="light"])` 讓明確的淺色選擇
+   勝過系統偏好；下面的屬性選擇器提供同一份調色盤的明確深色入口。兩份值必須一致。 */
 @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
         color-scheme: dark;
         --paper: #0b0c0d;
         --surface: #131517;
@@ -64,6 +66,28 @@
         --warn: #e3b160;
         --warn-soft: #2a2213;
     }
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #0b0c0d;
+    --surface: #131517;
+    --band: #f0f1ed;          /* inverted: black bars become paper bars */
+    --band-ink: #0b0c0d;
+    --ink: #f0f1ed;
+    --muted: #a0a6ab;
+    --hair: #2a2e31;
+    --line: #4a5055;
+    --grid: #23272a;
+    --hover: #1a1d1f;
+    --red: #ff6b5e;
+    --red-soft: #2a1614;
+    --cobalt: #7c9cff;
+    --cobalt-soft: #172033;
+    --ok: #4ecb8f;
+    --ok-soft: #12241b;
+    --warn: #e3b160;
+    --warn-soft: #2a2213;
 }
 
 /* ---------------------------------------------------------------- 02 base */

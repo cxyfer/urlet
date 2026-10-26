@@ -11,17 +11,26 @@ the binary and cannot be added at runtime.
 
 | Key | Name | Notes |
 |-----|------|-------|
-| `verdant` | Verdant Systems | The v1.2 production design; also the base templates and fallback. Supports the persisted light/dark control |
-| `aurora` | Aurora Glass | Dark glass command centre with a fixed sidebar. Dark-only |
-| `paper` | Paper Ledger | Editorial paper ledger; follows `prefers-color-scheme` |
-| `signal` | Signal | Brutalist signal board; follows `prefers-color-scheme` |
-| `gilded` | Gilded Circuit | Art Deco ivory/emerald/gold; follows `prefers-color-scheme` |
-| `swiss` | Swiss Telemetry | Swiss grid with numbered sections; follows `prefers-color-scheme` |
+| `verdant` | Verdant Systems | The v1.2 production design; also the base templates and fallback. Ships both palettes and the persisted light/dark control |
+| `aurora` | Aurora Glass | Dark glass command centre with a fixed sidebar. Dark-only: no light palette, so the light/dark control is hidden |
+| `paper` | Paper Ledger | Editorial paper ledger. Ships both palettes and the light/dark control |
+| `signal` | Signal | Brutalist signal board. Ships both palettes and the light/dark control |
+| `gilded` | Gilded Circuit | Art Deco ivory/emerald/gold. Ships both palettes and the light/dark control |
+| `swiss` | Swiss Telemetry | Swiss grid with numbered sections. Ships both palettes and the light/dark control |
 | `custom-…` | Uploaded | A stylesheet added from **Admin → Themes**; reuses the Verdant templates |
 
 The five non-default compiled-in themes are the designs proposed in the closed
 pull requests #5, #6, #7, #9 and #10. They were ported to the v1.2 page model
 rather than frozen at their original feature set.
+
+Every design except Aurora follows `prefers-color-scheme` until the visitor picks
+a mode, and then honours that choice in both directions: its stylesheet carries
+the dark palette twice, once behind `@media (prefers-color-scheme: dark)` guarded
+by `:not([data-theme="light"])` and once behind `:root[data-theme="dark"]`. A new
+port that skips the second copy still follows the operating system, but its
+light/dark control would be a lie — the test
+`every_dual_palette_design_serves_the_system_and_the_explicit_palette` catches
+that.
 
 ## Administrator workflow
 
@@ -174,17 +183,23 @@ stylesheet URL.
 ## Adding a compiled-in theme
 
 1. Add a variant to `ThemeKey` in `src/services/theme.rs` (key, name key,
-   description key, CSS URL, dark-only flag).
+   description key, CSS URL, palette policy). A design that ships only one
+   palette declares it through `is_dark_only`/`is_light_only`; `appearance()` is
+   the single source of truth for the catalogue's `appearance` field and its
+   light-only/dark-only badges.
 2. Add the CSS under `src/assets/themes/<key>.css` and register it in
    `src/assets.rs` and the `/assets/themes/{key}` route.
 3. Add the catalogue strings to the three `src/i18n/*.json` files.
 4. Create `templates/themes/<key>/` with at least `base.html`, `app_base.html`,
    `landing.html`, the auth/link/splash/error pages, the admin tabs and the app pages.
-   Reuse the content macros for the dense app pages. Render the picker exactly once per
-   page: in the top bar of `landing.html` and `app_base.html`, and through
-   `partials/site_tools.html` (picker plus language switcher) wherever the design keeps
-   its footer tools. A design that empties `footer_lang` for its own top bar must put the
-   picker there instead, as Swiss's auth pages do.
+   Reuse the content macros for the dense app pages. Load `theme.js` in `base.html`'s
+   `<head>`, and render the picker and the light/dark switch exactly once per page: in
+   the top bar of `landing.html` and `app_base.html`, and through
+   `partials/site_tools.html` (switch, picker plus language switcher) wherever the design
+   keeps its footer tools. A design that empties `footer_lang` for its own top bar must put
+   the tools there instead, as Swiss's auth pages do. Copy the `data-theme`/`data-theme-lock`
+   attributes of `templates/base.html` onto `<html>`, so a forced palette is marked on the
+   document as well as in the catalogue.
 5. Add `templates/themes/<key>/...` paths to every `themed_page!` call. Keep the
    `Verdant` entry in each invocation: it is also the fallback used when a page
    has not listed a newly added theme yet.
@@ -206,5 +221,7 @@ stylesheet URL.
 - No fine-grained per-account permission: the policy is site-wide (`all` or
   `admin`). The existing user-group feature toggles cover per-group data
   capabilities, not cosmetics.
-- The five ported designs do not add a manual light/dark switch; they follow the
-  operating system. Aurora is dark-only by design.
+- Every design except Aurora ships both palettes and the same persisted
+  light/dark control; the control is a cosmetic preference, so it never needs a
+  per-account column. Aurora is dark-only by design and has no light palette to
+  offer, so it hides the control instead of shipping a dead one.
