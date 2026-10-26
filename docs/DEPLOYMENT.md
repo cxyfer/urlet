@@ -18,7 +18,7 @@ its own (putting a TLS terminator in front of it is recommended).
 ## 2. Quick start (HTTP)
 
 ```bash
-git clone <this repo> urlet && cd urlet
+git clone https://github.com/cxyfer/urlet urlet && cd urlet
 cp .env.example .env
 ```
 

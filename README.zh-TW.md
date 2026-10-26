@@ -39,7 +39,7 @@
 ### Docker Compose（推薦）
 
 ```bash
-git clone <this repo> urlet && cd urlet
+git clone https://github.com/cxyfer/urlet urlet && cd urlet
 cp .env.example .env      # 至少設定 URLET_BASE_URL 與管理員帳密
 docker compose up -d --build
 ```

@@ -42,7 +42,7 @@ service, no frontend build step.
 ### Docker Compose (recommended)
 
 ```bash
-git clone <this repo> urlet && cd urlet
+git clone https://github.com/cxyfer/urlet urlet && cd urlet
 cp .env.example .env      # set at least URLET_BASE_URL and the admin credentials
 docker compose up -d --build
 ```
