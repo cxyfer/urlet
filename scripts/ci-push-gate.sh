@@ -8,6 +8,12 @@
 # done. This script recognises exactly that case and nothing else: any doubt,
 # API error or unexpected payload runs the suite.
 #
+# "The pull request passed" has to mean the checks this gate is allowed to skip
+# actually ran and passed there, not merely that whatever did run was green. A
+# pull request that drops, renames or conditions the real jobs away leaves its
+# own green gate check behind, and skipping the push would then hide a suite
+# that never ran; the names come from $REQUIRED.
+#
 # A base branch that moved after the pull request's last run cannot be seen here
 # once the pull request is closed. Requiring "branches up to date" in a branch
 # ruleset closes that gap; without it, such a merge is skipped like any other.
@@ -21,6 +27,7 @@
 #   SHA      github.sha
 #   BEFORE   github.event.before
 #   FORCED   github.event.forced
+#   REQUIRED comma-separated check names the gate is allowed to skip
 #   GH_TOKEN token used by `gh api`
 #
 set -uo pipefail
@@ -30,6 +37,7 @@ REPO="${REPO:-}"
 SHA="${SHA:-}"
 BEFORE="${BEFORE:-}"
 FORCED="${FORCED:-false}"
+REQUIRED="${REQUIRED:-}"
 
 run() {
   printf 'run=true\n' >>"${GITHUB_OUTPUT:?}"
@@ -88,15 +96,38 @@ seen="$(jq -r '.check_runs | length' <<<"$checks" 2>/dev/null)" || run "unexpect
 pending="$(jq -r '[.check_runs[] | select(.status != "completed")] | length' <<<"$checks" 2>/dev/null)" \
   || run "unexpected check-run payload"
 [[ "$pending" == "0" ]] || run "the pull request's checks are still running"
-not_green="$(jq -r '
+newest="$(jq -c '
   [.check_runs[]]
   | group_by(.name)
-  | map(max_by(.completed_at // ""))
-  | map(select(.conclusion != "success" and .conclusion != "neutral" and .conclusion != "skipped"))
-  | length' <<<"$checks" 2>/dev/null)" || run "unexpected check-run payload"
+  | map(max_by(.completed_at // "") | {name, conclusion})' <<<"$checks" 2>/dev/null)" \
+  || run "unexpected check-run payload"
+not_green="$(jq -r '
+  [.[] | select(.conclusion != "success" and .conclusion != "neutral" and .conclusion != "skipped")]
+  | length' <<<"$newest" 2>/dev/null)" || run "unexpected check-run payload"
 [[ "$not_green" == "0" ]] || run "the pull request's checks did not all pass"
 
-# 5. Commit statuses from integrations outside Actions, if there are any.
+# 5. The checks this gate exists to skip have to be among them, and have to have
+#    passed. Everything above only says that whatever ran was green, which a
+#    pull request that drops, renames or conditions the real jobs away also
+#    satisfies — its own gate check is green by itself. Naming them keeps the
+#    premise true: the suite ran against this tree and passed.
+required_names="$(jq -cn --arg want "$REQUIRED" '
+  $want | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))' 2>/dev/null)" \
+  || run "unexpected required-check list"
+[[ "$required_names" != "[]" ]] || run "gate does not know which checks it may skip"
+missing="$(jq -r --argjson names "$required_names" '
+  [.[] | .name] as $seen
+  | [$names[] | . as $n | select(($seen | index($n)) == null)]
+  | join(", ")' <<<"$newest" 2>/dev/null)" || run "unexpected check-run payload"
+[[ -z "$missing" ]] || run "the pull request never ran: $missing"
+# `success` only: a required job that was skipped, cancelled or neutral did not
+# prove anything about this tree, so the push runs the suite instead.
+unproven="$(jq -r --argjson names "$required_names" '
+  [.[] | select(.name as $n | ($names | index($n)) != null) | select(.conclusion != "success") | .name]
+  | join(", ")' <<<"$newest" 2>/dev/null)" || run "unexpected check-run payload"
+[[ -z "$unproven" ]] || run "the pull request did not pass: $unproven"
+
+# 6. Commit statuses from integrations outside Actions, if there are any.
 statuses="$(api "repos/$REPO/commits/$head_sha/status")" || run "could not read commit statuses"
 status_total="$(jq -r '.total_count // 0' <<<"$statuses" 2>/dev/null)" \
   || run "unexpected status payload"

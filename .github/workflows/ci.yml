@@ -67,6 +67,11 @@ jobs:
           SHA: ${{ github.sha }}
           BEFORE: ${{ github.event.before }}
           FORCED: ${{ github.event.forced }}
+          # The jobs whose work the gate is allowed to skip. The gate verifies
+          # that every one of them ran on the pull request and passed, so keep
+          # this in step with the `name:` of the three jobs below — a pull
+          # request that drops or renames one must not look tested.
+          REQUIRED: Formatting, Lints and tests, Smoke test
         run: bash scripts/ci-push-gate.sh
 
   # --------------------------------------------------------------- formatting
