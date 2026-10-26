@@ -17,7 +17,7 @@
 ## 2. 快速部署（HTTP）
 
 ```bash
-git clone <this repo> urlet && cd urlet
+git clone https://github.com/cxyfer/urlet urlet && cd urlet
 cp .env.example .env
 ```
 
