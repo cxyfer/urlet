@@ -316,6 +316,14 @@ as RapiDoc is 0.5 MB, at the cost of the localised interface chrome.
     variable rather than inheriting the canonical API server.
   - `/docs` is a reserved slug: no short link may claim it. A live link that already holds it is
     reported at startup and left untouched for its owner to rename.
+- The contract and the router are held together by tests, because nothing in the type system
+  connects them. axum exposes no way to read a built router back, so `tests/contract.rs` reads the
+  surface from the router's own source — the `.route(...)` calls are the registration — and asserts
+  set equality with each contract's paths and methods. A handler added without a contract entry
+  fails, and so does a contract entry whose handler is gone. The parse fails on a shape it does not
+  understand, and a size guard makes a parser that silently matched nothing fail rather than pass.
+  A CI job additionally lints both generated documents, which is what caught four components that
+  described dashboard payloads rather than API responses.
 - The same documents are published as a static, searchable site from `docs-site/`, deployed to the
   `gh-pages` branch by a path-filtered workflow. The repository's `docs/` tree stays the single
   source: a prebuild step copies it into the site's content tree, derives each page title from its

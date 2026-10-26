@@ -1614,7 +1614,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: 'components.yaml#/schemas/Page'
+                $ref: 'components.yaml#/schemas/GroupPage'
         '401':
           $ref: 'components.yaml#/responses/Unauthorized'
         '403':
@@ -1911,7 +1911,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: 'components.yaml#/schemas/Page'
+                $ref: 'components.yaml#/schemas/AuditPage'
         '401':
           $ref: 'components.yaml#/responses/Unauthorized'
         '403':

@@ -145,6 +145,12 @@ jobs:
   # Like the other three, it hangs off the gate: `always()` and an explicit
   # "false" keep a crashed gate from skipping it, and its name is in the gate's
   # `REQUIRED` list so a pull request cannot drop it and still look tested.
+  # The lint runs on the generated documents rather than the sources, because
+  # the sources are deliberately not valid OpenAPI documents on their own. The
+  # `minimal` ruleset checks the document is structurally sound; the stricter
+  # rulesets are style opinions this project has not adopted. A component that
+  # nothing references is a warning here, and it caught four schemas that
+  # described dashboard payloads rather than API responses.
   contracts:
     name: OpenAPI contracts
     needs: gate
@@ -160,3 +166,7 @@ jobs:
         run: python3 -m pip install --disable-pip-version-check pyyaml
       - name: python3 scripts/build-openapi.py --check
         run: python3 scripts/build-openapi.py --check
+      - name: npx @redocly/cli lint
+        run: |
+          npx --yes @redocly/cli@2.71.0 lint --extends=minimal openapi/dist/urlet.en.json
+          npx --yes @redocly/cli@2.71.0 lint --extends=minimal openapi/dist/urlet.zh-TW.json

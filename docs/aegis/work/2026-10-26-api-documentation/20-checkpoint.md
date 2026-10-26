@@ -28,7 +28,6 @@ Also fixed from the review: the version is no longer hardcoded in five places (t
 
 Two review findings did not survive checking. The claim that Aurora's footer pushes the repository link right, leaving the new link behind, does not reproduce: measuring all six themes at 1200px shows the API link immediately before the repository link everywhere (gap 9.6-24px), and Aurora's repository link is not right-aligned. The missing route-coverage test is the deliberate split the plan records: stage 3 owns it.
 
-Status: PR 1 is committed on feat/api-docs (b76f0f9) and verified; it is not pushed yet because the `gh` token lacks the `workflow` scope, which every push touching `.github/workflows/` needs. PR 2 is in progress on feat/api-docs-site.
 
 ## PR 2 — published documentation site
 
@@ -45,4 +44,26 @@ Four build failures were real and are fixed: Shiki has no `env` grammar (the dep
 
 Verified: `next build` exports 34 pages; every route answers 200 from a static server; the pages render in both languages with translated sidebar and headings, the language switcher is present, sidebar navigation works, and the browser reports no third-party host and no error beyond Next's RSC prefetch misses, which a static export cannot answer. `npm ci` is consistent with the lockfile, which the workflow relies on.
 
-Status: PR 1 is committed on feat/api-docs (b76f0f9). PR 2 is implemented and builds; its Rust-side checks are unaffected and still green. Neither branch is pushed yet.
+
+## PR 3 — contract drift protection
+
+`tests/contract.rs` reads the router's registered surface from the router's own source and asserts set equality with both contracts. axum exposes no way to read a built router back, so the `.route(...)` calls are the registration; the parse fails on a shape it does not understand, and a size guard makes a parser that silently matched nothing fail rather than pass. The check was verified to have teeth: adding `.route("/undocumented-probe", get(...))` fails both contract tests and names the offending method and path.
+
+The lint the plan called for turned out to be worth more than expected. Redocly's `minimal` ruleset flagged four components that nothing referenced, and checking each against the handlers showed they were not oversights in the wiring but genuine mistakes in the contract: `OverviewDto` and `TopLinkDto` are dashboard payloads for the HTML page and were never API responses, `OkResponse` had no handler at all, and `GET /api/v1/admin/audit` returns `Page<AuditDto>` while the contract referenced the generic `Page` and left the item type in prose. The three unused schemas are removed, `AuditPage` is added and referenced from both languages, and both documents now lint clean.
+
+## Independent review of PR 2 and PR 3
+
+The review found two blocking defects in the documentation site, both of which the build and the browser checks had missed, and both are fixed and re-verified:
+
+- Search was dead on the published site. The index is a route handler and had been placed under `app/[lang]/`, so the export produced `/en/api/search` and `/zh-TW/api/search` while the client fetches one `/api/search` for every locale. The two locale files were also byte-identical, so the fix removes 1.6 MB of duplication from the export.
+- The site was broken at the URL the README advertises. GitHub Pages serves a project site from `/<repo>/`, and without `basePath` every asset and route in the export pointed at the domain root: unstyled, unhydrated, and every internal link dead.
+
+The workflow's verification step only asserted that five files existed, which is why it passed while both defects were present. It now checks the search index path and the asset prefix as well.
+
+Also fixed from the review: the content sync fails on a relative link with no site equivalent and on a document with no level-one heading outside a code fence, naming the file; `GET /api/v1/admin/groups` had the same generic-`Page` defect as the audit operation and now has a `GroupPage`; and the contract test's coverage had a real false-negative hole — a module reached through `merge` or `nest` was invisible, so an undocumented route there would have passed. `every_merged_router_is_read` fails and names the module, and the size guard now compares distinct paths with `.route(` calls, which is the comparison that actually holds (one call can register several methods). Both guards were verified by defeating them.
+
+The review also noted that nothing builds `docs-site/` on a pull request, so a broken site is found after merge. That remains open and is recorded in the pull request.
+
+Two parser robustness issues the review raised as "noisy but safe" are also fixed, because a false positive is still a test that fails on correct code: whole-line `//` comments are stripped before parsing, so a commented-out `.route(...)` is no longer a phantom registration, and `.nest(` now fails with a message saying the parser does not read a nest prefix rather than silently producing wrong paths. The registration-count guard had to move to the same comment-stripped text; on the raw source the two counts disagreed the moment a commented call was added.
+
+Status after the review: the stack was rebased onto the current `master` (`33f5bae`, which had moved while the work was in progress and touched the same specification file) with both sides' changes preserved and no conflict. fmt, clippy, `build-openapi.py --check`, 616 tests and smoke (209) are green. PR 1 is on feat/api-docs (65e2d07), PR 2 on feat/api-docs-site (8217d83), PR 3 on feat/api-docs-drift (e680456). No branch is pushed: the `gh` token lacks the `workflow` scope, and an interactive refresh is waiting on the user.
