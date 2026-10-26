@@ -10,6 +10,10 @@ target
 .tmp
 data
 docs
+# The published documentation site. It is a separate static artifact with its
+# own build; the binary never reads it, and its node_modules would otherwise
+# dominate the context.
+docs-site
 scripts
 *.db
 *.db-wal

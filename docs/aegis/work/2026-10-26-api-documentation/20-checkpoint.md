@@ -28,4 +28,21 @@ Also fixed from the review: the version is no longer hardcoded in five places (t
 
 Two review findings did not survive checking. The claim that Aurora's footer pushes the repository link right, leaving the new link behind, does not reproduce: measuring all six themes at 1200px shows the API link immediately before the repository link everywhere (gap 9.6-24px), and Aurora's repository link is not right-aligned. The missing route-coverage test is the deliberate split the plan records: stage 3 owns it.
 
-Status: PR 1 is implemented and verified. Nothing is committed or pushed yet.
+Status: PR 1 is committed on feat/api-docs (b76f0f9) and verified; it is not pushed yet because the `gh` token lacks the `workflow` scope, which every push touching `.github/workflows/` needs. PR 2 is in progress on feat/api-docs-site.
+
+## PR 2 — published documentation site
+
+Two constraints discovered while building it, neither of which the plan anticipated:
+
+- Fumadocs resolves a locale by directory, so every language needs its own folder. The repository keeps English at the root of `docs/` and Traditional Chinese in `docs/zh-TW/`, which does not match. The plan's "content stays in place, no sync step" option is therefore impossible.
+- Next.js does not run middleware in a static export, so Fumadocs' `hideLocale` cannot rewrite `/docs` to `/en/docs`.
+
+Both are handled by generating the content tree instead of restructuring the repository: `docs-site/scripts/sync-content.mjs` runs as a prebuild step, copies the published documents into `content/docs/<locale>/`, derives each page title from the document's own first heading — so the thirty repository files need no frontmatter — and rewrites the links between documents. The generated directory is gitignored, so the repository still holds exactly one copy. `hideLocale` stays `never`: both languages carry their prefix, and `public/index.html` sends the bare root to English.
+
+Implemented: the `docs-site/` project with both locales, search, per-page markdown export and OG images; the sync script; `trailingSlash` so a plain static host resolves every route; `.dockerignore` excluding `docs-site/`; and `.github/workflows/docs.yml`, path-filtered and publishing to `gh-pages` with a post-build check that the export contains both locales.
+
+Four build failures were real and are fixed: Shiki has no `env` grammar (the deployment guide's `.env` fences are now `ini`, which is what a dotenv file is); `i18n.parser` defaults to `dot`, so the locale directory was becoming part of every slug and each page was generated twice under a doubled prefix; `I18nProvider` must be reached through `RootProvider` rather than rendered above it, or it calls the framework hooks before the provider that supplies them exists; and static-export route handlers each need `generateStaticParams`. A fifth was cosmetic but user-visible: the sync's link rewrite left bare brackets where a document pointed at the repository's `openapi/` directory, and now unwraps that link to its text.
+
+Verified: `next build` exports 34 pages; every route answers 200 from a static server; the pages render in both languages with translated sidebar and headings, the language switcher is present, sidebar navigation works, and the browser reports no third-party host and no error beyond Next's RSC prefetch misses, which a static export cannot answer. `npm ci` is consistent with the lockfile, which the workflow relies on.
+
+Status: PR 1 is committed on feat/api-docs (b76f0f9). PR 2 is implemented and builds; its Rust-side checks are unaffected and still green. Neither branch is pushed yet.

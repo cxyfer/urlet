@@ -161,6 +161,7 @@ urlet/
 │   ├── update-scalar.sh        # 更新釘住版本的 API 參考前端
 │   └── screenshot.py           # Playwright 截圖腳本
 ├── openapi/                    # OpenAPI 3.1 合約（共用元件 + 每語言一份）
+├── docs-site/                  # 發布用的文件網站（獨立靜態產物）
 ├── src/
 │   ├── assets/                 # 內嵌 CSS/JS/favicon、Scalar、產生的合約
 │   ├── db/                     # 所有 SQL（每張表一個模組）
@@ -212,6 +213,10 @@ bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 - [`RELEASING.md`](RELEASING.md) — 發布規則：版本、標籤與映像規則、檢查清單、回滾（[中文版](docs/zh-TW/RELEASING.md)）
 
 這些文件的中文版放在 `docs/zh-TW/`。
+
+同一批文件也以可搜尋的網站形式發布在 <https://cxyfer.github.io/urlet/>。它由
+[`docs-site/`](docs-site) 從本 repo 的 `docs/` 樹建置，並部署到 `gh-pages` 分支；內容在
+建置時複製進去，因此這裡的 Markdown 仍是唯一來源。該網站是獨立產物，不影響執行檔。
 
 ## 安全性
 

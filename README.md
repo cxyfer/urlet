@@ -170,6 +170,7 @@ urlet/
 │   ├── update-scalar.sh        # refresh the pinned API-reference bundle
 │   └── screenshot.py           # Playwright screenshot script
 ├── openapi/                    # OpenAPI 3.1 contract (shared components + one file per language)
+├── docs-site/                  # published documentation site (separate static artifact)
 ├── src/
 │   ├── assets/                 # embedded CSS/JS/favicon, Scalar, generated specs
 │   ├── db/                     # all SQL (one module per table)
@@ -223,6 +224,12 @@ off unless it is the newest stable release).
 - [`RELEASING.md`](RELEASING.md) — release rules: versioning, tag/image rules, checklist, rollback
 
 Chinese translations of these documents live under `docs/zh-TW/`.
+
+The same documents are published as a searchable site at
+<https://cxyfer.github.io/urlet/>. It is built from this repository's `docs/`
+tree by [`docs-site/`](docs-site) and deployed to the `gh-pages` branch; the
+content is copied in at build time, so the Markdown files here stay the only
+source. The site is a separate artifact and has no effect on the binary.
 
 ## Security
 
