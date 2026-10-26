@@ -140,7 +140,7 @@ pub async fn create(
     allowed_domain_ids: &[i64],
 ) -> Result<i64, sqlx::Error> {
     let now = now_iso();
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     let result = sqlx::query(
         "INSERT INTO user_groups
             (name, description, max_urls, max_api_tokens, max_invites, invite_period,
@@ -196,7 +196,7 @@ pub async fn update(
     allowed_domain_ids: Option<&[i64]>,
 ) -> Result<bool, sqlx::Error> {
     let now = now_iso();
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     let updated = sqlx::query(
         "UPDATE user_groups
             SET name = ?, description = ?, max_urls = ?, max_api_tokens = ?,
@@ -306,7 +306,7 @@ pub async fn delete_with_reassign(
     target: i64,
 ) -> Result<bool, sqlx::Error> {
     let now = now_iso();
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     sqlx::query("UPDATE users SET group_id = ?, updated_at = ? WHERE group_id = ?")
         .bind(target)
         .bind(&now)

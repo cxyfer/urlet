@@ -1192,7 +1192,9 @@ async fn a_rolled_back_issuance_does_not_consume_quota() {
 
     // Reserving then dropping the transaction (cancellation/crash) must not
     // leave an orphan slot behind.
-    let mut tx = app.state.db.begin().await.expect("transaction");
+    let mut tx = urlet::db::begin_write(&app.state.db)
+        .await
+        .expect("transaction");
     let reserved = quota
         .reserve(&mut tx, Some(group_id), None, urlet::services::time::now())
         .await

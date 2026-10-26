@@ -111,7 +111,7 @@ pub async fn set_state_and_setting(
     updated_by: Option<i64>,
 ) -> Result<(), sqlx::Error> {
     let now = now_iso();
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     sqlx::query("UPDATE themes SET is_enabled = 0, updated_at = ?")
         .bind(&now)

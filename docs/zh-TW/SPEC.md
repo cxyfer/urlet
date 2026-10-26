@@ -450,7 +450,7 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | ID | 需求 |
 |----|------|
 | NFR-PERF-1 | 轉址路徑：以索引查詢 URL 與選填預覽 + 佇列化寫入；目標 P95 < 10 ms（歷史轉址基準 0.74 ms；新增預覽查詢尚未測速） |
-| NFR-PERF-2 | SQLite：`journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000` |
+| NFR-PERF-2 | SQLite：`journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000`；每個寫入交易以 `BEGIN IMMEDIATE` 開啟，讓「先讀後寫」的交易從一開始就持有寫鎖，而不會因失去 WAL 快照得到 `SQLITE_BUSY_SNAPSHOT`——該錯誤不會觸發 busy handler，因此 `busy_timeout` 無法涵蓋 |
 | NFR-PERF-3 | 連線池：`max_connections=8`；點擊寫入由單一背景 writer 序列化（避免 WAL 因並發寫入無法 checkpoint 而無限成長） |
 | NFR-PERF-4 | 列表查詢一律分頁（預設 20，上限 100） |
 | NFR-PERF-5 | 統計查詢使用 `url_daily_stats` 與索引，避免全表掃描 |

@@ -186,7 +186,7 @@ async fn apply_transactional(
     migration: &Migration,
     checksum: &str,
 ) -> Result<()> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     if let Err(err) = sqlx::raw_sql(migration.sql).execute(&mut *tx).await {
         tx.rollback().await?;
         if is_applied(pool, migration.version, checksum).await? {

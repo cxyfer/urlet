@@ -262,7 +262,7 @@ pub async fn disable(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
 
 /// Make `id` the single default domain. The target must be active.
 pub async fn set_default(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
 
     let status: Option<String> = sqlx::query_scalar("SELECT status FROM domains WHERE id = ?")
         .bind(id)
@@ -311,7 +311,7 @@ pub async fn link_count(pool: &SqlitePool, id: i64) -> Result<i64, sqlx::Error> 
 /// have selected another active domain. If the current default is not active,
 /// it is cleared and the canonical domain is promoted.
 pub async fn ensure_canonical(pool: &SqlitePool, hostname: &str) -> Result<i64, sqlx::Error> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     let now = now_iso();
 
     let existing: Option<i64> =
@@ -428,7 +428,7 @@ pub async fn ensure_canonical(pool: &SqlitePool, hostname: &str) -> Result<i64, 
 /// removed from the deployment configuration instead of leaving it permanently
 /// protected as `env`.
 pub async fn detach_env(pool: &SqlitePool, declared: &[String]) -> Result<usize, sqlx::Error> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     let env_hosts: Vec<String> =
         sqlx::query_scalar("SELECT hostname FROM domains WHERE source = 'env'")
             .fetch_all(&mut *tx)
@@ -463,7 +463,7 @@ pub async fn detach_env(pool: &SqlitePool, declared: &[String]) -> Result<usize,
 /// Insert-only by design: an existing row keeps its status, source, default and
 /// verification. Returns how many rows were inserted.
 pub async fn seed_env(pool: &SqlitePool, hostnames: &[String]) -> Result<usize, sqlx::Error> {
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::begin_write(pool).await?;
     let now = now_iso();
     let mut inserted = 0usize;
 
