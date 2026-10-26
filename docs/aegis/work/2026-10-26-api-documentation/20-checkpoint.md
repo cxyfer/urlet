@@ -66,4 +66,18 @@ The review also noted that nothing builds `docs-site/` on a pull request, so a b
 
 Two parser robustness issues the review raised as "noisy but safe" are also fixed, because a false positive is still a test that fails on correct code: whole-line `//` comments are stripped before parsing, so a commented-out `.route(...)` is no longer a phantom registration, and `.nest(` now fails with a message saying the parser does not read a nest prefix rather than silently producing wrong paths. The registration-count guard had to move to the same comment-stripped text; on the raw source the two counts disagreed the moment a commented call was added.
 
-Status after the review: the stack was rebased onto the current `master` (`33f5bae`, which had moved while the work was in progress and touched the same specification file) with both sides' changes preserved and no conflict. fmt, clippy, `build-openapi.py --check`, 616 tests and smoke (209) are green. PR 1 is on feat/api-docs (65e2d07), PR 2 on feat/api-docs-site (8217d83), PR 3 on feat/api-docs-drift (e680456). No branch is pushed: the `gh` token lacks the `workflow` scope, and an interactive refresh is waiting on the user.
+## Delivered
+
+The `workflow` scope was granted and all three branches are pushed. The three pull requests are open and stacked, each against its predecessor so the next one consumes the previous one's contract:
+
+| PR | Branch | Base | Contents |
+| --- | --- | --- | --- |
+| [#43](https://github.com/cxyfer/urlet/pull/43) | `feat/api-docs` | `master` | Bilingual OpenAPI contract, generator, vendored Scalar, `/docs` and both contract endpoints, the reserved `docs` slug |
+| [#44](https://github.com/cxyfer/urlet/pull/44) | `feat/api-docs-site` | `feat/api-docs` | `docs-site/`, the content sync, the `gh-pages` deployment workflow |
+| [#45](https://github.com/cxyfer/urlet/pull/45) | `feat/api-docs-drift` | `feat/api-docs-site` | Contract-to-router drift tests and the Redocly lint step |
+
+All four CI jobs pass on all three: Formatting, Lints and tests, OpenAPI contracts, Smoke test. The `contracts` job is new in this work and it exercised both halves — the generator's `--check` and the Redocly lint — on every pull request.
+
+Retargeting after each merge: once #43 merges, #44's base becomes `master`; once #44 merges, #45's base becomes `master`. GitHub does this automatically when the base branch is deleted, otherwise it is one dropdown.
+
+Two things remain outside the repository. GitHub Pages has to be switched on with `gh-pages` as the source before <https://cxyfer.github.io/urlet/> serves anything, and nothing builds `docs-site/` on a pull request, so a broken site build is still found after merge rather than before — though the deploy then fails and the site keeps serving the last good version.
