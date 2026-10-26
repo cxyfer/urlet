@@ -47,6 +47,13 @@ async fn landing_page_serves_anonymous_visitors() {
     assert_eq!(response.body.matches("<h1>").count(), 1);
     assert_eq!(response.body.matches("landing-feature").count(), 6);
     assert_eq!(response.body.matches("data-lang-switcher").count(), 1);
+    // The footer attributes the instance to the project it was built from. The
+    // mark is inline SVG, because the CSP allows no remote image or icon font.
+    assert!(response
+        .body
+        .contains(&format!("href=\"{}\"", urlet::REPOSITORY)));
+    assert!(response.body.contains("class=\"footer-repo-icon\""));
+    assert!(response.body.contains("rel=\"noopener\""));
 }
 
 #[tokio::test]

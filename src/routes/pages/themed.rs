@@ -68,6 +68,13 @@ macro_rules! themed_page {
                         $crate::services::theme::current()
                     }
 
+                    /// Upstream repository, linked from the footer of every
+                    /// design. Constant for the lifetime of the binary, so the
+                    /// footer does not need a page field for it.
+                    pub fn repo_url(&self) -> &'static str {
+                        $crate::REPOSITORY
+                    }
+
                     /// Stylesheet of the request theme.
                     pub fn theme_css_url(&self) -> String {
                         $crate::services::theme::current_css_url()

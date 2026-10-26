@@ -19,6 +19,7 @@
 {% block footer %}
 <footer class="site">
     <span><span class="footer-brand">{{ site_name }}</span> — {{ lang.t("footer.tagline") }}</span>
+    {% include "partials/repo_link.html" %}
     {% block footer_lang %}{% include "partials/site_tools.html" %}{% endblock %}
 </footer>
 {% endblock %}

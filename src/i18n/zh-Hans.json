@@ -1,5 +1,7 @@
 {
   "footer.tagline": "轻量多用户短链接服务",
+  "footer.repo": "GitHub",
+  "footer.repo_label": "在 GitHub 查看源代码",
   "nav.links": "链接",
   "nav.account": "账号",
   "nav.admin": "管理",

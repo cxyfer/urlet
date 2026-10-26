@@ -21,6 +21,7 @@
     <div class="footer-brandrow">
         <span class="footer-brand"><span class="footer-dot" aria-hidden="true"></span>{{ site_name }}</span>
         <span class="footer-meta">{{ lang.t("footer.tagline") }}</span>
+        {% include "partials/repo_link.html" %}
     </div>
     {% block footer_tools %}
     {# The pages that keep their controls in a top bar (landing, app shell)
