@@ -9,16 +9,29 @@ CSS 檔。**上傳主題**則是存放於持久化 volume 的 CSS 檔；由於 A
 
 | Key | 名稱 | 說明 |
 |-----|------|------|
-| `verdant` | Verdant Systems | v1.2 的正式設計，也是基底模板與回退；支援明暗切換 |
-| `aurora` | Aurora Glass | 極光漸層與固定側欄的深色玻璃指揮中心；僅深色 |
-| `paper` | Paper Ledger | 編輯風紙本帳冊；跟隨 `prefers-color-scheme` |
-| `signal` | Signal | 粗獷訊號看板；跟隨 `prefers-color-scheme` |
-| `gilded` | Gilded Circuit | 象牙白、祖母綠與香檳金裝飾藝術；跟隨 `prefers-color-scheme` |
-| `swiss` | Swiss Telemetry | 編號區塊的瑞士遙測網格；跟隨 `prefers-color-scheme` |
+| `verdant` | Verdant Systems | v1.2 的正式設計，也是基底模板與回退；兩種色系齊備並支援明暗切換 |
+| `aurora` | Aurora Glass | 極光漸層與固定側欄的深色玻璃指揮中心；僅深色，因此不顯示明暗切換 |
+| `paper` | Paper Ledger | 編輯風紙本帳冊；兩種色系齊備並支援明暗切換 |
+| `signal` | Signal | 粗獷訊號看板；兩種色系齊備並支援明暗切換 |
+| `gilded` | Gilded Circuit | 象牙白、祖母綠與香檳金裝飾藝術；兩種色系齊備並支援明暗切換 |
+| `swiss` | Swiss Telemetry | 編號區塊的瑞士遙測網格；兩種色系齊備並支援明暗切換 |
 | `custom-…` | 自訂 | 由 **管理 → 主題** 上傳的樣式表，沿用 Verdant 模板 |
 
 五個非預設的內建主題來自已關閉的 PR #5、#6、#7、#9、#10，並已移植到 v1.2
 頁面模型，而非凍結在原本的功能集。
+
+除了 Aurora，每套設計在訪客選擇模式之前跟隨 `prefers-color-scheme`，選定後
+兩個方向都生效：樣式表把深色調色盤寫兩次，一次在
+`@media (prefers-color-scheme: dark)` 內並以 `:not([data-theme="light"])` 守衛，
+一次掛在 `:root[data-theme="dark"]`。新的移植若漏掉第二份，仍然跟隨作業系統，
+但明暗切換會是騙人的；測試
+`every_dual_palette_design_serves_the_system_and_the_explicit_palette`
+會抓到這件事。
+
+瀏覽器外框是 CSS 唯一構不到的表面：`theme-color` meta 標籤由媒體查詢決定，
+而媒體查詢看不到 `data-theme`。因此會替瀏覽器外框上色的設計（Signal）在兩個
+標籤上標記 `data-theme-mode="light"`／`"dark"`；媒體查詢仍是無 JavaScript 時的
+路徑，`theme.js` 則在解析出模式後打開對應的那一個。
 
 ## 管理員操作流程
 
@@ -142,16 +155,20 @@ Verdant 包裝，只替換樣式表 URL。
 ## 新增內建主題
 
 1. 在 `src/services/theme.rs` 的 `ThemeKey` 加入變體（key、名稱 key、說明 key、
-   CSS URL、僅深色旗標）。
+   CSS URL、調色盤政策）。只提供單一色系的設計以 `is_dark_only`／`is_light_only`
+   宣告；`appearance()` 是目錄的 `appearance` 欄位與「僅淺色／僅深色」徽章的
+   唯一來源。
 2. 將 CSS 放到 `src/assets/themes/<key>.css`，在 `src/assets.rs` 與
    `/assets/themes/{key}` 路由註冊。
 3. 在三個 `src/i18n/*.json` 加入目錄字串。
 4. 建立 `templates/themes/<key>/`，至少包含 `base.html`、`app_base.html`、
    `landing.html`、登入／註冊／連結中轉頁／錯誤頁、管理 tabs 與應用頁面；密集頁面可重用
-   content macro。每個頁面只能渲染一次切換器：`landing.html` 與 `app_base.html` 放在頂端
-   工具列，其餘頁面在設計保留 footer 工具時透過 `partials/site_tools.html`（切換器加語言
-   切換器）渲染。若某個設計為了自己的頂端列而清空 `footer_lang`，就必須改在那裡放入切換器，
-   例如 Swiss 的登入頁。
+   content macro。在 `base.html` 的 `<head>` 載入 `theme.js`，且每個頁面只能渲染一次切換器
+   與明暗開關：`landing.html` 與 `app_base.html` 放在頂端工具列，其餘頁面在設計保留 footer
+   工具時透過 `partials/site_tools.html`（明暗開關、切換器加語言切換器）渲染。若某個設計
+   為了自己的頂端列而清空 `footer_lang`，就必須改在那裡放入工具，例如 Swiss 的登入頁。
+   另外把 `templates/base.html` 的 `data-theme`／`data-theme-lock` 屬性複製到 `<html>`，
+   讓被強制的調色盤同時標記在文件與目錄上。
 5. 在每個 `themed_page!` 呼叫加入 `templates/themes/<key>/...` 路徑。每個呼叫都要保留
    `Verdant` 項目，它也是頁面尚未列出新主題時的回退。
 6. 將主題加入 `ALL`、migration 種子與管理測試；既有資料庫在啟動時也可依賴
@@ -169,4 +186,6 @@ Verdant 包裝，只替換樣式表 URL。
   `@import` 也會被拒絕。
 - 沒有細緻的個人權限：政策是全站 `all`／`admin`。既有的使用者群組功能開關負責
   各群組的資料能力，不負責外觀。
-- 五個移植設計沒有手動明暗切換，跟隨作業系統；Aurora 依設計僅提供深色。
+- 除了 Aurora，每套設計都提供兩種色系與同一組持久化明暗控制；控制項只是外觀偏好，
+  因此不需要每位使用者的資料欄位。Aurora 依設計僅提供深色，沒有淺色調色盤可給，
+  因此隱藏控制項，而不是放一個無效的按鈕。

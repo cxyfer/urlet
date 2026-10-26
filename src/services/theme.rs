@@ -193,16 +193,29 @@ impl ThemeKey {
         }
     }
 
-    /// Aurora is dark-only by design; the other themes follow the operating
-    /// system (and the optional light/dark control).
+    /// Whether the design ships only a dark palette. Aurora is dark-only by
+    /// design; every other theme ships both palettes and keeps the light/dark
+    /// control.
     pub const fn is_dark_only(self) -> bool {
         matches!(self, Self::Aurora)
     }
 
-    /// Palette policy of a compiled-in theme.
+    /// Whether the design ships only a light palette. No compiled-in theme is
+    /// light-only today, but the catalogue labels a theme from this flag rather
+    /// than assuming every design is `auto`, so a light-only port would be
+    /// marked correctly the moment it is added.
+    pub const fn is_light_only(self) -> bool {
+        false
+    }
+
+    /// Palette policy of a compiled-in theme. This is the single source of
+    /// truth for the `appearance` field and for the light-only/dark-only badges
+    /// of the admin catalogue.
     pub const fn appearance(self) -> ThemeAppearance {
         if self.is_dark_only() {
             ThemeAppearance::Dark
+        } else if self.is_light_only() {
+            ThemeAppearance::Light
         } else {
             ThemeAppearance::Auto
         }
@@ -666,8 +679,8 @@ pub fn admin_rows(registry: &ThemeRegistry, lang: Lang) -> Vec<AdminThemeRow> {
                 is_enabled: row.map(|row| row.is_enabled).unwrap_or(true),
                 is_default: row.map(|row| row.is_default).unwrap_or(false),
                 appearance: key.appearance(),
-                is_dark_only: key.is_dark_only(),
-                is_light_only: false,
+                is_dark_only: key.appearance().is_dark(),
+                is_light_only: key.appearance().is_light(),
                 css_url: key.css_url().to_string(),
                 is_custom: false,
                 custom_id: None,
@@ -826,6 +839,20 @@ mod tests {
         }
         assert_eq!(ThemeKey::parse("AURORA"), Some(ThemeKey::Aurora));
         assert_eq!(ThemeKey::parse("nope"), None);
+    }
+
+    #[test]
+    fn only_aurora_ships_a_single_palette_and_the_catalogue_agrees() {
+        assert_eq!(ThemeKey::Aurora.appearance(), ThemeAppearance::Dark);
+        for key in ALL {
+            // The badge flags must agree with the appearance the catalogue
+            // publishes, so a design cannot be listed as `auto` while a badge
+            // calls it light-only or dark-only.
+            assert_eq!(key.appearance().is_dark(), key.is_dark_only(), "{key:?}");
+            assert_eq!(key.appearance().is_light(), key.is_light_only(), "{key:?}");
+        }
+        assert_eq!(ThemeKey::Paper.appearance(), ThemeAppearance::Auto);
+        assert!(ALL.iter().all(|key| !key.is_light_only()));
     }
 
     #[test]

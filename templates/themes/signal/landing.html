@@ -19,6 +19,7 @@
         <a class="brand" href="/">{{ site_name }}<span>.</span></a>
         {% endif %}
         <nav class="nav">
+            {% if self.theme_allows_toggle() %}{% include "partials/theme_toggle.html" %}{% endif %}
             {% call theme_switcher::switcher(theme, lang) %}
             {% include "partials/lang_switcher.html" %}
             {% if signed_in %}

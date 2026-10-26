@@ -62,8 +62,10 @@
     --gutter: 24px;
 }
 
+/* 深色調色盤。媒體查詢跟隨作業系統，`:not([data-theme="light"])` 讓明確的淺色選擇
+   勝過系統偏好；下面的屬性選擇器提供同一份調色盤的明確深色入口。兩份值必須一致。 */
 @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
         color-scheme: dark;
 
         --paper: #0d0d0d;
@@ -97,6 +99,41 @@
         --bar-line: #0d0d0d;
         --bar-muted: #4b463d;
     }
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --paper: #0d0d0d;
+    --surface: #161616;
+    --surface-2: #1e1e1e;
+    --raise: #1b1b1b;
+    --ink: #f6f1e4;
+    --muted: #a8a196;
+    --line: #3b3833;
+
+    --blue: #7788ff;
+    --orange: #ff7a5a;
+    --ok: #5ed49a;
+    --warn: #e8a05a;
+    --danger: #ff8b7e;
+    --danger-solid: #b91c1c;
+
+    --on-blue: #0c0c0c;
+    --on-ink: #0d0d0d;
+    --focus: #9aa8ff;
+
+    --field-bg: #101010;
+    --table-head: #1d1d1d;
+    --row-hover: #23280f;
+    --dots: rgba(246, 241, 228, .06);
+    --grid: rgba(246, 241, 228, .06);
+    --shadow-ink: #f6f1e4;
+
+    --bar-bg: #f6f1e4;
+    --bar-fg: #0d0d0d;
+    --bar-line: #0d0d0d;
+    --bar-muted: #4b463d;
 }
 
 /* ----------------------------------------------------------------- 2. reset */

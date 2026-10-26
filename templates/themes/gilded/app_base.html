@@ -17,6 +17,7 @@
             {% endif %}
         </nav>
         <div class="nav-tools">
+            {% if self.theme_allows_toggle() %}{% include "partials/theme_toggle.html" %}{% endif %}
             {% call theme_switcher::switcher(chrome.theme, lang) %}
             {% include "partials/lang_switcher.html" %}
             <span class="muted small user-email">{{ chrome.email }}</span>

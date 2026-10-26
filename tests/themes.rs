@@ -43,6 +43,19 @@ async fn the_theme_catalogue_is_seeded_and_listed_by_the_admin_api() {
     assert!(themes
         .iter()
         .all(|theme| theme["css_url"].as_str().is_some()));
+
+    // The catalogue marking comes from one source of truth, so a row can never
+    // report `auto` while a badge calls it light-only or dark-only.
+    for theme in themes {
+        assert_eq!(theme["dark_only"], theme["appearance"] == "dark");
+        assert_eq!(theme["light_only"], theme["appearance"] == "light");
+    }
+    let aurora = themes
+        .iter()
+        .find(|theme| theme["key"] == "aurora")
+        .expect("aurora");
+    assert_eq!(aurora["appearance"], "dark");
+    assert_eq!(aurora["dark_only"], true);
 }
 
 #[tokio::test]
@@ -179,6 +192,51 @@ async fn a_member_may_switch_only_when_the_policy_allows_it() {
 }
 
 #[tokio::test]
+async fn every_design_marks_its_own_palette_policy() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+
+    // The five designs that ship both palettes offer the light/dark switch and
+    // load the script that resolves the stored preference. None of them pins
+    // the document, so the operating system still decides until the visitor
+    // chooses.
+    for key in ["verdant", "paper", "signal", "gilded", "swiss"] {
+        let page = app
+            .get_as("/app", &format!("{cookie}; urlet_theme={key}"))
+            .await;
+        assert_eq!(page.status, StatusCode::OK, "{key}");
+        assert!(
+            page.body.contains("data-theme-toggle"),
+            "{key} must offer the light/dark switch"
+        );
+        assert!(
+            page.body.contains("/assets/theme.js"),
+            "{key} must load the preference script"
+        );
+        assert!(
+            !page.body.contains("data-theme-lock"),
+            "{key} must not lock"
+        );
+        assert!(!page.body.contains("data-theme=\"light\""), "{key}");
+        assert!(!page.body.contains("data-theme=\"dark\""), "{key}");
+    }
+
+    // Aurora is dark-only: the page carries the server-side marker and offers
+    // no control, because a switch could not change anything.
+    let aurora = app
+        .get_as("/app", &format!("{cookie}; urlet_theme=aurora"))
+        .await;
+    assert_eq!(aurora.status, StatusCode::OK);
+    assert!(
+        aurora.body.contains("data-theme=\"dark\""),
+        "{}",
+        aurora.body
+    );
+    assert!(aurora.body.contains("data-theme-lock=\"dark\""));
+    assert!(!aurora.body.contains("data-theme-toggle"));
+}
+
+#[tokio::test]
 async fn disabled_and_unknown_themes_are_rejected_or_fall_back() {
     let app = TestApp::spawn().await;
     let cookie = admin(&app).await;
@@ -247,6 +305,62 @@ async fn theme_assets_are_embedded_and_unknown_keys_are_404() {
     let response = app.get("/assets/theme-ui.css").await;
     assert_eq!(response.status, StatusCode::OK);
     assert!(response.body.contains(".theme-switcher"));
+    // The light/dark switch is shared chrome like the picker, so a design that
+    // only loads its own stylesheet still gets a painted control.
+    assert!(response.body.contains(".theme-toggle"));
+}
+
+#[tokio::test]
+async fn every_dual_palette_design_serves_the_system_and_the_explicit_palette() {
+    let app = TestApp::spawn().await;
+
+    // Following the operating system is not enough once a design offers the
+    // light/dark switch: an explicit choice has to be able to override it in
+    // both directions.
+    for key in ["paper", "signal", "gilded", "swiss"] {
+        let response = app.get(&format!("/assets/themes/{key}")).await;
+        assert_eq!(response.status, StatusCode::OK, "{key}");
+        assert!(
+            response.body.contains(":root:not([data-theme=\"light\"])"),
+            "{key} must let an explicit light choice beat the system palette"
+        );
+        assert!(
+            response.body.contains(":root[data-theme=\"dark\"]"),
+            "{key} must define the explicit dark palette"
+        );
+    }
+
+    // The dark-only design has no second palette to serve.
+    let aurora = app.get("/assets/themes/aurora").await;
+    assert!(!aurora.body.contains("prefers-color-scheme"));
+    assert!(!aurora.body.contains("data-theme=\"dark\""));
+}
+
+#[tokio::test]
+async fn a_design_that_paints_the_browser_chrome_follows_the_resolved_mode() {
+    let app = TestApp::spawn().await;
+
+    // `theme-color` can only be selected by a media query, never by
+    // `data-theme`, so Signal marks its two tags with the mode they belong to
+    // and the resolved mode turns the matching one on.
+    let landing = app.get_as("/", "urlet_theme=signal").await;
+    assert_eq!(landing.status, StatusCode::OK);
+    for mode in ["light", "dark"] {
+        // The marker has to agree with the media query it sits next to, or the
+        // no-JavaScript path and the script would disagree about the mode.
+        let tag = format!("media=\"(prefers-color-scheme: {mode})\" data-theme-mode=\"{mode}\"");
+        assert!(landing.body.contains(&tag), "missing {tag}");
+    }
+
+    // The shared script is what flips them, so it must know the marker.
+    let script = app.get("/assets/theme.js").await;
+    assert_eq!(script.status, StatusCode::OK);
+    assert!(
+        script
+            .body
+            .contains("meta[name=\"theme-color\"][data-theme-mode]"),
+        "theme.js must select the marked theme-color tags"
+    );
 }
 
 #[tokio::test]
@@ -443,6 +557,9 @@ async fn every_theme_offers_the_picker_to_a_visitor() {
     for theme in urlet::services::theme::ALL {
         let key = theme.key();
         let cookie = format!("urlet_theme={key}");
+        // Aurora ships one palette, so it must not offer a switch; every other
+        // design offers exactly one, and never a second copy in the footer.
+        let toggles = if theme.is_dark_only() { 0 } else { 1 };
 
         let landing = app.get_as("/", &cookie).await;
         assert_eq!(landing.status, StatusCode::OK, "{key} landing");
@@ -451,6 +568,11 @@ async fn every_theme_offers_the_picker_to_a_visitor() {
             1,
             "{key} must offer exactly one picker on the landing page"
         );
+        assert_eq!(
+            landing.body.matches("data-theme-toggle").count(),
+            toggles,
+            "{key} light/dark switch count on the landing page"
+        );
 
         let login = app.get_as("/app/login", &cookie).await;
         assert_eq!(login.status, StatusCode::OK, "{key} sign-in");
@@ -458,6 +580,11 @@ async fn every_theme_offers_the_picker_to_a_visitor() {
             login.body.matches("data-theme-switcher").count(),
             1,
             "{key} must offer exactly one picker on the sign-in page"
+        );
+        assert_eq!(
+            login.body.matches("data-theme-toggle").count(),
+            toggles,
+            "{key} light/dark switch count on the sign-in page"
         );
         assert!(
             login.body.contains("/assets/theme-ui.css"),
@@ -471,12 +598,24 @@ async fn every_theme_offers_the_picker_to_a_visitor() {
             1,
             "{key} must offer exactly one picker on the registration page"
         );
+        assert_eq!(
+            register.body.matches("data-theme-toggle").count(),
+            toggles,
+            "{key} light/dark switch count on the registration page"
+        );
 
         let link = app.get_as("/definitely-not-a-slug", &cookie).await;
         assert_eq!(link.status, StatusCode::NOT_FOUND, "{key} link page");
         assert!(
             !link.body.contains("data-theme-switcher"),
             "{key} must keep the link page free of the picker"
+        );
+        // The switch is not part of the theme catalogue policy: it is a
+        // cosmetic preference, so the minimal link page keeps it in the footer.
+        assert_eq!(
+            link.body.matches("data-theme-toggle").count(),
+            toggles,
+            "{key} light/dark switch count on the link page"
         );
     }
 }
