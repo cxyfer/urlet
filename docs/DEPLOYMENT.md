@@ -34,7 +34,7 @@ URLET_REGISTRATION=invite                  # optional: open / invite / closed
 
 > Keep the scheme of `URLET_BASE_URL` in step with how visitors actually reach the instance: an
 > `https://` value makes urlet mark the session cookie `Secure`, so serving plain HTTP while
-> `URLET_BASE_URL` says `https://` signs users out again immediately (§4, §10).
+> `URLET_BASE_URL` says `https://` signs users out again immediately (§4, §12).
 
 Start it:
 
@@ -56,7 +56,7 @@ Every `v*` tag publishes a multi-arch image (`linux/amd64`, `linux/arm64`) to GH
 published release instead of building locally:
 
 ```bash
-export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.2.0   # pin the release you want
+export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.3.0   # pin the release you want
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 
@@ -104,7 +104,7 @@ URLET_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-Forw
 | `URLET_THEMES_DIR` | `<URLET_DATA_DIR>/themes` | Where uploaded theme stylesheets are stored. docker compose mounts the `urlet-themes` volume at `/data/themes` |
 | `URLET_SECRET` | Auto-generated | HMAC secret (at least 16 characters, 32+ recommended; the generated one is 44 characters of base64); **changing it invalidates every session and unlock cookie and makes existing invite codes unreadable, though they still redeem** |
 | `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` | — | Create or promote the administrator at startup |
-| `URLET_REGISTRATION` | Read from the settings table | Override the registration mode: `open` / `invite` / `closed` |
+| `URLET_REGISTRATION` | Read from the settings table | Override the registration mode: `open` / `invite` / `closed`. `invite_only` is accepted as `invite` and `disabled`/`none` as `closed`; an unrecognised value falls back to `open` |
 | `URLET_SECURE_COOKIES` | Derived from `BASE_URL` | Force the `Secure` cookie flag. The compose files always pass a value through (default `false`), so in Docker set it to `true` explicitly when you terminate TLS yourself; the TLS overlay does that for you |
 | `URLET_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` / `X-Forwarded-Proto` |
 | `URLET_SESSION_TTL_HOURS` | `168` | Session lifetime |
@@ -117,19 +117,34 @@ URLET_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-Forw
 | `URLET_CAPTCHA_ON_LOGIN` | `false` | Apply bot verification to the sign-in form |
 | `URLET_CAPTCHA_ON_CREATE` | `false` | Apply bot verification to the create-short-link form |
 | `URLET_CAPTCHA_ALLOWED_HOSTNAMES` | Empty | Extra hostnames accepted in the provider's `hostname` response, comma-separated (up to 10); the host of `URLET_BASE_URL` is always accepted |
-| `URLET_LOG` | `info` | tracing filter, for example `urlet=debug,tower=warn` |
+| `URLET_LOG` | `info` | tracing filter, for example `urlet=debug,tower=warn`. `RUST_LOG`, when set, takes precedence (the binary tries `EnvFilter::try_from_default_env` first) |
 | `URLET_LOG_FORMAT` | `compact` | `compact` or `json` |
 | `URLET_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | Target of `urlet healthcheck` |
+| `TZ` | OS timezone (`UTC` in the image) | Server process timezone for guest calendar quotas, for example `Asia/Taipei`; read at startup. Docker Compose forwards it (`TZ: ${TZ:-UTC}`) |
 
-### Multi-domain deployments
+Three further variables are read by the compose files, not by the urlet binary:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `URLET_PORT` | `8080` | Host port that `docker-compose.yml` publishes (the container itself always listens on 8080) |
+| `URLET_DOMAIN` | — | Domain the `docker-compose.tls.yml` overlay requests a certificate for; required by that overlay |
+| `URLET_IMAGE` | `ghcr.io/cxyfer/urlet:latest` | Image used by the `docker-compose.image.yml` overlay (ignored without it) |
+
+Instance-level settings (site name, registration mode, quota, default redirect type, analytics
+switch, click retention) are edited in **Admin → Settings**; they are stored in the database and
+take effect immediately. A non-empty environment variable always overrides the value stored
+there.
+
+## 5. Multi-domain deployments
 
 > **Upgrading from 1.2 or older:** back up the SQLite database first. The multi-domain migration
 > (`0003_multi_domain`) rebuilds the `urls` table so the slug namespace becomes per domain; the
 > migration is tested to preserve clicks, tags and daily stats, but a backup is the only rollback.
 
 The canonical host keeps the application (`/`, `/app`, `/api/v1`). Extra domains are
-redirect-only: `/{slug}` and `/{slug}/unlock` work, `/` shows a small landing page, `/app` is
-redirected to the canonical host and `/api` returns 404. Each domain has its own slug namespace.
+redirect-only: `/{slug}` and `/{slug}/unlock` work, `/` renders the theme-aware short landing page
+with the site tools, `/app` is redirected to the canonical host and `/api` returns 404. Each
+domain has its own slug namespace. The full design is in [`MULTI_DOMAIN.md`](MULTI_DOMAIN.md).
 
 - Seed extra domains with `URLET_DOMAINS=go.example.com,links.example.com`, or add them from
   `/app/admin/domains`.
@@ -149,20 +164,7 @@ redirected to the canonical host and `/api` returns 404. Each domain has its own
   Docker Compose always passes the variable, so an empty `URLET_DOMAINS` is treated as an explicit
   empty list.
 
-Three further variables are read by the compose files, not by the urlet binary:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `URLET_PORT` | `8080` | Host port that `docker-compose.yml` publishes (the container itself always listens on 8080) |
-| `URLET_DOMAIN` | — | Domain the `docker-compose.tls.yml` overlay requests a certificate for; required by that overlay |
-| `URLET_IMAGE` | `ghcr.io/cxyfer/urlet:latest` | Image used by the `docker-compose.image.yml` overlay (ignored without it) |
-
-Instance-level settings (site name, registration mode, quota, default redirect type, analytics
-switch, click retention) are edited in **Admin → Settings**; they are stored in the database and
-take effect immediately. A non-empty environment variable always overrides the value stored
-there.
-
-## 5. Bot verification (CAPTCHA)
+## 6. Bot verification (CAPTCHA)
 
 urlet can require a CAPTCHA on the three public forms that create state: the web registration
 form, the web sign-in form, and the web create-short-link form. The JSON API endpoints
@@ -182,15 +184,9 @@ by default.
 
 ### Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `URLET_CAPTCHA_PROVIDER` | `none` | `none`, `turnstile` or `recaptcha` |
-| `URLET_CAPTCHA_SITE_KEY` | Empty | Public site key |
-| `URLET_CAPTCHA_SECRET_KEY` | Empty | Secret key, server side only |
-| `URLET_CAPTCHA_ON_REGISTER` | `false` | Verify the registration form |
-| `URLET_CAPTCHA_ON_LOGIN` | `false` | Verify the sign-in form |
-| `URLET_CAPTCHA_ON_CREATE` | `false` | Verify the create-short-link form |
-| `URLET_CAPTCHA_ALLOWED_HOSTNAMES` | Empty | Extra hostnames whose tokens are accepted, comma-separated (up to 10) |
+All seven `URLET_CAPTCHA_*` variables are listed in the [configuration reference](#4-configuration-reference).
+The shipped `docker-compose.yml` passes every one of them through, so setting them in `.env` is
+enough — no compose edit is needed.
 
 Verification becomes active for a form only when **all four** conditions hold: the provider is
 not `none`, the site key is non-empty, the secret key is non-empty, and the matching `ON_*`
@@ -256,9 +252,7 @@ URLET_CAPTCHA_ON_CREATE=true
 # URLET_CAPTCHA_ALLOWED_HOSTNAMES=www.example.com,alt.example.com
 ```
 
-The shipped `docker-compose.yml` passes all seven `URLET_CAPTCHA_*` variables through to the
-container, so setting them in `.env` is enough — no compose edit is needed. Then
-`docker compose up -d` to recreate the container.
+Then `docker compose up -d` to recreate the container.
 
 The same values can be entered in the admin UI under **Admin → Settings**, which takes effect
 without a restart. The secret key is write-only there: the stored value is never displayed, and
@@ -282,7 +276,7 @@ the request. urlet resolves that address exactly like the rate limiter does:
 Only enable `URLET_TRUST_PROXY` when the proxy is guaranteed to overwrite `X-Real-IP` /
 `X-Forwarded-For`; otherwise a client can forge its address and also evade the rate limits.
 
-## 6. Data and backups
+## 7. Data and backups
 
 All state lives in `/data`: the `urlet-data` volume holds the database and secret, and the
 `urlet-themes` volume (mounted at `/data/themes`) holds uploaded theme stylesheets:
@@ -347,7 +341,7 @@ docker run --rm -v urlet-themes:/themes -v "$PWD":/backup alpine \
 docker compose up -d
 ```
 
-### Upgrading
+## 8. Upgrading
 
 ```bash
 git pull
@@ -357,7 +351,7 @@ docker compose up -d --build      # migrations are applied at startup
 With a prebuilt image, change `URLET_IMAGE` to the new version and recreate the container:
 
 ```bash
-export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.2.0
+export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.3.0
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 
@@ -365,7 +359,7 @@ Migrations are forward-only additive files (`migrations/`), and applied files ar
 protected: editing one makes startup fail instead of silently diverging. Back up before
 upgrading.
 
-## 7. Storage and disk usage
+## 9. Storage and disk usage
 
 | Data | Growth |
 |------|--------|
@@ -378,7 +372,7 @@ upgrading.
 
 100,000 clicks take roughly 15 MB. If you never prune, set `click_retention_days`.
 
-## 8. Reverse proxy notes
+## 10. Reverse proxy notes
 
 - Always set `URLET_BASE_URL` to the URL users actually see, otherwise short links point at the
   wrong domain.
@@ -392,7 +386,7 @@ upgrading.
 - Invite links carry the code in `?invite=`; reverse-proxy access logs that record query strings
   expose it. Restrict or redact those logs, or share the code instead.
 
-## 9. Monitoring
+## 11. Monitoring
 
 - Health check: `GET /health` (200 = healthy, 503 = database problem)
 - The container ships a `HEALTHCHECK` that runs `urlet healthcheck` (the image needs no curl)
@@ -402,7 +396,7 @@ upgrading.
 - **Admin → Overview** in the admin UI shows the user count, short link count, total clicks and
   database size
 
-## 10. Troubleshooting
+## 12. Troubleshooting
 
 | Symptom | Cause and fix |
 |---------|---------------|
@@ -420,12 +414,12 @@ upgrading.
 | A short link expired and you want it back | Open `/app/urls/{id}` and clear or extend the expiry; the data was never deleted |
 | Want to reuse a slug after deleting a short link | Deliberately not allowed (so old links cannot be hijacked); pick a new slug |
 
-## 11. Security checklist
+## 13. Security checklist
 
 - [ ] `URLET_BASE_URL` uses `https://`
 - [ ] `URLET_ADMIN_PASSWORD` is a strong password, changed at `/app/account` after the first sign-in
 - [ ] `URLET_SECRET` is set (at least 32 random characters), or the auto-generated `secret.key` (0600) is backed up
-- [ ] Only 80/443 are exposed publicly (Caddy or your existing proxy terminates TLS)
+- [ ] Only 80/443 are reachable from the internet. The base compose file publishes `${URLET_PORT:-8080}:8080` on every interface; the TLS overlay removes that publish, so use the overlay or firewall the port
 - [ ] `URLET_TRUST_PROXY` matches the actual proxy behavior
 - [ ] The registration mode is `invite` or `closed` (unless you really want open registration)
 - [ ] `click_retention_days` and a backup schedule are planned

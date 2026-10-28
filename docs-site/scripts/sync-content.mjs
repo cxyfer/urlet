@@ -55,10 +55,10 @@ const LOCALES = [
  * is internal and is not published.
  */
 const PUBLISHED = [
-  { file: "API.md", slug: "api" },
   { file: "DEPLOYMENT.md", slug: "deployment" },
   { file: "THEMES.md", slug: "themes" },
   { file: "MULTI_DOMAIN.md", slug: "multi-domain" },
+  { file: "API.md", slug: "api" },
 ];
 
 /** Section titles for the generated sidebar. */
@@ -105,8 +105,10 @@ const LINK_TARGETS = {
   "DEPLOYMENT.md": (prefix) => `${prefix}/deployment`,
   "MULTI_DOMAIN.md": (prefix) => `${prefix}/multi-domain`,
   // The contract lives in the repository, not on the site; the served reference
-  // at `/docs` is the site's own entry point to it.
+  // at `/docs` is the site's own entry point to it. The Chinese mirror sits one
+  // directory deeper, so its relative path is `../../openapi`.
   "../openapi": () => null,
+  "../../openapi": () => null,
 };
 
 /** Targets that need no rewriting: absolute URLs, anchors and site paths. */

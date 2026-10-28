@@ -1,16 +1,17 @@
 # Multi-domain support
 
-Status: implemented on `feat/multi-domain`
-Applies to: urlet (next release)
-Last updated: 2026-10-18
+**English** | [繁體中文](zh-TW/MULTI_DOMAIN.md)
+
+Status: implemented (shipped since v1.3.0)
+Last updated: 2026-10-28
 
 ## 1. Summary
 
 urlet serves short links on one **canonical host** plus any number of **extra
 domains**. The canonical host keeps the full application (`/`, `/app/*`,
 `/api/v1/*`). Extra domains are redirect-only: they answer `GET /{slug}` and
-`POST /{slug}/unlock`, show a small branded landing page at `/`, and send
-everything else back to the canonical host (or reject it).
+`POST /{slug}/unlock`, render the theme-aware short landing page at `/`, and
+send everything else back to the canonical host (or reject it).
 
 Each domain owns its own slug namespace: `(domain_id, slug)` is unique. The same
 slug may exist on `a.example.com` and `b.example.com` and resolve to different
@@ -21,7 +22,7 @@ targets.
 | # | Decision | Choice |
 |---|----------|--------|
 | 1 | Extra-domain scope | Redirect-only. `/app/*` GET/HEAD → 308 to canonical; other methods → 404. `/api/v1/*` → 404 JSON. |
-| 2 | Extra-domain root | A small branded landing page (`noindex`), not the canonical marketing page and not a 404. |
+| 2 | Extra-domain root | The theme-aware short landing page (`noindex`) in all six themes, with the site tools (theme picker, language switcher); not the canonical marketing page and not a 404. |
 | 3 | Default domain | Administrators may change it among active domains. The canonical host always exists and is always active, but need not be the default. |
 | 4 | New domains | Created as `pending`; an administrator activates them after DNS/TLS is ready. Only `active` domains are selectable. |
 | 5 | Scheme | One scheme for the whole instance, inherited from `URLET_BASE_URL`. No per-domain scheme column. |
@@ -32,8 +33,9 @@ Implementation defaults agreed for the open points:
 
 - Domains seeded through `URLET_DOMAINS` are inserted as `active` and verified:
   they are declared by the operator in deployment configuration.
-- The simple landing page shows the site name, one explanatory sentence and a
-  link to the canonical host. No login, registration or slug input.
+- The short landing page is theme-aware (all six themes) and shows the site name,
+  one explanatory sentence, a link to the canonical host and the site tools
+  (theme picker, language switcher). No login, registration or slug input.
 - The current default domain cannot be disabled or deleted until another active
   domain is made default.
 - `domains.source` distinguishes `system`, `env` and `ui`. The system/canonical
@@ -45,7 +47,7 @@ Implementation defaults agreed for the open points:
 | Host | `/` | `/{slug}` | `/app/*` | `/api/v1/*` | `/health` |
 |------|-----|-----------|----------|-------------|-----------|
 | canonical | existing landing page | redirect | full app | full API | 200 |
-| extra, `active` | simple landing page | redirect | GET/HEAD 308 to canonical; other methods 404 | 404 JSON | 200 |
+| extra, `active` | theme-aware short landing page | redirect | GET/HEAD 308 to canonical; other methods 404 | 404 JSON | 200 |
 | extra, `pending`/`disabled` | 404 | 404 | 404 | 404 JSON | 200 |
 | unknown host | 404 | 404 | 404 | 404 JSON | 200 |
 
@@ -75,6 +77,10 @@ existing `is_default` partial unique index keeps exactly one default domain.
 - `UNIQUE (domain_id, slug)` with the existing `COLLATE NOCASE` on `slug`
 - legacy `NULL` values are back-filled to the default domain
 - soft-deleted rows keep their `(domain_id, slug)` reservation
+
+Migration `0005_group_domains` adds the per-group domain policy:
+`user_groups.default_domain_id`, `restrict_domains` and the `group_domains`
+allowlist decide each member's effective default and selectable domains.
 
 ## 5. Migration `0003_multi_domain`
 
@@ -124,17 +130,25 @@ working `sqlite_sequence`.
 ## 7. Creating and displaying links
 
 - `CreateInput` and `POST /api/v1/urls` accept an optional `domain` hostname.
-  Omitted means the current default domain. The target must be an `active`
-  domain; `pending` and `disabled` domains are rejected.
+  Omitted resolves through the domain policy to the caller's group default (the
+  site-wide default when the group has none, or the group's choice is no longer
+  active). The target must be `active` and allowed by the caller's policy;
+  `pending` and `disabled` domains are rejected.
+- The public creation paths `POST /` and `POST /api/v1/public/urls` also accept
+  `domain`; the form echoes the resolved hostname back in its redirect, and the
+  API returns `domain` alongside `short_url`.
 - All slug checks, generated-slug retries and update checks are scoped to the
   selected domain. Conflicts are reported with the hostname.
 - `PATCH /api/v1/urls/{id}` accepts `domain`; moving a link re-checks the slug on
   the target domain and returns `409` on a conflict.
 - `UrlDto` gains `domain`; `short_url` is `{scheme}://{hostname}/{slug}` using the
   instance scheme.
-- HTML create and edit forms show a domain select populated from active domains;
-  the dashboard and detail pages open `short_url` rather than a relative path.
-- `GET /api/v1/domains` lists active domains for authenticated users.
+- HTML create and edit forms show a domain select populated from the domains the
+  caller's policy allows; the dashboard and detail pages open `short_url` rather
+  than a relative path.
+- `GET /api/v1/domains` returns the active domains the caller's group domain
+  policy allows, with `is_default` marking the group's effective default rather
+  than the site-wide one.
 - `GET /api/v1/public/urls/{slug}?domain=<hostname>` resolves the default domain
   when the parameter is absent, preserving existing callers. The response gains
   `domain`.
@@ -207,7 +221,9 @@ working `sqlite_sequence`.
 
 - DNS TXT ownership verification and automatic activation.
 - Per-domain branding, themes or settings.
-- Per-user domain allowlists.
+- Per-user domain exceptions. Group-level defaults and allowlists are implemented
+  by migration `0005_group_domains` (`user_groups.default_domain_id`,
+  `restrict_domains`, `group_domains`); only per-user overrides are out of scope.
 - Full white-label application on extra domains (login/dashboard/API).
 - Dynamic Caddy configuration from the admin UI.
 - Per-domain scheme and per-domain captcha keys.

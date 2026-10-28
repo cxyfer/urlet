@@ -2,8 +2,16 @@
 
 # urlet — Phased Implementation Plan
 
-> Spec: `docs/SPEC.md` v1.7
+> Spec: `docs/SPEC.md` v1.8
 > Principle: at the end of every phase the code must **compile, test, and commit**; each phase gets one (or a few) local commits.
+
+## Contents
+
+- Overview: [Results (completed)](#results-completed) · [Milestone Overview](#milestone-overview)
+- P1–P7: [P1](#p1--project-skeleton-and-data-layer) · [P2](#p2--authentication-and-sessions) · [P3](#p3--short-link-core) · [P4](#p4--redirect-and-unlock) · [P5](#p5--web-ui) · [P6](#p6--admin-panel-and-complete-api) · [P7](#p7--tests-and-documentation)
+- P8–P14: [P8](#p8--final-verification-and-wrap-up) · [P9](#p9--i18n-bot-protection-and-navigation-homepage-v11) · [P10](#p10--user-groups-v12) · [P11](#p11--group-domain-policy-v12-follow-up) · [P12](#p12--switchable-themes-v14) · [P13](#p13--splash-pages-and-redirect-mode-policy-v15) · [P14](#p14--uploadable-themes-v15)
+- P15–P21: [P15](#p15--public-shortener-v16) · P16–P18 ([Milestone Overview](#milestone-overview)) · [P19](#p19--tracking-parameter-cleanup) · [P20](#p20--editable-guest-destination-allowlist) · [P21](#p21--sns-preview-cards)
+- Appendices: [P8 Acceptance Measurements](#p8-acceptance-measurements) · [Risks and Mitigations](#risks-and-mitigations)
 
 ## Results (completed)
 
@@ -24,6 +32,12 @@
 | P13 Splash pages and redirect-mode policy (v1.5) | ✅ Done | See `git log` (migration 0011, splash templates for six themes, per-group policy, trilingual strings, docs, tests) |
 | P14 Uploadable themes (v1.5) | ✅ Done | See `git log` (migration 0012, CSS upload/edit/delete, hashed assets, persistent theme volume, tests) |
 | P15 Public shortener (v1.6) | ✅ Done | See `git log` (migration 0015, reserved Guest account, access level, field switches, two visitor budgets, landing form, public API, trilingual strings, docs, tests) |
+| P16 API reference and contract (v1.6) | ✅ Done | `8330556 ✨ feat(docs): serve an embedded API reference from a bilingual contract` |
+| P17 Published documentation site (v1.6) | ✅ Done | `6c20eb7 📝 docs(site): publish the bilingual documentation as a static site` |
+| P18 Contract drift protection (v1.6) | ✅ Done | `c96dc34 🧪 test(contract): keep the OpenAPI contract and the router in step` |
+| P19 Tracking parameter cleanup | ✅ Done | `5a0646b ✨ feat(urls): add configurable tracking parameter cleanup` |
+| P20 Editable guest destination allowlist | ✅ Done | `b36a1e3 ✨ feat(public): add an editable guest destination allowlist` |
+| P21 SNS preview cards | ✅ Done | `b92a2b8 ✨ feat(previews): customise social sharing cards` |
 
 Acceptance data (v1.0): `cargo test` is all green with 187 tests, `cargo clippy --all-targets -- -D warnings`
 and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scripts/smoke.sh` pass.
@@ -53,6 +67,9 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 | P16 | API reference and contract (v1.6) | `openapi/` contract (shared components plus one file per language) merged by `scripts/build-openapi.py` into two embedded specs; Scalar vendored by `scripts/update-scalar.sh`; `/docs`, `/docs/openapi.json` and `/docs/openapi.zh-TW.json` served by the binary; `docs` reserved with a startup report for a shadowed link; footer entry point in every design and locale | Both contracts answer over real HTTP with no third-party request; the two documents describe the same operations; the generator is deterministic and CI-guarded; no CSP change; image stays under 40 MB; every theme renders the link in three locales; fmt/clippy/test/smoke green | `✨ feat(docs): ...` |
 | P17 | Published documentation site (v1.6) | `docs-site/` built from the repository's `docs/` tree by a prebuild sync, in both languages, with search; deployed to `gh-pages` by a path-filtered workflow; excluded from the Docker context | The export contains both locales and every published page; the sync derives titles and rewrites inter-document links; `content/docs/` is gitignored so the repository keeps one copy; the site makes no third-party request; the Rust build, image and binary are untouched; fmt/clippy/test/smoke green | `📝 docs(site): ...` |
 | P18 | Contract drift protection (v1.6) | `tests/contract.rs` reads the router's registered surface from its own source and asserts set equality with both contracts; a size guard and a strict parse keep the check from passing vacuously; the `contracts` CI job lints both generated documents | Adding an undocumented route fails both contract tests with the offending method and path; removing a documented route fails them too; the lint reports no unused component; fmt/clippy/test/smoke green | `🧪 test(contract): ...` |
+| P19 | Tracking parameter cleanup | `src/services/url_cleaning.rs` with bounded custom-rule validation and pure query filtering, built-in rules embedded from `src/rules/url-cleaning.txt`, `url_cleaning_enabled`/`url_cleaning_rules` settings, and the shared settings UI in all three locales | Cleanup runs on creation only and is off by default; built-in providers, spoofed hosts, encoding/fragments, rule validation and idempotence covered; existing links and edits stay unchanged; fmt/clippy/test/smoke/merge-check green | `✨ feat(urls): ...` |
+| P20 | Editable guest destination allowlist | `src/services/guest_allowlist.rs` with the compiled-in list, exact and `*.` host matching plus optional path prefixes, `guest_allowlist_enabled`/`guest_allowlist` settings, and the admin form/API with a guest-visible allowed list | 24 services / 43 host rules by default; an empty enabled list denies every guest target; signed-in callers and existing redirects keep their behavior; edits persist immediately; fmt/clippy/test/smoke/merge-check green | `✨ feat(public): ...` |
+| P21 | SNS preview cards | Opt-in per-link title/description plus HTTPS or uploaded raster image, a four-mode administrator image policy, SQLite storage | Owner-only form/API, narrow social crawler metadata output, lifecycle/privacy boundaries and tests | `✨ feat(previews): ...` |
 
 ---
 
@@ -186,6 +203,24 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 
 ---
 
+## P8 Acceptance Measurements
+
+| Item | Target (`docs/SPEC.md` §3.3, §5.2) | Measured |
+|------|-------------------------------------|----------|
+| Release binary size | ≤ 15 MB | **4.2 MB** (stripped, LTO, `opt-level=z`) |
+| Idle memory RSS | ≤ 30 MB | **6.8 MB** (6.8 MB after 500 requests) |
+| Redirect latency (P95) | < 10 ms | **0.74 ms** (p50 0.40 ms, p99 1.05 ms, 500 keep-alive requests locally) |
+| Cold start to serving | ≤ 1 second | **~0.2 s** (including migrations) |
+| Container image | ≤ 40 MB | **13.2 MB** (built and `up -d` verified on real hardware with Docker Compose 27.4) |
+| Tests | All green | `cargo test` 187 items, `scripts/smoke.sh` 81 items |
+| Static checks | No warnings | `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` pass |
+
+The table above is the v1.0 record. The current measurements — 15.7 MB musl binary and 37.2 MB
+image in v1.6, ~0.1 s cold start in v1.1 — are tracked in `docs/SPEC.md` §3.3; read them there
+rather than quoting this table.
+
+---
+
 ## P9 — i18n, Bot Protection and Navigation Homepage (v1.1)
 
 **Tasks**
@@ -250,6 +285,19 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 
 ---
 
+## P13 — Splash Pages and Redirect-Mode Policy (v1.5)
+
+**Tasks**
+
+1. `migrations/0011_splash_pages.sql`: `urls.redirect_mode`, `urls.splash_delay_seconds` (1–60, default 5), `urls.splash_title` (≤ 120 characters), `urls.splash_message` (≤ 500 characters), and `user_groups.redirect_mode_policy` (`direct`/`splash`/`choice`).
+2. Splash templates for all six themes, using the configured delay and copy.
+3. Enforce `redirect_mode_policy` on creation and when switching modes on update; existing links are never modified.
+4. Trilingual strings, documentation and tests.
+
+**Acceptance**: existing links stay direct, password pages stay the only interstitial, the mode policy is enforced on create/update only, and `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and `scripts/smoke.sh` are green.
+
+---
+
 ## P14 — Uploadable Themes (v1.5)
 
 Uploads extend the theme catalogue without changing the compile-time template model.
@@ -301,7 +349,7 @@ until an administrator opens it.
 
 ---
 
-## P16 — Tracking parameter cleanup
+## P19 — Tracking Parameter Cleanup
 
 Approved scope (2026-10-23): optional cleanup on **creation only**, disabled by default. Cover Facebook, Instagram, Threads, X/Twitter, YouTube, TikTok and Bilibili, plus administrator-defined domain/parameter rules. Existing links and target edits retain their behavior. This implements the approved feature request; configuration alone cannot filter submitted targets.
 
@@ -319,7 +367,7 @@ Approved scope (2026-10-23): optional cleanup on **creation only**, disabled by 
 
 ---
 
-## P17 — Editable Guest Destination Allowlist
+## P20 — Editable Guest Destination Allowlist
 
 **Goal**: anonymous visitors may shorten only explicitly allowed destinations; administrators can edit the built-in list without restarting. Scope: local allowlist only, with no reputation API, blocklists, group overrides or redirect-time enforcement.
 
@@ -343,6 +391,12 @@ Approved scope (2026-10-23): optional cleanup on **creation only**, disabled by 
 
 ---
 
+## P21 — SNS Preview Cards
+
+Opt-in per-link title/description plus HTTPS or uploaded raster image, a four-mode administrator image policy, SQLite storage, owner-only form/API, narrow social crawler metadata output, lifecycle/privacy boundaries and tests. Implementation plan: [SNS preview plan](aegis/plans/2026-10-23-social-previews.md).
+
+---
+
 ## Risks and Mitigations
 
 | Risk | Impact | Mitigation |
@@ -352,25 +406,3 @@ Approved scope (2026-10-23): optional cleanup on **creation only**, disabled by 
 | SQLite write lock contention | Latency on high-concurrency click writes | WAL + `busy_timeout` + asynchronous writes + merged writes through rollup upserts |
 | Askama templates drift from routes | Runtime 500s | Templates are checked at compile time; integration tests cover a GET of every page |
 | Dependency version drift | Build failures | Commit `Cargo.lock`; pin the toolchain image version in the build stage |
-
----
-
-## P8 Acceptance Measurements
-
-| Item | Target (`docs/SPEC.md` §3.3, §5.2) | Measured |
-|------|-------------------------------------|----------|
-| Release binary size | ≤ 15 MB | **4.2 MB** (stripped, LTO, `opt-level=z`) |
-| Idle memory RSS | ≤ 30 MB | **6.8 MB** (6.8 MB after 500 requests) |
-| Redirect latency (P95) | < 10 ms | **0.74 ms** (p50 0.40 ms, p99 1.05 ms, 500 keep-alive requests locally) |
-| Cold start to serving | ≤ 1 second | **~0.2 s** (including migrations) |
-| Container image | ≤ 40 MB | **13.2 MB** (built and `up -d` verified on real hardware with Docker Compose 27.4) |
-| Tests | All green | `cargo test` 187 items, `scripts/smoke.sh` 81 items |
-| Static checks | No warnings | `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` pass |
-
-The table above is the v1.0 record; the current v1.1 numbers (5.7 MB glibc / 5.8 MB musl binary,
-14.8 MB image, 8.7 MB RSS, ~0.1 s cold start, the full test suite) are tracked in `docs/SPEC.md` §3.3 — read
-them there rather than quoting this table.
-
-## SNS preview cards
-
-Opt-in per-link title/description plus HTTPS or uploaded raster image, a four-mode administrator image policy, SQLite storage, owner-only form/API, narrow social crawler metadata output, lifecycle/privacy boundaries and tests. Implementation plan: [SNS preview plan](aegis/plans/2026-10-23-social-previews.md).

@@ -5,6 +5,17 @@
 這份文件是專案的發布規則。建立版本標籤前請先讀過；自動化流程位於
 [`.github/workflows/release-image.yml`](../../.github/workflows/release-image.yml)。
 
+## 目錄
+
+- [一次發布會做什麼](#一次發布會做什麼)
+- [映像標籤](#映像標籤)
+- [規則](#規則)
+- [發布檢查清單](#發布檢查清單)
+- [手動重建](#手動重建)
+- [清理重建留下的版本](#清理重建留下的版本)
+- [失敗處理](#失敗處理)
+- [快速複製指令](#快速複製指令)
+
 ## 一次發布會做什麼
 
 一次發布＝推送一個符合 `vMAJOR.MINOR.PATCH` 的 git 標籤（可帶 `-PRERELEASE` 後綴）。
@@ -87,7 +98,9 @@ cargo test
 bash scripts/smoke.sh       # 建議執行：會建置並實際操作二進位檔
 ```
 
-目前沒有會自動執行這些檢查的 CI，因此這一步就是品質關卡。
+這些檢查也會在 CI 執行：`.github/workflows/ci.yml` 會在每個 pull request，以及每個尚未被通過的
+pull request 涵蓋的 `master` 推送，執行格式化、lint、測試、smoke 與 OpenAPI 合約檢查。建立標籤前
+仍應在本機跑完上面這組指令，作為品質關卡，因為出錯的發布標籤無法重複使用。
 
 ### 2. 升版
 
@@ -116,10 +129,17 @@ cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
 ```
 
-提交三個檔案：
+內嵌的 API 參考也會帶上同一個版本（`info.version`），因此要一併重新產生合約並提交；提交的
+文件過期時 CI 的 `contracts` job 會失敗：
 
 ```bash
-git add Cargo.toml Cargo.lock docker-compose.yml
+python3 scripts/build-openapi.py     # 需要 PyYAML
+```
+
+提交版本變更與重新產生的合約：
+
+```bash
+git add Cargo.toml Cargo.lock docker-compose.yml openapi/dist
 git commit -m "🔖 release: v1.2.3"
 git push origin master
 ```
@@ -221,6 +241,7 @@ sed -i "s/^version = \".*\"$/version = \"$VERSION\"/" Cargo.toml
 sed -i "s/^\(    image: urlet:v\).*$/\1$VERSION/" docker-compose.yml
 cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
+python3 scripts/build-openapi.py
 
 grep -m1 '^version' Cargo.toml            # 1.2.3
 grep -m1 -A2 '^name = "urlet"' Cargo.lock # 1.2.3
@@ -242,10 +263,4 @@ $EDITOR ".tmp/release-notes-v$VERSION.md"
 ./scripts/release-notes-lint.sh ".tmp/release-notes-v$VERSION.md"
 gh release create "v$VERSION" --title "urlet $VERSION" \
   --notes-file ".tmp/release-notes-v$VERSION.md" --verify-tag
-```
-
-查看目前版本：
-
-```bash
-grep '^version' Cargo.toml
 ```

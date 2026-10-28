@@ -1,15 +1,16 @@
 # 多網域支援設計
 
-狀態：已於 `feat/multi-domain` 實作
-適用版本：urlet（下一個版本）
-最後更新：2026-10-18
+[English](../MULTI_DOMAIN.md) | **繁體中文**
+
+狀態：已實作（v1.3.0 起釋出）
+最後更新：2026-10-28
 
 ## 1. 摘要
 
 urlet 以一個 **canonical host** 提供完整應用，並可加上任意數量的
 **額外網域**。Canonical host 保留 `/`、`/app/*`、`/api/v1/*`；額外網域只做
-轉址：回應 `GET /{slug}`、`POST /{slug}/unlock`，根路徑顯示簡單品牌頁，其餘
-路徑導回 canonical 或拒絕。
+轉址：回應 `GET /{slug}`、`POST /{slug}/unlock`，根路徑顯示主題感知的短網址
+首頁，其餘路徑導回 canonical 或拒絕。
 
 每個網域有自己的 slug 命名空間：`(domain_id, slug)` 唯一。同一個 slug 可以
 同時存在於 `a.example.com` 與 `b.example.com`，各自指向不同目標。
@@ -19,7 +20,7 @@ urlet 以一個 **canonical host** 提供完整應用，並可加上任意數量
 | # | 決策 | 選擇 |
 |---|------|------|
 | 1 | 額外網域範圍 | 只做轉址。`/app/*` 的 GET/HEAD → 308 回 canonical；其他方法 → 404。`/api/v1/*` → 404 JSON。 |
-| 2 | 額外網域根路徑 | 小型品牌首頁（`noindex`），不是 canonical 的行銷首頁，也不是 404。 |
+| 2 | 額外網域根路徑 | 主題感知的短網址首頁（`noindex`），六個主題皆適用，並提供站台工具（主題選擇器、語言切換）；不是 canonical 的行銷首頁，也不是 404。 |
 | 3 | 預設網域 | 管理員可在 active 網域之間改動。Canonical host 永遠存在且永遠 active，但不一定是預設。 |
 | 4 | 新網域 | 建立後為 `pending`；管理員確認 DNS/TLS 後再啟用。只有 `active` 網域可被選用。 |
 | 5 | Scheme | 全站單一 scheme，繼承 `URLET_BASE_URL`；不新增 per-domain scheme 欄位。 |
@@ -30,8 +31,8 @@ urlet 以一個 **canonical host** 提供完整應用，並可加上任意數量
 
 - 由 `URLET_DOMAINS` seed 的網域直接插入為 `active`、已驗證，因為那是營運者
   在部署設定中的明確宣告。
-- 簡單首頁只顯示站名、一句說明與回 canonical 的連結；沒有登入、註冊或短碼
-  輸入框。
+- 短網址首頁會依六個主題呈現，顯示站名、一句說明、回 canonical 的連結，以及
+  站台工具（主題選擇器、語言切換）；沒有登入、註冊或短碼輸入框。
 - 目前的預設網域不能停用或刪除，必須先把另一個 active 網域設為預設。
 - `domains.source` 區分 `system`、`env`、`ui`。System/canonical 網域不可停用、
   也不可刪除；env 網域可以停用，但不能從 UI 刪除。
@@ -41,7 +42,7 @@ urlet 以一個 **canonical host** 提供完整應用，並可加上任意數量
 | Host | `/` | `/{slug}` | `/app/*` | `/api/v1/*` | `/health` |
 |------|-----|-----------|----------|-------------|-----------|
 | canonical | 既有行銷首頁 | 轉址 | 完整應用 | 完整 API | 200 |
-| 額外網域，`active` | 簡單首頁 | 轉址 | GET/HEAD 308 回 canonical；其他方法 404 | 404 JSON | 200 |
+| 額外網域，`active` | 主題感知短網址首頁（主題選擇器、語言切換） | 轉址 | GET/HEAD 308 回 canonical；其他方法 404 | 404 JSON | 200 |
 | 額外網域，`pending`/`disabled` | 404 | 404 | 404 | 404 JSON | 200 |
 | 未知 Host | 404 | 404 | 404 | 404 JSON | 200 |
 
@@ -70,6 +71,10 @@ urlet 以一個 **canonical host** 提供完整應用，並可加上任意數量
 - `UNIQUE (domain_id, slug)`，`slug` 保留既有的 `COLLATE NOCASE`
 - 舊資料的 `NULL` 回填到預設網域
 - soft-deleted 的資料仍保留 `(domain_id, slug)`，避免 slug 被劫持
+
+Migration `0005_group_domains` 新增群組層級的網域政策：
+`user_groups.default_domain_id`、`restrict_domains` 與 `group_domains`
+allowlist，決定每位成員的有效預設與可選網域。
 
 ## 5. Migration `0003_multi_domain`
 
@@ -112,17 +117,23 @@ daily stats，再套用 `0003`，檢查列數、外鍵、回填的 domain、per-
 
 ## 7. 建立與顯示短網址
 
-- `CreateInput` 與 `POST /api/v1/urls` 接受選用 `domain` hostname；省略時用
-  目前預設網域。目標必須是 `active`；`pending`、`disabled` 一律拒絕。
+- `CreateInput` 與 `POST /api/v1/urls` 接受選用 `domain` hostname；省略時由
+  網域政策解析為呼叫者所屬群組的預設網域（群組未設定，或設定的網域已非
+  active 時，回退到全站預設）。目標必須是 `active` 且被呼叫者的政策允許；
+  `pending`、`disabled` 一律拒絕。
+- 公開建立路徑 `POST /` 與 `POST /api/v1/public/urls` 也接受 `domain`；表單
+  會在轉回頁面的查詢字串帶回解析後的 hostname，API 則在 `short_url` 之外
+  回傳 `domain`。
 - 所有 slug 檢查、自動產生重試、更新檢查都以選定網域為範圍。衝突訊息會帶
   hostname。
 - `PATCH /api/v1/urls/{id}` 接受 `domain`；搬移時在目標網域重新檢查 slug，
   衝突回 `409`。
 - `UrlDto` 新增 `domain`；`short_url` 為 `{scheme}://{hostname}/{slug}`，使用
   全站 scheme。
-- HTML 建立與編輯表單顯示 active 網域下拉選單；dashboard 與 detail 頁的
-  「開啟」連結改用 `short_url`，不再用相對路徑。
-- `GET /api/v1/domains` 讓已登入使用者取得 active 網域清單。
+- HTML 建立與編輯表單顯示呼叫者政策允許的網域下拉選單；dashboard 與 detail
+  頁的「開啟」連結改用 `short_url`，不再用相對路徑。
+- `GET /api/v1/domains` 依呼叫者所屬群組的網域政策過濾，回傳可選的 active
+  網域；`is_default` 代表群組的有效預設，不是全站預設。
 - `GET /api/v1/public/urls/{slug}?domain=<hostname>`：省略 `domain` 時查預設
   網域，保持舊呼叫相容；回應新增 `domain`。
 
@@ -182,7 +193,9 @@ daily stats，再套用 `0003`，檢查列數、外鍵、回填的 domain、per-
 
 - DNS TXT 所有權驗證與自動啟用。
 - Per-domain 品牌、主題或設定。
-- Per-user 網域 allowlist。
+- 個別使用者的網域例外。群組層級的預設與 allowlist 已由 migration
+  `0005_group_domains` 實作（`user_groups.default_domain_id`、
+  `restrict_domains`、`group_domains`）；只有 per-user 覆寫不在範圍內。
 - 額外網域上的完整 white-label 應用（登入/儀表板/API）。
 - 由 admin UI 動態產生 Caddy 設定。
 - Per-domain scheme 與 per-domain captcha key。

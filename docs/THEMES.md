@@ -38,6 +38,72 @@ that paints the chrome (Signal) therefore marks its two tags with
 `data-theme-mode="light"`/`"dark"`; the media queries stay the no-JavaScript
 path, and `theme.js` switches the matching tag on once the mode is resolved.
 
+## How a visitor's theme is chosen
+
+1. `urlet_theme` cookie, when it names an enabled theme (compiled in or uploaded).
+2. Otherwise the administrator's default.
+3. A cookie for a disabled or unknown theme is ignored and the default is used.
+
+The picker is a native `<details>` element and works without JavaScript. When
+switching is open to everyone, a visitor who is not signed in sees it too, so a
+look chosen on the landing page survives the sign-in that follows. The
+cookie is `HttpOnly`, `SameSite=Lax`, lives for one year, and is `Secure` when
+the instance is configured for secure cookies. It is a cosmetic preference, not
+a per-user database column; a new browser starts at the default. The picker's
+**Site default** entry clears the cookie and follows the administrator's default
+again.
+
+Like the language picker, the switch endpoint is a `GET`. It only writes a
+cosmetic cookie; it never changes data or permissions. A cross-site top-level
+navigation can therefore change the look, but cannot grant access or alter an
+account.
+
+## Templates and the fallback
+
+`templates/` at the repository root is **both** the Verdant theme and the
+fallback. It also owns the shared chrome: the footer in `templates/base.html`
+carries the two user-visible links every design keeps — the attribution link to
+the upstream repository (`partials/repo_link.html`, labelled **GitHub**) and the
+API reference at `/docs` (`partials/api_docs_link.html`, labelled **API**). A
+compiled-in theme directory may override any page:
+
+```
+templates/
+├── base.html                 # Verdant base / fallback
+├── app_base.html
+├── dashboard.html
+├── ...
+├── content/                  # Shared v1.2 page bodies (macros)
+│   ├── dashboard.html
+│   └── admin/...
+└── themes/
+    ├── aurora/
+    │   ├── base.html
+    │   ├── app_base.html
+    │   ├── landing.html
+    │   ├── link_splash.html   # public interstitial page
+    │   ├── dashboard.html     # thin wrapper around content/dashboard.html
+    │   └── ...
+    ├── paper/
+    └── ...
+```
+
+Pages with a large amount of v1.2-only state (quotas, domains, groups, invites,
+settings) are shared through Askama macros in `templates/content/`. A theme
+overrides the chrome and the public/auth pages from its original design, and
+wraps the shared body in its own shell. This keeps every theme feature-complete
+when the product grows, at the cost of the older designs looking more like the
+base content on dense admin pages. The shared `src/assets/theme-ui.css` fills in
+classes those older stylesheets did not know about; it uses `:where()` so the
+original design always wins where it has an opinion.
+
+The template is selected at compile time by `themed_page!` in
+`src/routes/pages/themed.rs`. Each page context gets `.themed()`, and the macro
+generates one small wrapper per theme that dereferences to the same context.
+Askama's compile-time field checking therefore still applies to every theme.
+Uploaded themes select the Verdant wrapper at compile time and only replace the
+stylesheet URL; they join the catalogue through the administrator workflow below.
+
 ## Administrator workflow
 
 1. Open **Admin → Themes** (`/app/admin/themes`).
@@ -101,11 +167,18 @@ selectable.
 
 The upload is deliberately restricted:
 
-- one `.css` file, UTF-8, 256 KiB at most;
+- a CSS file: the upload field expects one; `accept=".css,text/css"` and the
+  drop zone's filename check are browser-side conveniences, and the server never
+  looks at the extension. Validation runs on the content: UTF-8, 256 KiB at
+  most, no control characters, and at least one `{` and one `}`;
 - at most 32 custom themes per instance;
-- no external URL anywhere: `url(...)`, `image-set(...)` and a bare `https://`
-  all count, and CSS escapes are decoded first, so `u\72l(` cannot smuggle one
-  past the check;
+- absolute external references and cross-origin `url(...)` are rejected:
+  `http://`, `https://`, `ftp://`, `data:text/html` and `data:image/svg` are
+  refused anywhere in the file, and a `url(...)` may not point at another origin.
+  CSS escapes and comments are decoded first, so `u\72l(` cannot smuggle one
+  past. The scan matches text rather than parsing CSS, so a protocol-relative
+  reference inside another functional notation — `image-set("//host/a.png")`,
+  for example — is not caught; the CSP is the second line of defence;
 - no `@import`, `expression(...)` or legacy `behavior`;
 - served as `text/css` with `X-Content-Type-Options: nosniff`, so it cannot turn
   into an HTML document.
@@ -123,68 +196,6 @@ layout override composes with the default design and wins the cascade. The base
 stylesheet is linked from the upload panel for reference. Custom uploads never
 change the document templates: they can restyle every page, but cannot add
 markup or scripts.
-
-## How a visitor's theme is chosen
-
-1. `urlet_theme` cookie, when it names an enabled theme (compiled in or uploaded).
-2. Otherwise the administrator's default.
-3. A cookie for a disabled or unknown theme is ignored and the default is used.
-
-The picker is a native `<details>` element and works without JavaScript. Under
-the `Everyone` policy a visitor who is not signed in sees it too, so a look
-chosen on the landing page survives the sign-in that follows. The
-cookie is `HttpOnly`, `SameSite=Lax`, lives for one year, and is `Secure` when
-the instance is configured for secure cookies. It is a cosmetic preference, not
-a per-user database column; a new browser starts at the default. The picker's
-**Site default** entry clears the cookie and follows the administrator's default
-again.
-
-Like the language picker, the switch endpoint is a `GET`. It only writes a
-cosmetic cookie; it never changes data or permissions. A cross-site top-level
-navigation can therefore change the look, but cannot grant access or alter an
-account.
-
-## Templates and the fallback
-
-`templates/` at the repository root is **both** the Verdant theme and the
-fallback. A compiled-in theme directory may override any page:
-
-```
-templates/
-├── base.html                 # Verdant base / fallback
-├── app_base.html
-├── dashboard.html
-├── ...
-├── content/                  # Shared v1.2 page bodies (macros)
-│   ├── dashboard.html
-│   └── admin/...
-└── themes/
-    ├── aurora/
-    │   ├── base.html
-    │   ├── app_base.html
-    │   ├── landing.html
-    │   ├── link_splash.html   # public interstitial page
-    │   ├── dashboard.html     # thin wrapper around content/dashboard.html
-    │   └── ...
-    ├── paper/
-    └── ...
-```
-
-Pages with a large amount of v1.2-only state (quotas, domains, groups, invites,
-settings) are shared through Askama macros in `templates/content/`. A theme
-overrides the chrome and the public/auth pages from its original design, and
-wraps the shared body in its own shell. This keeps every theme feature-complete
-when the product grows, at the cost of the older designs looking more like the
-base content on dense admin pages. The shared `src/assets/theme-ui.css` fills in
-classes those older stylesheets did not know about; it uses `:where()` so the
-original design always wins where it has an opinion.
-
-The template is selected at compile time by `themed_page!` in
-`src/routes/pages/themed.rs`. Each page context gets `.themed()`, and the macro
-generates one small wrapper per theme that dereferences to the same context.
-Askama's compile-time field checking therefore still applies to every theme.
-Uploaded themes select the Verdant wrapper at compile time and only replace the
-stylesheet URL.
 
 ## Adding a compiled-in theme
 
@@ -209,9 +220,10 @@ stylesheet URL.
 5. Add `templates/themes/<key>/...` paths to every `themed_page!` call. Keep the
    `Verdant` entry in each invocation: it is also the fallback used when a page
    has not listed a newly added theme yet.
-6. Add the theme to `ALL`, the migration seed and the admin tests. A new release
-   can also rely on `db::themes::ensure_defaults` at startup for an existing
-   database.
+6. With the key, templates and CSS registered, add the theme to `ALL` and the
+   admin tests, then let `db::themes::ensure_defaults` insert the catalogue row
+   at startup. Leave the migration seed untouched: released migrations are
+   checksum-protected, and startup seeding covers new and existing databases.
 7. Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
    `cargo test` and `scripts/smoke.sh`.
 

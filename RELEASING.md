@@ -5,6 +5,17 @@
 This file is the release contract for the repository. Read it before creating a version tag.
 The automation lives in [`.github/workflows/release-image.yml`](.github/workflows/release-image.yml).
 
+## Contents
+
+- [What a release does](#what-a-release-does)
+- [Image tags](#image-tags)
+- [Rules](#rules)
+- [Release checklist](#release-checklist)
+- [Manual rebuilds](#manual-rebuilds)
+- [Cleaning up a rebuilt version](#cleaning-up-a-rebuilt-version)
+- [Failure handling](#failure-handling)
+- [Quick copy-paste](#quick-copy-paste)
+
 ## What a release does
 
 A release is a git tag matching `vMAJOR.MINOR.PATCH` (optionally with a `-PRERELEASE` suffix).
@@ -97,7 +108,10 @@ cargo test
 bash scripts/smoke.sh       # recommended: builds and exercises the real binary
 ```
 
-There is currently no CI that runs these checks, so this step is the quality gate.
+These checks also run in CI: `.github/workflows/ci.yml` runs formatting, lints and tests, the smoke
+run and the OpenAPI contract job on every pull request and on every push to `master` that a green
+pull request did not already cover. The local run above is still the quality gate before a tag,
+because a release tag cannot be reused if it turns out broken.
 
 ### 2. Bump the version
 
@@ -126,10 +140,17 @@ cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
 ```
 
-Commit all three files:
+The embedded API reference carries the same version in `info.version`, so regenerate the contracts
+and commit them too; the CI `contracts` job fails when the committed documents are stale:
 
 ```bash
-git add Cargo.toml Cargo.lock docker-compose.yml
+python3 scripts/build-openapi.py     # needs PyYAML
+```
+
+Commit the version bump and the regenerated contracts:
+
+```bash
+git add Cargo.toml Cargo.lock docker-compose.yml openapi/dist
 git commit -m "🔖 release: v1.2.3"
 git push origin master
 ```
@@ -234,6 +255,7 @@ sed -i "s/^version = \".*\"$/version = \"$VERSION\"/" Cargo.toml
 sed -i "s/^\(    image: urlet:v\).*$/\1$VERSION/" docker-compose.yml
 cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
+python3 scripts/build-openapi.py
 
 grep -m1 '^version' Cargo.toml            # 1.2.3
 grep -m1 -A2 '^name = "urlet"' Cargo.lock # 1.2.3
@@ -243,7 +265,7 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 
-git add Cargo.toml Cargo.lock docker-compose.yml
+git add Cargo.toml Cargo.lock docker-compose.yml openapi/dist
 git commit -m "🔖 release: v$VERSION"
 git push origin master
 git tag -a "v$VERSION" -m "v$VERSION"
@@ -255,10 +277,4 @@ $EDITOR ".tmp/release-notes-v$VERSION.md"
 ./scripts/release-notes-lint.sh ".tmp/release-notes-v$VERSION.md"
 gh release create "v$VERSION" --title "urlet $VERSION" \
   --notes-file ".tmp/release-notes-v$VERSION.md" --verify-tag
-```
-
-Check the current version with:
-
-```bash
-grep '^version' Cargo.toml
 ```

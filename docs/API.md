@@ -200,7 +200,7 @@ Query parameters:
 | `q` | Search slug, title and target URL (`%` and `_` are treated literally) |
 | `tag` | Filter by tag name |
 | `status` | `active` or `disabled` |
-| `sort` | `created_at` (default), `clicks`, `slug`, `updated`, `expires` |
+| `sort` | `created_at` (default, newest first), `clicks` / `clicks_desc`, `slug` / `slug_asc`, `updated` / `updated_desc`, `expires` / `expires_asc`; each key has one fixed direction and an unknown value falls back to newest first |
 | `page` / `per_page` | Pagination |
 
 `200` → a paginated array of `UrlDto`.
@@ -238,7 +238,8 @@ Query parameters:
   active domain, otherwise the request fails with `422`; it must also satisfy the group policy
   (`allow_domain_selection`, `restrict_domains` / `domain_ids`) or the request fails with `403`.
   The slug namespace is per domain, so the same slug can exist on two domains
-- `slug` may be omitted (a 7-character base62 slug is generated); only `[A-Za-z0-9_-]` is
+- `slug` may be omitted (a base62 slug of the configured `default_slug_length` is generated,
+  4–16 characters, default 7); only `[A-Za-z0-9_-]` is
   allowed, length 1–64, and reserved words are rejected. A slug already used **on the selected
   domain** returns `409`
 - `expires_at` must be in the future; `max_clicks` ≥ 1
@@ -257,7 +258,11 @@ Query parameters:
 
 ### `PATCH /api/v1/urls/{id}`
 
-Partial update: **fields that are absent stay unchanged, while an explicit `null` clears them**.
+Partial update. A field that is **absent** stays unchanged. An explicit `null` clears only the
+nullable fields that opt into it — `title`, `notes`, `password`, `expires_at`, `max_clicks`,
+`splash_title` and `splash_message`. For `slug`, `domain`, `status`, `redirect_type`,
+`redirect_mode`, `splash_delay_seconds` and `tags`, `null` is treated like an absent field and
+keeps the current value.
 
 ```json
 { "title": "New title", "domain": "links.example.com", "password": null, "max_clicks": null, "tags": ["new"], "status": "disabled" }
@@ -289,7 +294,8 @@ and analytics data is kept.
 
 ### `GET /api/v1/urls/{id}/clicks?page=1`
 
-`200` → a paginated click log (**no** IP addresses or visitor hashes):
+`200` → a paginated click log (**no** IP addresses or visitor hashes). `page` and `per_page` are
+accepted; `per_page` defaults to 20 and is capped at 100:
 
 ```json
 { "items": [ { "clicked_at": "...", "referrer_host": "news.example.com", "country_code": null, "device_type": "Desktop", "browser": "Chrome", "os": "Windows", "is_bot": false, "is_unique": true, "password_protected": false } ], "page": 1, "per_page": 20, "total": 42, "total_pages": 3 }
@@ -335,6 +341,35 @@ keeps its current value, and clearing a blocked field is accepted; a non-empty l
 always a new value and is refused while passwords are blocked. The redirect-mode policy blocks a
 new `redirect_mode` (or switching to it on `PATCH`) but accepts keeping the current mode and
 clearing splash copy.
+
+---
+
+## SNS preview cards
+
+Administrators control `preview_image_policy` at `/app/admin/settings` or with `PUT /api/v1/admin/settings`: `{"preview_image_policy":"none"}`. Values: `none` (no images), `url` (HTTPS URLs only), `upload` (uploads only), `both` (default). Invalid values return 422 without partial updates. The policy applies to administrators and members alike; API attempts to set a prohibited source return 403, and browser forms return a 422 retry page retaining text. Keeping/removing an image and editing text remain allowed. Existing disallowed images stay stored but are omitted from metadata and the response `image_url`; `image_uploaded` still describes the stored source. Uploaded-image URLs return 404 with no-store while uploads are disabled. Re-enabling restores delivery. Third-party copies/caches of previously public images cannot be revoked. Startup seeds only missing settings, and old settings forms that omit this field preserve the existing policy.
+
+Social platforms build link cards from the fetched page's Open Graph (`og:title`, `og:description`, `og:image`) and Twitter Card tags. Without custom preview settings, urlet keeps its redirect behavior and the platform may read metadata from the destination. Configured links serve metadata from the owner's saved preview fields to recognised social crawlers. The platform chooses the footer, layout and refresh timing; there is no arbitrary footer field in these tags.
+
+These endpoints require the link owner's session or API token; another owner's link returns 404. Existing CSRF rules apply to cookie requests. Create a short link first, then configure its optional public preview. The public shortener does not accept uploads or these extra fields.
+
+| Method | Path | Behavior |
+|--------|------|----------|
+| GET | `/api/v1/urls/{id}/preview` | Returns `{title, description, image_url, image_uploaded, enabled}`; an unconfigured preview returns null fields and false flags |
+| PATCH | `/api/v1/urls/{id}/preview` | JSON `{title?, description?, image_url?}`. Omitted fields stay unchanged; null or blank clears the field. Setting/clearing image_url replaces/removes any uploaded image. The response uses the GET shape |
+| POST | `/api/v1/urls/{id}/preview/image` | Multipart field `image`; replaces the image while preserving text, returns the GET shape |
+| DELETE | `/api/v1/urls/{id}/preview` | Clears all custom preview data and image bytes, returns 204 |
+
+```bash
+curl -X PATCH "$BASE/api/v1/urls/42/preview" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"title":"Read this","description":"A custom summary","image_url":"https://example.com/card.png"}'
+curl "$BASE/api/v1/urls/42/preview/image" \
+  -H "Authorization: Bearer $TOKEN" -F 'image=@card.png'
+```
+
+Title: 200 characters; description: 1000 characters. Image URLs must be absolute HTTPS, at most 2048 characters, without credentials/whitespace. Uploads: PNG/JPEG/GIF/WebP, at most 2 MiB and 4096 × 4096 pixels. MIME is detected from validated bytes, not the filename. Stored images use opaque public `/assets/link-previews/{key}` URLs; replacing/removing the image revokes old keys. Invalid fields return 422; malformed/oversized multipart requests return a 4xx error without changing stored data. Uploads share a per-account rate budget.
+
+Configured text/images are public even on password-protected links. A blank preview title uses the site name; private link title/notes and the destination are never used as fallbacks. No external metadata or image fetch occurs on the server. Known social crawlers (including Discord, X/Twitter, Meta, Telegram, Slack, LinkedIn and LINE markers) receive OG/Twitter HTML; unknown agents retain normal link behavior. Link lifecycle checks apply to both metadata and uploaded images. Custom preview fetches do not count as clicks. Third-party caches and layout are controlled by the platforms; changing settings does not guarantee an immediate refreshed card.
 
 ---
 
@@ -475,64 +510,6 @@ their group policy. `is_default` marks the effective group default:
 
 ---
 
-## UI language
-
-The web UI ships in English (`en`), Traditional Chinese (`zh-Hant`) and Simplified Chinese
-(`zh-Hans`). On a first visit the language is chosen from the browser's `Accept-Language`
-header; when nothing matches, English is used. The selection is stored in the `urlet_lang`
-cookie.
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/app/lang/{code}?next=<path>` | Switch the UI language, set the `urlet_lang` cookie, then return `302` to `next` (or to `/app` when `next` is missing or not a same-site relative path) |
-
-`code` is one of `en`, `zh-Hant`, `zh-Hans`; `next` must be a same-site relative path.
-An unrecognized `code` falls back to English (it is never an error), and a visitor without a
-cookie is negotiated from `Accept-Language` instead — a present cookie always wins.
-
-The language setting only affects rendered HTML. **JSON responses are always English** and
-never change with the selected language.
-
----
-
-## Bot verification
-
-urlet can require a CAPTCHA on the three public forms that create state: the web registration
-form, the web sign-in form, and the web create-short-link form. The JSON API endpoints
-`POST /api/v1/auth/register` and `POST /api/v1/auth/login` accept the widget token in the optional
-`captcha_token` field. It is off by default and configured either through environment variables or
-in the admin UI under **Admin → Settings**; a non-empty environment variable overrides the admin
-setting. See the deployment guide for the variables and for how to obtain provider keys.
-
-| Provider | `provider` value | Widget |
-|----------|------------------|--------|
-| Disabled (default) | `none` | None |
-| Cloudflare Turnstile | `turnstile` | Managed Turnstile widget |
-| Google reCAPTCHA v2 | `recaptcha` | "I'm not a robot" checkbox |
-
-Verification applies to a form only when all four conditions hold: the provider is not `none`,
-the site key is non-empty, the secret key is non-empty, and the matching per-form switch
-(`captcha_on_register`, `captcha_on_login` or `captcha_on_create`) is `true`.
-
-Failure is **closed**: a missing, malformed, expired or already-used token — including a timeout
-or any non-2xx response from the provider — rejects the submission.
-
-The `hostname` reported by the provider is also checked: it must equal the host of the instance's
-base URL or one of the extra hostnames in `captcha_allowed_hostnames` (comma-separated, up to 10).
-A response whose `hostname` is missing or empty is accepted, and a mismatch is rejected and logged
-at `WARN`.
-
-| Surface | Verification |
-|---------|--------------|
-| Web registration form (`POST /app/register`) | Applies when enabled for registration |
-| Web sign-in form (`POST /app/login`) | Applies when enabled for sign-in |
-| Web create-short-link form (`POST /app/urls`) | Applies when enabled for link creation |
-| `POST /api/v1/auth/register` | Applies when enabled for registration; send the widget token in `captcha_token`; failure returns `400` with `error.code = "captcha_failed"` |
-| `POST /api/v1/auth/login` | Applies when enabled for sign-in; send the widget token in `captcha_token`; failure returns `400` with `error.code = "captcha_failed"` |
-| `POST /api/v1/urls` | **API tokens only** — exempt when the request carries `Authorization: Bearer ur_...`; a session-cookie call is subject to the link-creation switch and takes an optional `captcha_token` |
-
----
-
 ## Invite codes (member)
 
 Members can issue invite codes for their **own group** when that group has
@@ -608,7 +585,7 @@ Every `/api/v1/admin/**` endpoint returns `403 forbidden` for non-administrators
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/admin/users?q=&role=&status=&group_id=&page=` | User list (includes `link_count`, `group_id`, `group_name`) |
+| GET | `/admin/users?q=&role=&status=&group_id=&page=&per_page=` | User list (includes `link_count`, `group_id`, `group_name`) |
 | PATCH | `/admin/users/{id}` | `{ "role"?, "status"?, "display_name"?, "group_id"? }`; `group_id: null` makes the user ungrouped |
 | POST | `/admin/users/{id}/password` | `{ "new_password": "..." }` → `204`, revokes every session for that account |
 | DELETE | `/admin/users/{id}` | `204`, soft-deletes the account and all of its short links |
@@ -622,11 +599,22 @@ Every `/api/v1/admin/**` endpoint returns `403 forbidden` for non-administrators
 | DELETE | `/admin/groups/{id}?reassign_to={id}` | `204`, moves the members then deletes; `409` for the default group or a missing/invalid target |
 | GET | `/admin/themes` | Theme catalogue (key, name, description, `enabled`, `default`, `appearance`, `dark_only`, `light_only`, `css_url`, `custom`) plus `switching` (`all` or `admin`); includes administrator uploads |
 | PUT | `/admin/themes` | `{ "enabled"?: ["verdant", ...], "default"?: "verdant", "switching"?: "all"\|"admin" }`; omitted fields keep their value; at least one enabled theme and an enabled default are required (`422` otherwise). `enabled` and `default` may name `custom-…` uploads |
+| GET | `/admin/urls?q=&status=&user_id=&page=&sort=&per_page=` | Every short link on the instance; `sort` accepts the same values as `GET /api/v1/urls` |
+| PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
+| DELETE | `/admin/urls/{id}` | `204` |
+| GET | `/admin/invites` | The 200 newest invite codes with `code`, `link`, `prefix`, `group_id` / `group_name`; there is no pagination. `code` and `link` are `null` for legacy or secret-rotated rows, and `link` is also `null` for revoked, exhausted or expired codes |
+| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`; `link` mirrors `invite.link` and is `null` if the code is already unusable; the code stays available from `GET` and the link is returned while usable; `403` when the group's per-period invite quota is exhausted |
+| DELETE | `/admin/invites/{id}` | `204`, revoke; an unused code returns its quota slot, a redeemed code keeps it |
+| GET | `/admin/settings` | Current settings, including `theme_switching` (`all` or `admin`) |
+| PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", "theme_switching": "admin", ... }` |
+| GET | `/admin/audit?action=&target_type=&actor=&page=` | Audit log (`metadata` is parsed into JSON) |
+| GET | `/admin/stats` | User / short link / click totals, database size, version, uptime |
 
 Theme uploads are administrator-only browser multipart forms at `/app/admin/themes/custom` (create),
 `/app/admin/themes/custom/{id}` (edit/replace CSS) and `/app/admin/themes/custom/{id}/delete`. The
-JSON API deliberately has no file-upload endpoint. Uploads are CSS-only, at most 256 KiB, UTF-8,
-and may not load external resources; see [`THEMES.md`](THEMES.md).
+JSON API deliberately has no file-upload endpoint. Uploads are CSS-only, at most 256 KiB, UTF-8;
+absolute external references and cross-origin `url(...)` are rejected, with the CSP as the second
+line of defence; see [`THEMES.md`](THEMES.md).
 
 `GroupDto` also returns `default_domain_id`, `default_domain` (the stored value, even if the domain
 is disabled), `restrict_domains`, `allowed_domain_ids` and `allowed_domains`, plus the invite
@@ -634,16 +622,6 @@ quota (`max_invites`, `invite_period`) and its live counters (`invites_used`,
 `invites_remaining`; the latter is `null` when unlimited). The request field is
 `domain_ids` (`null` or `[]` clears it; omitting keeps it); the response uses `allowed_*`. `GET /api/v1/auth/me` returns the *effective* fallback
 default, which can differ from `default_domain` when the stored group default is disabled.
-| GET | `/admin/urls?q=&status=&user_id=&page=` | Every short link on the instance |
-| PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
-| DELETE | `/admin/urls/{id}` | `204` |
-| GET | `/admin/invites` | Invite code list with `code`, `link`, `prefix`, `group_id` / `group_name`; `code` and `link` are `null` for legacy or secret-rotated rows, and `link` is also `null` for revoked, exhausted or expired codes |
-| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`; `link` mirrors `invite.link` and is `null` if the code is already unusable; the code stays available from `GET` and the link is returned while usable; `403` when the group's per-period invite quota is exhausted |
-| DELETE | `/admin/invites/{id}` | `204`, revoke; an unused code returns its quota slot, a redeemed code keeps it |
-| GET | `/admin/settings` | Current settings, including `theme_switching` (`all` or `admin`) |
-| PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", "theme_switching": "admin", ... }` |
-| GET | `/admin/audit?action=&target_type=&actor=&page=` | Audit log (`metadata` is parsed into JSON) |
-| GET | `/admin/stats` | User / short link / click totals, database size, version, uptime |
 
 **User groups.** A group object is
 `{ id, name, description, max_urls, max_api_tokens, max_invites, invite_period, allow_*,
@@ -676,6 +654,7 @@ Editable setting keys: `site_name`, `registration_mode` (`open`/`invite`/`closed
 `max_api_tokens_per_user` (0 = unlimited, default 20),
 `max_invites_per_period` (0 = unlimited, default 0), `invite_period` (`day`/`week`/`month`,
 default `month`), `default_redirect_type` (301/302/307/308), `analytics_enabled`,
+`theme_switching` (`all`/`admin`, default `all`),
 `preview_image_policy` (`none`/`url`/`upload`/`both`, default `both`),
 `click_retention_days` (0 = keep forever), plus the bot verification keys
 `captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`,
@@ -749,9 +728,12 @@ Cleanup applies **only when creating links**, through `POST /api/v1/urls`, `POST
 | `url.created` / `url.updated` / `url.deleted` | Short link changes |
 | `token.created` / `token.revoked` | API tokens |
 | `invite.created` / `invite.revoked` / `invite.redeemed` | Invite codes |
+| `domain.created` / `domain.updated` / `domain.deleted` / `domain.default_changed` | Domain administration |
 | `admin.user_updated` / `admin.user_deleted` / `admin.password_reset` | Administrative actions |
 | `admin.group_created` / `admin.group_updated` / `admin.group_deleted` | Group changes |
 | `admin.url_updated` / `admin.settings_updated` / `admin.themes_updated` / `admin.theme_created` / `admin.theme_updated` / `admin.theme_deleted` | Administrative actions |
+
+---
 
 ## Rate limits
 
@@ -774,31 +756,60 @@ past.
 The IP used for login comes from `X-Real-IP` when `URLET_TRUST_PROXY=true`, falling back to the
 rightmost address in `X-Forwarded-For`.
 
+---
 
-## SNS preview configuration
+## UI language
 
-Administrators control `preview_image_policy` at `/app/admin/settings` or with `PUT /api/v1/admin/settings`: `{"preview_image_policy":"none"}`. Values: `none` (no images), `url` (HTTPS URLs only), `upload` (uploads only), `both` (default). Invalid values return 422 without partial updates. The policy applies to administrators and members alike; API attempts to set a prohibited source return 403, and browser forms return a 422 retry page retaining text. Keeping/removing an image and editing text remain allowed. Existing disallowed images stay stored but are omitted from metadata and the response `image_url`; `image_uploaded` still describes the stored source. Uploaded-image URLs return 404 with no-store while uploads are disabled. Re-enabling restores delivery. Third-party copies/caches of previously public images cannot be revoked. Startup seeds only missing settings, and old settings forms that omit this field preserve the existing policy.
+The web UI ships in English (`en`), Traditional Chinese (`zh-Hant`) and Simplified Chinese
+(`zh-Hans`). On a first visit the language is chosen from the browser's `Accept-Language`
+header; when nothing matches, English is used. The selection is stored in the `urlet_lang`
+cookie.
 
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/app/lang/{code}?next=<path>` | Switch the UI language, set the `urlet_lang` cookie, then return `302` to `next` (or to `/app` when `next` is missing or not a same-site relative path) |
 
-Social platforms build link cards from the fetched page's Open Graph (`og:title`, `og:description`, `og:image`) and Twitter Card tags. Without custom preview settings, urlet keeps its redirect behavior and the platform may read metadata from the destination. Configured links serve metadata from the owner's saved preview fields to recognised social crawlers. The platform chooses the footer, layout and refresh timing; there is no arbitrary footer field in these tags.
+`code` is one of `en`, `zh-Hant`, `zh-Hans`; `next` must be a same-site relative path.
+An unrecognized `code` falls back to English (it is never an error), and a visitor without a
+cookie is negotiated from `Accept-Language` instead — a present cookie always wins.
 
-These endpoints require the link owner's session or API token; another owner's link returns 404. Existing CSRF rules apply to cookie requests. Create a short link first, then configure its optional public preview. The public shortener does not accept uploads or these extra fields.
+The language setting only affects rendered HTML. **JSON responses are always English** and
+never change with the selected language.
 
-| Method | Path | Behavior |
-|--------|------|----------|
-| GET | `/api/v1/urls/{id}/preview` | Returns `{title, description, image_url, image_uploaded, enabled}`; an unconfigured preview returns null fields and false flags |
-| PATCH | `/api/v1/urls/{id}/preview` | JSON `{title?, description?, image_url?}`. Omitted fields stay unchanged; null or blank clears the field. Setting/clearing image_url replaces/removes any uploaded image. The response uses the GET shape |
-| POST | `/api/v1/urls/{id}/preview/image` | Multipart field `image`; replaces the image while preserving text, returns the GET shape |
-| DELETE | `/api/v1/urls/{id}/preview` | Clears all custom preview data and image bytes, returns 204 |
+---
 
-```bash
-curl -X PATCH "$BASE/api/v1/urls/42/preview" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"title":"Read this","description":"A custom summary","image_url":"https://example.com/card.png"}'
-curl "$BASE/api/v1/urls/42/preview/image" \
-  -H "Authorization: Bearer $TOKEN" -F 'image=@card.png'
-```
+## Bot verification
 
-Title: 200 characters; description: 1000 characters. Image URLs must be absolute HTTPS, at most 2048 characters, without credentials/whitespace. Uploads: PNG/JPEG/GIF/WebP, at most 2 MiB and 4096 × 4096 pixels. MIME is detected from validated bytes, not the filename. Stored images use opaque public `/assets/link-previews/{key}` URLs; replacing/removing the image revokes old keys. Invalid fields return 422; malformed/oversized multipart requests return a 4xx error without changing stored data. Uploads share a per-account rate budget.
+urlet can require a CAPTCHA on the three public forms that create state: the web registration
+form, the web sign-in form, and the web create-short-link form. The JSON API endpoints
+`POST /api/v1/auth/register` and `POST /api/v1/auth/login` accept the widget token in the optional
+`captcha_token` field. It is off by default and configured either through environment variables or
+in the admin UI under **Admin → Settings**; a non-empty environment variable overrides the admin
+setting. See the deployment guide for the variables and for how to obtain provider keys.
 
-Configured text/images are public even on password-protected links. A blank preview title uses the site name; private link title/notes and the destination are never used as fallbacks. No external metadata or image fetch occurs on the server. Known social crawlers (including Discord, X/Twitter, Meta, Telegram, Slack, LinkedIn and LINE markers) receive OG/Twitter HTML; unknown agents retain normal link behavior. Link lifecycle checks apply to both metadata and uploaded images. Custom preview fetches do not count as clicks. Third-party caches and layout are controlled by the platforms; changing settings does not guarantee an immediate refreshed card.
+| Provider | `provider` value | Widget |
+|----------|------------------|--------|
+| Disabled (default) | `none` | None |
+| Cloudflare Turnstile | `turnstile` | Managed Turnstile widget |
+| Google reCAPTCHA v2 | `recaptcha` | "I'm not a robot" checkbox |
+
+Verification applies to a form only when all four conditions hold: the provider is not `none`,
+the site key is non-empty, the secret key is non-empty, and the matching per-form switch
+(`captcha_on_register`, `captcha_on_login` or `captcha_on_create`) is `true`.
+
+Failure is **closed**: a missing, malformed, expired or already-used token — including a timeout
+or any non-2xx response from the provider — rejects the submission.
+
+The `hostname` reported by the provider is also checked: it must equal the host of the instance's
+base URL or one of the extra hostnames in `captcha_allowed_hostnames` (comma-separated, up to 10).
+A response whose `hostname` is missing or empty is accepted, and a mismatch is rejected and logged
+at `WARN`.
+
+| Surface | Verification |
+|---------|--------------|
+| Web registration form (`POST /app/register`) | Applies when enabled for registration |
+| Web sign-in form (`POST /app/login`) | Applies when enabled for sign-in |
+| Web create-short-link form (`POST /app/urls`) | Applies when enabled for link creation |
+| `POST /api/v1/auth/register` | Applies when enabled for registration; send the widget token in `captcha_token`; failure returns `400` with `error.code = "captcha_failed"` |
+| `POST /api/v1/auth/login` | Applies when enabled for sign-in; send the widget token in `captcha_token`; failure returns `400` with `error.code = "captcha_failed"` |
+| `POST /api/v1/urls` | **API tokens only** — exempt when the request carries `Authorization: Bearer ur_...`; a session-cookie call is subject to the link-creation switch and takes an optional `captcha_token` |
