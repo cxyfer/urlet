@@ -1,0 +1,2142 @@
+# urlet OpenAPI 3.1 — English prose and path structure.
+#
+# This file carries only the English prose and the shape of the API. Every schema, shared
+# response and security scheme lives in components.yaml and is referenced as
+# 'components.yaml#/schemas/Name' or 'components.yaml#/responses/Name'. Neither file is a
+# valid OpenAPI document on its own: scripts/build-openapi.py merges the two halves into the
+# self-contained documents under openapi/dist/. Those generated files are derived artifacts
+# and must never be edited by hand.
+
+openapi: 3.1.0
+info:
+  title: urlet JSON API
+  version: "__URLET_VERSION__"
+  description: >-
+    JSON API of urlet, a self-hosted URL shortener. Everything except the health probes, the
+    public shortener and the link unlock lives under `/api/v1` and answers
+    `application/json; charset=utf-8`. Timestamps are ISO-8601 UTC and JSON responses are
+    always English, whatever interface language the visitor selected. Authenticate with the
+    `urlet_session` cookie or with `Authorization: Bearer ur_...`.
+servers:
+  # The API lives on the canonical host, but the reference is served from every
+  # host its footer appears on, so the contract cannot name its own origin.
+  # The generator copies this token through unchanged and the binary replaces it
+  # with the configured base URL when it serves the document.
+  - url: __URLET_BASE_URL__
+    description: The instance serving this contract.
+tags:
+  - name: Authentication
+    description: Accounts, sessions, profiles and passwords.
+  - name: Short links
+    description: Creating, listing, updating and analysing short links.
+  - name: Previews
+    description: Custom Open Graph and Twitter Card metadata for one short link.
+  - name: Tags
+    description: The tag catalogue of the authenticated account.
+  - name: Invites
+    description: Invite codes a member issues for their own group.
+  - name: Domains
+    description: The active domains a caller may create links on.
+  - name: API tokens
+    description: 'Personal API tokens sent as `Authorization: Bearer ur_...`.'
+  - name: Public
+    description: Endpoints that answer without a credential.
+  - name: Administration
+    description: Endpoints that require `role = admin`.
+security:
+  - sessionCookie: []
+  - bearerToken: []
+paths:
+  /api/v1/auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register an account
+      description: >-
+        Creates the account and signs it in, setting the session cookie. In `invite`
+        registration mode an invite code is mandatory; in `open` mode it is optional but
+        validated when supplied, and its group wins over the default group. Bot verification
+        is only enforced when it is enabled for registration.
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/RegisterPayload'
+      responses:
+        '201':
+          description: Account created and signed in; the response also sets a session cookie.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/UserEnvelope'
+        '400':
+          $ref: 'components.yaml#/responses/BadRequest'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '409':
+          $ref: 'components.yaml#/responses/Conflict'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '429':
+          $ref: 'components.yaml#/responses/RateLimited'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/auth/login:
+    post:
+      tags: [Authentication]
+      summary: Sign in
+      description: >-
+        Verifies the credentials and sets the `urlet_session` cookie. Wrong credentials return
+        a fixed `401` message that does not reveal whether the account exists; a suspended
+        account returns `403`. Repeated failures lock the account and answer `429`.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/LoginPayload'
+      responses:
+        '200':
+          description: Signed in; the response also sets a session cookie.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/UserEnvelope'
+        '400':
+          $ref: 'components.yaml#/responses/BadRequest'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '429':
+          $ref: 'components.yaml#/responses/RateLimited'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Sign out
+      description: >-
+        Revokes the current session and clears the session cookie. The call may also be made
+        anonymously, in which case only the cookie is cleared.
+      operationId: logout
+      # The call may be made anonymously, so it must not inherit the document's
+      # session-or-bearer requirement: a client would otherwise model it as needing
+      # credentials it does not need.
+      security: []
+      responses:
+        '204':
+          description: Session revoked and the session cookie cleared.
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/auth/me:
+    get:
+      tags: [Authentication]
+      summary: Get the current account
+      description: >-
+        Returns the account, the group it belongs to (or `null`) and the effective limits. The
+        `limits` object is already resolved: a group overrides a site-wide value only when its
+        own value is not `NULL`, and `0` means unlimited.
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: The current account and the rules that apply to it.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/MeDto'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    patch:
+      tags: [Authentication]
+      summary: Update the current account
+      description: >-
+        Updates the profile of the authenticated account. An omitted field, `null` or an empty
+        string clears the display name.
+      operationId: updateCurrentUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/UpdateProfilePayload'
+      responses:
+        '200':
+          description: The updated account.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/UserEnvelope'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/auth/password:
+    post:
+      tags: [Authentication]
+      summary: Change the password
+      description: >-
+        Changes the password of the authenticated account. On success every other session is
+        revoked and all API tokens of the account are revoked; the current session survives.
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/ChangePasswordPayload'
+      responses:
+        '204':
+          description: Password changed; other sessions and all API tokens were revoked.
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '429':
+          $ref: 'components.yaml#/responses/RateLimited'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/auth/sessions:
+    get:
+      tags: [Authentication]
+      summary: List the sessions of the account
+      description: >-
+        Lists every session of the account, newest first. Sessions slide: activity pushes
+        `expires_at` forward and re-issues the cookie, so continuous use never expires.
+      operationId: listSessions
+      responses:
+        '200':
+          description: Every session of the account.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/SessionList'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/auth/sessions/{id}:
+    delete:
+      tags: [Authentication]
+      summary: Revoke a session
+      description: >-
+        Revokes one session of the authenticated account. A session that belongs to somebody
+        else is reported as `404`, exactly as a missing one.
+      operationId: revokeSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the session to revoke.
+          schema:
+            type: integer
+            format: int64
+            example: 12
+      responses:
+        '204':
+          description: Session revoked.
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/urls:
+    get:
+      tags: [Short links]
+      summary: List short links
+      description: >-
+        Lists the short links of the authenticated account, newest first, with the documented
+        filters applied. `per_page` defaults to 20 and is capped at 100.
+      operationId: listUrls
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Search slug, title and target URL; `%` and `_` are treated literally.
+          schema:
+            type: string
+            example: launch
+        - name: tag
+          in: query
+          required: false
+          description: Only return links that carry this tag name.
+          schema:
+            type: string
+            example: campaign
+        - name: status
+          in: query
+          required: false
+          description: Only return links in this stored status.
+          schema:
+            type: string
+            enum: [active, disabled]
+            example: active
+        - name: sort
+          in: query
+          required: false
+          description: >-
+            Sort order. Each field also accepts its explicit direction suffix
+            (`clicks_desc`, `slug_asc`, `updated_desc`, `expires_asc`). Any other value,
+            including `created_at`, falls back to newest first.
+          schema:
+            type: string
+            enum:
+              - created_at
+              - clicks
+              - clicks_desc
+              - slug
+              - slug_asc
+              - updated
+              - updated_desc
+              - expires
+              - expires_asc
+            default: created_at
+            example: clicks
+        - name: page
+          in: query
+          required: false
+          description: 1-based page number.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+            example: 2
+        - name: per_page
+          in: query
+          required: false
+          description: Rows per page; defaults to 20 and is capped at 100.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 100
+            default: 20
+            example: 20
+      responses:
+        '200':
+          description: A page of short links.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/UrlPage'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    post:
+      tags: [Short links]
+      summary: Create a short link
+      description: >-
+        Creates a short link. `target_url` is required and only `http`/`https` are accepted. A
+        supplied `domain` must be active and allowed by the group policy; `slug` is generated
+        when omitted and must be unique on the selected domain. `captcha_token` is only read
+        for a session-cookie call when bot verification is enabled for link creation; a Bearer
+        token call ignores it.
+      operationId: createUrl
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/CreatePayload'
+      responses:
+        '201':
+          description: Short link created.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/UrlDto'
+        '400':
+          $ref: 'components.yaml#/responses/BadRequest'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '409':
+          $ref: 'components.yaml#/responses/Conflict'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '429':
+          $ref: 'components.yaml#/responses/RateLimited'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/urls/{id}:
+    get:
+      tags: [Short links]
+      summary: Get a short link
+      description: >-
+        Returns one short link of the authenticated account. A link that belongs to somebody
+        else is reported as `404`.
+      operationId: getUrl
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the short link.
+          schema:
+            type: integer
+            format: int64
+            example: 42
+      responses:
+        '200':
+          description: The short link.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/UrlDto'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    patch:
+      tags: [Short links]
+      summary: Update a short link
+      description: >-
+        Partial update: a field that is absent stays unchanged, while an explicit `null` clears
+        it. An empty object returns `400`. Moving a link to another active domain must satisfy
+        the group policy and re-checks the slug there; keeping a link on its current domain is
+        always allowed.
+      operationId: updateUrl
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the short link.
+          schema:
+            type: integer
+            format: int64
+            example: 42
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/UpdatePayload'
+      responses:
+        '200':
+          description: The updated short link.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/UrlDto'
+        '400':
+          $ref: 'components.yaml#/responses/BadRequest'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '409':
+          $ref: 'components.yaml#/responses/Conflict'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    delete:
+      tags: [Short links]
+      summary: Delete a short link
+      description: >-
+        Soft delete. The slug is retained and never released, so an old link cannot be
+        hijacked, and the analytics data is kept.
+      operationId: deleteUrl
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the short link.
+          schema:
+            type: integer
+            format: int64
+            example: 42
+      responses:
+        '204':
+          description: Short link soft-deleted.
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/urls/{id}/stats:
+    get:
+      tags: [Short links]
+      summary: Get the statistics of a short link
+      description: >-
+        Returns the summary, the daily trend and the referrer, device, browser and operating
+        system breakdowns of one link. `days` is clamped to 1-365 (default 30) and the daily
+        series is padded with the days that had no clicks.
+      operationId: getUrlStats
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the short link.
+          schema:
+            type: integer
+            format: int64
+            example: 42
+        - name: days
+          in: query
+          required: false
+          description: Length of the reporting window in days, from 1 to 365.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 365
+            default: 30
+            example: 30
+      responses:
+        '200':
+          description: Statistics of the short link.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/UrlStatsDto'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/urls/{id}/clicks:
+    get:
+      tags: [Short links]
+      summary: List the clicks of a short link
+      description: >-
+        Returns a paginated click log, newest first. The log deliberately carries no IP
+        addresses and no visitor hashes.
+      operationId: listUrlClicks
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the short link.
+          schema:
+            type: integer
+            format: int64
+            example: 42
+        - name: page
+          in: query
+          required: false
+          description: 1-based page number.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+            example: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Rows per page; defaults to 20 and is capped at 100.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 100
+            default: 20
+            example: 20
+      responses:
+        '200':
+          description: A page of the click log.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/ClickList'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/urls/{id}/preview:
+    get:
+      tags: [Previews]
+      summary: Get the saved preview of a short link
+      description: >-
+        Returns the custom SNS preview metadata of one link. An unconfigured preview returns
+        null fields and false flags. Another owner's link is reported as `404`.
+      operationId: getUrlPreview
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the short link.
+          schema:
+            type: integer
+            format: int64
+            example: 42
+      responses:
+        '200':
+          description: The saved preview metadata.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/PreviewDto'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    patch:
+      tags: [Previews]
+      summary: Update the preview of a short link
+      description: >-
+        Omitted fields stay unchanged; `null` or a blank string clears the field. Setting or
+        clearing `image_url` replaces or removes any uploaded image. Title and description are
+        limited to 200 and 1000 characters, and an image URL must be absolute HTTPS.
+      operationId: updateUrlPreview
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the short link.
+          schema:
+            type: integer
+            format: int64
+            example: 42
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/Patch'
+      responses:
+        '200':
+          description: The preview metadata after the update.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/PreviewDto'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    delete:
+      tags: [Previews]
+      summary: Delete the preview of a short link
+      description: Clears all custom preview text and removes the uploaded image bytes.
+      operationId: deleteUrlPreview
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the short link.
+          schema:
+            type: integer
+            format: int64
+            example: 42
+      responses:
+        '204':
+          description: Preview cleared.
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/urls/{id}/preview/image:
+    post:
+      tags: [Previews]
+      summary: Upload the preview image of a short link
+      description: >-
+        Replaces the preview image while preserving the text. Uploads are PNG, JPEG, GIF or
+        WebP, at most 2 MiB and 4096 x 4096 pixels; the MIME type is detected from the
+        validated bytes. Uploads are refused with `403` while the instance disables them and
+        share a per-account rate budget.
+      operationId: uploadUrlPreviewImage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the short link.
+          schema:
+            type: integer
+            format: int64
+            example: 42
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: Image file to store as the preview image.
+              required: [image]
+      responses:
+        '200':
+          description: The preview metadata with the new image.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/PreviewDto'
+        '400':
+          $ref: 'components.yaml#/responses/BadRequest'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '429':
+          $ref: 'components.yaml#/responses/RateLimited'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/domains:
+    get:
+      tags: [Domains]
+      summary: List the selectable domains
+      description: >-
+        Lists the active domains available for new links, already filtered by the group policy
+        of the caller. `is_default` marks the effective group default.
+      operationId: listDomains
+      responses:
+        '200':
+          description: The selectable domains.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: 'components.yaml#/schemas/DomainChoiceDto'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/invites:
+    get:
+      tags: [Invites]
+      summary: List the invite codes of the account
+      description: >-
+        Returns the caller's own codes, newest first, including the displayable code and its
+        registration link, plus the effective quota. Member issuance is throttled to 20 codes
+        per hour per account.
+      operationId: listInvites
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: 1-based page number.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+            example: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Rows per page; defaults to 20 and is capped at 100.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 100
+            default: 20
+            example: 20
+      responses:
+        '200':
+          description: The invite codes of the account and its quota.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/MemberInviteList'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    post:
+      tags: [Invites]
+      summary: Create an invite code
+      description: >-
+        Issues a code for the group of the caller. The group must enable `allow_invites` and
+        its calendar quota applies; `max_uses` must be between 1 and 10. Exceeding the hourly
+        burst limit returns `429`.
+      operationId: createInvite
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/CreateMemberInvitePayload'
+      responses:
+        '201':
+          description: Invite code created.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/CreatedMemberInvite'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '429':
+          $ref: 'components.yaml#/responses/RateLimited'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/invites/{id}:
+    delete:
+      tags: [Invites]
+      summary: Revoke an invite code
+      description: >-
+        Revokes one of the caller's own codes. Another member's code is reported as `404`.
+        Revoking a code that nobody redeemed returns its quota slot; a redeemed code keeps it.
+      operationId: revokeInvite
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the invite code.
+          schema:
+            type: integer
+            format: int64
+            example: 4
+      responses:
+        '204':
+          description: Invite code revoked.
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/tags:
+    get:
+      tags: [Tags]
+      summary: List tags
+      description: Lists every tag of the authenticated account; the list is not paginated.
+      operationId: listTags
+      responses:
+        '200':
+          description: The tags of the account.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/TagList'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/tags/{id}:
+    delete:
+      tags: [Tags]
+      summary: Delete a tag
+      description: >-
+        Deletes a tag. It only unlinks the tag from short links; the links themselves are
+        untouched.
+      operationId: deleteTag
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the tag.
+          schema:
+            type: integer
+            format: int64
+            example: 4
+      responses:
+        '204':
+          description: Tag deleted.
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/public/urls:
+    post:
+      tags: [Public]
+      summary: Create a short link without an account
+      description: >-
+        The JSON form of the public shortener, for scripts. No credential is required when
+        `public_create_access` is `guest`; a session cookie or a Bearer token may be supplied
+        instead, and the link is then owned by that account. Anonymous requests must match the
+        enabled guest destination allowlist. The link id is deliberately not returned.
+      operationId: createPublicUrl
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/PublicCreatePayload'
+      responses:
+        '201':
+          description: Short link created.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/PublicCreatedDto'
+        '400':
+          $ref: 'components.yaml#/responses/BadRequest'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '409':
+          $ref: 'components.yaml#/responses/Conflict'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '429':
+          $ref: 'components.yaml#/responses/RateLimited'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/public/urls/{slug}:
+    get:
+      tags: [Public]
+      summary: Get the public metadata of a short link
+      description: >-
+        Returns public metadata without the target URL. Without `domain` the default domain is
+        used, which keeps callers that predate multi-domain working for links on the default
+        domain.
+      operationId: getPublicUrl
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: Slug of the short link.
+          schema:
+            type: string
+            example: promo
+        - name: domain
+          in: query
+          required: false
+          description: Hostname of the domain the link lives on; omitted uses the default domain.
+          schema:
+            type: string
+            example: go.example.com
+      responses:
+        '200':
+          description: Public metadata of the link.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/PublicUrlDto'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/tokens:
+    get:
+      tags: [API tokens]
+      summary: List API tokens
+      description: Lists every API token of the account; the list is not paginated.
+      operationId: listTokens
+      responses:
+        '200':
+          description: The API tokens of the account.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/TokenList'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    post:
+      tags: [API tokens]
+      summary: Create an API token
+      description: >-
+        Creates a personal API token and returns its plaintext value this one time only.
+        Creation is refused with `403` when the group disables API tokens or the effective
+        `max_api_tokens` is exhausted; only usable tokens count against the quota.
+      operationId: createToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/CreateTokenPayload'
+      responses:
+        '201':
+          description: Token created; the plaintext value is returned only in this response.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/CreatedTokenResponse'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/tokens/{id}:
+    delete:
+      tags: [API tokens]
+      summary: Revoke an API token
+      description: >-
+        Revokes one token of the account, which frees its quota slot immediately. Another
+        account's token is reported as `404`.
+      operationId: revokeToken
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the API token.
+          schema:
+            type: integer
+            format: int64
+            example: 1
+      responses:
+        '204':
+          description: Token revoked.
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/admin/domains:
+    get:
+      tags: [Administration]
+      summary: List every domain
+      description: >-
+        Lists every domain of the instance with its link count, status, source and the
+        administrative flags that say which actions are currently allowed.
+      operationId: listAdminDomains
+      responses:
+        '200':
+          description: Every domain of the instance.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: 'components.yaml#/schemas/AdminDomainDto'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    post:
+      tags: [Administration]
+      summary: Create a domain
+      description: >-
+        Adds a domain, created with the status `pending`. A duplicate hostname is a `409`
+        conflict.
+      operationId: createAdminDomain
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/CreateDomainPayload'
+      responses:
+        '201':
+          description: Domain created as `pending`.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/AdminDomainDto'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '409':
+          $ref: 'components.yaml#/responses/Conflict'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/admin/domains/{id}:
+    patch:
+      tags: [Administration]
+      summary: Update a domain
+      description: >-
+        Activates, disables or promotes a domain. A domain cannot be disabled and made the
+        default in one request, and the default marker cannot be cleared through this call.
+      operationId: updateAdminDomain
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the domain.
+          schema:
+            type: integer
+            format: int64
+            example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/UpdateDomainPayload'
+      responses:
+        '200':
+          description: The updated domain.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/AdminDomainDto'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    delete:
+      tags: [Administration]
+      summary: Delete a domain
+      description: >-
+        Deletes a domain. Only a `ui` domain that has no links and is not the default can be
+        deleted; anything else is a `409` conflict.
+      operationId: deleteAdminDomain
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the domain.
+          schema:
+            type: integer
+            format: int64
+            example: 1
+      responses:
+        '204':
+          description: Domain deleted.
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '409':
+          $ref: 'components.yaml#/responses/Conflict'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/admin/users:
+    get:
+      tags: [Administration]
+      summary: List users
+      description: >-
+        Lists the accounts of the instance with their link count, group id and group name.
+        `per_page` defaults to 20 and is capped at 100.
+      operationId: listAdminUsers
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Search email and display name.
+          schema:
+            type: string
+            example: ada
+        - name: role
+          in: query
+          required: false
+          description: Only return accounts with this role.
+          schema:
+            type: string
+            enum: [user, admin]
+            example: admin
+        - name: status
+          in: query
+          required: false
+          description: Only return accounts with this status.
+          schema:
+            type: string
+            enum: [active, suspended]
+            example: active
+        - name: group_id
+          in: query
+          required: false
+          description: Only return accounts that belong to this group.
+          schema:
+            type: integer
+            format: int64
+            example: 2
+        - name: page
+          in: query
+          required: false
+          description: 1-based page number.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+            example: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Rows per page; defaults to 20 and is capped at 100.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 100
+            default: 20
+            example: 20
+      responses:
+        '200':
+          description: A page of user rows.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/AdminUserPage'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/admin/users/{id}:
+    patch:
+      tags: [Administration]
+      summary: Update a user
+      description: >-
+        Changes the role, status, display name or group of an account; `group_id: null` makes
+        the account ungrouped. An administrator cannot change their own role or status, and the
+        instance always keeps at least one active administrator.
+      operationId: updateAdminUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the account.
+          schema:
+            type: integer
+            format: int64
+            example: 7
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/UpdateUserPayload'
+      responses:
+        '200':
+          description: The updated account.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/UserDto'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '409':
+          $ref: 'components.yaml#/responses/Conflict'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    delete:
+      tags: [Administration]
+      summary: Delete a user
+      description: >-
+        Soft-deletes the account and all of its short links. An administrator cannot delete
+        themselves, and the instance always keeps at least one active administrator.
+      operationId: deleteAdminUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the account.
+          schema:
+            type: integer
+            format: int64
+            example: 7
+      responses:
+        '204':
+          description: Account and its short links soft-deleted.
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '409':
+          $ref: 'components.yaml#/responses/Conflict'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/admin/users/{id}/password:
+    post:
+      tags: [Administration]
+      summary: Reset the password of a user
+      description: >-
+        Sets a new password for an account and revokes every session of that account. The new
+        password must satisfy the instance password policy.
+      operationId: resetAdminUserPassword
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the account.
+          schema:
+            type: integer
+            format: int64
+            example: 7
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/ResetPasswordPayload'
+      responses:
+        '204':
+          description: Password reset; every session of the account was revoked.
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/admin/urls:
+    get:
+      tags: [Administration]
+      summary: List every short link
+      description: >-
+        Lists every short link on the instance with the documented filters. `per_page` defaults
+        to 20 and is capped at 100.
+      operationId: listAdminUrls
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Search slug, title and target URL.
+          schema:
+            type: string
+            example: launch
+        - name: status
+          in: query
+          required: false
+          description: Only return links in this stored status.
+          schema:
+            type: string
+            enum: [active, disabled]
+            example: active
+        - name: user_id
+          in: query
+          required: false
+          description: Only return links owned by this account.
+          schema:
+            type: integer
+            format: int64
+            example: 7
+        - name: sort
+          in: query
+          required: false
+          description: >-
+            Sort order. Each field also accepts its explicit direction suffix
+            (`clicks_desc`, `slug_asc`, `updated_desc`, `expires_asc`). Any other value,
+            including `created_at`, falls back to newest first.
+          schema:
+            type: string
+            enum:
+              - created_at
+              - clicks
+              - clicks_desc
+              - slug
+              - slug_asc
+              - updated
+              - updated_desc
+              - expires
+              - expires_asc
+            default: created_at
+            example: clicks
+        - name: page
+          in: query
+          required: false
+          description: 1-based page number.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+            example: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Rows per page; defaults to 20 and is capped at 100.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 100
+            default: 20
+            example: 20
+      responses:
+        '200':
+          description: A page of short links.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/UrlPage'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/admin/urls/{id}:
+    patch:
+      tags: [Administration]
+      summary: Update a short link
+      description: Changes the stored status or the redirect status code of any short link.
+      operationId: updateAdminUrl
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the short link.
+          schema:
+            type: integer
+            format: int64
+            example: 42
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/UpdateUrlPayload'
+      responses:
+        '200':
+          description: The updated short link.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/UrlDto'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    delete:
+      tags: [Administration]
+      summary: Delete a short link
+      description: Soft-deletes any short link on the instance.
+      operationId: deleteAdminUrl
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the short link.
+          schema:
+            type: integer
+            format: int64
+            example: 42
+      responses:
+        '204':
+          description: Short link soft-deleted.
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/admin/invites:
+    get:
+      tags: [Administration]
+      summary: List invite codes
+      description: >-
+        Lists every invite code of the instance with its code, link, prefix and group. `code`
+        and `link` are `null` for legacy or secret-rotated rows, and `link` is also `null` for
+        revoked, exhausted or expired codes.
+      operationId: listAdminInvites
+      responses:
+        '200':
+          description: Every invite code of the instance.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/InviteList'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    post:
+      tags: [Administration]
+      summary: Create an invite code
+      description: >-
+        Issues a code, optionally pinned to a group and with an expiry. A code without
+        `group_id` consumes the site-wide quota; exceeding the per-period quota returns `403`.
+      operationId: createAdminInvite
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/CreateInvitePayload'
+      responses:
+        '201':
+          description: Invite code created.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/CreatedInviteResponse'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/admin/invites/{id}:
+    delete:
+      tags: [Administration]
+      summary: Revoke an invite code
+      description: >-
+        Revokes any invite code. An unused code returns its quota slot; a redeemed code keeps
+        it.
+      operationId: revokeAdminInvite
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the invite code.
+          schema:
+            type: integer
+            format: int64
+            example: 4
+      responses:
+        '204':
+          description: Invite code revoked.
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/admin/groups:
+    get:
+      tags: [Administration]
+      summary: List user groups
+      description: >-
+        Lists the user groups with their member counts and live invite counters. `per_page`
+        defaults to 20 and is capped at 100.
+      operationId: listAdminGroups
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: 1-based page number.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+            example: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Rows per page; defaults to 20 and is capped at 100.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 100
+            default: 20
+            example: 20
+      responses:
+        '200':
+          description: A page of groups; `items` are `GroupDto` objects.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/Page'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    post:
+      tags: [Administration]
+      summary: Create a user group
+      description: >-
+        Creates a group. `name` is required; omitted quotas inherit the site-wide setting,
+        omitted toggles keep their create defaults, `default_domain_id` must reference an
+        active domain and `domain_ids` must reference existing domains.
+      operationId: createAdminGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/GroupPayload'
+      responses:
+        '201':
+          description: Group created.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/GroupDto'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/admin/groups/{id}:
+    put:
+      tags: [Administration]
+      summary: Update a user group
+      description: >-
+        Replaces the mutable fields of a group. `name` is required; other omitted fields keep
+        their current value, quotas set to `null` inherit the site quota, `description: null`
+        clears it, `domain_ids: null` or `[]` clears the allowlist and `is_default: true` moves
+        the single default marker.
+      operationId: updateAdminGroup
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the group.
+          schema:
+            type: integer
+            format: int64
+            example: 2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/GroupPayload'
+      responses:
+        '200':
+          description: The updated group.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/GroupDto'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    delete:
+      tags: [Administration]
+      summary: Delete a user group
+      description: >-
+        Moves the members to `reassign_to` and deletes the group. The default group cannot be
+        deleted, and a missing or invalid target is a `409` conflict; move the marker with
+        `PUT` first.
+      operationId: deleteAdminGroup
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Numeric id of the group.
+          schema:
+            type: integer
+            format: int64
+            example: 2
+        - name: reassign_to
+          in: query
+          required: false
+          description: Id of the group that receives the members of the deleted group.
+          schema:
+            type: integer
+            format: int64
+            example: 3
+      responses:
+        '204':
+          description: Group deleted after its members were moved.
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '409':
+          $ref: 'components.yaml#/responses/Conflict'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/admin/themes:
+    get:
+      tags: [Administration]
+      summary: Get the theme catalogue
+      description: >-
+        Returns every theme, including administrator uploads, plus who may switch themes
+        (`all` or `admin`).
+      operationId: getAdminThemes
+      responses:
+        '200':
+          description: The theme catalogue and the switching policy.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/AdminThemesDto'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    put:
+      tags: [Administration]
+      summary: Update the theme selection
+      description: >-
+        Replaces the enabled themes, the default theme or the switching policy. Omitted fields
+        keep their value; at least one enabled theme and an enabled default are required, and
+        `enabled` and `default` may name `custom-...` uploads.
+      operationId: updateAdminThemes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/UpdateThemesPayload'
+      responses:
+        '200':
+          description: The theme catalogue after the update.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/AdminThemesDto'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/admin/settings:
+    get:
+      tags: [Administration]
+      summary: Get the instance settings
+      description: >-
+        Returns the current settings as a flat string map, including `theme_switching` and the
+        bot verification keys. The captcha secret key is write-only and never returned in
+        plaintext.
+      operationId: getAdminSettings
+      responses:
+        '200':
+          description: The current settings.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Setting key/value pairs; every value is a string.
+                additionalProperties:
+                  type: string
+                example:
+                  site_name: urlet
+                  registration_mode: invite
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+    put:
+      tags: [Administration]
+      summary: Update the instance settings
+      description: >-
+        Writes the supplied setting keys and returns the whole resulting map. An invalid batch
+        returns `422` and changes neither the database nor the settings cache; an empty
+        captcha secret key keeps the stored value.
+      operationId: updateAdminSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Setting key/value pairs to write; every value is a string.
+              additionalProperties:
+                type: string
+              example:
+                site_name: urlet
+                registration_mode: invite
+      responses:
+        '200':
+          description: The settings after the update.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Setting key/value pairs; every value is a string.
+                additionalProperties:
+                  type: string
+                example:
+                  site_name: urlet
+                  registration_mode: invite
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '422':
+          $ref: 'components.yaml#/responses/ValidationError'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/admin/audit:
+    get:
+      tags: [Administration]
+      summary: List the audit log
+      description: >-
+        Returns the audit log with the documented filters; the `metadata` column is parsed into
+        JSON. `per_page` defaults to 20 and is capped at 100.
+      operationId: listAdminAudit
+      parameters:
+        - name: action
+          in: query
+          required: false
+          description: Only return entries with this audit action code.
+          schema:
+            type: string
+            example: url.created
+        - name: target_type
+          in: query
+          required: false
+          description: Only return entries that target this object type.
+          schema:
+            type: string
+            example: url
+        - name: actor
+          in: query
+          required: false
+          description: Only return entries performed by this account id.
+          schema:
+            type: integer
+            format: int64
+            example: 7
+        - name: page
+          in: query
+          required: false
+          description: 1-based page number.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+            example: 1
+        - name: per_page
+          in: query
+          required: false
+          description: Rows per page; defaults to 20 and is capped at 100.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 100
+            default: 20
+            example: 20
+      responses:
+        '200':
+          description: A page of audit entries; `items` are `AuditDto` objects.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/Page'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /api/v1/admin/stats:
+    get:
+      tags: [Administration]
+      summary: Get the instance statistics
+      description: >-
+        Returns the user, short link and click totals, the database size, the version and the
+        uptime of the instance.
+      operationId: getAdminStats
+      responses:
+        '200':
+          description: Instance totals used by the admin dashboard.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    description: Version of the running binary.
+                    example: __URLET_VERSION__
+                  uptime_seconds:
+                    type: integer
+                    format: int64
+                    description: Seconds since the process started.
+                    example: 42
+                  users:
+                    type: integer
+                    format: int64
+                    description: Number of accounts.
+                    example: 120
+                  admins:
+                    type: integer
+                    format: int64
+                    description: Number of accounts with the `admin` role.
+                    example: 2
+                  links:
+                    type: integer
+                    format: int64
+                    description: Number of short links.
+                    example: 4210
+                  total_clicks:
+                    type: integer
+                    format: int64
+                    description: All recorded clicks, including automated traffic.
+                    example: 91234
+                  unique_clicks:
+                    type: integer
+                    format: int64
+                    description: Clicks from unique visitors.
+                    example: 71234
+                  bot_clicks:
+                    type: integer
+                    format: int64
+                    description: Clicks classified as automated traffic.
+                    example: 20000
+                  expired_links:
+                    type: integer
+                    format: int64
+                    description: Number of links that expired or reached their click limit.
+                    example: 310
+                  active_invites:
+                    type: integer
+                    format: int64
+                    description: Number of invite codes that can still be redeemed.
+                    example: 12
+                  active_tokens:
+                    type: integer
+                    format: int64
+                    description: Number of API tokens that can still authenticate.
+                    example: 34
+                  database_bytes:
+                    type: [integer, 'null']
+                    format: int64
+                    description: Size of the SQLite database in bytes, or `null` when it is unknown.
+                    example: 10485760
+                  registration_mode:
+                    type: string
+                    description: Effective registration mode of the instance.
+                    example: invite
+                required:
+                  - version
+                  - uptime_seconds
+                  - users
+                  - admins
+                  - links
+                  - total_clicks
+                  - unique_clicks
+                  - bot_clicks
+                  - expired_links
+                  - active_invites
+                  - active_tokens
+                  - database_bytes
+                  - registration_mode
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '403':
+          $ref: 'components.yaml#/responses/Forbidden'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'
+
+  /health:
+    get:
+      tags: [Public]
+      summary: Health probe
+      description: >-
+        Answers the health of the instance for docker health checks and uptime probes. When the
+        database cannot be queried the response is `503` with `status: degraded`.
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: The instance and its database are healthy.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/Health'
+        '503':
+          description: The database could not be queried; `status` is `degraded`.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/Health'
+
+  /healthz:
+    get:
+      tags: [Public]
+      summary: Health probe alias
+      description: An alias of `GET /health` with the same response and status codes.
+      operationId: getHealthz
+      security: []
+      responses:
+        '200':
+          description: The instance and its database are healthy.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/Health'
+        '503':
+          description: The database could not be queried; `status` is `degraded`.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/Health'
+
+  /{slug}/unlock:
+    post:
+      tags: [Public]
+      summary: Unlock a password-protected short link
+      description: >-
+        Accepts `application/json` or `application/x-www-form-urlencoded`. A JSON request that
+        succeeds answers `200` with the next path and sets the unlock cookie; a form request is
+        answered with `303` to `/{slug}`. The destination is never disclosed before the
+        password is accepted, and repeated failures are rate limited.
+      operationId: unlockLink
+      security: []
+      # A link can live on an extra short-link domain, and this endpoint resolves the
+      # slug through the request's own host. The document-level server names the
+      # canonical API host, which would unlock a different link or answer 404, so the
+      # operation names the link's own domain instead.
+      servers:
+        # Every active domain serves this endpoint, and the slug is resolved on
+        # the domain the request arrived on. A relative URL would still resolve
+        # against the canonical host serving this document, which would unlock a
+        # different link or answer 404, so the origin is a variable the caller
+        # substitutes. The default is the canonical host, which is correct for a
+        # link that lives there.
+        - url: '{origin}'
+          description: >-
+            The origin of the short link. Use the origin the link was created on, as
+            returned by `GET /api/v1/domains`; a link on an extra short-link domain is
+            unlocked there, not on the canonical API host.
+          variables:
+            origin:
+              default: __URLET_BASE_URL__
+              description: The short link's origin, including scheme.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: Slug of the password-protected short link.
+          schema:
+            type: string
+            example: promo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components.yaml#/schemas/UnlockPayload'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: 'components.yaml#/schemas/UnlockPayload'
+      responses:
+        '200':
+          description: Password accepted; the unlock cookie is set in this response.
+          content:
+            application/json:
+              schema:
+                $ref: 'components.yaml#/schemas/UnlockResponse'
+        '303':
+          description: >-
+            The form request succeeded; the response redirects to `/{slug}` and sets the unlock
+            cookie.
+          headers:
+            Location:
+              description: Same-site path of the unlocked link.
+              schema:
+                type: string
+                example: /promo
+        '400':
+          $ref: 'components.yaml#/responses/BadRequest'
+        '401':
+          $ref: 'components.yaml#/responses/Unauthorized'
+        '404':
+          $ref: 'components.yaml#/responses/NotFound'
+        '410':
+          $ref: 'components.yaml#/responses/Gone'
+        '429':
+          $ref: 'components.yaml#/responses/RateLimited'
+        '500':
+          $ref: 'components.yaml#/responses/InternalError'

@@ -1,7 +1,7 @@
 //! `/api/v1/urls/{id}/stats` and `/api/v1/urls/{id}/clicks`.
 
+use crate::routes::extract::Json;
 use axum::extract::{Path, Query, State};
-use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::db::clicks::{self, Click, ClickSummary, Dimension};

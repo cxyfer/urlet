@@ -4,6 +4,9 @@
 .github
 target
 .cargo-home
+# Task worktrees live here by project convention; each carries its own target/,
+# so leaving them in the context would ship gigabytes the build never reads.
+.worktrees
 .tmp
 data
 docs

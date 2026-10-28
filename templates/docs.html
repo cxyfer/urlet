@@ -1,0 +1,20 @@
+{# API 參考頁。
+   這個頁面刻意不 extends 任何 base 模板、也不套用任何主題：Scalar 自帶樣式與
+   版面，需求就是讓它獨立於主網站的視覺之外。
+   腳本只能是同源（`script-src 'self'`，沒有 'unsafe-inline'），所以 spec 的
+   網址用 data 屬性傳遞，由 scalar-init.js 讀取；頁面本身不含任何內嵌腳本。 #}
+<!DOCTYPE html>
+<html lang="{{ lang_code }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>{{ title }}</title>
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+    <div id="urlet-api-reference" data-openapi-url="{{ spec_url }}"></div>
+    <script src="/assets/scalar.js?v={{ version }}"></script>
+    <script src="/assets/scalar-init.js?v={{ version }}"></script>
+</body>
+</html>

@@ -118,6 +118,20 @@ pub async fn domain_gate(
         return ApiError(AppError::not_found()).into_response();
     }
 
+    // The API reference belongs on the canonical host. It is not enough to
+    // serve it here as well: the page's Test Request calls the canonical base
+    // URL, the CSP allows `connect-src 'self'` only, and there is no CORS layer,
+    // so an interactive reference on an extra domain would have its requests
+    // blocked by the browser. Sending the visitor to the canonical host gives
+    // them a reference that works, and keeps the page and its contract on the
+    // same origin.
+    if path == "/docs" || path.starts_with("/docs/") {
+        if matches!(method, Method::GET | Method::HEAD) {
+            return redirect_to_canonical(&state, &request);
+        }
+        return AppError::NotFound.into_response();
+    }
+
     if is_redirect_path(&path) {
         request.extensions_mut().insert(HostContext {
             canonical: false,

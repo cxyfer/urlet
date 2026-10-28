@@ -142,14 +142,20 @@ siteverify 請求（`src/services/captcha.rs`）：使用 `ureq` 2 搭配 rustls
 
 ### 3.3 二進位檔與映像檔尺寸目標
 
-| 項目 | 目標 | v1.0 | v1.1 |
-|------|------|------|------|
-| Release 二進位（stripped, LTO, `opt-level=z`） | ≤ 15 MB | 4.2 MB（glibc）／4.5 MB（musl） | **5.7 MB**（glibc 本機）／**5.8 MB**（容器內 musl） |
-| 執行期映像（`alpine` + 二進位 + CA 憑證） | ≤ 40 MB | 13.2 MB | **14.8 MB** |
-| 閒置／負載記憶體 | ≤ 30 MB RSS | 6.8 MB（500 次請求後） | **8.7 MB**（500 次請求後） |
-| 冷啟動到可服務 | ≤ 1 秒 | 約 0.2 秒（含遷移） | **約 0.1 秒**（全新資料庫，含遷移） |
+| 項目 | 目標 | v1.0 | v1.1 | v1.6 |
+|------|------|------|------|------|
+| Release 二進位（stripped, LTO, `opt-level=z`） | ≤ 15 MB | 4.2 MB（glibc）／4.5 MB（musl） | **5.7 MB**（glibc 本機）／**5.8 MB**（容器內 musl） | **15.7 MB**（容器內 musl） |
+| 執行期映像（`alpine` + 二進位 + CA 憑證） | ≤ 40 MB | 13.2 MB | **14.8 MB** | **37.2 MB**（35.5 MiB） |
+| 閒置／負載記憶體 | ≤ 30 MB RSS | 6.8 MB（500 次請求後） | **8.7 MB**（500 次請求後） | 未重新量測 |
+| 冷啟動到可服務 | ≤ 1 秒 | 約 0.2 秒（含遷移） | **約 0.1 秒**（全新資料庫，含遷移） | 未重新量測 |
 
 v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，各項目標仍然達成。
+
+v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大部分成長來自其間新增的功能
+——SNS 預覽圖片、公開短網址工具與主題系統——而非參考頁本身：同一棵樹移除參考頁後為
+30.4 MB。參考頁增加 6.5 MiB，其中內嵌的 Scalar 前端佔 4.9 MB、兩份 OpenAPI 合約佔 0.4 MB。
+二進位檔目標仍然達成，但映像已用掉大部分預算；若需要縮減，槓桿在內嵌前端——壓縮後約
+1.3 MB，改用 RapiDoc 之類較小的渲染器則為 0.5 MB，代價是失去在地化的介面文字。
 
 ---
 
@@ -268,6 +274,27 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 - 分頁格式：`{ "items": [...], "page": 1, "per_page": 20, "total": 42, "total_pages": 3 }`
 - 認證：Session Cookie **或** `Authorization: Bearer <api_token>`。
 - **JSON API 回應一律為英文**，不受請求語言或 `urlet_lang` cookie 影響。
+- 執行個體自己提供可瀏覽的參考頁，內嵌於執行檔中，因此沒有對外網路的執行個體也能使用：
+  - `GET /docs` 以訪客的介面語言呈現參考頁。
+  - `GET /docs/openapi.json` 與 `GET /docs/openapi.zh-TW.json` 提供 OpenAPI 3.1 合約。
+    兩者都由 `scripts/build-openapi.py` 從 `openapi/` 產生後提交，因為執行檔以
+    `include_str!` 內嵌它們；CI 會重新產生並在有任何差異時失敗。
+  - 兩份合約必須描述同一組操作，且每個操作都必須參照文件宣告的分組。分組名稱與其餘敘述
+    一併翻譯，因此參考頁的側邊欄會以訪客的語言呈現。簡體中文訪客取得英文合約，因為
+    敘述性文件只有雙語。
+  - Scalar 內嵌於 `src/assets/scalar.js`，由 `scripts/update-scalar.sh` 釘住版本與雜湊。
+    該頁面不會發出任何第三方請求，也不需要 CSP 例外：掛載元素避開了 Scalar 會自動偵測的
+    id，因此傳給它的選項得以生效。
+  - 合約以設定的 base URL 作為 server，參考頁也只存在於該主機。頁尾會在每個設計（含額外
+    網域的簡短首頁）連結它，但在額外網域上 `/docs` 與 `/docs/*` 會回 `308` 轉往 canonical
+    主機，而不是提供該頁面：參考頁的 Test Request 會呼叫 canonical base URL，而 CSP 只允許
+    `connect-src 'self'` 且沒有 CORS 層，因此在額外網域提供的互動式參考頁，每個請求都會被
+    瀏覽器擋下。base URL 屬於部署設定，因此產生器在提交的合約中留下佔位符，由回應在提供時
+    替換；該值不隨請求變動，因此每個主機取到的快取內容相同。
+  - `POST /{slug}/unlock` 是例外：每個已啟用的網域都提供它，且 slug 是在請求抵達的網域上
+    解析，因此這個操作以連結自己的來源作為 server 變數，而非繼承 canonical API server。
+  - `/docs` 是保留 slug：短網址不得佔用。已存在且持有該 slug 的連結會在啟動時回報，
+    並保留給擁有者自行重新命名。
 - 端點清單見 §7。
 
 ### 4.10 網頁介面 (FR-UI)
@@ -357,7 +384,8 @@ v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，�
 | FR-THEME-8 | 外觀 | 除了 Aurora，每個內建設計都提供兩種色系與持久化的明暗控制：訪客選定模式之前跟隨 `prefers-color-scheme`，選定後 `data-theme` 兩個方向都生效，因此儲存的淺色偏好也能勝過深色的作業系統。Aurora 僅有深色，在 `<html>` 標記 `data-theme="dark"`／`data-theme-lock="dark"` 並隱藏控制項，而不是放一個無效的按鈕。目錄的 `appearance` 欄位與「僅淺色／僅深色」徽章都來自同一份 `ThemeKey` 政策，不寫死旗標。上傳主題有管理員選擇的外觀：`auto` 保留明暗控制，`light`／`dark` 透過 `data-theme`／`data-theme-lock` 強制調色盤、隱藏控制，且瀏覽器儲存的偏好無法覆寫 |
 | FR-THEME-9 | 持久化 | 選擇存在 cookie，而非每位使用者的資料庫欄位。已停用的主題在下一個請求即被拒絕，管理員可隨時為沒有偏好的訪客更改預設。上傳主題的中介資料在 `custom_themes`、樣式表在持久化 volume 的 `URLET_THEMES_DIR`、目錄狀態在 `themes`，重啟後仍可選用。主題切換不觸碰任何連結、使用者或點擊資料 |
 | FR-THEME-10 | 上傳 | 上傳、編輯與刪除僅限管理員。上傳內容為單一 UTF-8 `.css` 檔、最大 256 KiB；名稱 1–60 字元、說明最多 200 字元、外觀為 `auto`／`light`／`dark`；每個執行個體最多 32 個上傳。CSS 以 `text/css` 與 `nosniff` 提供，接在 Verdant 基礎樣式表之後，且不可使用外部 `url(...)`、`@import`、`expression(...)` 或舊式 `behavior`。替換樣式表會改變內容雜湊 URL；刪除會移除檔案；預設主題不可刪除 |
-| FR-THEME-11 | 頁尾署名 | 每個設計的頁尾都連向上游 repo，讓自架執行個體能標明自己是從哪個專案建置的。URL 來自 `Cargo.toml` 的 `repository` 欄位，以 `urlet::REPOSITORY` 提供，並由 `templates/partials/repo_link.html` 渲染；每個 base 模板都納入它，包含 Gilded 獨立的首頁頁尾與額外網域的簡短首頁。標籤使用品牌名 `GitHub`，在每份 catalogue 都保持原文；圖示是 inline SVG，因為 CSP 不允許遠端圖片，且專案沒有圖示字型。連結以新分頁開啟並帶 `rel="noopener"`；共用的 `.footer-repo` 規則放在 `/assets/theme-ui.css`，各主題的擺放位置與字級則緊鄰該設計自己的頁尾規則 |
+| FR-THEME-11 | 頁尾署名 | 每個設計的頁尾都連向上游 repo，讓自架執行個體能標明自己是從哪個專案建置的。URL 來自 `Cargo.toml` 的 `repository` 欄位，以 `urlet::REPOSITORY` 提供，並由 `templates/partials/repo_link.html` 渲染；每個 base 模板都納入它，包含 Gilded 獨立的首頁頁尾與額外網域的簡短首頁。標籤使用品牌名 `GitHub`，在每份 catalogue 都保持原文；圖示是 inline SVG，因為 CSP 不允許遠端圖片，且專案沒有圖示字型。連結以新分頁開啟並帶 `rel="noopener"`；共用的 `.footer-link` 規則放在 `/assets/theme-ui.css`（`.footer-repo` 保留為別名，讓已上傳且針對它撰寫的樣式表繼續運作），各主題的擺放位置與字級則緊鄰該設計自己的頁尾規則 |
+| FR-THEME-12 | 參考頁入口 | 每個設計的頁尾也連向內嵌的 API 參考頁 `/docs`，由 `templates/partials/api_docs_link.html` 渲染，位置緊接在 repo 連結之前，讓署名維持在最後。可見標籤在每份 catalogue 都是 `API`，無障礙名稱則翻譯（`footer.api_label`），因此無障礙名稱仍包含可見標籤。連結不帶圖示：專案沒有圖示字型，而第二個 inline 標記會是多一個要同步的 owner。它使用共用的 `.footer-link` 規則，因此各主題的頁尾字級會原樣套用 |
 
 ### 4.15 中轉頁 (FR-SPLASH)
 

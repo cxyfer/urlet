@@ -1088,6 +1088,13 @@ async fn every_theme_renders_the_public_pages() {
                 response.body.contains("class=\"footer-repo-icon\""),
                 "{key} {uri} is missing the inline repository mark"
             );
+            // The embedded API reference is linked from the same footer, so a
+            // visitor can reach it from whatever design the instance runs.
+            assert!(
+                response.body.contains("class=\"footer-link footer-api\"")
+                    && response.body.contains("href=\"/docs\""),
+                "{key} {uri} is missing the API reference link"
+            );
         }
         // The public shell still carries exactly one language switcher and the
         // sign-in form even when a non-default theme is active.

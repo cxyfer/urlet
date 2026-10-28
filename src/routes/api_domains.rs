@@ -1,7 +1,7 @@
 //! `/api/v1/domains` — active domains a signed-in user may choose.
 
+use crate::routes::extract::Json;
 use axum::extract::State;
-use axum::Json;
 use serde::Serialize;
 
 use crate::error::ApiError;

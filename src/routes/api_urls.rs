@@ -1,9 +1,9 @@
 //! `/api/v1/urls` — short link management for the authenticated user.
 
+use crate::routes::extract::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde::Deserialize;
 
 use crate::db::urls::{AdminUrlFilter, UrlSort, UserUrlFilter};

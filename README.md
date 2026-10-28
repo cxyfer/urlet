@@ -166,12 +166,15 @@ urlet/
 ├── scripts/
 │   ├── smoke.sh                # end-to-end acceptance test (curl)
 │   ├── demo.sh                 # generate demo data and screenshots
+│   ├── build-openapi.py        # merge the OpenAPI sources into the served specs
+│   ├── update-scalar.sh        # refresh the pinned API-reference bundle
 │   └── screenshot.py           # Playwright screenshot script
+├── openapi/                    # OpenAPI 3.1 contract (shared components + one file per language)
 ├── src/
-│   ├── assets/                 # embedded CSS/JS/favicon
+│   ├── assets/                 # embedded CSS/JS/favicon, Scalar, generated specs
 │   ├── db/                     # all SQL (one module per table)
 │   ├── middleware/             # auth, CSRF, security headers, request id
-│   ├── routes/                 # HTTP: api_*, pages/*, redirect, health
+│   ├── routes/                 # HTTP: api_*, docs, pages/*, redirect, health
 │   ├── services/               # business logic: auth, urls, slug, click, admin...
 │   ├── config.rs  error.rs  state.rs  server.rs
 │   └── main.rs                 # CLI entry point
@@ -213,6 +216,9 @@ off unless it is the newest stable release).
 - [`docs/PLAN.md`](docs/PLAN.md) — phased implementation plan and acceptance criteria
 - [`docs/THEMES.md`](docs/THEMES.md) — theme catalogue, administrator workflow and how to add a theme
 - [`docs/API.md`](docs/API.md) — JSON API reference
+- [`openapi/`](openapi) — the OpenAPI 3.1 contract. Every instance serves a browsable reference
+  built from it at `/docs`, with the contracts at `/docs/openapi.json` and
+  `/docs/openapi.zh-TW.json`; both are embedded in the binary and need no outbound network
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — deployment, configuration, backup, upgrades, troubleshooting
 - [`RELEASING.md`](RELEASING.md) — release rules: versioning, tag/image rules, checklist, rollback
 

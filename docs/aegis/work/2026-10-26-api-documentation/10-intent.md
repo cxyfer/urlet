@@ -1,0 +1,5 @@
+# Intent
+
+urlet has a complete JSON API but no browsable reference and no machine-readable contract. Deliver three separately reviewable stages: (1) a bilingual OpenAPI 3.1 contract under `openapi/` plus a Scalar reference embedded in the binary and served at `/docs`; (2) a Fumadocs site in `docs-site/` published from CI to a `gh-pages` branch; (3) drift protection between the contract and the axum router. The user authorises implementation, one PR per stage and independent subagent review. No merge, tag, release or deployment is included.
+
+Success evidence: `/docs` and both spec endpoints answer over real HTTP with no third-party request; `docs` is reserved and an existing collision is disclosed at startup; the generator is deterministic and CI-guarded; the image stays under the 40 MB budget; the Fumadocs site builds from the repository sources without copying content and publishes from a path-filtered workflow; the coverage test fails on a missing or undocumented route; required repository checks and independent review pass for each stage.

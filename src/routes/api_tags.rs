@@ -1,9 +1,9 @@
 //! `/api/v1/tags` — tag listing and cleanup for the authenticated user.
 
+use crate::routes::extract::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde::Serialize;
 
 use crate::db::tags;

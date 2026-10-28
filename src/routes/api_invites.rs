@@ -5,10 +5,10 @@
 //! `invite_period`) and the shared issuance ledger apply exactly as they do for
 //! administrators, so both paths draw from the same budget.
 
+use crate::routes::extract::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::db::invites::Invite;

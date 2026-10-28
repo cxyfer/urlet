@@ -17,6 +17,7 @@ pub const RESERVED: &[&str] = &[
     "api",
     "app",
     "assets",
+    "docs",
     "health",
     "healthz",
     "favicon.ico",
@@ -134,7 +135,7 @@ mod tests {
 
     #[test]
     fn rejects_reserved_paths_case_insensitively() {
-        for reserved in ["api", "APP", "Assets", "health", "favicon.ico"] {
+        for reserved in ["api", "APP", "Assets", "docs", "health", "favicon.ico"] {
             assert!(is_reserved(reserved), "{reserved} must be reserved");
             assert!(validate(reserved).is_err());
         }

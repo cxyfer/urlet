@@ -301,6 +301,42 @@ missing "public metadata hides the target" "example.com/meta" "$META"
 check "public metadata for an unknown slug is 404" "404" \
     "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/public/urls/unknown-slug")"
 
+# ---------------------------------------------------------- api reference
+echo
+echo "API reference"
+check "the reference page is served" "200" \
+    "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/docs")"
+REFERENCE=$(curl -s "$BASE/docs")
+contains "the reference mounts the vendored bundle" "/assets/scalar.js" "$REFERENCE"
+contains "the reference points at the English contract" "/docs/openapi.json" "$REFERENCE"
+missing "the reference loads nothing from a CDN" "jsdelivr" "$REFERENCE"
+missing "the reference loads no remote font" "fonts.scalar.com" "$REFERENCE"
+contains "the reference follows the interface language" "/docs/openapi.zh-TW.json" \
+    "$(curl -s -H 'Accept-Language: zh-TW' "$BASE/docs")"
+check "the vendored bundle is served" "200" \
+    "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/assets/scalar.js")"
+check "the English contract is served" "200" \
+    "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/docs/openapi.json")"
+check "the Traditional Chinese contract is served" "200" \
+    "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/docs/openapi.zh-TW.json")"
+contains "the contract documents the API" '"operationId"' "$(curl -s "$BASE/docs/openapi.json")"
+contains "the contract carries the shared schemas" '"securitySchemes"' \
+    "$(curl -s "$BASE/docs/openapi.json")"
+contains "the contract is translated" '"urlet JSON API 參考"' \
+    "$(curl -s "$BASE/docs/openapi.zh-TW.json")"
+contains "the contract names the instance as its server" "\"url\": \"$BASE\"" \
+    "$(curl -s "$BASE/docs/openapi.json")"
+missing "the contract has no unresolved placeholder" "__URLET_BASE_URL__" \
+    "$(curl -s "$BASE/docs/openapi.json")"
+check "the reference redirects to the canonical host from an extra domain" "308" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: go.example.com' "$BASE/docs")"
+contains "the redirect names the canonical host" "$BASE/docs" \
+    "$(curl -s -o /dev/null -D - -H 'Host: go.example.com' "$BASE/docs" | tr -d '\r' | grep -i '^location:')"
+check "the docs slug is refused for a new link" "422" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIES" -X POST "$BASE/api/v1/urls" \
+        -H 'content-type: application/json' -H "origin: $BASE" \
+        -d '{"target_url":"https://example.com/shadow","slug":"docs"}')"
+
 # ----------------------------------------------------------------- expiry
 echo
 echo "expiry and limits"

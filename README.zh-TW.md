@@ -157,12 +157,15 @@ urlet/
 ├── scripts/
 │   ├── smoke.sh                # 端對端驗收測試（curl）
 │   ├── demo.sh                 # 產生示範資料並截圖
+│   ├── build-openapi.py        # 合併 OpenAPI 來源為對外提供的合約
+│   ├── update-scalar.sh        # 更新釘住版本的 API 參考前端
 │   └── screenshot.py           # Playwright 截圖腳本
+├── openapi/                    # OpenAPI 3.1 合約（共用元件 + 每語言一份）
 ├── src/
-│   ├── assets/                 # 內嵌 CSS/JS/favicon
+│   ├── assets/                 # 內嵌 CSS/JS/favicon、Scalar、產生的合約
 │   ├── db/                     # 所有 SQL（每張表一個模組）
 │   ├── middleware/             # 認證、CSRF、安全標頭、request id
-│   ├── routes/                 # HTTP：api_*、pages/*、redirect、health
+│   ├── routes/                 # HTTP：api_*、docs、pages/*、redirect、health
 │   ├── services/               # 業務邏輯：auth、urls、slug、click、admin...
 │   ├── config.rs  error.rs  state.rs  server.rs
 │   └── main.rs                 # CLI 入口
@@ -201,6 +204,9 @@ bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 - [`docs/SPEC.md`](docs/SPEC.md) — 規格書：需求、資料模型、API、非功能需求
 - [`docs/PLAN.md`](docs/PLAN.md) — 分階段實作計畫與驗收標準
 - [`docs/API.md`](docs/API.md) — JSON API 參考
+- [`openapi/`](openapi) — OpenAPI 3.1 合約。每個執行個體都在 `/docs` 提供由它產生的可瀏覽
+  參考頁，合約本身位於 `/docs/openapi.json` 與 `/docs/openapi.zh-TW.json`；兩者都內嵌於
+  執行檔，不需要對外網路
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — 部署、設定、備份、升級、疑難排解
 - [`docs/zh-TW/THEMES.md`](docs/zh-TW/THEMES.md) — 主題目錄、管理操作與新增主題的方式
 - [`RELEASING.md`](RELEASING.md) — 發布規則：版本、標籤與映像規則、檢查清單、回滾（[中文版](docs/zh-TW/RELEASING.md)）

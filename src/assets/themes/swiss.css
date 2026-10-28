@@ -2223,7 +2223,7 @@ footer.site {
 }
 
 /* 黑色底帶沒有設定頁尾字級，所以 repo 連結跟隨旁邊索引列的小字級。 */
-footer.site .footer-repo {
+footer.site .footer-link {
     font-family: var(--mono);
     font-size: 0.64rem;
     letter-spacing: 0.08em;
