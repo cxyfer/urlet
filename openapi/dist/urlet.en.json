@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "urlet JSON API",
-    "version": "1.4.0-rc.2",
+    "version": "1.4.0-rc.3",
     "description": "JSON API of urlet, a self-hosted URL shortener. Everything except the health probes, the public shortener and the link unlock lives under `/api/v1` and answers `application/json; charset=utf-8`. Timestamps are ISO-8601 UTC and JSON responses are always English, whatever interface language the visitor selected. Authenticate with the `urlet_session` cookie or with `Authorization: Bearer ur_...`."
   },
   "servers": [
@@ -2706,7 +2706,7 @@
                     "version": {
                       "type": "string",
                       "description": "Version of the running binary.",
-                      "example": "1.4.0-rc.2"
+                      "example": "1.4.0-rc.3"
                     },
                     "uptime_seconds": {
                       "type": "integer",
@@ -6116,7 +6116,7 @@
           "version": {
             "type": "string",
             "description": "Version of the running binary.",
-            "example": "1.4.0-rc.2"
+            "example": "1.4.0-rc.3"
           },
           "database": {
             "type": "string",

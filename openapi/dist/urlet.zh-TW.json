@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "urlet JSON API 參考",
-    "version": "1.4.0-rc.2",
+    "version": "1.4.0-rc.3",
     "description": "urlet 的 JSON API，這是一套自架的短網址服務。除了健康檢查、公開短網址工具與連結解鎖 之外，其餘端點都位於 `/api/v1` 之下，並回應 `application/json; charset=utf-8`。時間 一律為 ISO-8601 UTC，JSON 回應一律為英文，不受使用者選擇的介面語言影響。認證方式為 `urlet_session` cookie 或 `Authorization: Bearer ur_...`。"
   },
   "servers": [
@@ -2706,7 +2706,7 @@
                     "version": {
                       "type": "string",
                       "description": "執行中二進位檔的版本。",
-                      "example": "1.4.0-rc.2"
+                      "example": "1.4.0-rc.3"
                     },
                     "uptime_seconds": {
                       "type": "integer",
@@ -6116,7 +6116,7 @@
           "version": {
             "type": "string",
             "description": "Version of the running binary.",
-            "example": "1.4.0-rc.2"
+            "example": "1.4.0-rc.3"
           },
           "database": {
             "type": "string",

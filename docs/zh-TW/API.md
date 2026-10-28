@@ -423,7 +423,7 @@ curl "$BASE/api/v1/urls/42/preview/image" \
 ### `GET /health`
 
 ```json
-{ "status": "ok", "version": "1.4.0-rc.2", "database": "ok", "uptime_seconds": 42 }
+{ "status": "ok", "version": "1.4.0-rc.3", "database": "ok", "uptime_seconds": 42 }
 ```
 
 資料庫無法查詢時回 `503` 且 `status` 為 `degraded`。`/healthz` 是同一端點的別名。
