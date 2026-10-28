@@ -74,6 +74,12 @@ jobs:
           test -f out/api/search
           test -f out/en/docs/index.html
           test -f out/zh-TW/docs/index.html
+          test -f out/en/docs/deployment/index.html
+          test -f out/zh-TW/docs/deployment/index.html
+          test -f out/en/docs/themes/index.html
+          test -f out/zh-TW/docs/themes/index.html
+          test -f out/en/docs/multi-domain/index.html
+          test -f out/zh-TW/docs/multi-domain/index.html
           grep -q '"/urlet/_next/' out/en/index.html
           grep -q 'href="/urlet/zh-TW/docs/api/"' out/zh-TW/docs/api/index.html
           echo "export looks complete"

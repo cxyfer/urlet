@@ -29,10 +29,21 @@
 | 🌐 多語系介面 | 介面提供 English / 繁體中文 / 简体中文 切換；初次訪問依瀏覽器 `Accept-Language` 自動選擇，無法辨識時預設英文 |
 | 🤖 防機器人驗證 | 可透過環境變數或管理後台啟用 Cloudflare Turnstile 或 Google reCAPTCHA v2，套用於註冊、登入與建立短網址表單 |
 | 🐳 部署 | 單一容器 + named volumes；GHCR 提供多架構映像；附 Caddy 自動 HTTPS overlay |
-| 🪶 輕量 | 二進位檔 5.7 MB（glibc）／5.8 MB（musl）、容器映像 14.8 MB、500 次請求後 RSS 8.7 MB、轉址 P95 低於 1 毫秒（說明見下） |
+| 🪶 輕量 | 二進位檔 15.7 MB（musl）、容器映像 37.2 MB、負載下 RSS 8.7 MB（v1.1）、轉址 P95 低於 1 毫秒（說明見下） |
 
-> 二進位檔與映像的數字已包含內嵌語言目錄，以及選用的防機器人驗證所需的 TLS 相依；轉址延遲
-> 為 v1.0 的量測值，預期不變 —— 驗證只在註冊、登入與建立短網址表單執行，轉址路徑完全不受影響。
+> 二進位檔與映像為 v1.6 的量測值；閒置 RSS 上次量測為 v1.1。自 v1.1 以來的主要成長來自內嵌的
+> Scalar bundle（4.9 MB）與兩份 OpenAPI 合約，另有內嵌語言目錄與選用防機器人驗證所需的 TLS
+> 相依。轉址延遲為 v1.0 的量測值，預期不變 —— 驗證只在註冊、登入與建立短網址表單執行，轉址
+> 路徑完全不受影響。完整量測見 `docs/SPEC.md` §3.3。
+
+## SNS 預覽卡片
+
+在儀表板開啟短網址，使用 **SNS 預覽** 設定公開卡片的標題、說明，以及 HTTPS 圖片網址或
+PNG/JPEG/GIF/WebP 上傳（上限 2 MiB、4096 × 4096 像素）。三者皆清除即恢復既有連結行為。
+管理員可在 **Admin → Settings → SNS preview images** 選擇不允許圖片、僅 HTTPS 網址、僅上傳或
+兩者皆可（預設兩者）。既有但不被允許的圖片會被隱藏並保留，之後可重新開放。上傳圖片儲存在
+SQLite。預覽內容在密碼保護連結上仍是公開的；一般瀏覽器轉址行為不變。自動化請見
+[API 參考](docs/zh-TW/API.md#sns-預覽卡片)。社群平台自行決定卡片版型與快取更新。
 
 ## 快速開始
 
@@ -77,6 +88,7 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 cargo build --release
 URLET_BASE_URL=http://localhost:8080 \
 URLET_DATA_DIR=./data \
+URLET_DATABASE_URL=sqlite://./data/urlet.db?mode=rwc \
 URLET_ADMIN_EMAIL=admin@example.com \
 URLET_ADMIN_PASSWORD=change-me-please \
 ./target/release/urlet serve
@@ -144,11 +156,13 @@ urlet version | help
 ```
 urlet/
 ├── .github/workflows/
-│   ├── ci.yml                  # 格式化、Clippy、測試與 smoke，每個 PR 都跑
-│   └── release-image.yml       # 標籤觸發的多架構映像發布
+│   ├── ci.yml                  # 格式化、Clippy、測試、smoke 與 OpenAPI 合約
+│   ├── docs.yml                # 建置並發布文件網站
+│   ├── release-image.yml       # 標籤觸發的多架構映像發布
+│   └── delete-image-version.yml
 ├── Cargo.toml
 ├── Dockerfile                  # 多階段建置（rust:alpine → alpine）
-├── docker-compose.yml          # 單一容器 + named volume
+├── docker-compose.yml          # 單一容器 + named volumes
 ├── docker-compose.image.yml    # 使用已發布映像，不在本機建置
 ├── docker-compose.tls.yml      # 可選：Caddy 自動 HTTPS
 ├── deploy/Caddyfile
@@ -156,30 +170,36 @@ urlet/
 ├── templates/                  # Askama 模板（編譯期檢查）
 ├── scripts/
 │   ├── smoke.sh                # 端對端驗收測試（curl）
+│   ├── merge-check.sh          # 群組與網域流程的合併後檢查
 │   ├── demo.sh                 # 產生示範資料並截圖
 │   ├── build-openapi.py        # 合併 OpenAPI 來源為對外提供的合約
 │   ├── update-scalar.sh        # 更新釘住版本的 API 參考前端
+│   ├── release-notes.sh        # 產生 GitHub Release 草稿
+│   ├── release-notes-lint.sh   # 檢查 release notes 草稿
+│   ├── ci-push-gate.sh         # 判斷推送是否需要完整 CI
 │   └── screenshot.py           # Playwright 截圖腳本
 ├── openapi/                    # OpenAPI 3.1 合約（共用元件 + 每語言一份）
 ├── docs-site/                  # 發布用的文件網站（獨立靜態產物）
 ├── src/
 │   ├── assets/                 # 內嵌 CSS/JS/favicon、Scalar、產生的合約
 │   ├── db/                     # 所有 SQL（每張表一個模組）
-│   ├── middleware/             # 認證、CSRF、安全標頭、request id
-│   ├── routes/                 # HTTP：api_*、docs、pages/*、redirect、health
-│   ├── services/               # 業務邏輯：auth、urls、slug、click、admin...
+│   ├── i18n/                   # en / zh-Hant / zh-Hans 介面字串
+│   ├── middleware/             # 認證、CSRF、語系、主題、網域、安全標頭
+│   ├── routes/                 # HTTP：api_*、docs、previews、pages/*、redirect、health
+│   ├── rules/                  # 內建的網址清理規則
+│   ├── services/               # 業務邏輯：auth、urls、slug、theme、admin...
 │   ├── config.rs  error.rs  state.rs  server.rs
 │   └── main.rs                 # CLI 入口
-└── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,THEMES.md}
+└── docs/                       # SPEC、PLAN、API、DEPLOYMENT、THEMES、MULTI_DOMAIN 與 zh-TW 對照
 ```
 
 ## 開發
 
 ```bash
-cargo test                 # 單元 + 整合測試（530 個）
+cargo test                 # 單元 + 整合測試（完整測試套件）
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收（177 項）
+bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收
 bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 ```
 
@@ -202,21 +222,23 @@ bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 
 ## 文件
 
-- [`docs/SPEC.md`](docs/SPEC.md) — 規格書：需求、資料模型、API、非功能需求
-- [`docs/PLAN.md`](docs/PLAN.md) — 分階段實作計畫與驗收標準
-- [`docs/API.md`](docs/API.md) — JSON API 參考
+- [`docs/zh-TW/SPEC.md`](docs/zh-TW/SPEC.md) — 規格書：需求、資料模型、API、非功能需求
+- [`docs/zh-TW/PLAN.md`](docs/zh-TW/PLAN.md) — 分階段實作計畫與驗收標準
+- [`docs/zh-TW/API.md`](docs/zh-TW/API.md) — JSON API 參考
+- [`docs/zh-TW/DEPLOYMENT.md`](docs/zh-TW/DEPLOYMENT.md) — 部署、設定、備份、升級、疑難排解
+- [`docs/zh-TW/THEMES.md`](docs/zh-TW/THEMES.md) — 主題目錄、管理操作與新增主題的方式
+- [`docs/zh-TW/MULTI_DOMAIN.md`](docs/zh-TW/MULTI_DOMAIN.md) — 多網域設計：路由、主機解析與維運
 - [`openapi/`](openapi) — OpenAPI 3.1 合約。每個執行個體都在 `/docs` 提供由它產生的可瀏覽
   參考頁，合約本身位於 `/docs/openapi.json` 與 `/docs/openapi.zh-TW.json`；兩者都內嵌於
   執行檔，不需要對外網路
-- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — 部署、設定、備份、升級、疑難排解
-- [`docs/zh-TW/THEMES.md`](docs/zh-TW/THEMES.md) — 主題目錄、管理操作與新增主題的方式
 - [`RELEASING.md`](RELEASING.md) — 發布規則：版本、標籤與映像規則、檢查清單、回滾（[中文版](docs/zh-TW/RELEASING.md)）
 
 這些文件的中文版放在 `docs/zh-TW/`。
 
-同一批文件也以可搜尋的網站形式發布在 <https://cxyfer.github.io/urlet/>。它由
+API、部署、主題與多網域指南也以可搜尋的網站形式發布在 <https://cxyfer.github.io/urlet/>。它由
 [`docs-site/`](docs-site) 從本 repo 的 `docs/` 樹建置，並部署到 `gh-pages` 分支；內容在
-建置時複製進去，因此這裡的 Markdown 仍是唯一來源。該網站是獨立產物，不影響執行檔。
+建置時複製進去，因此這裡的 Markdown 仍是唯一來源。規格書、實作計畫與發布規則只保留在
+repository 內。該網站是獨立產物，不影響執行檔。
 
 ## 安全性
 

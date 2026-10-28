@@ -2,8 +2,16 @@
 
 # urlet — 分階段實作計畫 (Implementation Plan)
 
-> 對應規格：`docs/SPEC.md` v1.7
+> 對應規格：`docs/SPEC.md` v1.8
 > 原則：每個階段結束時程式碼必須**可編譯、可測試、可提交**；每個階段一個（或數個）本地 commit。
+
+## 目錄
+
+- 總覽：[執行結果（已完成）](#執行結果已完成) · [里程碑總覽](#里程碑總覽)
+- P1–P7：[P1](#p1--專案骨架與資料層) · [P2](#p2--認證與-session) · [P3](#p3--短網址核心) · [P4](#p4--轉址與解鎖) · [P5](#p5--web-ui) · [P6](#p6--管理後台與-api-完整化) · [P7](#p7--測試與文件)
+- P8–P14：[P8](#p8--最終驗證與收尾) · [P9](#p9--多語系防機器人驗證與導覽首頁-v11) · [P10](#p10--使用者群組-v12) · [P11](#p11--群組網域策略v12-follow-up) · [P12](#p12--可切換主題-v14) · [P13](#p13--中轉頁與轉址方式政策-v15) · [P14](#p14--可上傳主題-v15)
+- P15–P21：[P15](#p15--公開短網址工具-v16) · P16–P18（[里程碑總覽](#里程碑總覽)） · [P19](#p19--追蹤參數清理) · [P20](#p20--可編輯的訪客目標網址白名單) · [P21](#p21--sns-分享預覽)
+- 附錄：[P8 驗收量測結果](#p8-驗收量測結果) · [風險與對策](#風險與對策)
 
 ## 執行結果（已完成）
 
@@ -24,6 +32,12 @@
 | P13 中轉頁與轉址方式政策 (v1.5) | ✅ 完成 | 見 `git log`（migration 0011、六個主題的中轉頁模板、群組政策、三語字串、文件、測試） |
 | P14 可上傳主題 (v1.5) | ✅ 完成 | 見 `git log`（migration 0012、CSS 上傳/編輯/刪除、雜湊資產、持久化 theme volume、測試） |
 | P15 公開短網址工具 (v1.6) | ✅ 完成 | 見 `git log`（migration 0015、保留的訪客帳號、存取層級、欄位開關、兩組訪客額度、導覽首頁表單、公開 API、三語字串、文件、測試） |
+| P16 API 參考與合約 (v1.6) | ✅ 完成 | `8330556 ✨ feat(docs): serve an embedded API reference from a bilingual contract` |
+| P17 發布用文件網站 (v1.6) | ✅ 完成 | `6c20eb7 📝 docs(site): publish the bilingual documentation as a static site` |
+| P18 合約防漂移 (v1.6) | ✅ 完成 | `c96dc34 🧪 test(contract): keep the OpenAPI contract and the router in step` |
+| P19 追蹤參數清理 | ✅ 完成 | `5a0646b ✨ feat(urls): add configurable tracking parameter cleanup` |
+| P20 可編輯的訪客目標網址白名單 | ✅ 完成 | `b36a1e3 ✨ feat(public): add an editable guest destination allowlist` |
+| P21 SNS 分享預覽 | ✅ 完成 | `b92a2b8 ✨ feat(previews): customise social sharing cards` |
 
 驗收數據（v1.0）：`cargo test` 187 個測試全綠、`cargo clippy --all-targets -- -D warnings` 與
 `cargo fmt --check` 無警告、`scripts/smoke.sh` 81 項端對端檢查全數通過。
@@ -53,6 +67,9 @@
 | P16 | API 參考與合約 (v1.6) | `openapi/` 合約（共用元件加每語言一份），由 `scripts/build-openapi.py` 合併成兩份內嵌 spec；Scalar 由 `scripts/update-scalar.sh` 釘住版本；執行檔提供 `/docs`、`/docs/openapi.json` 與 `/docs/openapi.zh-TW.json`；`docs` 列為保留並在啟動時回報被遮蔽的連結；每個設計與語系的頁尾都有入口 | 兩份合約在真實 HTTP 下回應且不發出第三方請求；兩份文件描述同一組操作；產生器具決定性並由 CI 把關；CSP 不需調整；映像維持在 40 MB 以內；每個主題在三個語系都渲染該連結；fmt/clippy/test/smoke 全綠 | `✨ feat(docs): ...` |
 | P17 | 發布用文件網站 (v1.6) | `docs-site/` 由 prebuild 同步從 repo 的 `docs/` 樹建置，雙語並附搜尋；由以路徑過濾的 workflow 部署到 `gh-pages`；排除在 Docker context 之外 | 匯出內容包含兩個語系與每一個已發佈頁面；同步會推導標題並改寫文件間連結；`content/docs/` 已被 gitignore，因此 repo 只保留一份；網站不發出第三方請求；Rust 建置、映像與執行檔不受影響；fmt/clippy/test/smoke 全綠 | `📝 docs(site): ...` |
 | P18 | 合約防漂移 (v1.6) | `tests/contract.rs` 從 router 自己的原始碼讀取已註冊的表面，並與兩份合約做集合相等比對；大小守門與嚴格解析確保檢查不會空轉通過；CI 的 `contracts` job 會 lint 兩份產生的文件 | 新增未記載的路由會讓兩個合約測試失敗並指出方法與路徑；移除已記載的路由同樣會失敗；lint 不再回報未使用的元件；fmt/clippy/test/smoke 全綠 | `🧪 test(contract): ...` |
+| P19 | 追蹤參數清理 | `src/services/url_cleaning.rs` 的有界規則驗證與純 query 過濾、`src/rules/url-cleaning.txt` 內建的服務規則、`url_cleaning_enabled`／`url_cleaning_rules` 設定，以及三語共用設定介面 | 僅在建立時清理且預設關閉；內建服務、偽裝主機、編碼／fragment、規則驗證與冪等性皆有涵蓋；既有連結與編輯不變；fmt/clippy/test/smoke/merge-check 全綠 | `✨ feat(urls): ...` |
+| P20 | 可編輯的訪客目標網址白名單 | `src/services/guest_allowlist.rs` 的內建清單、精確與 `*.` 主機比對及選填路徑前綴、`guest_allowlist_enabled`／`guest_allowlist` 設定，以及含訪客可見允許清單的管理表單／API | 預設 24 個服務／43 條主機規則；啟用但清單為空時拒絕所有訪客目標；登入者與既有轉址維持原行為；編輯即時生效；fmt/clippy/test/smoke/merge-check 全綠 | `✨ feat(public): ...` |
+| P21 | SNS 分享預覽 | 每條連結可選的標題／描述與 HTTPS 或上傳圖片、四種模式的圖片來源政策、SQLite 儲存 | 僅擁有者可見的表單／API、限定的 SNS 爬蟲 metadata 輸出、生命週期與隱私邊界及測試 | `✨ feat(previews): ...` |
 
 ---
 
@@ -186,6 +203,23 @@
 
 ---
 
+## P8 驗收量測結果
+
+| 項目 | 目標（`docs/SPEC.md` §3.3、§5.2） | 實測 |
+|------|-----------------------------------|------|
+| Release 二進位大小 | ≤ 15 MB | **4.2 MB**（stripped, LTO, `opt-level=z`） |
+| 閒置記憶體 RSS | ≤ 30 MB | **6.8 MB**（500 次請求後 6.8 MB） |
+| 轉址延遲（P95） | < 10 ms | **0.74 ms**（p50 0.40 ms、p99 1.05 ms、本機 500 次 keep-alive） |
+| 冷啟動到可服務 | ≤ 1 秒 | **約 0.2 秒**（含遷移） |
+| 容器映像 | ≤ 40 MB | **13.2 MB**（Docker Compose 27.4 實機建置並 `up -d` 通過） |
+| 測試 | 全綠 | `cargo test` 187 項、`scripts/smoke.sh` 81 項 |
+| 靜態檢查 | 無警告 | `cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 通過 |
+
+上表為 v1.0 的歷史紀錄。目前量測值——v1.6 的二進位 15.7 MB musl 與映像 37.2 MB、v1.1 的冷啟動
+約 0.1 秒——請見 `docs/SPEC.md` §3.3，不要直接引用上表。
+
+---
+
 ## P9 — 多語系、防機器人驗證與導覽首頁 (v1.1)
 
 **任務**
@@ -250,6 +284,19 @@
 
 ---
 
+## P13 — 中轉頁與轉址方式政策 (v1.5)
+
+**任務**
+
+1. `migrations/0011_splash_pages.sql`：`urls.redirect_mode`、`urls.splash_delay_seconds`（1–60 秒，預設 5）、`urls.splash_title`（≤ 120 字元）、`urls.splash_message`（≤ 500 字元），以及 `user_groups.redirect_mode_policy`（`direct`／`splash`／`choice`）。
+2. 六個主題的中轉頁模板，使用設定的延遲秒數與文案。
+3. 建立連結與更新時切換模式都套用 `redirect_mode_policy`；既有連結永不修改。
+4. 三語字串、文件與測試。
+
+**驗收**：既有連結維持直接跳轉、密碼頁仍是唯一中間頁、政策只把關建立與更新，且 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test` 與 `scripts/smoke.sh` 全綠。
+
+---
+
 ## P14 — 可上傳主題 (v1.5)
 
 上傳在不改變編譯期模板模型的前提下擴充主題目錄。
@@ -304,7 +351,7 @@
 
 ---
 
-## P16 — 追蹤參數清理
+## P19 — 追蹤參數清理
 
 已確認範圍（2026-10-23）：預設關閉，僅在**建立**短網址時清理。支援 Facebook、Instagram、Threads、X/Twitter、YouTube、TikTok、Bilibili，以及管理員自訂網域／參數規則。既有連結與目標網址編輯保留原行為。單靠設定無法過濾輸入網址，因此需要新增清理邏輯。
 
@@ -322,7 +369,7 @@
 
 ---
 
-## P17 — 可編輯的訪客目標網址白名單
+## P20 — 可編輯的訪客目標網址白名單
 
 **目標**：未登入訪客只能縮短明確允許的目標，管理員可編輯內建清單並立即生效。範圍僅含本機白名單，不含可信度 API、黑名單、群組覆寫或轉址時檢查。
 
@@ -346,6 +393,12 @@
 
 ---
 
+## P21 — SNS 分享預覽
+
+每條短網址可選擇設定標題、內容與 HTTPS／上傳圖片，管理員可設定四種圖片來源政策。以 SQLite 儲存，提供擁有者表單與 API、限定 SNS 爬蟲的 metadata 輸出，驗證生命週期與隱私邊界。[實作計畫](aegis/plans/2026-10-23-social-previews.md)。
+
+---
+
 ## 風險與對策
 
 | 風險 | 影響 | 對策 |
@@ -355,24 +408,3 @@
 | SQLite 寫入鎖競爭 | 高併發點擊寫入延遲 | WAL + `busy_timeout` + 非同步寫入 + 彙總表 upsert 合併寫入 |
 | Askama 模板與路由不同步 | 執行期 500 | 模板於編譯期檢查；整合測試覆蓋每個頁面 GET |
 | 相依套件版本漂移 | 建置失敗 | 提交 `Cargo.lock`；建置階段固定工具鏈映像版本 |
-
----
-
-## P8 驗收量測結果
-
-| 項目 | 目標（`docs/SPEC.md` §3.3、§5.2） | 實測 |
-|------|-----------------------------------|------|
-| Release 二進位大小 | ≤ 15 MB | **4.2 MB**（stripped, LTO, `opt-level=z`） |
-| 閒置記憶體 RSS | ≤ 30 MB | **6.8 MB**（500 次請求後 6.8 MB） |
-| 轉址延遲（P95） | < 10 ms | **0.74 ms**（p50 0.40 ms、p99 1.05 ms、本機 500 次 keep-alive） |
-| 冷啟動到可服務 | ≤ 1 秒 | **約 0.2 秒**（含遷移） |
-| 容器映像 | ≤ 40 MB | **13.2 MB**（Docker Compose 27.4 實機建置並 `up -d` 通過） |
-| 測試 | 全綠 | `cargo test` 187 項、`scripts/smoke.sh` 81 項 |
-| 靜態檢查 | 無警告 | `cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 通過 |
-
-上表為 v1.0 的歷史紀錄；v1.1 的最新數字（二進位 5.7 MB glibc／5.8 MB musl、映像 14.8 MB、
-RSS 8.7 MB、冷啟動約 0.1 秒、完整測試套件）請見 `docs/SPEC.md` §3.3，不要直接引用上表。
-
-## SNS 分享預覽
-
-每條短網址可選擇設定標題、內容與 HTTPS／上傳圖片，管理員可設定四種圖片來源政策。以 SQLite 儲存，提供擁有者表單與 API、限定 SNS 爬蟲的 metadata 輸出，驗證生命週期與隱私邊界。[實作計畫](aegis/plans/2026-10-23-social-previews.md)。

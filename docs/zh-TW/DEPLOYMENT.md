@@ -33,7 +33,7 @@ URLET_REGISTRATION=invite                  # 可選：open / invite / closed
 
 > `URLET_BASE_URL` 的 scheme 必須與使用者實際連線的方式一致：`https://` 會讓 urlet 把 Session
 > Cookie 標記為 `Secure`，因此一邊用純 HTTP 提供服務、一邊把 `URLET_BASE_URL` 設成 `https://`，
-> 會導致登入後立刻被登出（見 §4、§10）。
+> 會導致登入後立刻被登出（見 §4、§12）。
 
 啟動：
 
@@ -55,7 +55,7 @@ docker compose exec urlet /usr/local/bin/urlet healthcheck
 建置，可直接執行已發布的版本：
 
 ```bash
-export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.2.0   # 固定要使用的版本
+export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.3.0   # 固定要使用的版本
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 
@@ -99,7 +99,7 @@ URLET_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-*
 | `URLET_THEMES_DIR` | `<URLET_DATA_DIR>/themes` | 上傳主題樣式表的存放目錄。docker compose 將 `urlet-themes` volume 掛載於 `/data/themes` |
 | `URLET_SECRET` | 自動產生 | HMAC 密鑰（至少 16 字元，建議 32+；自動產生的為 44 字元 base64）；**更換會讓所有 Session 與解鎖 Cookie 失效，既有邀請碼也無法再顯示（但仍可兌換）** |
 | `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` | — | 啟動時建立或升級管理員 |
-| `URLET_REGISTRATION` | 讀取設定表 | 覆寫註冊模式：`open` / `invite` / `closed` |
+| `URLET_REGISTRATION` | 讀取設定表 | 覆寫註冊模式：`open` / `invite` / `closed`。`invite_only` 視同 `invite`，`disabled`/`none` 視同 `closed`；無法辨識的值會退回 `open` |
 | `URLET_SECURE_COOKIES` | 依 `BASE_URL` 判斷 | 強制 Cookie `Secure`。compose 檔一律會帶入值（預設 `false`），因此在 Docker 環境自行終結 TLS 時請明確設為 `true`；TLS overlay 已自動處理 |
 | `URLET_TRUST_PROXY` | `false` | 信任 `X-Forwarded-For` / `X-Forwarded-Proto` |
 | `URLET_SESSION_TTL_HOURS` | `168` | Session 有效期 |
@@ -112,19 +112,32 @@ URLET_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-*
 | `URLET_CAPTCHA_ON_LOGIN` | `false` | 登入表單是否套用防機器人驗證 |
 | `URLET_CAPTCHA_ON_CREATE` | `false` | 建立短網址表單是否套用防機器人驗證 |
 | `URLET_CAPTCHA_ALLOWED_HOSTNAMES` | 空 | 供應商 `hostname` 回應中額外接受的主機名稱，以逗號分隔（最多 10 項）；`URLET_BASE_URL` 的主機名稱一律接受 |
-| `URLET_LOG` | `info` | tracing 過濾器，例如 `urlet=debug,tower=warn` |
+| `URLET_LOG` | `info` | tracing 過濾器，例如 `urlet=debug,tower=warn`。若有設定 `RUST_LOG`，它以 `RUST_LOG` 為準（程式會先嘗試 `EnvFilter::try_from_default_env`） |
 | `URLET_LOG_FORMAT` | `compact` | `compact` 或 `json` |
 | `URLET_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | `urlet healthcheck` 的目標 |
+| `TZ` | 系統時區（映像內為 `UTC`） | 遊客日曆配額使用的伺服器時區，例如 `Asia/Taipei`；啟動時讀取。Docker Compose 會轉傳（`TZ: ${TZ:-UTC}`） |
 
-### 多網域部署
+另外三個變數由 compose 檔讀取，urlet 二進位檔本身不會讀取：
+
+| 變數 | 預設 | 說明 |
+|------|------|------|
+| `URLET_PORT` | `8080` | `docker-compose.yml` 對外發布的主機連接埠（容器本身一律監聽 8080） |
+| `URLET_DOMAIN` | — | `docker-compose.tls.yml` overlay 申請憑證用的網域；該 overlay 必填 |
+| `URLET_IMAGE` | `ghcr.io/cxyfer/urlet:latest` | `docker-compose.image.yml` overlay 使用的映像（僅在該 overlay 生效） |
+
+站台層級設定（站名、註冊模式、配額、預設轉址類型、統計開關、點擊保留天數）
+在 **Admin → Settings** 調整，會存進資料庫並即時生效。
+非空的環境變數一律覆蓋設定表中的值。
+
+## 5. 多網域部署
 
 > **從 1.2 或更舊版本升級：** 請先備份 SQLite 資料庫。多網域 migration
 > （`0003_multi_domain`）會重建 `urls` 表，把 slug 命名空間改為以網域為單位；migration 已測試
 > 會保留 clicks、tags 與每日統計，但備份是唯一的回滾方式。
 
 Canonical host 保留完整應用（`/`、`/app`、`/api/v1`）。額外網域只做轉址：`/{slug}` 與
-`/{slug}/unlock` 可用，`/` 顯示簡單品牌頁，`/app` 導回 canonical，`/api` 回 404。每個網域有
-自己的 slug 命名空間。
+`/{slug}/unlock` 可用，`/` 顯示會套用主題的短網址導覽頁並帶站台工具，`/app` 導回 canonical，
+`/api` 回 404。每個網域有自己的 slug 命名空間。完整設計見 [`MULTI_DOMAIN.md`](MULTI_DOMAIN.md)。
 
 - 用 `URLET_DOMAINS=go.example.com,links.example.com` 預先加入，或從 `/app/admin/domains` 新增。
 - 後台新增的網域是 `pending`。先把 DNS 指向此實例、把 hostname 加進 Caddy site label（或你的
@@ -139,19 +152,7 @@ Canonical host 保留完整應用（`/`、`/app`、`/api/v1`）。額外網域�
   （保留狀態、連結與預設），不會自動刪除。Docker Compose 一律會傳入此變數，因此空的
   `URLET_DOMAINS` 會被視為明確的空清單。
 
-另外三個變數由 compose 檔讀取，urlet 二進位檔本身不會讀取：
-
-| 變數 | 預設 | 說明 |
-|------|------|------|
-| `URLET_PORT` | `8080` | `docker-compose.yml` 對外發布的主機連接埠（容器本身一律監聽 8080） |
-| `URLET_DOMAIN` | — | `docker-compose.tls.yml` overlay 申請憑證用的網域；該 overlay 必填 |
-| `URLET_IMAGE` | `ghcr.io/cxyfer/urlet:latest` | `docker-compose.image.yml` overlay 使用的映像（僅在該 overlay 生效） |
-
-站台層級設定（站名、註冊模式、配額、預設轉址類型、統計開關、點擊保留天數）
-在 **Admin → Settings** 調整，會存進資料庫並即時生效。
-非空的環境變數一律覆蓋設定表中的值。
-
-## 5. 防機器人驗證（CAPTCHA）
+## 6. 防機器人驗證（CAPTCHA）
 
 urlet 可以要求三個會產生資料的公開表單通過防機器人驗證：網頁註冊表單、網頁登入表單與
 網頁建立短網址表單。JSON API 的 `POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`
@@ -169,15 +170,8 @@ urlet 可以要求三個會產生資料的公開表單通過防機器人驗證�
 
 ### 環境變數
 
-| 變數 | 預設 | 說明 |
-|------|------|------|
-| `URLET_CAPTCHA_PROVIDER` | `none` | `none`、`turnstile` 或 `recaptcha` |
-| `URLET_CAPTCHA_SITE_KEY` | 空 | 公開 site key |
-| `URLET_CAPTCHA_SECRET_KEY` | 空 | 密鑰，只存在於伺服器端 |
-| `URLET_CAPTCHA_ON_REGISTER` | `false` | 驗證註冊表單 |
-| `URLET_CAPTCHA_ON_LOGIN` | `false` | 驗證登入表單 |
-| `URLET_CAPTCHA_ON_CREATE` | `false` | 驗證建立短網址表單 |
-| `URLET_CAPTCHA_ALLOWED_HOSTNAMES` | 空 | 額外接受其 token 的主機名稱，以逗號分隔（最多 10 項） |
+七個 `URLET_CAPTCHA_*` 變數都列在[設定參考](#4-設定參考)。出貨的 `docker-compose.yml` 會把
+它們全部轉傳到容器，因此只要寫進 `.env` 即可，不需要改 compose。
 
 四個條件**全部**成立時，該表單才會啟用驗證：provider 不是 `none`、site key 非空、
 secret key 非空，以及對應的 `ON_*` 開關（`URLET_CAPTCHA_ON_REGISTER`、
@@ -238,9 +232,7 @@ URLET_CAPTCHA_ON_CREATE=true
 # URLET_CAPTCHA_ALLOWED_HOSTNAMES=www.example.com,alt.example.com
 ```
 
-隨附的 `docker-compose.yml` 會把七個 `URLET_CAPTCHA_*` 變數直接傳進容器，
-因此只要在 `.env` 設定即可，不需要修改 compose 檔。接著執行
-`docker compose up -d` 重建容器。
+接著執行 `docker compose up -d` 重建容器。
 
 同樣的值也可以在管理後台 **Admin → Settings** 輸入，不需要重啟即生效。
 密鑰在後台是唯寫的：不會回顯已儲存的值，留白則維持原值。
@@ -262,7 +254,7 @@ urlet 解析這個位址的方式與速率限制完全相同：
 只有在代理**保證覆寫** `X-Real-IP` / `X-Forwarded-For` 時才開啟 `URLET_TRUST_PROXY`，
 否則客戶端可以偽造 IP，同時繞過速率限制。
 
-## 6. 資料與備份
+## 7. 資料與備份
 
 所有狀態都在 `/data`：`urlet-data` volume 存放資料庫與密鑰，`urlet-themes` volume（掛載於
 `/data/themes`）存放上傳的主題樣式表：
@@ -323,7 +315,7 @@ docker run --rm -v urlet-themes:/themes -v "$PWD":/backup alpine \
 docker compose up -d
 ```
 
-### 升級
+## 8. 升級
 
 ```bash
 git pull
@@ -333,14 +325,14 @@ docker compose up -d --build      # 啟動時自動套用遷移
 使用預先建置的映像時，把 `URLET_IMAGE` 改成新版本並重建容器即可：
 
 ```bash
-export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.2.0
+export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.3.0
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 
 遷移是向前相容的累加檔案（`migrations/`），已套用的檔案有 checksum 保護，
 被修改時啟動會直接失敗而不是默默分歧。升級前建議先備份。
 
-## 7. 資源與硬碟用量
+## 9. 資源與硬碟用量
 
 | 資料 | 成長速度 |
 |------|----------|
@@ -353,7 +345,7 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 
 10 萬次點擊約佔 15 MB。若長期不清理，記得設定 `click_retention_days`。
 
-## 8. 反向代理注意事項
+## 10. 反向代理注意事項
 
 - 一定要設定 `URLET_BASE_URL` 為使用者實際看到的網址，否則短網址會指向錯誤的網域。
 - 只有在代理**保證覆寫** `X-Forwarded-For` / `X-Real-IP` 時才開啟 `URLET_TRUST_PROXY`，
@@ -364,7 +356,7 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 - 邀請連結會在 `?invite=` 攜帶邀請碼；若反向代理的存取日誌記錄 query string，就會留下邀請碼。
   請限制或遮蔽該日誌，或改為只分享邀請碼。
 
-## 9. 監控
+## 11. 監控
 
 - 健康檢查：`GET /health`（200 = 正常，503 = 資料庫異常）
 - 容器 `HEALTHCHECK` 已內建，使用 `urlet healthcheck`（映像檔不需要 curl）
@@ -372,7 +364,7 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 - 每個請求都有 `x-request-id` 回應標頭，並以相同 id 寫入日誌
 - 管理後台 **Admin → Overview** 可看使用者數、短網址數、點擊總量、資料庫大小
 
-## 10. 疑難排解
+## 12. 疑難排解
 
 | 症狀 | 原因與處理 |
 |------|-----------|
@@ -390,12 +382,12 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 | 短網址已過期想復原 | 到 `/app/urls/{id}` 清除或延長到期時間；資料未被刪除 |
 | 刪除短網址後想重用同一個 slug | 刻意不允許（避免舊連結被劫持）；請改用新 slug |
 
-## 11. 安全檢查清單
+## 13. 安全檢查清單
 
 - [ ] `URLET_BASE_URL` 使用 `https://`
 - [ ] `URLET_ADMIN_PASSWORD` 為強密碼，且登入後於 `/app/account` 更換
 - [ ] 設定 `URLET_SECRET`（至少 32 個隨機字元）或確保自動產生的 `secret.key`（0600）已備份
-- [ ] 對外只暴露 80/443（由 Caddy 或既有代理終結 TLS）
+- [ ] 對外只開放 80/443。基礎 compose 檔會在所有介面發布 `${URLET_PORT:-8080}:8080`；TLS overlay 會移除這個發布，因此請使用 overlay 或以防火牆封鎖該連接埠
 - [ ] 確認 `URLET_TRUST_PROXY` 的設定與代理行為一致
 - [ ] 註冊模式設為 `invite` 或 `closed`（除非真的要開放註冊）
 - [ ] 已規劃 `click_retention_days` 與備份排程

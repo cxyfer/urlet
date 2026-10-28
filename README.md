@@ -30,12 +30,25 @@ service, no frontend build step.
 | 🌐 Localized UI | English, Traditional Chinese, and Simplified Chinese; the first visit follows the browser's `Accept-Language` header and falls back to English |
 | 🤖 Bot protection | Cloudflare Turnstile or Google reCAPTCHA v2, enabled through environment variables or the admin panel; applies to the registration, sign-in and link creation forms |
 | 🐳 Deployment | Single container plus named volumes; published multi-arch images on GHCR; optional Caddy overlay for automatic HTTPS |
-| 🪶 Lightweight | 5.7 MB (glibc) / 5.8 MB (musl) binary, 14.8 MB container image, 8.7 MB RSS after 500 requests, and sub-millisecond redirect latency at P95 (see the note below) |
+| 🪶 Lightweight | 15.7 MB (musl) binary, 37.2 MB container image, 8.7 MB RSS under load (v1.1), and sub-millisecond redirect latency at P95 (see the note below) |
 
-> The binary and image figures include the embedded locale catalogs and the TLS stack used by the
-> optional bot protection; the redirect latency was measured on v1.0 and is expected to be
-> unchanged, since captcha verification only runs on the registration, sign-in and link-creation
-> forms — never on the redirect path.
+> The binary and image figures are the v1.6 measurement; idle RSS was last measured in v1.1. Most
+> of the growth since v1.1 is the vendored Scalar bundle (4.9 MB) and the two embedded OpenAPI
+> contracts, alongside the locale catalogs and the TLS stack used by the optional bot protection.
+> The redirect latency was measured on v1.0 and is expected to be unchanged, since captcha
+> verification only runs on the registration, sign-in and link-creation forms — never on the
+> redirect path. All measurements are in `docs/SPEC.md` §3.3.
+
+## SNS preview cards
+
+Open a link in the dashboard and use **SNS preview** to set its public card title, description and
+either an HTTPS image URL or a PNG/JPEG/GIF/WebP upload (up to 2 MiB, 4096 × 4096 pixels). Clear all
+three to restore existing link behavior. Administrators choose no images, HTTPS URLs only, uploads
+only or both at **Admin → Settings → SNS preview images** (default: both). Disallowed existing
+images are hidden and retained for later re-enabling. Uploaded images stay in SQLite. Preview
+content is public even on password links; normal browser redirects are unchanged. See [the API
+reference](docs/API.md#sns-preview-cards) for automation. Social platforms control their own card
+layout and cache refresh.
 
 ## Quick start
 
@@ -81,6 +94,7 @@ make the package public under *Package settings → Change visibility*. See
 cargo build --release
 URLET_BASE_URL=http://localhost:8080 \
 URLET_DATA_DIR=./data \
+URLET_DATABASE_URL=sqlite://./data/urlet.db?mode=rwc \
 URLET_ADMIN_EMAIL=admin@example.com \
 URLET_ADMIN_PASSWORD=change-me-please \
 ./target/release/urlet serve
@@ -153,11 +167,13 @@ blocklists, webhooks, email delivery. The tables and architecture leave room for
 ```
 urlet/
 ├── .github/workflows/
-│   ├── ci.yml                  # fmt, Clippy, tests and smoke on every pull request
-│   └── release-image.yml       # tag-driven multi-arch image release
+│   ├── ci.yml                  # fmt, Clippy, tests, smoke and OpenAPI contracts
+│   ├── docs.yml                # build and publish the documentation site
+│   ├── release-image.yml       # tag-driven multi-arch image release
+│   └── delete-image-version.yml
 ├── Cargo.toml
 ├── Dockerfile                  # multi-stage build (rust:alpine → alpine)
-├── docker-compose.yml          # single container + named volume
+├── docker-compose.yml          # single container + named volumes
 ├── docker-compose.image.yml    # run a published image instead of building
 ├── docker-compose.tls.yml      # optional: Caddy with automatic HTTPS
 ├── deploy/Caddyfile
@@ -165,30 +181,36 @@ urlet/
 ├── templates/                  # Askama templates (checked at compile time)
 ├── scripts/
 │   ├── smoke.sh                # end-to-end acceptance test (curl)
+│   ├── merge-check.sh          # merged group and domain flows
 │   ├── demo.sh                 # generate demo data and screenshots
 │   ├── build-openapi.py        # merge the OpenAPI sources into the served specs
 │   ├── update-scalar.sh        # refresh the pinned API-reference bundle
+│   ├── release-notes.sh        # scaffold a GitHub Release body
+│   ├── release-notes-lint.sh   # check a release-notes draft
+│   ├── ci-push-gate.sh         # decide whether a push needs a full CI run
 │   └── screenshot.py           # Playwright screenshot script
 ├── openapi/                    # OpenAPI 3.1 contract (shared components + one file per language)
 ├── docs-site/                  # published documentation site (separate static artifact)
 ├── src/
 │   ├── assets/                 # embedded CSS/JS/favicon, Scalar, generated specs
 │   ├── db/                     # all SQL (one module per table)
-│   ├── middleware/             # auth, CSRF, security headers, request id
-│   ├── routes/                 # HTTP: api_*, docs, pages/*, redirect, health
-│   ├── services/               # business logic: auth, urls, slug, click, admin...
+│   ├── i18n/                   # en / zh-Hant / zh-Hans UI catalogs
+│   ├── middleware/             # auth, CSRF, locale, theme, domain, security headers
+│   ├── routes/                 # HTTP: api_*, docs, previews, pages/*, redirect, health
+│   ├── rules/                  # compiled-in URL-cleaning rules
+│   ├── services/               # business logic: auth, urls, slug, theme, admin...
 │   ├── config.rs  error.rs  state.rs  server.rs
 │   └── main.rs                 # CLI entry point
-└── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,THEMES.md}
+└── docs/                       # SPEC, PLAN, API, DEPLOYMENT, THEMES, MULTI_DOMAIN + zh-TW mirrors
 ```
 
 ## Development
 
 ```bash
-cargo test                 # unit + integration tests (530)
+cargo test                 # unit + integration tests (the full suite)
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-bash scripts/smoke.sh      # end-to-end acceptance run against the real binary (177 checks)
+bash scripts/smoke.sh      # end-to-end acceptance run against the real binary
 bash scripts/demo.sh       # build a demo site and write screenshots to .tmp/demo/shots
 ```
 
@@ -215,21 +237,23 @@ off unless it is the newest stable release).
 
 - [`docs/SPEC.md`](docs/SPEC.md) — specification: requirements, data model, API, non-functional requirements
 - [`docs/PLAN.md`](docs/PLAN.md) — phased implementation plan and acceptance criteria
-- [`docs/THEMES.md`](docs/THEMES.md) — theme catalogue, administrator workflow and how to add a theme
 - [`docs/API.md`](docs/API.md) — JSON API reference
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — deployment, configuration, backup, upgrades, troubleshooting
+- [`docs/THEMES.md`](docs/THEMES.md) — theme catalogue, administrator workflow and how to add a theme
+- [`docs/MULTI_DOMAIN.md`](docs/MULTI_DOMAIN.md) — multi-domain design: routing, host resolution and operations
 - [`openapi/`](openapi) — the OpenAPI 3.1 contract. Every instance serves a browsable reference
   built from it at `/docs`, with the contracts at `/docs/openapi.json` and
   `/docs/openapi.zh-TW.json`; both are embedded in the binary and need no outbound network
-- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — deployment, configuration, backup, upgrades, troubleshooting
 - [`RELEASING.md`](RELEASING.md) — release rules: versioning, tag/image rules, checklist, rollback
 
 Chinese translations of these documents live under `docs/zh-TW/`.
 
-The same documents are published as a searchable site at
+The API, deployment, theme and multi-domain guides are also published as a searchable site at
 <https://cxyfer.github.io/urlet/>. It is built from this repository's `docs/`
 tree by [`docs-site/`](docs-site) and deployed to the `gh-pages` branch; the
 content is copied in at build time, so the Markdown files here stay the only
-source. The site is a separate artifact and has no effect on the binary.
+source. The specification, the plan and the release contract stay internal to the repository. The
+site is a separate artifact and has no effect on the binary.
 
 ## Security
 
@@ -264,7 +288,3 @@ source. The site is a separate artifact and has no effect on the binary.
 ## License
 
 MIT, see [`LICENSE`](LICENSE).
-
-### Custom SNS previews
-
-Open a link in the dashboard and use **SNS preview** to set its public card title, description and either an HTTPS image URL or a PNG/JPEG/GIF/WebP upload (up to 2 MiB, 4096 × 4096 pixels). Clear all three to restore existing link behavior. Administrators choose no images, HTTPS URLs only, uploads only or both at **Admin → Settings → SNS preview images** (default: both). Disallowed existing images are hidden and retained for later re-enabling. Uploaded images stay in SQLite. Preview content is public even on password links; normal browser redirects are unchanged. See [the API reference](docs/API.md#sns-preview-configuration) for automation. Social platforms control their own card layout and cache refresh.

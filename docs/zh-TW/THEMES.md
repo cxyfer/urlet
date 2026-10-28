@@ -33,6 +33,61 @@ CSS 檔。**上傳主題**則是存放於持久化 volume 的 CSS 檔；由於 A
 標籤上標記 `data-theme-mode="light"`／`"dark"`；媒體查詢仍是無 JavaScript 時的
 路徑，`theme.js` 則在解析出模式後打開對應的那一個。
 
+## 訪客主題的決定順序
+
+1. `urlet_theme` cookie，且指向已啟用主題（內建或上傳）。
+2. 否則使用管理員設定的預設主題。
+3. cookie 指向已停用或未知主題時忽略，使用預設。
+
+切換器是原生 `<details>` 元素，沒有 JavaScript 也能運作。切換開放給所有使用者時，
+未登入的訪客也看得到它，因此在首頁選好的外觀會延續到之後的登入。cookie 為
+`HttpOnly`、`SameSite=Lax`、一年，且在設定安全 cookie 時加上 `Secure`。主題是
+外觀偏好，不是每位使用者的資料庫欄位；新瀏覽器會從預設開始。切換器的**網站預設**
+項目會清除 cookie，重新跟隨管理員的預設。
+
+與語言切換器相同，主題切換端點是 `GET`，只會寫入外觀 cookie，不會變更資料或
+權限。跨站頂層導覽因此可以改變外觀，但不能取得存取權或變更帳號。
+
+## 模板與回退
+
+根目錄的 `templates/` **同時**是 Verdant 主題與回退，也是共用外框的來源：
+`templates/base.html` 的頁尾包含每套設計都保留的兩個使用者可見連結——標示上游
+repository 的來源連結（`partials/repo_link.html`，標籤為 **GitHub**）與 `/docs`
+的 API 參考（`partials/api_docs_link.html`，標籤為 **API**）。內建主題目錄可覆寫
+任一頁面：
+
+```
+templates/
+├── base.html                 # Verdant 基底／回退
+├── app_base.html
+├── dashboard.html
+├── ...
+├── content/                  # 共享的 v1.2 頁面內容（macro）
+│   ├── dashboard.html
+│   └── admin/...
+└── themes/
+    ├── aurora/
+    │   ├── base.html
+    │   ├── app_base.html
+    │   ├── landing.html
+    │   ├── link_splash.html   # 公開中轉頁
+    │   ├── dashboard.html     # content/dashboard.html 的薄包裝
+    │   └── ...
+    ├── paper/
+    └── ...
+```
+
+帶有大量 v1.2 狀態的頁面（配額、網域、群組、邀請碼、設定）由
+`templates/content/` 的 Askama macro 共享。主題覆寫自己的外框與公開／登入頁，
+再把共用內容放進自己的殼；這讓每個主題在產品長出新功能時仍能完整運作，代價是
+較舊的設計在密集的管理頁面會更接近基礎內容。共用的 `src/assets/theme-ui.css`
+補上那些舊樣式表不認得的 class，並使用 `:where()` 讓原設計在有其意見時勝出。
+
+模板由 `src/routes/pages/themed.rs` 的 `themed_page!` 在編譯期選擇。每個頁面
+context 加上 `.themed()`，macro 會為每個主題產生一個 Deref 到同一 context 的小
+包裝，因此 Askama 的編譯期欄位檢查仍套用到每個主題。上傳主題在編譯期選擇
+Verdant 包裝，只替換樣式表 URL；它們會由下節的管理員流程加入目錄。
+
 ## 管理員操作流程
 
 1. 開啟 **管理 → 主題**（`/app/admin/themes`）。
@@ -84,10 +139,15 @@ volume；重啟後 registry 會從資料庫重建，上傳主題仍可選用。
 
 上傳有明確限制：
 
-- 單一 `.css` 檔、UTF-8、最大 256 KiB；
+- 一個 CSS 檔：上傳欄位期待的就是 CSS；`accept=".css,text/css"` 與拖放區的檔名
+  檢查都只是瀏覽器端的輔助，伺服器從不檢查副檔名。驗證的是內容：UTF-8、最大
+  256 KiB、不得含控制字元，且 `{` 與 `}` 各至少一個；
 - 每個執行個體最多 32 個自訂主題；
-- 完全不可出現外部 URL：`url(...)`、`image-set(...)` 與裸 `https://` 都算，
-  且會先解碼 CSS 跳脫序列，`u\72l(` 無法繞過檢查；
+- 絕對外部參照與跨來源 `url(...)` 會被拒絕：`http://`、`https://`、`ftp://`、
+  `data:text/html`、`data:image/svg` 出現在檔案任何位置都會被擋下，`url(...)`
+  也不得指向其他來源。掃描前會先解碼 CSS 跳脫序列與註解，`u\72l(` 無法繞過。
+  這項掃描比對文字而非解析 CSS，因此其他函式記法裡的協定相對參照（例如
+  `image-set("//host/a.png")`）不會被抓到；CSP 是第二道防線；
 - 不可使用 `@import`、`expression(...)` 或舊式 `behavior`；
 - 以 `text/css` 與 `X-Content-Type-Options: nosniff` 提供，無法變成 HTML 文件。
 
@@ -100,57 +160,6 @@ volume；重啟後 registry 會從資料庫重建，上傳主題仍可選用。
 上傳的 CSS 會**接在** Verdant 樣式表之後提供，因此小幅的顏色或版面覆寫能與基礎
 設計疊加，並在串接中勝出。上傳面板可下載 `/assets/app.css` 作為參考。自訂上傳
 不會改變文件模板：它可以重新配色所有頁面，但不能新增標記或腳本。
-
-## 訪客主題的決定順序
-
-1. `urlet_theme` cookie，且指向已啟用主題（內建或上傳）。
-2. 否則使用管理員設定的預設主題。
-3. cookie 指向已停用或未知主題時忽略，使用預設。
-
-切換器是原生 `<details>` 元素，沒有 JavaScript 也能運作。在 `所有使用者` 政策下，
-未登入的訪客也看得到它，因此在首頁選好的外觀會延續到之後的登入。cookie 為
-`HttpOnly`、`SameSite=Lax`、一年，且在設定安全 cookie 時加上 `Secure`。主題是
-外觀偏好，不是每位使用者的資料庫欄位；新瀏覽器會從預設開始。切換器的**網站預設**
-項目會清除 cookie，重新跟隨管理員的預設。
-
-與語言切換器相同，主題切換端點是 `GET`，只會寫入外觀 cookie，不會變更資料或
-權限。跨站頂層導覽因此可以改變外觀，但不能取得存取權或變更帳號。
-
-## 模板與回退
-
-根目錄的 `templates/` **同時**是 Verdant 主題與回退。內建主題目錄可覆寫任一頁面：
-
-```
-templates/
-├── base.html                 # Verdant 基底／回退
-├── app_base.html
-├── dashboard.html
-├── ...
-├── content/                  # 共享的 v1.2 頁面內容（macro）
-│   ├── dashboard.html
-│   └── admin/...
-└── themes/
-    ├── aurora/
-    │   ├── base.html
-    │   ├── app_base.html
-    │   ├── landing.html
-    │   ├── link_splash.html   # 公開中轉頁
-    │   ├── dashboard.html     # content/dashboard.html 的薄包裝
-    │   └── ...
-    ├── paper/
-    └── ...
-```
-
-帶有大量 v1.2 狀態的頁面（配額、網域、群組、邀請碼、設定）由
-`templates/content/` 的 Askama macro 共享。主題覆寫自己的外框與公開／登入頁，
-再把共用內容放進自己的殼；這讓每個主題在產品長出新功能時仍能完整運作，代價是
-較舊的設計在密集的管理頁面會更接近基礎內容。共用的 `src/assets/theme-ui.css`
-補上那些舊樣式表不認得的 class，並使用 `:where()` 讓原設計在有其意見時勝出。
-
-模板由 `src/routes/pages/themed.rs` 的 `themed_page!` 在編譯期選擇。每個頁面
-context 加上 `.themed()`，macro 會為每個主題產生一個 Deref 到同一 context 的小
-包裝，因此 Askama 的編譯期欄位檢查仍套用到每個主題。上傳主題在編譯期選擇
-Verdant 包裝，只替換樣式表 URL。
 
 ## 新增內建主題
 
@@ -171,8 +180,9 @@ Verdant 包裝，只替換樣式表 URL。
    讓被強制的調色盤同時標記在文件與目錄上。
 5. 在每個 `themed_page!` 呼叫加入 `templates/themes/<key>/...` 路徑。每個呼叫都要保留
    `Verdant` 項目，它也是頁面尚未列出新主題時的回退。
-6. 將主題加入 `ALL`、migration 種子與管理測試；既有資料庫在啟動時也可依賴
-   `db::themes::ensure_defaults` 補上。
+6. key、模板與 CSS 註冊完成後，將主題加入 `ALL` 與管理測試，並讓
+   `db::themes::ensure_defaults` 在啟動時插入目錄資料列。不要修改 migration
+   種子：已發佈的 migration 受 checksum 保護；啟動時的 seeding 對新舊資料庫都適用。
 7. 執行 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、
    `cargo test` 與 `scripts/smoke.sh`。
 

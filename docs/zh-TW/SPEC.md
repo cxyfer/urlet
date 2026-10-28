@@ -2,9 +2,24 @@
 
 # urlet — 輕量化多用戶短網址系統規格書 (Spec)
 
-> 版本：1.7
+> 版本：1.8
 > 狀態：Approved for implementation
-> 最後更新：2026-10-23
+> 最後更新：2026-10-28
+
+**目錄**
+
+1. 概述 (Overview)
+2. 名詞定義
+3. 系統架構
+4. 功能需求
+5. 非功能需求
+6. 資料模型
+7. API 規格
+8. 設定（環境變數）
+9. 部署
+10. 測試策略
+11. 驗收標準 (Definition of Done)
+12. 未來擴充路徑
 
 ---
 
@@ -76,6 +91,9 @@ Non-Goal，v1.2 起納入配額與功能開關（見 §4.13），但仍不做逐
 | 功能開關 (Feature toggle) | 群組上的 `allow_*` 布林值，決定某項連結功能可否使用；關閉開關不會刪除既有資料 |
 | 預設群組 (Default group) | `is_default = 1` 的唯一群組；新註冊與未指定群組的邀請碼會進到這裡。標記可轉移，但該群組不可刪除 |
 | 生效額度 (Effective limits) | 實際套用到使用者的配額與開關：群組有設定就用群組值，否則用全站預設 |
+| 主題 (Theme) | 視覺識別。內建主題是 Askama 模板覆寫目錄加上一份內嵌 CSS；上傳主題是管理員提供的 CSS 檔，存放於持久化 volume，並以基底模板呈現 |
+| 預設主題 (Default theme) | 訪客沒有 cookie，或 cookie 指向已停用/未知主題時所使用的唯一已啟用主題 |
+| 主題目錄 (Theme catalogue) | 六個內建主題（Verdant、Aurora、Paper、Signal、Gilded、Swiss）加上管理員上傳（`custom-…`） |
 | 中轉頁 (Splash page) | `redirect_mode` 為 `splash` 的連結所顯示的中間頁；呈現選填的宣傳文案、目的地主機與倒數，之後再前往目標 |
 | 轉址方式 (Redirect mode) | 連結如何把訪客交給目標：`direct`（立刻回 30x）或 `splash`（先顯示中轉頁）。儲存在 `urls.redirect_mode` |
 | 轉址方式政策 (Redirect-mode policy) | 群組上的 `redirect_mode_policy`（`direct`、`splash` 或 `choice`），限制**新**連結可用的模式；既有連結維持原模式 |
@@ -92,28 +110,34 @@ Non-Goal，v1.2 起納入配額與功能開關（見 §4.13），但仍不做逐
 
 ```
                         ┌─────────────────────────────────────────────────┐
-                        │ urlet（單一容器）                              │
-Browser / curl          │                                                 │
-───────────────────►    │ Axum Router                                     │
-:8080                   │  ├─ /               導覽首頁 + 公開短網址       │
-                        │  │                    （POST / 建立連結）       │
+                        │ urlet（單一容器）                                │
+Browser / curl          │                                                  │
+───────────────────►    │ Axum Router                                      │
+:8080                   │  ├─ /               導覽首頁 + 公開短網址        │
+                        │  │                    （POST / 建立連結）        │
                         │  ├─ /{slug}           跳轉 / 密碼 / 中轉頁       │
-                        │  ├─ /api/v1/**        JSON API                  │
-                        │  │   └─ /public/urls  未認證建立                │
-                        │  ├─ /app/**           SSR 使用者與管理介面      │
-                        │  ├─ /app/lang/{code}  語言切換（302）           │
-                        │  ├─ /app/theme/{key}  主題切換（302）           │
-                        │  ├─ /assets/**        內嵌 CSS/JS               │
-                        │  └─ /health           健康檢查                  │
-                        │                                                 │
-                        │ Middleware: 安全標頭 → 請求 ID → 日誌           │
-                        │             → Session/Token 認證 → 語言         │
-                        │             → CSRF → 速率限制 → 驗證碼          │
-                        │                                                 │
-                        │ Services: slug / url / click / ua / ratelimit / │
-                        │           audit / settings / i18n / captcha     │
-                        │                                                 │
-                        │ sqlx Pool (WAL)  ──►  /data/urlet.db           │
+                        │  ├─ /api/v1/**        JSON API                   │
+                        │  │   └─ /public/urls  未認證建立                 │
+                        │  ├─ /app/**           SSR 使用者與管理介面       │
+                        │  ├─ /app/lang/{code}  語言切換（302）            │
+                        │  ├─ /app/theme/{key}  主題切換（302）            │
+                        │  ├─ /docs             內嵌 API 參考頁            │
+                        │  ├─ /assets/**        內嵌 CSS/JS                │
+                        │  │   ├─ /themes/{key}          內建 CSS          │
+                        │  │   ├─ /custom-themes/{key}   上傳 CSS          │
+                        │  │   └─ /link-previews/{key}   預覽圖片          │
+                        │  ├─ /health           健康檢查                   │
+                        │  └─ /healthz          健康檢查別名               │
+                        │                                                  │
+                        │ Middleware: 安全標頭 → 請求 ID/日誌              │
+                        │             → 網域閘門 → 主題 → 語言             │
+                        │             → Session/Token 認證 → CSRF          │
+                        │             → 速率限制 → 驗證碼                  │
+                        │                                                  │
+                        │ Services: slug / url / click / ua / ratelimit /  │
+                        │           audit / settings / i18n / captcha      │
+                        │                                                  │
+                        │ sqlx Pool (WAL)  ──►  /data/urlet.db             │
                         └─────────────────────────────────────────────────┘
                          named volume: urlet-data
 ```
@@ -149,13 +173,14 @@ siteverify 請求（`src/services/captcha.rs`）：使用 `ureq` 2 搭配 rustls
 | 閒置／負載記憶體 | ≤ 30 MB RSS | 6.8 MB（500 次請求後） | **8.7 MB**（500 次請求後） | 未重新量測 |
 | 冷啟動到可服務 | ≤ 1 秒 | 約 0.2 秒（含遷移） | **約 0.1 秒**（全新資料庫，含遷移） | 未重新量測 |
 
-v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，各項目標仍然達成。
+v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，v1.1 各項目標仍然達成。
 
 v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大部分成長來自其間新增的功能
 ——SNS 預覽圖片、公開短網址工具與主題系統——而非參考頁本身：同一棵樹移除參考頁後為
 30.4 MB。參考頁增加 6.5 MiB，其中內嵌的 Scalar 前端佔 4.9 MB、兩份 OpenAPI 合約佔 0.4 MB。
-二進位檔目標仍然達成，但映像已用掉大部分預算；若需要縮減，槓桿在內嵌前端——壓縮後約
-1.3 MB，改用 RapiDoc 之類較小的渲染器則為 0.5 MB，代價是失去在地化的介面文字。
+二進位檔已超出 15 MB 目標 0.7 MB，而 37.2 MB 的映像仍在 40 MB 目標之內；若需要縮減映像，
+槓桿在內嵌前端——壓縮後約 1.3 MB，改用 RapiDoc 之類較小的渲染器則為 0.5 MB，代價是失去
+在地化的介面文字。
 
 ---
 
@@ -182,7 +207,7 @@ v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大
 | ID | 需求 | 說明 |
 |----|------|------|
 | FR-URL-1 | 建立 | 必填 `target_url`；可選 `slug`、標題、備註、標籤、密碼、過期時間、點擊上限、轉址類型、轉址方式與中轉頁文案 |
-| FR-URL-2 | 自動 Slug | 未指定時產生 7 字元 base62 隨機 Slug，碰撞時重試（最多 5 次） |
+| FR-URL-2 | 自動 Slug | 未指定時產生 base62 隨機 Slug，長度為 `default_slug_length` 設定（4–16，預設 7），碰撞時重試（最多 5 次） |
 | FR-URL-3 | 自訂 Slug | 長度 1–64，僅 `[A-Za-z0-9_-]`，不得為保留字，全域唯一 |
 | FR-URL-4 | 編輯 | 可改 target、標題、備註、標籤、密碼（設定/清除）、過期、點擊上限、轉址類型、轉址方式、中轉頁文案與狀態 |
 | FR-URL-5 | 刪除 | 軟刪除（`deleted_at`），Slug 保留不釋出（避免連結被劫持），點擊紀錄保留 |
@@ -256,7 +281,7 @@ v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大
 | FR-ADMIN-1 | 使用者管理 | 列表、搜尋（含依群組）、改角色、指派群組、停權/復權、重設密碼、軟刪除 |
 | FR-ADMIN-2 | 全站網址 | 列表、搜尋、強制停用/刪除 |
 | FR-ADMIN-3 | 邀請碼 | 建立（次數/到期/備註/可選目標群組）、列表、撤銷；`invite` 模式下註冊需邀請碼。指定群組的邀請碼會在兌換時將使用者加入該群組（FR-GROUP-4）。邀請碼與註冊連結（`/app/register?invite=CODE`）在建立後仍可查看；v1.3 之前建立或密鑰更換後的加密封存會回退為前綴。撤銷從未被兌換的邀請碼會退回配額，已被兌換的邀請碼則維持計入 |
-| FR-ADMIN-4 | 全站設定 | 編輯 `settings` 表（站名、註冊模式、全站連結與 Token 配額、預設轉址類型、統計開關、保留天數、驗證碼） |
+| FR-ADMIN-4 | 全站設定 | 編輯全站設定。可編輯鍵的權威清單位於 [`docs/API.md`](API.md) |
 | FR-ADMIN-5 | 稽核日誌 | 記錄登入、註冊、網址異動、群組異動、管理操作、設定變更；可依動作/對象篩選 |
 | FR-ADMIN-6 | 系統資訊 | 版本、資料庫大小、使用者/網址/點擊總數、運行時間 |
 | FR-ADMIN-7 | 授權 | 所有 `/api/v1/admin/**` 與 `/app/admin/**` 需 `role = admin`，否則 403 |
@@ -533,15 +558,17 @@ users ─┬─< sessions
        ├─< api_tokens
        ├─< urls ─┬─< clicks
        │         ├─< url_daily_stats
-       │         └─< url_tags >─ tags
+       │         ├─< url_tags >─ tags
+       │         └─< url_previews（選填，每條連結至多一筆）
        ├─< tags
        ├─< invite_redemptions >─ invite_codes
        └─< audit_logs (actor)
 domains ─< urls
-settings (key-value)
-themes (獨立)
-custom_themes (中介資料；CSS 在持久化 volume)
-login_attempts (稽核用)
+settings（key-value）
+public_creation_quota（遊客自然週期計數）
+themes（獨立）
+custom_themes（中介資料；CSS 在持久化 volume）
+login_attempts（稽核用）
 ```
 
 ### 6.2 設計原則
@@ -560,12 +587,12 @@ login_attempts (稽核用)
 
 ### 6.3 DDL（migration 摘要）
 
-> 完整真實來源為 `migrations/` 目錄（`0001_init.sql` 至 `0017_public_creation_quota.sql`）：`0003_multi_domain.sql` 重建網域 schema，`0004_user_groups.sql`–`0007_member_invites.sql` 新增群組與邀請碼配額，`0010`／`0012`／`0013` 新增主題，`0011_splash_pages.sql` 新增轉址中繼頁，`0014_invite_issuance_released.sql` 新增邀請碼退還欄位，`0015_public_shorten.sql` 新增 `users.is_system`、保留的訪客帳號與公開短網址工具設定；`0016_url_previews.sql` 新增 SNS 預覽資料與圖片；`0017_public_creation_quota.sql` 新增遊客自然週期計數與週期設定；以下為結構摘要。
+> 完整真實來源為 `migrations/` 目錄（`0001_init.sql` 至 `0017_public_creation_quota.sql`）：`0003_multi_domain.sql` 重建網域 schema，`0004_user_groups.sql`–`0007_member_invites.sql` 新增群組與邀請碼配額，`0010`／`0012`／`0013` 新增主題，`0011_splash_pages.sql` 新增轉址中繼頁，`0014_invite_issuance_released.sql` 新增邀請碼退還欄位，`0015_public_shorten.sql` 新增 `users.is_system`、保留的訪客帳號與公開短網址工具設定；`0016_url_previews.sql` 新增 SNS 預覽資料與圖片（每條連結至多一筆）；`0017_public_creation_quota.sql` 新增遊客自然週期計數與週期設定；以下為結構摘要。
 
 | 表 | 主要欄位 | 用途 |
 |----|----------|------|
 | `users` | id, email, email_normalized(UNIQUE), password_hash, display_name, role, status, group_id, is_system, email_verified_at, last_login_at, created_at, updated_at, deleted_at | 使用者；`is_system = 1` 標記擁有匿名連結的保留訪客帳號 |
-| `user_groups` | id, name(UNIQUE, NOCASE), description, max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection, redirect_mode_policy, default_domain_id, restrict_domains, is_default, created_at, updated_at | 配額、功能開關、轉址方式與網域策略群組 |
+| `user_groups` | id, name(UNIQUE, NOCASE), description, max_urls, max_api_tokens, max_invites, invite_period, allow_invites, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection, redirect_mode_policy, default_domain_id, restrict_domains, is_default, created_at, updated_at | 配額、功能開關、邀請碼、轉址方式與網域策略群組 |
 | `group_domains` | group_id, domain_id (PK) | 各群組的明確網域允許清單 |
 | `sessions` | id, user_id, token_hash(UNIQUE), user_agent, ip_hash, created_at, last_seen_at, expires_at, revoked_at | 登入狀態 |
 | `api_tokens` | id, user_id, name, token_prefix, token_hash(UNIQUE), scopes, last_used_at, expires_at, created_at, revoked_at | API 憑證 |
@@ -619,6 +646,8 @@ v1.5 新增 `urls` 的中轉頁欄位與 `user_groups.redirect_mode_policy`（�
 升級後首次啟動時，也會釋放「已撤銷且從未兌換」的既有邀請碼，因此 `invites_used` 可能一次下降。
 v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表、36 個索引**；SNS 預覽新增 `url_previews` 且不增加明確定義的索引；自然週期配額再新增 `public_creation_quota` 與到期索引，目前為 **21 張表、37 個索引**。
 
+`url_previews` 的 metadata 查詢不載入圖片 BLOB，備份仍以資料庫為單位。Trigger 會在所屬連結被軟刪除時移除預覽資料與圖片（包含帳號刪除）；停用或過期則保留預覽。SQLite 可重用釋放的頁面，資料庫檔案不會自動縮小。
+
 ### 6.5 預設資料 (seed)
 
 - SNS 圖片：`preview_image_policy=both`；允許值為 `none`、`url`、`upload`、`both`。
@@ -632,6 +661,9 @@ v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表�
 - `settings`（v1.2 新 key）：`max_api_tokens_per_user=20`（全站 Token 配額；`0` = 無上限）。
   由於預設為 20 而非 0，升級後若帳號已持有超過 20 個可用 Token，必須先撤銷部分 Token 才能再新增；
   升級不會主動撤銷任何既有 Token。
+- `settings`（v1.2 邀請碼配額，`0006_group_invite_quotas.sql`）：`max_invites_per_period=0`
+  （`0` = 無上限）、`invite_period=month`（`day`、`week` 或 `month`；未綁定群組的邀請碼所使用的
+  自然週期）。
 - `settings`（v1.4 新 key）：`theme_switching=all`（誰能切換主題；`admin` 僅限管理員）。
 - `user_groups`（v1.2）：建立一筆名為 `Standard`、`max_urls = NULL`、`max_api_tokens = NULL`、
   七個開關皆為 `1`（含 `allow_domain_selection`）、`default_domain_id = NULL`、
@@ -645,7 +677,10 @@ v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表�
   `public_max_urls=1000`、
   `public_allow_slug=true`、`public_allow_title=true`，而 `public_allow_tags`、
   `public_allow_password`、`public_allow_expiry`、`public_allow_max_clicks`、
-  `public_allow_redirect`、`public_allow_domain` 皆為 `false`。migration 也會插入保留的
+  `public_allow_redirect`、`public_allow_domain` 皆為 `false`；`guest_allowlist_enabled=true`，
+  `guest_allowlist` 以內建的 43 條主機規則清單（`src/services/guest_allowlist.txt`，由
+  `src/db/settings.rs` 寫入）作為預設，僅在缺少時插入，因此已編輯或刻意清空的清單不會被覆寫。
+  migration 也會插入保留的
   訪客帳號（`guest@urlet.invalid`、`is_system = 1`、`status = suspended`、無群組）；
   只有在該位址已屬於其他人的極端情況下才會略過，並於啟動時回報。
 - `domains`：啟動時依 `URLET_BASE_URL` 的 host 插入/更新 canonical 網域（`source=system`，永遠 active）。
@@ -677,12 +712,16 @@ v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表�
 
 | 方法 | 路徑 | 說明 |
 |------|------|------|
-| GET | `/api/v1/urls` | 查詢參數：`q, tag, status, page, per_page, sort(created_at\|clicks\|slug\|updated\|expires)` |
+| GET | `/api/v1/urls` | 查詢參數：`q, tag, status, page, per_page, sort(created_at\|clicks(_desc)\|slug(_asc)\|updated(_desc)\|expires(_asc))` |
 | POST | `/api/v1/urls` | `{target_url, domain?, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?, redirect_mode?, splash_delay_seconds?, splash_title?, splash_message?, captcha_token?}`；API Token 呼叫豁免驗證碼，Session Cookie 呼叫受 `on_create` 約束 |
 | GET | `/api/v1/domains` | 建立短網址時可選的 active 網域，已依呼叫者的群組策略過濾（含生效的 `is_default`） |
 | GET | `/api/v1/urls/{id}` | 單筆（含 `short_url`、`is_expired`、`has_password`） |
 | PATCH | `/api/v1/urls/{id}` | 部分更新；`domain` 可搬移連結；`password: null` 清除密碼；`expires_at: null` 清除過期；`splash_title` / `splash_message: null` 清除自訂文案 |
 | DELETE | `/api/v1/urls/{id}` | 軟刪除 → 204 |
+| GET | `/api/v1/urls/{id}/preview` | 該連結的 SNS 預覽：`{title, description, image_url, image_uploaded, enabled}` |
+| PATCH | `/api/v1/urls/{id}/preview` | `{title?, description?, image_url?}`；`null` 清除單一欄位，全部清空即移除自訂預覽；被 `preview_image_policy` 禁止的來源會被拒絕 |
+| DELETE | `/api/v1/urls/{id}/preview` | 移除自訂預覽與其上傳圖片 → 204 |
+| POST | `/api/v1/urls/{id}/preview/image` | multipart `image` 上傳（PNG/JPEG/GIF/WebP，≤ 2 MiB，≤ 4096 × 4096）→ 預覽 |
 | GET | `/api/v1/urls/{id}/stats?days=30` | 每日趨勢 + 維度分佈 + 摘要 |
 | GET | `/api/v1/urls/{id}/clicks?page=1` | 點擊明細（分頁） |
 
@@ -703,7 +742,19 @@ v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表�
 
 生效 Token 配額只計算可用 Token（未撤銷且未過期），因此撤銷舊 Token 會立即釋出一個名額（FR-TOK-6）。
 
-### 7.4 管理（需 admin）
+### 7.4 成員邀請碼
+
+| 方法 | 路徑 | 說明 |
+|------|------|------|
+| GET | `/api/v1/invites?page=&per_page=` | 呼叫者自己的邀請碼，新的在前，含 `code`、`link`、`prefix`、`group_id`、`max_uses`、`used_count`、`status` 與生效的 `quota` |
+| POST | `/api/v1/invites` | `{note?, max_uses?}` → 201 `{code, link, invite, quota}`；邀請碼固定綁定呼叫者的群組；群組停用邀請或週期配額用盡回 `403`，每小時突發限制用盡回 `429` |
+| DELETE | `/api/v1/invites/{id}` | 撤銷呼叫者自己的邀請碼 → 204；他人的邀請碼回 404 |
+
+成員邀請碼需要 `user_groups.allow_invites = 1`；邀請碼一律綁定呼叫者的群組，因此兌換者會加入該
+群組，管理員與成員發行的邀請碼共用同一份各群組帳本（`max_invites` / `invite_period`，migrations
+`0006`/`0007`）。成員邀請碼的 `max_uses` 為 1–10。
+
+### 7.5 管理（需 admin）
 
 | 方法 | 路徑 | 說明 |
 |------|------|------|
@@ -711,6 +762,10 @@ v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表�
 | PATCH | `/api/v1/admin/users/{id}` | `{role?, status?, display_name?, group_id?}`；`group_id: null` 表示改為未分組（套用全站預設） |
 | POST | `/api/v1/admin/users/{id}/password` | `{new_password}` 重設 |
 | DELETE | `/api/v1/admin/users/{id}` | 軟刪除（其網址一併軟刪除） |
+| GET | `/api/v1/admin/domains` | 所有網域，含連結數、狀態與來源 |
+| POST | `/api/v1/admin/domains` | `{hostname}` → 201，建立為 `pending` |
+| PATCH | `/api/v1/admin/domains/{id}` | `{status?: "active"\|"disabled", is_default?: true}` |
+| DELETE | `/api/v1/admin/domains/{id}` | 204；僅限零連結、非預設的 UI 網域 |
 | GET | `/api/v1/admin/groups` | 使用者群組列表（含成員數、儲存的預設/允許網域欄位，分頁） |
 | POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, redirect_mode_policy?, default_domain_id?, restrict_domains?, domain_ids?, is_default?}` → 201；domain_ids 必須存在，default_domain_id 必須 active；名稱重複或第二個預設群組回 409 |
 | PUT | `/api/v1/admin/groups/{id}` | `name` 為必填；其餘省略的欄位維持原值；`max_urls` / `max_api_tokens` 設為 `null` 表示跟隨全站配額；`description: null` 會清除說明；`default_domain_id: null` 表示全站預設；`domain_ids: null` 或 `[]` 會清空允許清單；`is_default: true` 會在同一交易內轉移預設標記 |
@@ -719,7 +774,7 @@ v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表�
 | PUT | `/api/v1/admin/themes` | `{enabled?: [keys], default?: key, switching?: "all"\|"admin"}`；省略的欄位維持原值；至少一個啟用主題且預設必須啟用。`keys` 可包含 `custom-…` 上傳主題 |
 | GET | `/api/v1/admin/urls` | 全站網址列表 |
 | PATCH | `/api/v1/admin/urls/{id}` | 強制停用/啟用/刪除 |
-| GET | `/api/v1/admin/invites` | 邀請碼列表，含 `code`、`link`、`prefix`、`group_id` / `group_name`；舊版或密鑰更換後的列為 `null`；已撤銷、次數用盡或到期的邀請碼 `link` 也為 `null` |
+| GET | `/api/v1/admin/invites` | 邀請碼列表（新的在前），含 `code`、`link`、`prefix`、`group_id` / `group_name`；最多回傳最新的 200 筆邀請碼，且沒有分頁。舊版或密鑰更換後的列為 `null`；已撤銷、次數用盡或到期的邀請碼 `link` 也為 `null` |
 | POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?, group_id?}` → 201 `{code: "K7M2QPX4RT", link: "https://host/app/register?invite=K7M2QPX4RT", invite}`；`link` 與 `invite.link` 一致，若建立後已不可用則為 `null`；`GET` 一律保留 `code`，`link` 只在可用時回傳 |
 | DELETE | `/api/v1/admin/invites/{id}` | 撤銷 → 204 |
 | GET | `/api/v1/admin/settings` | 全站設定 |
@@ -733,7 +788,7 @@ v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表�
 `admin.group_updated`、`admin.group_deleted`），使用者的群組改派則記錄在既有的
 `admin.user_updated` metadata 中。
 
-### 7.5 公開
+### 7.6 公開
 
 | 方法 | 路徑 | 說明 |
 |------|------|------|
@@ -788,29 +843,10 @@ v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表�
 
 ### 9.1 目錄結構
 
-```
-urlet/
-├── Cargo.toml  Cargo.lock  rustfmt.toml
-├── Dockerfile  .dockerignore
-├── docker-compose.yml            # 單一容器 + named volume
-├── docker-compose.tls.yml        # 可選：Caddy 自動 HTTPS
-├── deploy/Caddyfile
-├── .env.example
-├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_splash_pages.sql 0012_custom_themes.sql 0013_custom_theme_appearance.sql 0014_invite_issuance_released.sql 0015_public_shorten.sql 0016_url_previews.sql 0017_public_creation_quota.sql
-├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
-├── scripts/{smoke.sh,demo.sh,screenshot.py}
-├── templates/                    # Askama 模板（base、app_base、landing.html + 各頁面 + admin/）
-├── src/
-│   ├── main.rs  lib.rs  config.rs  state.rs  error.rs  server.rs  assets.rs
-│   ├── assets/{app.css,app.js,favicon.svg}
-│   ├── i18n/{mod.rs,en.json,zh-Hant.json,zh-Hans.json}
-│   ├── db/{mod,migrate,users,user_groups,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
-│   ├── services/{auth,urls,admin,domains,domain_policy,groups,invite_code,invite_quota,invites,limits,redirect_mode,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
-│   ├── middleware/{mod,auth,csrf,domain,security,locale}.rs
-│   └── routes/{mod,api,api_auth,api_urls,api_domains,api_tags,api_tokens,api_stats,api_admin,api_invites,api_public,redirect,health,assets,dto,extract}.rs
-│       └── pages/{mod,auth,dashboard,urls,account,admin,home,invites}.rs
-└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,splash.rs,pages.rs,admin.rs,groups.rs,invites.rs,i18n.rs,captcha.rs}
-```
+原始碼樹：見 [`README.zh-TW.md`](../../README.zh-TW.md) 的「專案結構」一節，列出 `src/`（模組、
+middleware 與 routes）、`templates/`、`migrations/`、`scripts/` 與測試樹。執行期 `/data` 配置
+——`urlet.db` 及其 WAL/SHM 檔、自動產生的 `secret.key`，以及 `themes/` 下的上傳主題樣式表
+——見 [`DEPLOYMENT.md`](DEPLOYMENT.md) 的「資料與備份」一節。Migration 檔名列於 §6.3。
 
 ### 9.2 Dockerfile 策略
 
@@ -820,20 +856,11 @@ urlet/
 
 ### 9.3 Compose 服務
 
-```yaml
-services:
-  urlet:
-    build: .
-    image: urlet:latest
-    ports: ["8080:8080"]
-    env_file: [.env]
-    volumes: [urlet-data:/data, urlet-themes:/data/themes]
-    healthcheck: ...   # urlet healthcheck
-    restart: unless-stopped
-volumes:
-  urlet-data:
-  urlet-themes:
-```
+`docker-compose.yml` 執行單一 `urlet` 容器，預設從本機 `Dockerfile` 建置（也可透過
+`docker-compose.image.yml` 使用已發布的映像），並使用 `urlet-data` 與 `urlet-themes` 兩個
+volume。設定以容器環境變數傳入，支援 `${VAR:-default}` 替換；主機連接埠預設為 `8080`；容器
+健康檢查呼叫 `urlet healthcheck`。實際映像標籤、volume 掛載與重啟政策以
+[`docker-compose.yml`](../../docker-compose.yml) 為準。
 
 `docker-compose.tls.yml`：額外加入 Caddy（80/443、自動 Let's Encrypt），
 urlet 不對外暴露連接埠，由 Caddy 反向代理。
@@ -845,7 +872,7 @@ urlet 不對外暴露連接埠，由 Caddy 反向代理。
 | 層級 | 範圍 | 工具 |
 |------|------|------|
 | 單元測試 | slug 產生/驗證/保留字、UA 解析、過期判定、設定解析、群組配額繼承（NULL／0／自訂值、未分組回退）、密碼雜湊、IP 雜湊、CSRF 同源判斷、`Accept-Language` 協商（`q=` 權重、回退英文）、語言目錄回退、驗證碼啟用條件矩陣、驗證碼失敗關閉判定 | `#[cfg(test)]` 模組 |
-| 整合測試 | 註冊→登入→建立→轉址→統計；密碼保護流程；過期與點擊上限；所有權隔離；admin 授權；API Token；群組 CRUD 與預設標記轉移；各群組的連結與 Token 配額；建立與更新時的功能開關強制；帶群組的邀請碼；刪除群組並改派；CSRF 拒絕；語言協商與 cookie 切換；API JSON 維持英文；註冊、登入與建立時的驗證碼拒絕（網頁與 JSON API）；導覽首頁；中轉頁渲染、密碼優先與轉址方式政策 | `tests/integration.rs` + `tower::ServiceExt::oneshot` + 臨時 SQLite |
+| 整合測試 | 註冊→登入→建立→轉址→統計；密碼保護流程；過期與點擊上限；所有權隔離；admin 授權；API Token；群組 CRUD 與預設標記轉移；各群組的連結與 Token 配額；建立與更新時的功能開關強制；帶群組的邀請碼；刪除群組並改派；CSRF 拒絕；語言協商與 cookie 切換；API JSON 維持英文；註冊、登入與建立時的驗證碼拒絕（網頁與 JSON API）；導覽首頁；中轉頁渲染、密碼優先與轉址方式政策 | `tests/`——`auth.rs`、`urls.rs`、`redirect.rs`、`splash.rs`、`pages.rs`、`admin.rs`、`groups.rs`、`invites.rs`、`i18n.rs`、`captcha.rs`、`multi_domain.rs`、`previews.rs`、`public_urls.rs`、`themes.rs`、`url_cleaning.rs`、`guest_allowlist.rs`，外加 `contract.rs`、`api_docs.rs` 與 `ci_workflow.rs`——以 `tower::ServiceExt::oneshot` 對臨時 SQLite 執行。`contract.rs` 檢查 §4.9 所述的 router 與合約集合相等，`ci_workflow.rs` 檢查每個 CI job 都在 gate 的 `REQUIRED` 清單中 |
 | 端對端煙霧測試 | 以真實二進位 + curl 走完主要流程 | `scripts/smoke.sh` |
 | 靜態檢查 | `cargo fmt --check`、`cargo clippy -D warnings` | CI 指令（README 說明） |
 
@@ -868,48 +895,25 @@ v1.0：
 - [x] README 可讓新使用者在 5 分鐘內完成部署
 - [x] 每個階段皆有對應的本地 commit（見 `docs/PLAN.md`）
 
-v1.1 新增項目（本批次）：
+v1.1 新增項目：
 
-- [ ] 三份語言目錄（`en`、`zh-Hant`、`zh-Hans`）內嵌於二進位檔並涵蓋所有介面字串，缺少 key 時回退英文
-- [ ] `Accept-Language` 協商正確處理 `q=` 權重，無法辨識或未帶標頭時預設英文
-- [ ] `GET /app/lang/{code}?next=<path>` 設定 `urlet_lang`（Path=/、SameSite=Lax、Max-Age 一年、非 HttpOnly）並回 302 轉往 `next` 或 `/app`，且 `next` 只接受同站相對路徑
-- [ ] `<html lang>` 反映當前語言，錯誤頁面亦依語言呈現
-- [ ] HTML 回應帶 `Content-Language` 與 `Vary: Accept-Language, Cookie`；靜態資源不設 `Vary`
-- [ ] JSON API 回應不受請求語言影響，一律英文
-- [ ] 驗證碼僅在 provider ≠ none、兩把 key 非空、對應開關（`on_register`、`on_login` 或 `on_create`）為 true 時啟用；非空環境變數覆蓋後台設定
-- [ ] 驗證碼逾時、非 2xx 或無法解析時一律拒絕，並套用於網頁註冊、網頁登入、網頁建立、`POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`（400 `captcha_failed`）
-- [ ] 回報的 `hostname` 僅在符合 `URLET_BASE_URL` 的主機名稱或 `URLET_CAPTCHA_ALLOWED_HOSTNAMES` 時接受；未帶或空字串時接受，不符時拒絕並記一筆 `WARN`
-- [ ] siteverify 是系統唯一的對外 HTTP 請求，透過 `ureq` 2 + rustls + webpki-roots（不需 OpenSSL）發出，且預設關閉
-- [ ] `POST /api/v1/urls` 僅在 API Token 呼叫時豁免驗證碼（Session Cookie 呼叫受 `on_create` 約束）；後台 secret key 欄位為唯寫
-- [ ] `GET /` 對未登入與已登入使用者皆回 200 的導覽首頁，不再 302 至 `/app`
+- [x] 三份語言目錄（`en`、`zh-Hant`、`zh-Hans`）內嵌於二進位檔並涵蓋所有介面字串，缺少 key 時回退英文
+- [x] `Accept-Language` 協商正確處理 `q=` 權重，無法辨識或未帶標頭時預設英文
+- [x] `GET /app/lang/{code}?next=<path>` 設定 `urlet_lang`（Path=/、SameSite=Lax、Max-Age 一年、非 HttpOnly）並回 302 轉往 `next` 或 `/app`，且 `next` 只接受同站相對路徑
+- [x] `<html lang>` 反映當前語言，錯誤頁面亦依語言呈現
+- [x] HTML 回應帶 `Content-Language` 與 `Vary: Accept-Language, Cookie`；靜態資源不設 `Vary`
+- [x] JSON API 回應不受請求語言影響，一律英文
+- [x] 驗證碼僅在 provider ≠ none、兩把 key 非空、對應開關（`on_register`、`on_login` 或 `on_create`）為 true 時啟用；非空環境變數覆蓋後台設定
+- [x] 驗證碼逾時、非 2xx 或無法解析時一律拒絕，並套用於網頁註冊、網頁登入、網頁建立、`POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`（400 `captcha_failed`）
+- [x] 回報的 `hostname` 僅在符合 `URLET_BASE_URL` 的主機名稱或 `URLET_CAPTCHA_ALLOWED_HOSTNAMES` 時接受；未帶或空字串時接受，不符時拒絕並記一筆 `WARN`
+- [x] siteverify 是系統唯一的對外 HTTP 請求，透過 `ureq` 2 + rustls + webpki-roots（不需 OpenSSL）發出，且預設關閉
+- [x] `POST /api/v1/urls` 僅在 API Token 呼叫時豁免驗證碼（Session Cookie 呼叫受 `on_create` 約束）；後台 secret key 欄位為唯寫
+- [x] `GET /` 對未登入與已登入使用者皆回 200 的導覽首頁，不再 302 至 `/app`
 - [ ] `cargo test`（完整測試套件）、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過，`scripts/smoke.sh` 端對端檢查全過，且容器映像可在 musl 下建置並執行（§3.3）
 
-v1.6 新增項目（本批次）：
+最後一項維持未勾選：上述功能已在原始碼中確認，但更新本文件時未執行測試套件與映像建置。
 
-- [x] 只要訪客可以建立連結，canonical 導覽首頁就提供公開短網址工具；額外（僅轉址）網域永遠不會，且該處的 `POST /` 回 `404`
-- [x] `public_create_access`（`guest` / `user` / `admin`，預設 `user`）把關每一條建立路徑；當呼叫者低於該層級時，儀表板會以提示取代表單
-- [x] 保留的訪客帳號（`users.is_system = 1`，19 張表／36 個索引）擁有匿名連結；它不會出現在使用者列表與任何計數中，在管理員的網址列表標為 `Guest`，無法登入，也不能編輯或刪除
-- [x] `public_allow_*` 開關決定公開表單提供哪些選填欄位；送出時填了被停用的欄位會回 `403`
-- [x] `public_captcha` 保護匿名流程，已登入的 Session 依 `captcha_on_create`，Bearer Token 則維持豁免
-- [x] `public_rate_limit_per_ip` 與 `public_rate_limit_global` 只限制匿名建立，週期可各自選擇分鐘／時／日／週／月（預設每自然小時 20／500 次），`0` 會停用任一項，被拒絕時回 `429` / `?err=rate_limited`
-- [x] `POST /api/v1/public/urls` 回 `201 {domain, slug, short_url, target_url, created_at}`，且不提供連結 id
-- [x] `?shortened=<slug>` 以資料庫解析，因此結果框永不逐字印出查詢字串的值，也永不洩漏目的地
-- [x] 三份語言目錄與六個導覽首頁模板都帶有新字串與共用的表單 partial
-- [x] `cargo test`、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`scripts/smoke.sh` 與 `scripts/merge-check.sh` 全綠
-
-v1.5 新增項目（本批次）：
-
-- [x] `urls.redirect_mode`（`direct` / `splash`）、`splash_delay_seconds`（1–60，預設 5）、`splash_title`（≤120）與 `splash_message`（≤500，可換行）；既有連結維持 `direct`
-- [x] 中轉頁連結回 200 中間頁，顯示自訂或在地化文案、目的地主機、倒數、meta refresh 與立即前往按鈕；送出時記錄點擊、設定 `no-store`，且不載入外部資源
-- [x] 受密碼保護的連結以密碼頁為唯一中間頁，解鎖後直接前往目標
-- [x] `user_groups.redirect_mode_policy`（`direct` / `splash` / `choice`，預設 `choice`）只把關建立與模式切換，透過 `GET /api/v1/auth/me` 曝光，兩個網頁表單都會隱藏被封鎖的選項
-- [x] 六個主題皆提供中轉頁模板，三份語言目錄涵蓋所有新字串
-- [x] `cargo test`、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`scripts/smoke.sh` 與 `scripts/merge-check.sh` 全綠
-
-v1.4 新增項目（本批次）：
-- [x] `themes`（19 張表、35 個索引）：六個內建設計與管理員 CSS 上傳、啟用/預設切換、全站切換權限、`urlet_theme` cookie、各主題模板目錄，以及持久化於 `/data/themes` 的 `custom_themes` 目錄與檔案
-
-v1.2 新增項目（本批次）：
+v1.2 新增項目：
 
 - [x] `user_groups` 與 `group_domains`（16 張表、31 個索引）具備可空的 `max_urls` / `max_api_tokens`、七個功能開關、各群組預設網域與允許清單，並新增 `users.group_id` 與 `invite_codes.group_id`
 - [x] 遷移建立 `Standard` 群組（兩個配額皆為 `NULL`）並把所有既有使用者指派進去，升級後行為不變
@@ -922,6 +926,32 @@ v1.2 新增項目（本批次）：
 - [x] Token 配額預設為 20 個可用 Token，顯示於帳號頁，並與生效連結配額及開關一起在 `GET /api/v1/auth/me` 回傳
 - [x] 群組異動寫入稽核（`admin.group_created` / `updated` / `deleted`），使用者改派記錄於稽核 metadata
 - [x] `cargo test`（374 個測試，1 個 ignored）、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 全數通過，`scripts/smoke.sh` 108 項檢查全過（含群組 CRUD、配額強制、網域策略與改派）
+
+v1.4 新增項目：
+
+- [x] `themes`（19 張表、35 個索引）：六個內建設計與管理員 CSS 上傳、啟用/預設切換、全站切換權限、`urlet_theme` cookie、各主題模板目錄，以及持久化於 `/data/themes` 的 `custom_themes` 目錄與檔案
+
+v1.5 新增項目：
+
+- [x] `urls.redirect_mode`（`direct` / `splash`）、`splash_delay_seconds`（1–60，預設 5）、`splash_title`（≤120）與 `splash_message`（≤500，可換行）；既有連結維持 `direct`
+- [x] 中轉頁連結回 200 中間頁，顯示自訂或在地化文案、目的地主機、倒數、meta refresh 與立即前往按鈕；送出時記錄點擊、設定 `no-store`，且不載入外部資源
+- [x] 受密碼保護的連結以密碼頁為唯一中間頁，解鎖後直接前往目標
+- [x] `user_groups.redirect_mode_policy`（`direct` / `splash` / `choice`，預設 `choice`）只把關建立與模式切換，透過 `GET /api/v1/auth/me` 曝光，兩個網頁表單都會隱藏被封鎖的選項
+- [x] 六個主題皆提供中轉頁模板，三份語言目錄涵蓋所有新字串
+- [x] `cargo test`、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`scripts/smoke.sh` 與 `scripts/merge-check.sh` 全綠
+
+v1.6 新增項目：
+
+- [x] 只要訪客可以建立連結，canonical 導覽首頁就提供公開短網址工具；額外（僅轉址）網域永遠不會，且該處的 `POST /` 回 `404`
+- [x] `public_create_access`（`guest` / `user` / `admin`，預設 `user`）把關每一條建立路徑；當呼叫者低於該層級時，儀表板會以提示取代表單
+- [x] 保留的訪客帳號（`users.is_system = 1`，19 張表／36 個索引）擁有匿名連結；它不會出現在使用者列表與任何計數中，在管理員的網址列表標為 `Guest`，無法登入，也不能編輯或刪除
+- [x] `public_allow_*` 開關決定公開表單提供哪些選填欄位；送出時填了被停用的欄位會回 `403`
+- [x] `public_captcha` 保護匿名流程，已登入的 Session 依 `captcha_on_create`，Bearer Token 則維持豁免
+- [x] `public_rate_limit_per_ip` 與 `public_rate_limit_global` 只限制匿名建立，週期可各自選擇分鐘／時／日／週／月（預設每自然小時 20／500 次），`0` 會停用任一項，被拒絕時回 `429` / `?err=rate_limited`
+- [x] `POST /api/v1/public/urls` 回 `201 {domain, slug, short_url, target_url, created_at}`，且不提供連結 id
+- [x] `?shortened=<slug>` 以資料庫解析，因此結果框永不逐字印出查詢字串的值，也永不洩漏目的地
+- [x] 三份語言目錄與六個導覽首頁模板都帶有新字串與共用的表單 partial
+- [x] `cargo test`、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`scripts/smoke.sh` 與 `scripts/merge-check.sh` 全綠
 
 ---
 
@@ -936,5 +966,3 @@ v1.2 新增項目（本批次）：
 | GeoIP 國家統計 | `clicks.country_code` 已存在，只需加入解析器 |
 | 點擊明細匯出 / CSV | `clicks` 完整欄位 + 索引 |
 | 稽核合規 | `audit_logs.metadata` JSON 保留完整上下文 |
-
-遷移 `0016_url_previews.sql` 新增 `url_previews`（每條短網址至多一筆），在遊客自然週期計數遷移前，schema 共 20 張表、36 個明確定義的索引；加入計數表後，目前為 21 張表、37 個明確定義的索引。一般 metadata 查詢不載入圖片 BLOB；備份仍以資料庫為單位。Trigger 會在所屬連結被軟刪除時移除預覽資料與圖片，包含帳號刪除；停用或過期則保留預覽。SQLite 可重用釋放的頁面，資料庫檔案不會自動縮小。

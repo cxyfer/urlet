@@ -12,7 +12,7 @@
 - JSON 回應一律為英文，不受使用者選擇的介面語言影響（見[介面語言](#介面語言)）
 
 本文件是敘述性參考。每個執行個體也提供同一套 API 的可瀏覽版本，由
-[`openapi/`](../openapi) 的 OpenAPI 合約產生：
+[`openapi/`](../../openapi) 的 OpenAPI 合約產生：
 
 - `GET /docs` — 互動式參考（Scalar），跟隨訪客的介面語言
 - `GET /docs/openapi.json` — 英文 OpenAPI 3.1 合約
@@ -189,7 +189,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 | `q` | 搜尋 slug／標題／目標網址（`%`、`_` 視為字面值） |
 | `tag` | 依標籤名稱篩選 |
 | `status` | `active` 或 `disabled` |
-| `sort` | `created_at`（預設）、`clicks`、`slug`、`updated`、`expires` |
+| `sort` | `created_at`（預設，新到舊）、`clicks` / `clicks_desc`、`slug` / `slug_asc`、`updated` / `updated_desc`、`expires` / `expires_asc`；每個鍵只有固定方向，無法辨識的值會退回新到舊 |
 | `page` / `per_page` | 分頁 |
 
 `200` → 分頁的 `UrlDto` 陣列。
@@ -222,7 +222,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
   以 `Bearer` Token 呼叫時會被忽略。驗證失敗回 `400` 且 `error.code = "captcha_failed"`
 - `target_url` 必填；只接受 `http`/`https`；未寫 scheme 的裸網域會自動補 `https://`
 - `domain` 可省略（使用生效的群組預設網域）；指定時必須是 active 網域，否則回 `422`；還必須符合群組策略（`allow_domain_selection`、`restrict_domains` / `domain_ids`），否則回 `403`；slug 命名空間以網域為單位，同一個 slug 可以存在於兩個網域
-- `slug` 可省略（自動產生 7 字元 base62）；僅允許 `[A-Za-z0-9_-]`，長度 1–64，且不得為保留字；若 slug **在選定網域上**已被使用，回 `409`
+- `slug` 可省略（依 `default_slug_length` 自動產生 base62，長度 4–16，預設 7）；僅允許 `[A-Za-z0-9_-]`，長度 1–64，且不得為保留字；若 slug **在選定網域上**已被使用，回 `409`
 - `expires_at` 必須是未來時間；`max_clicks` ≥ 1
 - `redirect_type` ∈ {301, 302, 307, 308}
 - `redirect_mode` 為 `direct`（預設）或 `splash`。省略時採用群組政策的預設值（僅中轉頁政策下為
@@ -238,7 +238,10 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 ### `PATCH /api/v1/urls/{id}`
 
-部分更新：**未出現的欄位維持不變，明確傳 `null` 表示清除**。
+部分更新。**未出現**的欄位維持不變；明確傳 `null` 只會清除支援這個語意的可空欄位：
+`title`、`notes`、`password`、`expires_at`、`max_clicks`、`splash_title`、`splash_message`。
+`slug`、`domain`、`status`、`redirect_type`、`redirect_mode`、`splash_delay_seconds`、`tags`
+傳 `null` 時視同未提供，維持原值。
 
 ```json
 { "title": "新標題", "domain": "links.example.com", "password": null, "max_clicks": null, "tags": ["new"], "status": "disabled" }
@@ -266,7 +269,8 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 ### `GET /api/v1/urls/{id}/clicks?page=1`
 
-`200` → 點擊明細分頁（**不含** IP 或 visitor 雜湊）：
+`200` → 點擊明細分頁（**不含** IP 或 visitor 雜湊）。接受 `page` 與 `per_page`；`per_page`
+預設 20、上限 100：
 
 ```json
 { "items": [ { "clicked_at": "...", "referrer_host": "news.example.com", "country_code": null, "device_type": "Desktop", "browser": "Chrome", "os": "Windows", "is_bot": false, "is_unique": true, "password_protected": false } ], "page": 1, "per_page": 20, "total": 42, "total_pages": 3 }
@@ -309,6 +313,35 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 （`slug`、`password`、`expires_at`、`max_clicks`、`tags`）的提交，`PATCH` 時也不允許「新開啟」。
 省略欄位代表維持原值，清除被封鎖的欄位則可接受；非空的連結密碼一律視為新值，在密碼被封鎖時會被拒絕。轉址方式政策會擋下新的
 `redirect_mode`（或 `PATCH` 時切換到被封鎖的模式），但允許維持目前模式與清除中轉頁文案。
+
+---
+
+## SNS 預覽卡片
+
+管理員可在 `/app/admin/settings` 或以 `PUT /api/v1/admin/settings` 設定 `preview_image_policy`，例如 `{"preview_image_policy":"none"}`。值為 `none`（不允許圖片）、`url`（僅 HTTPS 網址）、`upload`（僅上傳）、`both`（預設皆可）。非法值回 422，整批不寫入。政策同時套用管理員與一般成員；API 設定禁止的來源回 403，瀏覽器表單回保留文字的 422 重試頁。保留／移除圖片與編輯文字仍可使用。不允許的既有圖片仍儲存，但不輸出 metadata 圖片，回應的 `image_url` 為 null；`image_uploaded` 仍表示已儲存的來源。禁止上傳時，上傳圖片網址回 404 與 no-store；重新允許後恢復。第三方已複製或快取的公開圖片無法撤回。啟動時只補入缺少的設定，舊設定表單缺少此欄位時保留原政策。
+
+社群平台抓取網頁的 Open Graph（`og:title`、`og:description`、`og:image`）及 Twitter Card 標籤來產生預覽。未自訂時，urlet 沿用轉址行為，平台可能從目標網站取得 metadata；自訂後，已知社群爬蟲取得的是擁有者儲存的預覽欄位。Footer、版型與更新時間由平台決定，這些標籤沒有任意 footer 欄位。
+
+端點要求短網址擁有者的 session 或 API token；其他人的連結回傳 404。Cookie 請求沿用既有 CSRF 規則。先建立短網址，再設定選填的公開預覽；公開短網址工具不接受圖片上傳或這些額外欄位。
+
+| 方法 | 路徑 | 行為 |
+|------|------|------|
+| GET | `/api/v1/urls/{id}/preview` | 回傳 `{title, description, image_url, image_uploaded, enabled}`；未設定時各欄位為 null，旗標為 false |
+| PATCH | `/api/v1/urls/{id}/preview` | JSON `{title?, description?, image_url?}`；省略則保留，null 或空白則清除。設定／清除 image_url 會替換／移除上傳圖片；回傳格式同 GET |
+| POST | `/api/v1/urls/{id}/preview/image` | Multipart 欄位 `image`；替換圖片並保留文字，回傳格式同 GET |
+| DELETE | `/api/v1/urls/{id}/preview` | 清除所有自訂預覽與圖片資料，回傳 204 |
+
+```bash
+curl -X PATCH "$BASE/api/v1/urls/42/preview" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"title":"閱讀內容","description":"自訂摘要","image_url":"https://example.com/card.png"}'
+curl "$BASE/api/v1/urls/42/preview/image" \
+  -H "Authorization: Bearer $TOKEN" -F 'image=@card.png'
+```
+
+標題上限 200 字，內容上限 1000 字。圖片網址須為完整 HTTPS，上限 2048 字，不含帳號密碼或空白。上傳支援 PNG、JPEG、GIF、WebP，上限 2 MiB、4096 × 4096 像素；依驗證後的檔案內容決定 MIME，不相信檔名。圖片存於 SQLite，以不透明的公開 `/assets/link-previews/{key}` 網址提供；替換／移除後舊網址失效。欄位無效回傳 422；格式錯誤或過大的 multipart 回傳 4xx，既有資料不變。上傳套用每帳號速率限制。
+
+預覽文字與圖片即使在密碼保護連結也會公開。預覽標題留空時使用站台名稱；管理用標題、備註與目標網址不作預設內容。伺服器不抓取外部 metadata 或圖片。已知社群爬蟲（含 Discord、X／Twitter、Meta、Telegram、Slack、LinkedIn、LINE 標記）會取得 OG／Twitter HTML；未知 agent 保留一般轉址行為。Metadata 與上傳圖片都遵循連結生命週期；自訂預覽抓取不計點擊。第三方快取與版型由平台決定，修改後不保證立即更新卡片。
 
 ---
 
@@ -439,60 +472,6 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 ---
 
-## 介面語言
-
-網頁介面提供三種語言：英文（`en`）、繁體中文（`zh-Hant`）與简体中文（`zh-Hans`）。
-初次訪問時依瀏覽器的 `Accept-Language` 標頭自動選擇，無法辨識時使用英文；
-選擇結果存在 cookie `urlet_lang`。
-
-| 方法 | 路徑 | 說明 |
-|------|------|------|
-| GET | `/app/lang/{code}?next=<path>` | 切換介面語言、設定 `urlet_lang` cookie，接著回 `302` 轉往 `next`（未帶 `next` 或不是同站相對路徑時轉往 `/app`） |
-
-`code` 為 `en`、`zh-Hant`、`zh-Hans` 之一；`next` 必須是同站的相對路徑。
-無法辨識的 `code` 會退回英文（不會回錯誤）；未帶 cookie 的訪客則依 `Accept-Language`
-協商，只要帶了 cookie 一律以 cookie 為準。
-
-語言設定只影響渲染出的 HTML。**API 的 JSON 回應一律英文**，不受語言設定影響。
-
----
-
-## 防機器人驗證
-
-urlet 可以要求三個會產生資料的公開表單通過防機器人驗證：網頁註冊表單、網頁登入表單與
-網頁建立短網址表單。JSON API 的 `POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`
-則以選填欄位 `captcha_token` 接收驗證元件的權杖。預設關閉，可透過環境變數設定，
-也可在管理後台 **Admin → Settings** 設定；非空的環境變數會覆蓋後台設定。
-變數與金鑰申請方式請見部署指南。
-
-| 供應商 | `provider` 值 | 驗證元件 |
-|--------|---------------|----------|
-| 關閉（預設） | `none` | 無 |
-| Cloudflare Turnstile | `turnstile` | Turnstile 元件（Managed 模式） |
-| Google reCAPTCHA v2 | `recaptcha` | 「我不是機器人」核取方塊 |
-
-四個條件都成立才會對某個表單啟用驗證：provider 不是 `none`、site key 非空、
-secret key 非空，以及該表單對應的開關（`captcha_on_register`、`captcha_on_login`
-或 `captcha_on_create`）為 `true`。
-
-驗證失敗一律**拒絕**（fail closed）：token 缺少、格式錯誤、逾期或已使用過，
-以及逾時或供應商回應非 2xx，都會拒絕該次提交。
-
-供應商回報的 `hostname` 也會一併檢查：必須等於實例 base URL 的主機名稱，或
-`captcha_allowed_hostnames` 中的其中一個（以逗號分隔，最多 10 項）。回應未帶 `hostname`
-或該欄位為空字串時予以接受；不符時拒絕並記一筆 `WARN`。
-
-| 套用位置 | 是否驗證 |
-|----------|----------|
-| 網頁註冊表單（`POST /app/register`） | 註冊流程啟用時套用 |
-| 網頁登入表單（`POST /app/login`） | 登入流程啟用時套用 |
-| 網頁建立短網址表單（`POST /app/urls`） | 建立流程啟用時套用 |
-| `POST /api/v1/auth/register` | 註冊流程啟用時套用；以 `captcha_token` 傳入驗證元件的 token；失敗回 `400` 且 `error.code = "captcha_failed"` |
-| `POST /api/v1/auth/login` | 登入流程啟用時套用；以 `captcha_token` 傳入驗證元件的 token；失敗回 `400` 且 `error.code = "captcha_failed"` |
-| `POST /api/v1/urls` | **僅限 API Token 豁免** —— 帶 `Authorization: Bearer ur_...` 時不套用；使用 Session Cookie 者受「建立短網址」開關約束，可帶 optional `captcha_token` |
-
----
-
 ## 邀請碼（成員）
 
 當群組開啟 `allow_invites` 時，成員可為**自己的群組**產生邀請碼。邀請碼會綁定該群組，
@@ -519,7 +498,7 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 }
 ```
 
-`code` 與 `link` 在 v1.3 之前建立、或 `URLET_SECRET` 更換後會是 `null`；`prefix` 一律存在。
+`code` 與 `link` 在密封儲存之前建立、或 `URLET_SECRET` 更換後會是 `null`；`prefix` 一律存在。
 已撤銷、次數用盡或到期的邀請碼只保留 `code` 供查閱，`link` 為 `null`。
 `per_page` 預設 20、上限 100。`quota.allowed` 為 `false` 表示群組未開放成員發碼：
 此時建立邀請碼會回 `403`，但關閉開關前已發出的邀請碼仍會列出並可撤銷。`limit` 為 `0`
@@ -556,7 +535,7 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 
 | 方法 | 路徑 | 說明 |
 |------|------|------|
-| GET | `/admin/users?q=&role=&status=&group_id=&page=` | 使用者列表（含 `link_count`、`group_id`、`group_name`） |
+| GET | `/admin/users?q=&role=&status=&group_id=&page=&per_page=` | 使用者列表（含 `link_count`、`group_id`、`group_name`） |
 | PATCH | `/admin/users/{id}` | `{ "role"?, "status"?, "display_name"?, "group_id"? }`；`group_id: null` 表示改為未分組 |
 | POST | `/admin/users/{id}/password` | `{ "new_password": "..." }` → `204`，撤銷該帳號所有 Session |
 | DELETE | `/admin/users/{id}` | `204`，軟刪除帳號與其所有短網址 |
@@ -570,11 +549,21 @@ secret key 非空，以及該表單對應的開關（`captcha_on_register`、`ca
 | DELETE | `/admin/groups/{id}?reassign_to={id}` | `204`，先移動成員再刪除；預設群組或目標不存在/不合法回 `409` |
 | GET | `/admin/themes` | 主題目錄（key、名稱、說明、`enabled`、`default`、`appearance`、`dark_only`、`light_only`、`css_url`、`custom`）與 `switching`（`all` 或 `admin`）；包含管理員上傳主題 |
 | PUT | `/admin/themes` | `{ "enabled"?: ["verdant", ...], "default"?: "verdant", "switching"?: "all"\|"admin" }`；省略欄位維持原值；至少一個啟用主題且預設必須啟用（否則 `422`）。`enabled` 與 `default` 可指定 `custom-…` 上傳主題 |
+| GET | `/admin/urls?q=&status=&user_id=&page=&sort=&per_page=` | 全站短網址；`sort` 接受與 `GET /api/v1/urls` 相同的值 |
+| PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
+| DELETE | `/admin/urls/{id}` | `204` |
+| GET | `/admin/invites` | 最新 200 筆邀請碼，含 `code`、`link`、`prefix`、`group_id` / `group_name`；沒有分頁。舊版或密鑰更換後的列為 `null`；已撤銷、次數用盡或到期的邀請碼 `link` 也為 `null` |
+| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`；`link` 與 `invite.link` 一致，若建立後已不可用則為 `null`；`GET` 一律保留 `code`，`link` 只在可用時回傳；群組的週期配額用盡時回 `403` |
+| DELETE | `/admin/invites/{id}` | `204`，撤銷；未被兌換的邀請碼會退回配額，已兌換的維持計入 |
+| GET | `/admin/settings` | 目前設定，包含 `theme_switching`（`all` 或 `admin`） |
+| PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", "theme_switching": "admin", ... }` |
+| GET | `/admin/audit?action=&target_type=&actor=&page=` | 稽核日誌（`metadata` 已解析為 JSON） |
+| GET | `/admin/stats` | 使用者／短網址／點擊總量、資料庫大小、版本、運行時間 |
 
 主題上傳是僅限管理員的瀏覽器 multipart 表單：`/app/admin/themes/custom`（建立）、
 `/app/admin/themes/custom/{id}`（編輯／替換 CSS）與 `/app/admin/themes/custom/{id}/delete`。
-JSON API 刻意不提供檔案上傳端點。上傳僅限 CSS、最大 256 KiB、UTF-8，且不可載入外部資源；
-詳見 [`THEMES.md`](THEMES.md)。
+JSON API 刻意不提供檔案上傳端點。上傳僅限 CSS、最大 256 KiB、UTF-8；絕對外部參照與跨來源
+`url(...)` 會被拒絕，CSP 是第二道防線；詳見 [`THEMES.md`](THEMES.md)。
 
 `GroupDto` 另回傳 `default_domain_id`、`default_domain`（儲存值，即使網域已停用）、
 `restrict_domains`、`allowed_domain_ids`、`allowed_domains`，以及邀請碼配額
@@ -582,16 +571,6 @@ JSON API 刻意不提供檔案上傳端點。上傳僅限 CSS、最大 256 KiB�
 無上限時為 `null`）。請求欄位是 `domain_ids`（`null` 或 `[]` 表示清空，省略則維持原值），回應使用
 `allowed_*`。`GET /api/v1/auth/me` 回傳的是*生效*的 fallback 預設，若儲存的群組預設已停用，
 可能與 `default_domain` 不同。
-| GET | `/admin/urls?q=&status=&user_id=&page=` | 全站短網址 |
-| PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
-| DELETE | `/admin/urls/{id}` | `204` |
-| GET | `/admin/invites` | 邀請碼列表，含 `code`、`link`、`prefix`、`group_id` / `group_name`；舊版或密鑰更換後的列為 `null`；已撤銷、次數用盡或到期的邀請碼 `link` 也為 `null` |
-| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`；`link` 與 `invite.link` 一致，若建立後已不可用則為 `null`；`GET` 一律保留 `code`，`link` 只在可用時回傳；群組的週期配額用盡時回 `403` |
-| DELETE | `/admin/invites/{id}` | `204`，撤銷；未被兌換的邀請碼會退回配額，已兌換的維持計入 |
-| GET | `/admin/settings` | 目前設定，包含 `theme_switching`（`all` 或 `admin`） |
-| PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", "theme_switching": "admin", ... }` |
-| GET | `/admin/audit?action=&target_type=&actor=&page=` | 稽核日誌（`metadata` 已解析為 JSON） |
-| GET | `/admin/stats` | 使用者／短網址／點擊總量、資料庫大小、版本、運行時間 |
 
 **使用者群組。** 群組物件為
 `{ id, name, description, max_urls, max_api_tokens, max_invites, invite_period, allow_*,
@@ -620,6 +599,7 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 `max_invites_per_period`（0 = 無限，預設 0）、`invite_period`（`day`/`week`/`month`，預設
 `month`）、
 `default_redirect_type`（301/302/307/308）、`analytics_enabled`、
+`theme_switching`（`all`/`admin`，預設 `all`）、
 `preview_image_policy`（`none`/`url`/`upload`/`both`，預設 `both`）、
 `click_retention_days`（0 = 永久保留），以及防機器人驗證的
 `captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、
@@ -693,9 +673,12 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 | `url.created` / `url.updated` / `url.deleted` | 短網址異動 |
 | `token.created` / `token.revoked` | API Token |
 | `invite.created` / `invite.revoked` / `invite.redeemed` | 邀請碼 |
+| `domain.created` / `domain.updated` / `domain.deleted` / `domain.default_changed` | 網域管理 |
 | `admin.user_updated` / `admin.user_deleted` / `admin.password_reset` | 管理操作 |
 | `admin.group_created` / `admin.group_updated` / `admin.group_deleted` | 群組異動 |
 | `admin.url_updated` / `admin.settings_updated` / `admin.themes_updated` / `admin.theme_created` / `admin.theme_updated` / `admin.theme_deleted` | 管理操作 |
+
+---
 
 ## 速率限制
 
@@ -717,31 +700,56 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 登入的 IP 來源：`URLET_TRUST_PROXY=true` 時優先採用 `X-Real-IP`，
 其次取 `X-Forwarded-For` 最右側的位址。
 
+---
 
-## SNS 預覽設定
+## 介面語言
 
-管理員可在 `/app/admin/settings` 或以 `PUT /api/v1/admin/settings` 設定 `preview_image_policy`，例如 `{"preview_image_policy":"none"}`。值為 `none`（不允許圖片）、`url`（僅 HTTPS 網址）、`upload`（僅上傳）、`both`（預設皆可）。非法值回 422，整批不寫入。政策同時套用管理員與一般成員；API 設定禁止的來源回 403，瀏覽器表單回保留文字的 422 重試頁。保留／移除圖片與編輯文字仍可使用。不允許的既有圖片仍儲存，但不輸出 metadata 圖片，回應的 `image_url` 為 null；`image_uploaded` 仍表示已儲存的來源。禁止上傳時，上傳圖片網址回 404 與 no-store；重新允許後恢復。第三方已複製或快取的公開圖片無法撤回。啟動時只補入缺少的設定，舊設定表單缺少此欄位時保留原政策。
+網頁介面提供三種語言：英文（`en`）、繁體中文（`zh-Hant`）與简体中文（`zh-Hans`）。
+初次訪問時依瀏覽器的 `Accept-Language` 標頭自動選擇，無法辨識時使用英文；
+選擇結果存在 cookie `urlet_lang`。
 
-
-社群平台抓取網頁的 Open Graph（`og:title`、`og:description`、`og:image`）及 Twitter Card 標籤來產生預覽。未自訂時，urlet 沿用轉址行為，平台可能從目標網站取得 metadata；自訂後，已知社群爬蟲取得的是擁有者儲存的預覽欄位。Footer、版型與更新時間由平台決定，這些標籤沒有任意 footer 欄位。
-
-端點要求短網址擁有者的 session 或 API token；其他人的連結回傳 404。Cookie 請求沿用既有 CSRF 規則。先建立短網址，再設定選填的公開預覽；公開短網址工具不接受圖片上傳或這些額外欄位。
-
-| 方法 | 路徑 | 行為 |
+| 方法 | 路徑 | 說明 |
 |------|------|------|
-| GET | `/api/v1/urls/{id}/preview` | 回傳 `{title, description, image_url, image_uploaded, enabled}`；未設定時各欄位為 null，旗標為 false |
-| PATCH | `/api/v1/urls/{id}/preview` | JSON `{title?, description?, image_url?}`；省略則保留，null 或空白則清除。設定／清除 image_url 會替換／移除上傳圖片；回傳格式同 GET |
-| POST | `/api/v1/urls/{id}/preview/image` | Multipart 欄位 `image`；替換圖片並保留文字，回傳格式同 GET |
-| DELETE | `/api/v1/urls/{id}/preview` | 清除所有自訂預覽與圖片資料，回傳 204 |
+| GET | `/app/lang/{code}?next=<path>` | 切換介面語言、設定 `urlet_lang` cookie，接著回 `302` 轉往 `next`（未帶 `next` 或不是同站相對路徑時轉往 `/app`） |
 
-```bash
-curl -X PATCH "$BASE/api/v1/urls/42/preview" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"title":"閱讀內容","description":"自訂摘要","image_url":"https://example.com/card.png"}'
-curl "$BASE/api/v1/urls/42/preview/image" \
-  -H "Authorization: Bearer $TOKEN" -F 'image=@card.png'
-```
+`code` 為 `en`、`zh-Hant`、`zh-Hans` 之一；`next` 必須是同站的相對路徑。
+無法辨識的 `code` 會退回英文（不會回錯誤）；未帶 cookie 的訪客則依 `Accept-Language`
+協商，只要帶了 cookie 一律以 cookie 為準。
 
-標題上限 200 字，內容上限 1000 字。圖片網址須為完整 HTTPS，上限 2048 字，不含帳號密碼或空白。上傳支援 PNG、JPEG、GIF、WebP，上限 2 MiB、4096 × 4096 像素；依驗證後的檔案內容決定 MIME，不相信檔名。圖片存於 SQLite，以不透明的公開 `/assets/link-previews/{key}` 網址提供；替換／移除後舊網址失效。欄位無效回傳 422；格式錯誤或過大的 multipart 回傳 4xx，既有資料不變。上傳套用每帳號速率限制。
+語言設定只影響渲染出的 HTML。**API 的 JSON 回應一律英文**，不受語言設定影響。
 
-預覽文字與圖片即使在密碼保護連結也會公開。預覽標題留空時使用站台名稱；管理用標題、備註與目標網址不作預設內容。伺服器不抓取外部 metadata 或圖片。已知社群爬蟲（含 Discord、X／Twitter、Meta、Telegram、Slack、LinkedIn、LINE 標記）會取得 OG／Twitter HTML；未知 agent 保留一般轉址行為。Metadata 與上傳圖片都遵循連結生命週期；自訂預覽抓取不計點擊。第三方快取與版型由平台決定，修改後不保證立即更新卡片。
+---
+
+## 防機器人驗證
+
+urlet 可以要求三個會產生資料的公開表單通過防機器人驗證：網頁註冊表單、網頁登入表單與
+網頁建立短網址表單。JSON API 的 `POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`
+則以選填欄位 `captcha_token` 接收驗證元件的權杖。預設關閉，可透過環境變數設定，
+也可在管理後台 **Admin → Settings** 設定；非空的環境變數會覆蓋後台設定。
+變數與金鑰申請方式請見部署指南。
+
+| 供應商 | `provider` 值 | 驗證元件 |
+|--------|---------------|----------|
+| 關閉（預設） | `none` | 無 |
+| Cloudflare Turnstile | `turnstile` | Turnstile 元件（Managed 模式） |
+| Google reCAPTCHA v2 | `recaptcha` | 「我不是機器人」核取方塊 |
+
+四個條件都成立才會對某個表單啟用驗證：provider 不是 `none`、site key 非空、
+secret key 非空，以及該表單對應的開關（`captcha_on_register`、`captcha_on_login`
+或 `captcha_on_create`）為 `true`。
+
+驗證失敗一律**拒絕**（fail closed）：token 缺少、格式錯誤、逾期或已使用過，
+以及逾時或供應商回應非 2xx，都會拒絕該次提交。
+
+供應商回報的 `hostname` 也會一併檢查：必須等於實例 base URL 的主機名稱，或
+`captcha_allowed_hostnames` 中的其中一個（以逗號分隔，最多 10 項）。回應未帶 `hostname`
+或該欄位為空字串時予以接受；不符時拒絕並記一筆 `WARN`。
+
+| 套用位置 | 是否驗證 |
+|----------|----------|
+| 網頁註冊表單（`POST /app/register`） | 註冊流程啟用時套用 |
+| 網頁登入表單（`POST /app/login`） | 登入流程啟用時套用 |
+| 網頁建立短網址表單（`POST /app/urls`） | 建立流程啟用時套用 |
+| `POST /api/v1/auth/register` | 註冊流程啟用時套用；以 `captcha_token` 傳入驗證元件的 token；失敗回 `400` 且 `error.code = "captcha_failed"` |
+| `POST /api/v1/auth/login` | 登入流程啟用時套用；以 `captcha_token` 傳入驗證元件的 token；失敗回 `400` 且 `error.code = "captcha_failed"` |
+| `POST /api/v1/urls` | **僅限 API Token 豁免** —— 帶 `Authorization: Bearer ur_...` 時不套用；使用 Session Cookie 者受「建立短網址」開關約束，可帶 optional `captcha_token` |

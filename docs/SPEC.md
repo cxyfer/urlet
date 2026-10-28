@@ -2,9 +2,24 @@
 
 # urlet — Lightweight Multi-User URL Shortener Specification
 
-> Version: 1.7
+> Version: 1.8
 > Status: Approved for implementation
-> Last updated: 2026-10-23
+> Last updated: 2026-10-28
+
+**Contents**
+
+1. Overview
+2. Glossary
+3. System Architecture
+4. Functional Requirements
+5. Non-Functional Requirements
+6. Data Model
+7. API Specification
+8. Configuration (Environment Variables)
+9. Deployment
+10. Test Strategy
+11. Definition of Done
+12. Future Extension Paths
 
 ---
 
@@ -102,28 +117,34 @@ per-action permission matrix.
 
 ```
                         ┌─────────────────────────────────────────────────┐
-                        │ urlet (single container)                       │
-Browser / curl          │                                                 │
-───────────────────►    │ Axum Router                                     │
-:8080                   │  ├─ /                landing + public shortener │
-                        │  │                      (POST / creates a link) │
-                        │  ├─ /{slug}     redirect / password / splash  │
-                        │  ├─ /api/v1/**        JSON API                  │
-                        │  │   └─ /public/urls   unauthenticated creation │
-                        │  ├─ /app/**           SSR user + admin UI       │
-                        │  ├─ /app/lang/{code}  language switch (302)     │
-                        │  ├─ /app/theme/{key}  theme switch (302)        │
-                        │  ├─ /assets/**        embedded CSS/JS           │
-                        │  └─ /health           health check              │
-                        │                                                 │
-                        │ Middleware: security headers → request ID → log │
-                        │             → session/token auth → language     │
-                        │             → CSRF → rate limit → captcha       │
-                        │                                                 │
-                        │ Services: slug / url / click / ua / ratelimit / │
-                        │           audit / settings / i18n / captcha     │
-                        │                                                 │
-                        │ sqlx Pool (WAL)  ──►  /data/urlet.db           │
+                        │ urlet (single container)                         │
+Browser / curl          │                                                  │
+───────────────────►    │ Axum Router                                      │
+:8080                   │  ├─ /                landing + public shortener  │
+                        │  │                      (POST / creates a link)  │
+                        │  ├─ /{slug}     redirect / password / splash     │
+                        │  ├─ /api/v1/**        JSON API                   │
+                        │  │   └─ /public/urls   unauthenticated creation  │
+                        │  ├─ /app/**           SSR user + admin UI        │
+                        │  ├─ /app/lang/{code}  language switch (302)      │
+                        │  ├─ /app/theme/{key}  theme switch (302)         │
+                        │  ├─ /docs             embedded API reference     │
+                        │  ├─ /assets/**        embedded CSS/JS            │
+                        │  │   ├─ /themes/{key}          compiled-in CSS   │
+                        │  │   ├─ /custom-themes/{key}   uploaded CSS      │
+                        │  │   └─ /link-previews/{key}   preview images    │
+                        │  ├─ /health           health check               │
+                        │  └─ /healthz          health check alias         │
+                        │                                                  │
+                        │ Middleware: security headers → request ID/log    │
+                        │             → domain gate → theme → language     │
+                        │             → session/token auth → CSRF          │
+                        │             → rate limit → captcha               │
+                        │                                                  │
+                        │ Services: slug / url / click / ua / ratelimit /  │
+                        │           audit / settings / i18n / captcha      │
+                        │                                                  │
+                        │ sqlx Pool (WAL)  ──►  /data/urlet.db             │
                         └─────────────────────────────────────────────────┘
                          named volume: urlet-data
 ```
@@ -162,15 +183,16 @@ configures a provider, it times out after **5 seconds**, and any failure rejects
 | Cold start to serving | ≤ 1 second | ~0.2 s (including migrations) | **~0.1 s** (fresh database, including migrations) | not re-measured |
 
 The v1.1 column includes the embedded locale catalogs and the rustls-based captcha client. Every
-target is still met.
+v1.1 target is still met.
 
 The v1.6 column is measured on `master` plus the embedded API reference. Most of the growth since
 v1.1 is the features added in between — SNS preview images, the public shortener and the theme
 system — not the reference itself: the same tree without it measures 30.4 MB. The reference adds
 6.5 MiB, of which the vendored Scalar bundle is 4.9 MB and the two OpenAPI contracts are 0.4 MB.
-The binary target is still met, but the image now uses most of its budget; if it needs to come
-down, the vendored bundle is the lever — it compresses to about 1.3 MB and a smaller renderer such
-as RapiDoc is 0.5 MB, at the cost of the localised interface chrome.
+The binary now exceeds its 15 MB target by 0.7 MB (15.7 MB), while the 37.2 MB image is
+still under its 40 MB target. If the image needs to come down, the vendored bundle is the
+lever — it compresses to about 1.3 MB and a smaller renderer such as RapiDoc is 0.5 MB, at
+the cost of the localised interface chrome.
 
 ---
 
@@ -197,7 +219,7 @@ as RapiDoc is 0.5 MB, at the cost of the localised interface chrome.
 | ID | Requirement | Description |
 |----|-------------|-------------|
 | FR-URL-1 | Create | `target_url` is required; `slug`, title, notes, tags, password, expiry, click cap, redirect type, redirect mode, and splash copy are optional |
-| FR-URL-2 | Automatic slug | When no slug is given, generate a 7-character base62 slug and retry on collision (at most 5 times) |
+| FR-URL-2 | Automatic slug | When no slug is given, generate a base62 slug whose length is the `default_slug_length` setting (4–16, default 7) and retry on collision (at most 5 times) |
 | FR-URL-3 | Custom slug | Length 1–64, only `[A-Za-z0-9_-]`, must not be a reserved word, globally unique |
 | FR-URL-4 | Edit | Change target, title, notes, tags, password (set/clear), expiry, click cap, redirect type, redirect mode, splash copy, and status |
 | FR-URL-5 | Delete | Soft delete (`deleted_at`); the slug is retained and never released (so links cannot be hijacked), and click records are kept |
@@ -271,7 +293,7 @@ as RapiDoc is 0.5 MB, at the cost of the localised interface chrome.
 | FR-ADMIN-1 | User management | List, search (including by group), change role, assign a user group, suspend/restore, reset password, soft delete |
 | FR-ADMIN-2 | All links | List, search, force-disable/delete |
 | FR-ADMIN-3 | Invite codes | Create (uses/expiry/note/optional target group), list, revoke; registration in `invite` mode requires an invite code. A code with a group assigns the redeemer to that group (FR-GROUP-4). The code and a registration link (`/app/register?invite=CODE`) stay viewable after creation; sealed copies issued before v1.3, or after a secret change, fall back to the prefix. Revoking a code that was never redeemed returns its invite-quota slot; a redeemed code keeps it |
-| FR-ADMIN-4 | Site settings | Edit the `settings` table (site name, registration mode, site-wide link and token quotas, default redirect type, analytics switch, retention days, captcha) |
+| FR-ADMIN-4 | Site settings | Edit the site settings. The authoritative list of editable keys lives in [`docs/API.md`](API.md) |
 | FR-ADMIN-5 | Audit log | Records logins, registrations, link changes, group changes, admin actions, and setting changes; filterable by action/target |
 | FR-ADMIN-6 | System info | Version, database size, user/link/click totals, uptime |
 | FR-ADMIN-7 | Authorization | Every `/api/v1/admin/**` and `/app/admin/**` route requires `role = admin`, otherwise 403 |
@@ -558,12 +580,14 @@ users ─┬─< sessions
        ├─< api_tokens
        ├─< urls ─┬─< clicks
        │         ├─< url_daily_stats
-       │         └─< url_tags >─ tags
+       │         ├─< url_tags >─ tags
+       │         └─< url_previews (optional, one per link)
        ├─< tags
        ├─< invite_redemptions >─ invite_codes
        └─< audit_logs (actor)
 domains ─< urls
 settings (key-value)
+public_creation_quota (guest calendar counters)
 themes (standalone)
 custom_themes (metadata; CSS on the persistent volume)
 login_attempts (auditing)
@@ -585,13 +609,13 @@ login_attempts (auditing)
 
 ### 6.3 DDL (migration summary)
 
-> The complete source of truth is `migrations/` (`0001_init.sql` through `0017_public_creation_quota.sql`): `0003_multi_domain.sql` rebuilds the domain schema, `0004_user_groups.sql`–`0007_member_invites.sql` add groups and invite quotas, `0010`/`0012`/`0013` add themes, `0011_splash_pages.sql` adds splash pages, `0014_invite_issuance_released.sql` adds the invite-refund column, and `0015_public_shorten.sql` adds `users.is_system` with the reserved Guest account and the public-shortener settings. `0016_url_previews.sql` adds SNS preview metadata and images. `0017_public_creation_quota.sql` adds durable guest calendar counters and period settings. The table below is a structural summary.
+> The complete source of truth is `migrations/` (`0001_init.sql` through `0017_public_creation_quota.sql`): `0003_multi_domain.sql` rebuilds the domain schema, `0004_user_groups.sql`–`0007_member_invites.sql` add groups and invite quotas, `0010`/`0012`/`0013` add themes, `0011_splash_pages.sql` adds splash pages, `0014_invite_issuance_released.sql` adds the invite-refund column, and `0015_public_shorten.sql` adds `users.is_system` with the reserved Guest account and the public-shortener settings. `0016_url_previews.sql` adds SNS preview metadata and images (one optional row per link). `0017_public_creation_quota.sql` adds durable guest calendar counters and period settings. The table below is a structural summary.
 
 
 | Table | Main columns | Purpose |
 |-------|--------------|---------|
 | `users` | id, email, email_normalized(UNIQUE), password_hash, display_name, role, status, group_id, is_system, email_verified_at, last_login_at, created_at, updated_at, deleted_at | Users; `is_system = 1` marks the reserved Guest account that owns anonymous links |
-| `user_groups` | id, name(UNIQUE, NOCASE), description, max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection, redirect_mode_policy, default_domain_id, restrict_domains, is_default, created_at, updated_at | Quota, feature-toggle, redirect-mode and domain-policy groups |
+| `user_groups` | id, name(UNIQUE, NOCASE), description, max_urls, max_api_tokens, max_invites, invite_period, allow_invites, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection, redirect_mode_policy, default_domain_id, restrict_domains, is_default, created_at, updated_at | Quota, feature-toggle, invite, redirect-mode and domain-policy groups |
 | `group_domains` | group_id, domain_id (PK) | Explicit per-group domain allowlist |
 | `sessions` | id, user_id, token_hash(UNIQUE), user_agent, ip_hash, created_at, last_seen_at, expires_at, revoked_at | Login state |
 | `api_tokens` | id, user_id, name, token_prefix, token_hash(UNIQUE), scopes, last_used_at, expires_at, created_at, revoked_at | API credentials |
@@ -650,6 +674,11 @@ so `invites_used` can drop once. v1.6 adds only the `users.is_system` column and
 index (no new table), for **19 tables and 36 indexes**. SNS previews add `url_previews` without an explicit index. Calendar quotas add
 `public_creation_quota` and its expiry index, bringing the current total to **21 tables and 37 indexes**.
 
+`url_previews` metadata reads omit the image BLOB, so the database remains the backup boundary.
+A trigger removes the preview row and its image when the owning link is soft-deleted, including
+account deletion; disabling or expiring a link preserves its preview. SQLite can reuse the freed
+pages, so the database file does not automatically shrink.
+
 ### 6.5 Seed Data
 
 - SNS images: `preview_image_policy=both`; accepted values are `none`, `url`, `upload`, `both`.
@@ -664,6 +693,9 @@ index (no new table), for **19 tables and 36 indexes**. SNS previews add `url_pr
 - `settings` (v1.2 key): `max_api_tokens_per_user=20` (the site-wide token quota; `0` = unlimited).
   Because it defaults to 20 rather than 0, an account that already holds more than 20 usable tokens
   cannot create another one until it revokes some; existing tokens are never revoked by the upgrade.
+- `settings` (v1.2 invite quota, `0006_group_invite_quotas.sql`): `max_invites_per_period=0`
+  (`0` = unlimited) and `invite_period=month` (`day`, `week` or `month`; the calendar period for
+  invite codes that are not pinned to a group).
 - `user_groups` (v1.2): one row named `Standard` with `max_urls = NULL`, `max_api_tokens = NULL`,
   all seven toggles `1` (including `allow_domain_selection`), `default_domain_id = NULL`,
   `restrict_domains = 0` and `is_default = 1`; the migration assigns every existing user to it.
@@ -673,6 +705,8 @@ index (no new table), for **19 tables and 36 indexes**. SNS previews add `url_pr
 - `themes` (v1.4): `verdant` is enabled and default; `aurora`, `paper`, `signal`, `gilded` and
   `swiss` are enabled and not default, with sort orders 10–50. The migration is additive, so an
   upgrade keeps the current look until an administrator changes the default.
+- `settings` (v1.4 key): `theme_switching=all` (who may switch themes; `admin` restricts it to
+  administrators).
 - `group_domains`: no rows are seeded; an existing or new group without restriction rows may use
   every active domain.
 - Public shortener (v1.6): `public_create_access=user` (an upgrade keeps the previous behaviour),
@@ -681,7 +715,10 @@ index (no new table), for **19 tables and 36 indexes**. SNS previews add `url_pr
   `public_max_urls=1000`,
   `public_allow_slug=true`, `public_allow_title=true`, and `public_allow_tags`,
   `public_allow_password`, `public_allow_expiry`, `public_allow_max_clicks`,
-  `public_allow_redirect`, `public_allow_domain` all `false`. The migration also inserts the
+  `public_allow_redirect`, `public_allow_domain` all `false`; `guest_allowlist_enabled=true` and
+  `guest_allowlist` is seeded with the built-in 43-host-rule list (`src/services/guest_allowlist.txt`,
+  wired in `src/db/settings.rs`), inserted only when missing so an edited or deliberately empty list
+  is preserved. The migration also inserts the
   reserved Guest account (`guest@urlet.invalid`, `is_system = 1`, `status = suspended`, no group);
   it is skipped only in the pathological case where that address already belongs to somebody, which
   is reported at startup.
@@ -716,12 +753,16 @@ name and effective limits are exposed through `GET /api/v1/auth/me`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/urls` | Query parameters: `q, tag, status, page, per_page, sort(created_at\|clicks\|slug\|updated\|expires)` |
+| GET | `/api/v1/urls` | Query parameters: `q, tag, status, page, per_page, sort(created_at\|clicks(_desc)\|slug(_asc)\|updated(_desc)\|expires(_asc))` |
 | POST | `/api/v1/urls` | `{target_url, domain?, slug?, title?, notes?, tags?, password?, expires_at?, max_clicks?, redirect_type?, redirect_mode?, splash_delay_seconds?, splash_title?, splash_message?, captcha_token?}`; API-token calls are captcha-exempt, session-cookie calls honour `on_create` |
 | GET | `/api/v1/domains` | Active domains available for new links, filtered by the caller's group policy (includes the effective `is_default`) |
 | GET | `/api/v1/urls/{id}` | Single link (with `short_url`, `is_expired`, `has_password`) |
 | PATCH | `/api/v1/urls/{id}` | Partial update; `domain` moves the link; `password: null` clears the password; `expires_at: null` clears the expiry; `splash_title` / `splash_message: null` clear the custom copy |
 | DELETE | `/api/v1/urls/{id}` | Soft delete → 204 |
+| GET | `/api/v1/urls/{id}/preview` | The link's SNS preview: `{title, description, image_url, image_uploaded, enabled}` |
+| PATCH | `/api/v1/urls/{id}/preview` | `{title?, description?, image_url?}`; `null` clears a field, an empty set removes the custom preview, and a source blocked by `preview_image_policy` is refused |
+| DELETE | `/api/v1/urls/{id}/preview` | Remove the custom preview and its uploaded image → 204 |
+| POST | `/api/v1/urls/{id}/preview/image` | Multipart `image` upload (PNG/JPEG/GIF/WebP, ≤ 2 MiB, ≤ 4096 × 4096) → the preview |
 | GET | `/api/v1/urls/{id}/stats?days=30` | Daily trend + dimension breakdown + summary |
 | GET | `/api/v1/urls/{id}/clicks?page=1` | Click details (paginated) |
 
@@ -743,7 +784,20 @@ always a new value, so it is refused while passwords are blocked (FR-GROUP-3).
 The effective token quota counts usable tokens only (not revoked and not expired), so revoking an
 old token frees a slot immediately (FR-TOK-6).
 
-### 7.4 Admin (requires admin)
+### 7.4 Member Invites
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/invites?page=&per_page=` | The caller's own codes, newest first, with `code`, `link`, `prefix`, `group_id`, `max_uses`, `used_count`, `status` and the effective `quota` |
+| POST | `/api/v1/invites` | `{note?, max_uses?}` → 201 `{code, link, invite, quota}`; the code is pinned to the caller's group; `403` when the group disables invites or the period quota is exhausted, `429` when the hourly burst limit is hit |
+| DELETE | `/api/v1/invites/{id}` | Revoke one of the caller's own codes → 204; another member's code is 404 |
+
+Member invites require `user_groups.allow_invites = 1`; codes are always pinned to the caller's
+group so the redeemer joins it, and administrator-issued and member-issued codes share one
+per-group ledger (`max_invites` / `invite_period`, migrations `0006`/`0007`). `max_uses` for
+member codes is 1–10.
+
+### 7.5 Admin (requires admin)
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -751,6 +805,10 @@ old token frees a slot immediately (FR-TOK-6).
 | PATCH | `/api/v1/admin/users/{id}` | `{role?, status?, display_name?, group_id?}`; `group_id: null` makes the user ungrouped (site-wide defaults apply) |
 | POST | `/api/v1/admin/users/{id}/password` | `{new_password}` reset |
 | DELETE | `/api/v1/admin/users/{id}` | Soft delete (their links are soft-deleted too) |
+| GET | `/api/v1/admin/domains` | Every domain with link counts, status and source |
+| POST | `/api/v1/admin/domains` | `{hostname}` → 201, created as `pending` |
+| PATCH | `/api/v1/admin/domains/{id}` | `{status?: "active"\|"disabled", is_default?: true}` |
+| DELETE | `/api/v1/admin/domains/{id}` | 204; only a zero-link UI domain that is not the default |
 | GET | `/api/v1/admin/groups` | Group list with member counts, stored default/allowlist domain fields (paginated) |
 | POST | `/api/v1/admin/groups` | `{name, description?, max_urls?, max_api_tokens?, allow_*?, redirect_mode_policy?, default_domain_id?, restrict_domains?, domain_ids?, is_default?}` → 201; domain_ids must exist and default_domain_id must be active; a duplicate name or a second default returns 409 |
 | PUT | `/api/v1/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` set to `null` inherit the site quota; `description: null` clears it; `default_domain_id: null` means the site default; `domain_ids: null` or `[]` clears the allowlist; `is_default: true` moves the marker in one transaction |
@@ -759,7 +817,7 @@ old token frees a slot immediately (FR-TOK-6).
 | PUT | `/api/v1/admin/themes` | `{enabled?: [keys], default?: key, switching?: "all"\|"admin"}`; omitted fields keep their value; at least one enabled theme and an enabled default are required. `keys` may include `custom-…` uploads |
 | GET | `/api/v1/admin/urls` | Site-wide link list |
 | PATCH | `/api/v1/admin/urls/{id}` | Force disable/enable/delete |
-| GET | `/api/v1/admin/invites` | Invite code list, including `code`, `link`, `prefix`, `group_id` / `group_name`; `code` and `link` are `null` for legacy or secret-rotated rows, and `link` is also `null` for revoked, exhausted or expired codes |
+| GET | `/api/v1/admin/invites` | Invite code list, newest first, including `code`, `link`, `prefix`, `group_id` / `group_name`; returns at most the 200 newest codes and has no pagination. `code` and `link` are `null` for legacy or secret-rotated rows, and `link` is also `null` for revoked, exhausted or expired codes |
 | POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?, group_id?}` → 201 `{code: "K7M2QPX4RT", link: "https://host/app/register?invite=K7M2QPX4RT", invite}`; `link` mirrors `invite.link` and is `null` if the code is already unusable; the code stays available from `GET` and the link while usable |
 | DELETE | `/api/v1/admin/invites/{id}` | Revoke → 204 |
 | GET | `/api/v1/admin/settings` | Site settings |
@@ -774,7 +832,7 @@ Every group mutation is audited (`admin.group_created`, `admin.group_updated`,
 `admin.group_deleted`), and a user's group change is recorded in the existing
 `admin.user_updated` metadata.
 
-### 7.5 Public
+### 7.6 Public
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -830,29 +888,11 @@ The captcha variables follow the same override rule as `URLET_REGISTRATION` and
 
 ### 9.1 Directory Structure
 
-```
-urlet/
-├── Cargo.toml  Cargo.lock  rustfmt.toml
-├── Dockerfile  .dockerignore
-├── docker-compose.yml            # single container + named volume
-├── docker-compose.tls.yml        # optional: Caddy automatic HTTPS
-├── deploy/Caddyfile
-├── .env.example
-├── migrations/0001_init.sql 0002_clicks_indexes.sql 0003_multi_domain.sql 0004_user_groups.sql 0005_group_domains.sql 0006_group_invite_quotas.sql 0007_member_invites.sql 0008_invite_creator_index.sql 0009_invite_code_sealed.sql 0010_themes.sql 0011_splash_pages.sql 0012_custom_themes.sql 0013_custom_theme_appearance.sql 0014_invite_issuance_released.sql 0015_public_shorten.sql 0016_url_previews.sql 0017_public_creation_quota.sql
-├── docs/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md,screenshots/,zh-TW/{SPEC.md,PLAN.md,API.md,DEPLOYMENT.md}}
-├── scripts/{smoke.sh,demo.sh,screenshot.py}
-├── templates/                    # Askama templates (base, app_base, landing.html + pages + admin/)
-├── src/
-│   ├── main.rs  lib.rs  config.rs  state.rs  error.rs  server.rs  assets.rs
-│   ├── assets/{app.css,app.js,favicon.svg}
-│   ├── i18n/{mod.rs,en.json,zh-Hant.json,zh-Hans.json}
-│   ├── db/{mod,migrate,users,user_groups,sessions,tokens,urls,tags,clicks,settings,invites,audit,domains,login_attempts}.rs
-│   ├── services/{auth,urls,admin,domains,domain_policy,groups,invite_code,invite_quota,invites,limits,redirect_mode,slug,target,click,ua,unlock,cookies,chart,audit,settings,time,secret,password,ratelimit,tokens,captcha}.rs
-│   ├── middleware/{mod,auth,csrf,domain,security,locale}.rs
-│   └── routes/{mod,api,api_auth,api_urls,api_domains,api_tags,api_tokens,api_stats,api_admin,api_invites,api_public,redirect,health,assets,dto,extract}.rs
-│       └── pages/{mod,auth,dashboard,urls,account,admin,home,invites}.rs
-└── tests/{common/mod.rs,auth.rs,urls.rs,redirect.rs,splash.rs,pages.rs,admin.rs,groups.rs,invites.rs,i18n.rs,captcha.rs}
-```
+Source tree: the **Project layout** section of [`README.md`](../README.md) lists `src/` (modules,
+middleware and routes), `templates/`, `migrations/`, `scripts/` and the test tree. The runtime
+`/data` layout — `urlet.db` and its WAL/SHM files, the auto-generated `secret.key`, and uploaded
+theme stylesheets under `themes/` — is documented in **Data and backups** in
+[`DEPLOYMENT.md`](DEPLOYMENT.md). Migration filenames are listed in §6.3.
 
 ### 9.2 Dockerfile Strategy
 
@@ -862,20 +902,12 @@ Multi-stage build:
 
 ### 9.3 Compose Services
 
-```yaml
-services:
-  urlet:
-    build: .
-    image: urlet:latest
-    ports: ["8080:8080"]
-    env_file: [.env]
-    volumes: [urlet-data:/data, urlet-themes:/data/themes]
-    healthcheck: ...   # urlet healthcheck
-    restart: unless-stopped
-volumes:
-  urlet-data:
-  urlet-themes:
-```
+`docker-compose.yml` runs a single `urlet` container built from the local `Dockerfile` (or a
+published image through `docker-compose.image.yml`) with the `urlet-data` and `urlet-themes`
+volumes. Configuration is passed as container environment variables with `${VAR:-default}`
+substitutions, the host port defaults to `8080`, and the container healthcheck calls
+`urlet healthcheck`. The file is the source of truth for the exact image tag, volume mounts and
+restart policy: [`docker-compose.yml`](../docker-compose.yml).
 
 `docker-compose.tls.yml`: adds Caddy (80/443, automatic Let's Encrypt) and stops exposing the
 urlet port, so Caddy reverse-proxies it.
@@ -887,7 +919,7 @@ urlet port, so Caddy reverse-proxies it.
 | Layer | Scope | Tooling |
 |-------|-------|---------|
 | Unit tests | Slug generation/validation/reserved words, UA parsing, expiry decisions, settings parsing, group limit inheritance (NULL / 0 / value, ungrouped fallback), password hashing, IP hashing, CSRF same-origin checks, `Accept-Language` negotiation (`q=` weights, fallback to English), locale fallback, the captcha enablement matrix, and captcha fail-closed classification | `#[cfg(test)]` modules |
-| Integration tests | Register → login → create → redirect → analytics; the password protection flow; expiry and click caps; ownership isolation; admin authorization; API tokens; group CRUD and default-marker transfer; per-group link and token quotas; feature-toggle enforcement on create and update; invite codes that carry a group; group deletion with reassignment; CSRF rejection; language negotiation and cookie switching; API JSON staying English; captcha rejection on register, sign-in and create (web forms and JSON API); the landing page; splash rendering, group policy enforcement and password precedence | `tests/integration.rs` + `tower::ServiceExt::oneshot` + a temporary SQLite database |
+| Integration tests | Register → login → create → redirect → analytics; the password protection flow; expiry and click caps; ownership isolation; admin authorization; API tokens; group CRUD and default-marker transfer; per-group link and token quotas; feature-toggle enforcement on create and update; invite codes that carry a group; group deletion with reassignment; CSRF rejection; language negotiation and cookie switching; API JSON staying English; captcha rejection on register, sign-in and create (web forms and JSON API); the landing page; splash rendering, group policy enforcement and password precedence | `tests/` — `auth.rs`, `urls.rs`, `redirect.rs`, `splash.rs`, `pages.rs`, `admin.rs`, `groups.rs`, `invites.rs`, `i18n.rs`, `captcha.rs`, `multi_domain.rs`, `previews.rs`, `public_urls.rs`, `themes.rs`, `url_cleaning.rs`, `guest_allowlist.rs`, plus `contract.rs`, `api_docs.rs` and `ci_workflow.rs` — run with `tower::ServiceExt::oneshot` against a temporary SQLite database. `contract.rs` checks the router-to-contract set equality described in §4.9, and `ci_workflow.rs` checks that every CI job is in the gate's `REQUIRED` list |
 | End-to-end smoke test | Runs the main flows against the real binary with curl | `scripts/smoke.sh` |
 | Static checks | `cargo fmt --check`, `cargo clippy -D warnings` | CI commands (documented in the README) |
 
@@ -910,49 +942,26 @@ v1.0:
 - [x] The README lets a new user deploy within 5 minutes
 - [x] Every phase has a corresponding local commit (see `docs/PLAN.md`)
 
-v1.1 additions (this batch):
+v1.1 additions:
 
-- [ ] Three locale catalogs (`en`, `zh-Hant`, `zh-Hans`) are embedded in the binary and cover every UI string, with a missing key falling back to English
-- [ ] `Accept-Language` negotiation honors `q=` weights and defaults to English for an unrecognized or absent header
-- [ ] `GET /app/lang/{code}?next=<path>` sets `urlet_lang` (Path=/, SameSite=Lax, Max-Age one year, not HttpOnly) and returns 302 to `next` or to `/app`, and `next` accepts only same-site relative paths
-- [ ] `<html lang>` reflects the active language and error pages are localized
-- [ ] HTML responses carry `Content-Language` and `Vary: Accept-Language, Cookie`, while static assets set no `Vary`
-- [ ] JSON API responses stay English regardless of the request language
-- [ ] Captcha is enabled only when provider ≠ none, both keys are non-empty, and the matching switch (`on_register`, `on_login` or `on_create`) is true; a non-empty environment variable overrides the stored setting
-- [ ] Captcha verification fails closed on timeout, non-2xx status, or an unparsable response, and is enforced on web register, web sign-in, web create, `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (400 `captcha_failed`)
-- [ ] A reported `hostname` is accepted only when it matches the `URLET_BASE_URL` host or `URLET_CAPTCHA_ALLOWED_HOSTNAMES`; a missing or empty `hostname` is accepted, and a mismatch is rejected with a `WARN` log line
-- [ ] The siteverify call is the only outbound HTTP request, goes through `ureq` 2 over rustls + webpki-roots (no OpenSSL), and is off by default
-- [ ] `POST /api/v1/urls` is captcha-exempt only for API-token calls (a session-cookie call honours `on_create`), and the admin secret-key field is write-only
-- [ ] `GET /` returns 200 as a landing/navigation page for anonymous and signed-in visitors, and no longer redirects to `/app`
+- [x] Three locale catalogs (`en`, `zh-Hant`, `zh-Hans`) are embedded in the binary and cover every UI string, with a missing key falling back to English
+- [x] `Accept-Language` negotiation honors `q=` weights and defaults to English for an unrecognized or absent header
+- [x] `GET /app/lang/{code}?next=<path>` sets `urlet_lang` (Path=/, SameSite=Lax, Max-Age one year, not HttpOnly) and returns 302 to `next` or to `/app`, and `next` accepts only same-site relative paths
+- [x] `<html lang>` reflects the active language and error pages are localized
+- [x] HTML responses carry `Content-Language` and `Vary: Accept-Language, Cookie`, while static assets set no `Vary`
+- [x] JSON API responses stay English regardless of the request language
+- [x] Captcha is enabled only when provider ≠ none, both keys are non-empty, and the matching switch (`on_register`, `on_login` or `on_create`) is true; a non-empty environment variable overrides the stored setting
+- [x] Captcha verification fails closed on timeout, non-2xx status, or an unparsable response, and is enforced on web register, web sign-in, web create, `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (400 `captcha_failed`)
+- [x] A reported `hostname` is accepted only when it matches the `URLET_BASE_URL` host or `URLET_CAPTCHA_ALLOWED_HOSTNAMES`; a missing or empty `hostname` is accepted, and a mismatch is rejected with a `WARN` log line
+- [x] The siteverify call is the only outbound HTTP request, goes through `ureq` 2 over rustls + webpki-roots (no OpenSSL), and is off by default
+- [x] `POST /api/v1/urls` is captcha-exempt only for API-token calls (a session-cookie call honours `on_create`), and the admin secret-key field is write-only
+- [x] `GET /` returns 200 as a landing/navigation page for anonymous and signed-in visitors, and no longer redirects to `/app`
 - [ ] `cargo test` (the full suite), `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are clean, `scripts/smoke.sh` passes all end-to-end checks, and the container image builds and runs under musl (§3.3)
 
-v1.6 additions (this batch):
+The final item stays unchecked: the features above were confirmed in the source, but the suites and the
+image build were not run while updating this document.
 
-- [x] The canonical landing page serves the public shortener whenever the visitor may create a link; extra (redirect-only) domains never do, and `POST /` there is `404`
-- [x] `public_create_access` (`guest` / `user` / `admin`, default `user`) gates every creation path, and the dashboard replaces the form with a notice when the caller is below the level
-- [x] The reserved Guest account (`users.is_system = 1`, 19 tables / 36 indexes) owns anonymous links; it is hidden from the user list and every count, labelled `Guest` in the admin link list, cannot sign in, and cannot be edited or deleted
-- [x] The `public_allow_*` switches decide which optional inputs the public form offers; a submission that fills in a disabled field is refused with `403`
-- [x] `public_captcha` protects the anonymous flow, a signed-in session follows `captcha_on_create`, and a Bearer token stays exempt
-- [x] `public_rate_limit_per_ip` and `public_rate_limit_global` bound only anonymous creation, each with its own calendar minute/hour/day/week/month period (defaults: 20/hour and 500/hour), `0` disables either, and a refusal is `429` / `?err=rate_limited`
-- [x] `POST /api/v1/public/urls` answers `201 {domain, slug, short_url, target_url, created_at}` without handing out the link id
-- [x] `?shortened=<slug>` is resolved against the database, so the result box never prints a query-string value verbatim and never leaks a destination
-- [x] The three locale catalogues and all six landing templates carry the new strings and the shared form partial
-- [x] `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `scripts/smoke.sh` and `scripts/merge-check.sh` are green
-
-v1.5 additions (this batch):
-
-- [x] `urls.redirect_mode` (`direct` / `splash`), `splash_delay_seconds` (1–60, default 5), `splash_title` (≤120) and `splash_message` (≤500, newlines allowed); existing links stay `direct`
-- [x] A splash link returns a 200 interstitial with the custom or localised copy, destination host, countdown, meta refresh and continue link; it records the click when served, sets `no-store`, and loads no external asset
-- [x] Password-protected links keep the password page as their only interstitial and go straight to the target after unlocking
-- [x] `user_groups.redirect_mode_policy` (`direct` / `splash` / `choice`, default `choice`) gates create and mode changes only, is exposed in `GET /api/v1/auth/me`, and both web forms hide the blocked option
-- [x] Splash templates ship for all six themes, and the three locale catalogues cover every new string
-- [x] `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `scripts/smoke.sh` and `scripts/merge-check.sh` are green
-
-v1.4 additions (this batch):
-
-- [x] `themes` (19 tables, 35 indexes): six compiled-in designs plus administrator CSS uploads, enable/default switches, a site-wide switch permission, a `urlet_theme` cookie, per-theme template directories, and a persisted `custom_themes` catalogue with uploaded files under `/data/themes`
-
-v1.2 additions (this batch):
+v1.2 additions:
 
 - [x] `user_groups` and `group_domains` (16 tables, 31 indexes) with nullable `max_urls` / `max_api_tokens`, seven feature toggles, per-group default domains and allowlists, plus `users.group_id` and `invite_codes.group_id`
 - [x] The migration seeds a `Standard` group with both quotas `NULL` and assigns every existing user to it, so upgrading changes no behaviour
@@ -965,6 +974,32 @@ v1.2 additions (this batch):
 - [x] The token quota defaults to 20 usable tokens, is shown on the account page, and is exposed in `GET /api/v1/auth/me` together with the effective link quota and toggles
 - [x] Group mutations are audited (`admin.group_created` / `updated` / `deleted`) and user reassignment is recorded in the audit metadata
 - [x] `cargo test` (374 tests, one ignored), `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are clean, and `scripts/smoke.sh` passes all 108 checks (including group CRUD, quota enforcement, domain policy and reassignment)
+
+v1.4 additions:
+
+- [x] `themes` (19 tables, 35 indexes): six compiled-in designs plus administrator CSS uploads, enable/default switches, a site-wide switch permission, a `urlet_theme` cookie, per-theme template directories, and a persisted `custom_themes` catalogue with uploaded files under `/data/themes`
+
+v1.5 additions:
+
+- [x] `urls.redirect_mode` (`direct` / `splash`), `splash_delay_seconds` (1–60, default 5), `splash_title` (≤120) and `splash_message` (≤500, newlines allowed); existing links stay `direct`
+- [x] A splash link returns a 200 interstitial with the custom or localised copy, destination host, countdown, meta refresh and continue link; it records the click when served, sets `no-store`, and loads no external asset
+- [x] Password-protected links keep the password page as their only interstitial and go straight to the target after unlocking
+- [x] `user_groups.redirect_mode_policy` (`direct` / `splash` / `choice`, default `choice`) gates create and mode changes only, is exposed in `GET /api/v1/auth/me`, and both web forms hide the blocked option
+- [x] Splash templates ship for all six themes, and the three locale catalogues cover every new string
+- [x] `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `scripts/smoke.sh` and `scripts/merge-check.sh` are green
+
+v1.6 additions:
+
+- [x] The canonical landing page serves the public shortener whenever the visitor may create a link; extra (redirect-only) domains never do, and `POST /` there is `404`
+- [x] `public_create_access` (`guest` / `user` / `admin`, default `user`) gates every creation path, and the dashboard replaces the form with a notice when the caller is below the level
+- [x] The reserved Guest account (`users.is_system = 1`, 19 tables / 36 indexes) owns anonymous links; it is hidden from the user list and every count, labelled `Guest` in the admin link list, cannot sign in, and cannot be edited or deleted
+- [x] The `public_allow_*` switches decide which optional inputs the public form offers; a submission that fills in a disabled field is refused with `403`
+- [x] `public_captcha` protects the anonymous flow, a signed-in session follows `captcha_on_create`, and a Bearer token stays exempt
+- [x] `public_rate_limit_per_ip` and `public_rate_limit_global` bound only anonymous creation, each with its own calendar minute/hour/day/week/month period (defaults: 20/hour and 500/hour), `0` disables either, and a refusal is `429` / `?err=rate_limited`
+- [x] `POST /api/v1/public/urls` answers `201 {domain, slug, short_url, target_url, created_at}` without handing out the link id
+- [x] `?shortened=<slug>` is resolved against the database, so the result box never prints a query-string value verbatim and never leaks a destination
+- [x] The three locale catalogues and all six landing templates carry the new strings and the shared form partial
+- [x] `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `scripts/smoke.sh` and `scripts/merge-check.sh` are green
 
 ---
 
@@ -979,5 +1014,3 @@ v1.2 additions (this batch):
 | GeoIP country analytics | `clicks.country_code` already exists; only a resolver is missing |
 | Click export / CSV | The full `clicks` column set + indexes |
 | Audit compliance | `audit_logs.metadata` keeps the full JSON context |
-
-Migration `0016_url_previews.sql` adds `url_previews` (one optional row per link), bringing the schema to 20 tables and 36 explicit indexes before the guest calendar counters; with those counters, the current total is 21 tables and 37 explicit indexes. Metadata reads exclude image BLOBs; the database remains the backup boundary. A trigger removes the preview row and its image when the owning link is soft-deleted, including account deletion; disabling or expiring a link preserves its preview. SQLite can reuse the freed pages; the database file does not automatically shrink.

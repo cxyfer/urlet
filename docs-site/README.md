@@ -19,7 +19,7 @@ site needs and the repository should not carry:
   directory while the repository keeps English at the root of `docs/` and
   Traditional Chinese in `docs/zh-TW/`;
 - it derives each page title from the document's own first heading, so the
-  thirty repository files need no frontmatter;
+  thirteen repository files need no frontmatter;
 - it rewrites the links between documents to site routes, and unwraps the ones
   that point at something with no page here.
 
