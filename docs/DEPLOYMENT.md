@@ -24,7 +24,7 @@ cp .env.example .env
 
 Edit `.env`:
 
-```env
+```ini
 URLET_BASE_URL=http://localhost:8080      # public URL; use https:// once TLS is in front (§3)
 URLET_PORT=8080                            # host port to publish (read by docker compose only)
 URLET_ADMIN_EMAIL=admin@example.com
@@ -86,7 +86,7 @@ docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
 
 If you already run Nginx or Traefik, reverse proxy to `127.0.0.1:8080` yourself and set:
 
-```env
+```ini
 URLET_BASE_URL=https://s.example.com
 URLET_SECURE_COOKIES=true
 URLET_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-Forwarded-*
@@ -245,7 +245,7 @@ of `URLET_BASE_URL`", which is the right setting for the common single-domain de
 
 In `.env` (docker compose):
 
-```env
+```ini
 URLET_CAPTCHA_PROVIDER=turnstile
 URLET_CAPTCHA_SITE_KEY=0x4AAAAAAA...
 URLET_CAPTCHA_SECRET_KEY=0x4AAAAAAA...

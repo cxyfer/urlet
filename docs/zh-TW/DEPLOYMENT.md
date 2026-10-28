@@ -23,7 +23,7 @@ cp .env.example .env
 
 編輯 `.env`：
 
-```env
+```ini
 URLET_BASE_URL=http://localhost:8080      # 對外網址；加上 TLS 後請改為 https://（見 §3）
 URLET_PORT=8080                            # 主機對應的連接埠（僅 docker compose 讀取）
 URLET_ADMIN_EMAIL=admin@example.com
@@ -81,7 +81,7 @@ docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
 
 若使用既有的 Nginx/Traefik，請自行反向代理到 `127.0.0.1:8080` 並設定：
 
-```env
+```ini
 URLET_BASE_URL=https://s.example.com
 URLET_SECURE_COOKIES=true
 URLET_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-* 時才開啟
@@ -227,7 +227,7 @@ token 必須是在**本站**解出的。因此回報的 hostname 必須等於 `U
 
 在 `.env`（docker compose）中：
 
-```env
+```ini
 URLET_CAPTCHA_PROVIDER=turnstile
 URLET_CAPTCHA_SITE_KEY=0x4AAAAAAA...
 URLET_CAPTCHA_SECRET_KEY=0x4AAAAAAA...

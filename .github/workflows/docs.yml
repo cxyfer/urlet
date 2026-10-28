@@ -1,0 +1,89 @@
+name: Documentation site
+
+# Builds `docs-site/` and publishes it to the `gh-pages` branch.
+#
+# The site is a separate artifact: the Rust build, the container image and the
+# binary's own `/docs` reference are all untouched by it. The workflow is
+# filtered by path so a change to the server does not rebuild the site, and the
+# site cannot rebuild the server.
+#
+# `gh-pages` holds build output only. The sources live on the default branch, so
+# a documentation change is committed with the change it describes rather than
+# on a long-lived branch that would have to be kept in sync.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "docs-site/**"
+      - "docs/**"
+      - "openapi/**"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+
+      - name: npm ci
+        working-directory: docs-site
+        run: npm ci
+
+      # `npm run build` runs the content sync first, so the pages always come
+      # from the `docs/` tree in this commit rather than from a stale copy.
+      - name: npm run build
+        working-directory: docs-site
+        run: npm run build
+
+      # The site is a static export and needs no server, but a missing page is
+      # still a broken deploy. Two of these checks exist because the obvious
+      # version of this step passed while the site was broken:
+      #
+      #   * the search index has to sit at the path the client fetches. It is a
+      #     route handler, not a page, so it must stay outside `app/[lang]/` —
+      #     under a locale segment it was exported to `/en/api/search`, which
+      #     nothing requests, and search failed on the published site;
+      #   * every asset URL has to carry the base path. GitHub Pages serves a
+      #     project site from `/<repo>/`, so an unprefixed `/_next/...` resolves
+      #     against the domain root and the pages load unstyled and unhydrated.
+      - name: Verify the export
+        working-directory: docs-site
+        run: |
+          test -f out/index.html
+          test -f out/en/index.html
+          test -f out/zh-TW/index.html
+          test -f out/en/docs/api/index.html
+          test -f out/zh-TW/docs/api/index.html
+          test -f out/api/search
+          test -f out/en/docs/index.html
+          test -f out/zh-TW/docs/index.html
+          grep -q '"/urlet/_next/' out/en/index.html
+          grep -q 'href="/urlet/zh-TW/docs/api/"' out/zh-TW/docs/api/index.html
+          echo "export looks complete"
+
+      - name: Publish to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs-site/out
+          publish_branch: gh-pages
+          # One commit per publish keeps the branch small; the history of the
+          # site is the history of the default branch.
+          force_orphan: true

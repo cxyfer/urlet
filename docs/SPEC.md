@@ -316,6 +316,12 @@ as RapiDoc is 0.5 MB, at the cost of the localised interface chrome.
     variable rather than inheriting the canonical API server.
   - `/docs` is a reserved slug: no short link may claim it. A live link that already holds it is
     reported at startup and left untouched for its owner to rename.
+- The same documents are published as a static, searchable site from `docs-site/`, deployed to the
+  `gh-pages` branch by a path-filtered workflow. The repository's `docs/` tree stays the single
+  source: a prebuild step copies it into the site's content tree, derives each page title from its
+  own first heading, and rewrites the links between documents. The generated copy is gitignored,
+  so the repository never carries a second copy that could drift. The site is a separate artifact
+  and does not enter the Docker context or the binary.
 - See §7 for the endpoint list.
 
 ### 4.10 Web Interface (FR-UI)
