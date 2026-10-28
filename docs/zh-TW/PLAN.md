@@ -52,6 +52,7 @@
 | P15 | 公開短網址工具 (v1.6) | 導覽首頁的縮網址表單與 `POST /api/v1/public/urls`、擁有匿名連結的保留訪客帳號、`public_create_access`、八個 `public_allow_*` 欄位開關、`public_captcha`、每來源位址與全體訪客共用額度、管理設定區塊、三語字串、六個導覽首頁模板 | 19 張表／36 個索引、升級後訪客仍無法建立、存取層級把關每一條建立路徑、被停用的欄位由伺服器端拒絕、額度與訪客帳號皆有測試、fmt/clippy/test/smoke/merge-check 全綠 | `✨ feat(public): ...` |
 | P16 | API 參考與合約 (v1.6) | `openapi/` 合約（共用元件加每語言一份），由 `scripts/build-openapi.py` 合併成兩份內嵌 spec；Scalar 由 `scripts/update-scalar.sh` 釘住版本；執行檔提供 `/docs`、`/docs/openapi.json` 與 `/docs/openapi.zh-TW.json`；`docs` 列為保留並在啟動時回報被遮蔽的連結；每個設計與語系的頁尾都有入口 | 兩份合約在真實 HTTP 下回應且不發出第三方請求；兩份文件描述同一組操作；產生器具決定性並由 CI 把關；CSP 不需調整；映像維持在 40 MB 以內；每個主題在三個語系都渲染該連結；fmt/clippy/test/smoke 全綠 | `✨ feat(docs): ...` |
 | P17 | 發布用文件網站 (v1.6) | `docs-site/` 由 prebuild 同步從 repo 的 `docs/` 樹建置，雙語並附搜尋；由以路徑過濾的 workflow 部署到 `gh-pages`；排除在 Docker context 之外 | 匯出內容包含兩個語系與每一個已發佈頁面；同步會推導標題並改寫文件間連結；`content/docs/` 已被 gitignore，因此 repo 只保留一份；網站不發出第三方請求；Rust 建置、映像與執行檔不受影響；fmt/clippy/test/smoke 全綠 | `📝 docs(site): ...` |
+| P18 | 合約防漂移 (v1.6) | `tests/contract.rs` 從 router 自己的原始碼讀取已註冊的表面，並與兩份合約做集合相等比對；大小守門與嚴格解析確保檢查不會空轉通過；CI 的 `contracts` job 會 lint 兩份產生的文件 | 新增未記載的路由會讓兩個合約測試失敗並指出方法與路徑；移除已記載的路由同樣會失敗；lint 不再回報未使用的元件；fmt/clippy/test/smoke 全綠 | `🧪 test(contract): ...` |
 
 ---
 

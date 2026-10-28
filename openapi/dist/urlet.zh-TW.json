@@ -2255,7 +2255,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page"
+                  "$ref": "#/components/schemas/GroupPage"
                 }
               }
             }
@@ -2670,7 +2670,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page"
+                  "$ref": "#/components/schemas/AuditPage"
                 }
               }
             }
@@ -3301,20 +3301,6 @@
           "total_pages"
         ]
       },
-      "OkResponse": {
-        "type": "object",
-        "description": "Simple success envelope for mutations that return nothing meaningful.",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "description": "Always `true` on success.",
-            "example": true
-          }
-        },
-        "required": [
-          "ok"
-        ]
-      },
       "UrlDto": {
         "type": "object",
         "description": "Public representation of a short link.",
@@ -3824,128 +3810,6 @@
           "devices",
           "browsers",
           "operating_systems"
-        ]
-      },
-      "OverviewDto": {
-        "type": "object",
-        "description": "Account level overview used by the dashboard.",
-        "properties": {
-          "links": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Total number of short links owned by the account.",
-            "example": 120
-          },
-          "active_links": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Number of links that currently redirect.",
-            "example": 110
-          },
-          "expired_links": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Number of links that expired or reached their click limit.",
-            "example": 10
-          },
-          "total_clicks": {
-            "type": "integer",
-            "format": "int64",
-            "description": "All clicks across the account, including automated traffic.",
-            "example": 4210
-          },
-          "unique_clicks": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Unique-visitor clicks across the account.",
-            "example": 3120
-          },
-          "bot_clicks": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Automated clicks across the account.",
-            "example": 1090
-          },
-          "bot_share": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Percentage of clicks classified as automated traffic (0-100).",
-            "example": 26
-          },
-          "clicks_7d": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Clicks recorded in the last 7 days.",
-            "example": 240
-          },
-          "clicks_30d": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Clicks recorded in the last 30 days.",
-            "example": 980
-          },
-          "daily": {
-            "type": "array",
-            "description": "Trend points used by the overview chart.",
-            "items": {
-              "$ref": "#/components/schemas/DailyPointDto"
-            }
-          },
-          "top_links": {
-            "type": "array",
-            "description": "Best performing links of the account.",
-            "items": {
-              "$ref": "#/components/schemas/TopLinkDto"
-            }
-          }
-        },
-        "required": [
-          "links",
-          "active_links",
-          "expired_links",
-          "total_clicks",
-          "unique_clicks",
-          "bot_clicks",
-          "bot_share",
-          "clicks_7d",
-          "clicks_30d",
-          "daily",
-          "top_links"
-        ]
-      },
-      "TopLinkDto": {
-        "type": "object",
-        "description": "Best performing link.",
-        "properties": {
-          "id": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Unique numeric short link id.",
-            "example": 1
-          },
-          "slug": {
-            "type": "string",
-            "description": "Short code of the link.",
-            "example": "launch"
-          },
-          "target_url": {
-            "type": "string",
-            "format": "uri",
-            "description": "Destination the link redirects to.",
-            "example": "https://example.com/landing"
-          },
-          "click_count": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Total number of recorded clicks, including automated traffic.",
-            "example": 42
-          }
-        },
-        "required": [
-          "id",
-          "slug",
-          "target_url",
-          "click_count"
         ]
       },
       "UserEnvelope": {
@@ -6387,6 +6251,52 @@
                 "description": "Short links on the requested page.",
                 "items": {
                   "$ref": "#/components/schemas/UrlDto"
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          }
+        ]
+      },
+      "GroupPage": {
+        "description": "Paginated user groups (`Page<GroupDto>`).",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Page"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "description": "Groups on the requested page.",
+                "items": {
+                  "$ref": "#/components/schemas/GroupDto"
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          }
+        ]
+      },
+      "AuditPage": {
+        "description": "Paginated audit log (`Page<AuditDto>`).",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Page"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "description": "Audit entries on the requested page.",
+                "items": {
+                  "$ref": "#/components/schemas/AuditDto"
                 }
               }
             },
