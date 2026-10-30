@@ -654,7 +654,7 @@ hr {
 
 .spec-row {
     display: grid;
-    grid-template-columns: 26px minmax(0, 1fr) 44px;
+    grid-template-columns: 26px minmax(0, 1fr);
     align-items: center;
     gap: 8px;
     padding: 6px 0;
@@ -663,22 +663,6 @@ hr {
 
 .spec-row .k { color: var(--red); }
 .spec-row .v { color: var(--ink); font-variant-numeric: tabular-nums; }
-.spec-bar {
-    display: block;
-    height: 6px;
-    border: 1px solid var(--hair);
-    position: relative;
-}
-
-.spec-bar i {
-    position: absolute;
-    inset: 1px auto 1px 1px;
-    display: block;
-    background: var(--ink);
-}
-
-.spec-row:nth-child(3) .spec-bar i { background: var(--cobalt); }
-.spec-row:nth-child(4) .spec-bar i { background: var(--red); }
 
 .spec-diagram {
     display: block;

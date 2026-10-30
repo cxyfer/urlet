@@ -77,7 +77,7 @@
             </div>
             <div class="hero-inner">
                 <div class="crown" aria-hidden="true"></div>
-                <p class="hero-issue" aria-hidden="true">№ 01 · MMXXVI</p>
+                <p class="hero-issue" aria-hidden="true">№ 01 · {{ clock.year }}</p>
                 <h1>{{ site_name }}</h1>
                 <div class="rule-diamond" aria-hidden="true"></div>
                 <p class="landing-tagline">{{ lang.t("landing.tagline") }}</p>
@@ -112,7 +112,7 @@
 
     <section class="mt-2" aria-labelledby="landing-highlights">
         <header class="section-head">
-            <p class="kicker kicker--center" aria-hidden="true">F · 06</p>
+            <p class="kicker kicker--center" aria-hidden="true">F · {{ feature_count }}</p>
             <h2 id="landing-highlights">{{ lang.t("landing.features.heading") }}</h2>
             <p class="muted">{{ lang.t("landing.features.subtitle") }}</p>
         </header>

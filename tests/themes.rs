@@ -2199,3 +2199,35 @@ async fn every_theme_renders_the_splash_page() {
         );
     }
 }
+
+#[tokio::test]
+async fn no_landing_prints_a_metric_the_server_cannot_produce() {
+    let app = TestApp::spawn().await;
+
+    // Every design draws its own instrument chrome, and four of them draw it
+    // close enough to the real readouts to be mistaken for telemetry. The
+    // label is what keeps the drawing honest, so a new design cannot ship
+    // without one, and no design may print a number nobody can verify.
+    let with_panel = ["verdant", "aurora", "signal", "swiss"];
+    for key in ["verdant", "aurora", "paper", "signal", "gilded", "swiss"] {
+        let landing = app.get_as("/", &format!("urlet_theme={key}")).await;
+        assert_eq!(landing.status, StatusCode::OK, "{key} landing");
+
+        if with_panel.contains(&key) {
+            assert!(
+                landing.body.contains("Illustrative only"),
+                "{key} draws a panel without the illustrative label"
+            );
+        }
+
+        for invented in [
+            ">86.4<", ">86.4%<", ">12.4k<", ">3.2<", ">042<", ">+128<", ">0.842<", ">0.664<",
+            ">MMXXVI<", "a7f3k", ">SLO<", ">AMB<",
+        ] {
+            assert!(
+                !landing.body.contains(invented),
+                "{key} still prints {invented}"
+            );
+        }
+    }
+}

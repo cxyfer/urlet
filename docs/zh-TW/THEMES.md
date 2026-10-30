@@ -177,7 +177,9 @@ volume；重啟後 registry 會從資料庫重建，上傳主題仍可選用。
    工具時透過 `partials/site_tools.html`（明暗開關、切換器加語言切換器）渲染。若某個設計
    為了自己的頂端列而清空 `footer_lang`，就必須改在那裡放入工具，例如 Swiss 的登入頁。
    另外把 `templates/base.html` 的 `data-theme`／`data-theme-lock` 屬性複製到 `<html>`，
-   讓被強制的調色盤同時標記在文件與目錄上。
+   讓被強制的調色盤同時標記在文件與目錄上。landing 頁可以畫儀表造型，但任何讀起來像量測值的
+   內容，都必須來自頁面資料（`clock`、`version`、`feature_count`），或位於標了
+   `landing.decorative.note` 的面板內；不要印出看似合理的常數，例如 `99.9` 或 `86.4%`。
 5. 在每個 `themed_page!` 呼叫加入 `templates/themes/<key>/...` 路徑。每個呼叫都要保留
    `Verdant` 項目，它也是頁面尚未列出新主題時的回退。
 6. key、模板與 CSS 註冊完成後，將主題加入 `ALL` 與管理測試，並讓

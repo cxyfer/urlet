@@ -44,19 +44,15 @@
     <div class="ticker-track">
         <div class="ticker-group">
             <span class="ticker-item">{{ site_name }}</span><span class="ticker-mark"></span>
-            <span class="ticker-item">+01</span><span class="ticker-mark"></span>
             <span class="ticker-item">///</span><span class="ticker-mark"></span>
-            <span class="ticker-item">86.4%</span><span class="ticker-mark"></span>
-            <span class="ticker-item">+128</span><span class="ticker-mark"></span>
-            <span class="ticker-item">01 / 06</span><span class="ticker-mark"></span>
+            <span class="ticker-item">{{ lang.t("landing.hero.chip") }}</span><span class="ticker-mark"></span>
+            <span class="ticker-item">///</span><span class="ticker-mark"></span>
         </div>
         <div class="ticker-group">
             <span class="ticker-item">{{ site_name }}</span><span class="ticker-mark"></span>
-            <span class="ticker-item">+01</span><span class="ticker-mark"></span>
             <span class="ticker-item">///</span><span class="ticker-mark"></span>
-            <span class="ticker-item">86.4%</span><span class="ticker-mark"></span>
-            <span class="ticker-item">+128</span><span class="ticker-mark"></span>
-            <span class="ticker-item">01 / 06</span><span class="ticker-mark"></span>
+            <span class="ticker-item">{{ lang.t("landing.hero.chip") }}</span><span class="ticker-mark"></span>
+            <span class="ticker-item">///</span><span class="ticker-mark"></span>
         </div>
     </div>
 </div>
@@ -94,7 +90,7 @@
         <aside class="hero-deck" aria-hidden="true">
             <div class="deck-bar">
                 <span class="deck-dots"><i></i><i></i><i></i></span>
-                <span>/// 042</span>
+                <span>///</span>
             </div>
             <div class="deck-body">
                 <div class="deck-graph">
@@ -115,23 +111,20 @@
                     <svg class="deck-spark" viewBox="0 0 120 40" fill="none">
                         <polyline points="0,34 12,30 24,31 36,22 48,25 60,16 72,19 84,10 96,13 108,6 120,9"></polyline>
                     </svg>
-                    <div class="deck-axis"><span>01</span><span>07</span><span>14</span></div>
+                    <div class="deck-axis" aria-hidden="true"><span>—</span><span>—</span><span>—</span></div>
                 </div>
                 <div class="deck-grid">
                     <div class="deck-cell">
-                        <span class="deck-num">042</span>
-                        <span class="deck-unit">/H</span>
+                        <span class="deck-num">—</span>
                     </div>
                     <div class="deck-cell deck-cell-acid">
-                        <span class="deck-num">86.4</span>
-                        <span class="deck-unit">%</span>
+                        <span class="deck-num">—</span>
                     </div>
                     <div class="deck-cell deck-cell-blue">
-                        <span class="deck-num">+128</span>
+                        <span class="deck-num">—</span>
                     </div>
                     <div class="deck-cell">
-                        <span class="deck-num">3.2</span>
-                        <span class="deck-unit">MS</span>
+                        <span class="deck-num">—</span>
                     </div>
                 </div>
                 <div class="deck-controls">
@@ -144,6 +137,7 @@
                     <span class="deck-ruler"></span>
                 </div>
             </div>
+            <p class="decorative-note">{{ lang.t("landing.decorative.note") }}</p>
         </aside>
     </section>
 

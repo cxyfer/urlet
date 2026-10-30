@@ -1620,30 +1620,6 @@ dl.meta dt:last-of-type, dl.meta dd:last-of-type { border-bottom: 0; }
     flex-wrap: wrap;
 }
 .landing-cta .btn { padding: .68rem 1.15rem; border-radius: var(--r-md); font-size: .94rem; }
-.hero-meta {
-    display: flex;
-    align-items: center;
-    gap: 1.1rem;
-    flex-wrap: wrap;
-    margin-top: 2rem;
-    padding-top: 1.1rem;
-    border-top: 1px solid var(--hairline);
-    font-family: var(--mono);
-    font-size: .68rem;
-    letter-spacing: .1em;
-    color: var(--muted);
-    text-transform: uppercase;
-}
-.hero-meta span { display: inline-flex; align-items: center; gap: .42rem; }
-.hero-meta i {
-    width: .42rem;
-    height: .42rem;
-    border-radius: 50%;
-    background: var(--sap);
-    display: inline-block;
-}
-.hero-meta i.water { background: var(--water); }
-.hero-meta i.clay { background: var(--clay); }
 
 /* specimen panel — the petri dish */
 .specimen {
@@ -1703,15 +1679,6 @@ dl.meta dt:last-of-type, dl.meta dd:last-of-type { border-bottom: 0; }
 .specimen-curve-glow { fill: none; stroke: var(--sap); stroke-width: 6; opacity: .28; stroke-linecap: round; }
 .specimen-node { fill: var(--sap); stroke: var(--surface); stroke-width: 1.2; }
 .specimen-cross { stroke: var(--muted); stroke-width: .8; opacity: .6; }
-.specimen-readout {
-    font-family: var(--mono);
-    font-size: 6.4px;
-    letter-spacing: .1em;
-    fill: var(--muted);
-    text-transform: uppercase;
-}
-.specimen-readout.strong { fill: var(--ink); font-size: 8.2px; font-weight: 700; letter-spacing: .04em; }
-.specimen-readout.lime { fill: var(--forest); }
 
 .specimen-float {
     position: absolute;
@@ -2670,7 +2637,6 @@ dl.meta dt:last-of-type, dl.meta dd:last-of-type { border-bottom: 0; }
     .landing-topbar .nav { width: auto; flex: 1 1 auto; justify-content: flex-end; }
     .hero { padding-top: 1.75rem; }
     .hero h1 { font-size: clamp(2.45rem, 13vw, 3.4rem); }
-    .hero-meta { margin-top: 1.5rem; gap: .5rem .9rem; font-size: .62rem; }
     .hero-chip { margin-bottom: 1.1rem; }
     .landing-tagline { font-size: 1.12rem; }
     .landing-subtitle { font-size: .92rem; }
@@ -2837,9 +2803,6 @@ dl.meta dt:last-of-type, dl.meta dd:last-of-type { border-bottom: 0; }
     }
     :root:not([data-theme="light"]) .specimen-node {
         stroke: var(--canvas);
-    }
-    :root:not([data-theme="light"]) .specimen-readout.lime {
-        fill: var(--sap);
     }
     :root:not([data-theme="light"]) .specimen-glass {
         fill: rgba(26, 45, 34, .55);
