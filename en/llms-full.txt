@@ -1,0 +1,1725 @@
+# urlet JSON API reference (/en/docs/api)
+
+- Base path: `/api/v1`
+- Authentication (choose one)
+  - **Session cookie**: `urlet_session`, issued by `POST /api/v1/auth/login` (the browser form flow uses the same cookie)
+  - **API token**: `Authorization: Bearer ur_...` (create one under `/app/account`)
+- Requests and responses are `application/json; charset=utf-8`
+- Timestamps are always ISO-8601 UTC (`2030-01-31T12:00:00.000Z`); input also accepts
+  `2030-01-31T12:00:00Z`, `2030-01-31 12:00`, `2030-01-31`, and similar forms
+- JSON responses are always English, whatever UI language the visitor selected
+  (see [UI language](#ui-language))
+
+This file is the narrative reference. Every instance also serves a browsable version of the same
+API, built from the OpenAPI contract in `openapi/`:
+
+- `GET /docs` — the interactive reference (Scalar), following the visitor's interface language
+- `GET /docs/openapi.json` — the English OpenAPI 3.1 contract
+- `GET /docs/openapi.zh-TW.json` — the Traditional Chinese contract
+
+The reference is embedded in the binary, so it works on an instance with no outbound network.
+`/docs` is a reserved path: no short link may use the slug `docs`.
+
+## Error format [#error-format]
+
+```json
+{
+  "error": {
+    "code": "validation_error",
+    "message": "slug may only contain letters, digits, '-' and '_'",
+    "details": { "field": "slug" }
+  }
+}
+```
+
+| HTTP | `code` | Meaning |
+|------|--------|---------|
+| 400 | `bad_request` | Malformed request, or nothing to change |
+| 400 | `captcha_failed` | Bot verification failed, expired, or was rejected by the provider (registration and sign-in) |
+| 401 | `unauthorized` | Not authenticated, token revoked, wrong password |
+| 403 | `forbidden` | Insufficient permission, CSRF rejection, registration closed, quota exhausted |
+| 404 | `not_found` | Resource does not exist (including resources that belong to someone else) |
+| 409 | `conflict` | Uniqueness conflict (email, slug on a domain, domain hostname) |
+| 410 | `gone` | Short link expired or reached its click limit |
+| 422 | `validation_error` | Field validation failed; `details.field` names the offending field |
+| 429 | `rate_limited` | Rate limited; the response carries a `Retry-After` header |
+| 500 | `internal_error` | Server error (details go to the log only) |
+
+Pagination envelope:
+
+```json
+{ "items": [], "page": 1, "per_page": 20, "total": 0, "total_pages": 1 }
+```
+
+`per_page` defaults to 20 and is capped at 100.
+
+---
+
+## Authentication [#authentication]
+
+### `POST /api/v1/auth/register` [#post-apiv1authregister]
+
+```json
+{ "email": "user@example.com", "password": "at-least-8-chars", "invite_code": "optional", "display_name": "optional", "captcha_token": "optional" }
+```
+
+`201` → `{ "user": { ... } }`, and the response sets a session cookie (registering signs you in).
+
+Errors: `409` duplicate email, `422` validation failure, `403` registration closed or invalid
+invite code, `400` `captcha_failed` when bot verification is enabled and rejects the request.
+
+An invite code may carry a user group. In `invite` mode a code is mandatory; in `open` mode it is
+optional, but when one is supplied it is validated and its group wins over the default group. The
+returned `user` object includes `group_id`.
+
+The web form accepts the same code as `/app/register?invite=CODE`; the link produced for an invite
+prefills the field. The JSON body is unchanged.
+
+`captcha_token` carries the token produced by the CAPTCHA widget on the web registration form.
+It is only checked when bot verification is enabled for registration; otherwise the field is
+ignored. See [Bot verification](#bot-verification).
+
+> `POST /api/v1/urls` is exempt from bot verification **only when it authenticates with an API
+> token** (`Authorization: Bearer ur_...`), so automation and CI pipelines are unaffected. A
+> request authenticated with a **session cookie** is a browser session and is subject to the
+> link-creation switch; send the widget token in `captcha_token`.
+
+### `POST /api/v1/auth/login` [#post-apiv1authlogin]
+
+```json
+{ "email": "user@example.com", "password": "...", "captcha_token": "optional" }
+```
+
+`200` → `{ "user": { ... } }` + `Set-Cookie`.
+Errors: `401` wrong credentials (the message is fixed and does not reveal whether the account
+exists), `403` account suspended, `400` `captcha_failed` when bot verification is enabled for
+sign-in and rejects the request, `429` rate limited.
+
+`captcha_token` carries the token produced by the CAPTCHA widget on the web sign-in form. It is
+only checked when bot verification is enabled for sign-in (`captcha_on_login` /
+`URLET_CAPTCHA_ON_LOGIN`); otherwise the field is ignored. See
+[Bot verification](#bot-verification).
+
+### `POST /api/v1/auth/logout` [#post-apiv1authlogout]
+
+`204`, revokes the current session and clears the cookie (may be called anonymously).
+
+### `GET /api/v1/auth/me` [#get-apiv1authme]
+
+`200` → the user, the group they belong to (or `null`) and the effective limits:
+
+```json
+{
+  "user": { "id": 7, "email": "ada@example.com", "role": "user", "group_id": 2, "...": "..." },
+  "group": { "id": 2, "name": "Pro" },
+  "limits": {
+    "max_urls": 500,
+    "max_api_tokens": 5,
+    "allow_custom_slug": true,
+    "allow_password": true,
+    "allow_expiry": true,
+    "allow_max_clicks": true,
+    "allow_tags": true,
+    "allow_api_tokens": true,
+    "allow_domain_selection": true,
+    "redirect_mode_policy": "choice",
+    "default_domain": "links.example.com",
+    "allowed_domains": ["links.example.com", "go.example.com"]
+  }
+}
+```
+
+`group` is `null` for an ungrouped account, which falls back to the site-wide settings. The
+`limits` object is the resolved value: a group overrides a quota only when it is not `NULL`, and
+`0` means unlimited. `default_domain` is the effective group default (falling back to the site
+default when it is missing or disabled); `allowed_domains` is the effective selection list. When
+`allow_domain_selection` is `false`, only that default is accepted for new links or moves.
+`redirect_mode_policy` is `direct`, `splash` or `choice`; it limits the redirect mode of **new**
+links and never rewrites existing ones. An ungrouped account gets `choice`.
+
+### `PATCH /api/v1/auth/me` [#patch-apiv1authme]
+
+```json
+{ "display_name": "Ada" }
+```
+
+An empty string or `null` clears the display name. `200` → `{ "user": { ... } }`
+
+### `POST /api/v1/auth/password` [#post-apiv1authpassword]
+
+```json
+{ "current_password": "...", "new_password": "..." }
+```
+
+`204`. On success every **other** session is revoked (the current one survives) **and all API
+tokens for the account are revoked**.
+Errors: `401` wrong current password, `422` new password does not meet the policy.
+
+### `GET /api/v1/auth/sessions` [#get-apiv1authsessions]
+
+`200` → `{ "items": [ { "id", "user_agent", "created_at", "last_seen_at", "expires_at", "current", "revoked" } ] }`
+
+Sessions slide: any activity (written at most once per minute) pushes `expires_at` forward and
+re-issues the cookie, so continuous use never expires.
+
+### `DELETE /api/v1/auth/sessions/{id}` [#delete-apiv1authsessionsid]
+
+`204`. You can only revoke your own sessions; anything else is `404`.
+
+### `GET /api/v1/tokens` · `POST /api/v1/tokens` · `DELETE /api/v1/tokens/{id}` [#get-apiv1tokens--post-apiv1tokens--delete-apiv1tokensid]
+
+`POST` body: `{ "name": "ci pipeline", "expires_at": "2030-01-01" }`
+
+`201` → the plaintext token is shown **this one time only**:
+
+```json
+{
+  "token": "ur_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "api_token": { "id": 1, "name": "ci pipeline", "prefix": "ur_abc12345", "scopes": "...", "created_at": "...", "last_used_at": null, "expires_at": "2030-01-01T00:00:00.000Z", "revoked": false, "active": true }
+}
+```
+
+`DELETE` → `204`.
+
+Token creation is refused with `403` when the group disables API tokens (`allow_api_tokens`) or
+the effective `max_api_tokens` is exhausted. Only usable tokens count (not revoked, not expired),
+so revoking one frees a slot immediately.
+
+---
+
+## Short links [#short-links]
+
+### `GET /api/v1/urls` [#get-apiv1urls]
+
+Query parameters:
+
+| Parameter | Meaning |
+|-----------|---------|
+| `q` | Search slug, title and target URL (`%` and `_` are treated literally) |
+| `tag` | Filter by tag name |
+| `status` | `active` or `disabled` |
+| `sort` | `created_at` (default, newest first), `clicks` / `clicks_desc`, `slug` / `slug_asc`, `updated` / `updated_desc`, `expires` / `expires_asc`; each key has one fixed direction and an unknown value falls back to newest first |
+| `page` / `per_page` | Pagination |
+
+`200` → a paginated array of `UrlDto`.
+
+### `POST /api/v1/urls` [#post-apiv1urls]
+
+```json
+{
+  "target_url": "example.com/path",
+  "domain": "go.example.com",
+  "slug": "promo",
+  "title": "Launch",
+  "notes": "internal note",
+  "tags": ["campaign", "docs"],
+  "password": "linkpass",
+  "expires_at": "2030-06-30 12:00",
+  "max_clicks": 500,
+  "redirect_type": 302,
+  "redirect_mode": "splash",
+  "splash_delay_seconds": 7,
+  "splash_title": "Launch day",
+  "splash_message": "Welcome aboard",
+  "captcha_token": "0.abc..."
+}
+```
+
+`201` → `UrlDto`. Rules:
+
+- `captcha_token` is only read when the request is authenticated with a **session cookie** and
+  bot verification is enabled for link creation; a `Bearer` token call ignores it. A failed
+  check returns `400` with `error.code = "captcha_failed"`
+- `target_url` is required; only `http`/`https` are accepted, and a bare domain without a scheme
+  is given a `https://` prefix
+- `domain` may be omitted (the effective group default is used). A supplied hostname must be an
+  active domain, otherwise the request fails with `422`; it must also satisfy the group policy
+  (`allow_domain_selection`, `restrict_domains` / `domain_ids`) or the request fails with `403`.
+  The slug namespace is per domain, so the same slug can exist on two domains
+- `slug` may be omitted (a base62 slug of the configured `default_slug_length` is generated,
+  4–16 characters, default 7); only `[A-Za-z0-9_-]` is
+  allowed, length 1–64, and reserved words are rejected. A slug already used **on the selected
+  domain** returns `409`
+- `expires_at` must be in the future; `max_clicks` ≥ 1
+- `redirect_type` ∈ {301, 302, 307, 308}
+- `redirect_mode` is `direct` (default) or `splash`. Omitted, it takes the group policy's default
+  (splash under a splash-only policy, otherwise direct). A mode the group blocks returns `403`
+- `splash_delay_seconds` is 1–60 (default 5). `splash_title` (at most 120 characters) and
+  `splash_message` (at most 500 characters, newlines allowed) are optional; empty/omitted uses the
+  localised built-in copy. They are stored even while the link is direct, so switching modes keeps
+  the copy
+- Exceeding the `max_urls_per_user` quota → `403`
+
+### `GET /api/v1/urls/{id}` [#get-apiv1urlsid]
+
+`200` → `UrlDto` (`state` is `active` / `expired` / `limit_reached` / `disabled`).
+
+### `PATCH /api/v1/urls/{id}` [#patch-apiv1urlsid]
+
+Partial update. A field that is **absent** stays unchanged. An explicit `null` clears only the
+nullable fields that opt into it — `title`, `notes`, `password`, `expires_at`, `max_clicks`,
+`splash_title` and `splash_message`. For `slug`, `domain`, `status`, `redirect_type`,
+`redirect_mode`, `splash_delay_seconds` and `tags`, `null` is treated like an absent field and
+keeps the current value.
+
+```json
+{ "title": "New title", "domain": "links.example.com", "password": null, "max_clicks": null, "tags": ["new"], "status": "disabled" }
+```
+
+`200` → the updated `UrlDto`. An empty object → `400`. Moving a link to another active domain
+must satisfy the group policy and re-checks the slug there (`409` on a collision). Keeping a link
+on its current domain — even a disabled one — is always allowed, so existing links remain
+editable.
+
+### `DELETE /api/v1/urls/{id}` [#delete-apiv1urlsid]
+
+`204`, soft delete. The slug is retained and never released (so old links cannot be hijacked),
+and analytics data is kept.
+
+### `GET /api/v1/urls/{id}/stats?days=30` [#get-apiv1urlsidstatsdays30]
+
+```json
+{
+  "url": { ... },
+  "summary": { "total_clicks": 42, "human_clicks": 41, "unique_clicks": 3, "bot_clicks": 1, "first_click_at": "...", "last_click_at": "..." },
+  "daily": [ { "day": "2026-02-01", "clicks": 5, "unique_clicks": 2, "bot_clicks": 0 } ],
+  "referrers": [ { "label": "news.example.com", "count": 34 } ],
+  "devices": [], "browsers": [], "operating_systems": []
+}
+```
+
+`days` ranges from 1 to 365 (default 30), and `daily` is padded with the days that had no clicks.
+
+### `GET /api/v1/urls/{id}/clicks?page=1` [#get-apiv1urlsidclickspage1]
+
+`200` → a paginated click log (**no** IP addresses or visitor hashes). `page` and `per_page` are
+accepted; `per_page` defaults to 20 and is capped at 100:
+
+```json
+{ "items": [ { "clicked_at": "...", "referrer_host": "news.example.com", "country_code": null, "device_type": "Desktop", "browser": "Chrome", "os": "Windows", "is_bot": false, "is_unique": true, "password_protected": false } ], "page": 1, "per_page": 20, "total": 42, "total_pages": 3 }
+```
+
+### `UrlDto` [#urldto]
+
+```json
+{
+  "id": 1,
+  "domain": "s.example.com",
+  "slug": "promo",
+  "short_url": "https://s.example.com/promo",
+  "target_url": "https://example.com/landing",
+  "title": "Launch",
+  "notes": null,
+  "tags": ["campaign"],
+  "has_password": true,
+  "expires_at": "2030-06-30T12:00:00.000Z",
+  "expires_in": "in 52 months",
+  "max_clicks": 500,
+  "click_count": 42,
+  "unique_click_count": 3,
+  "redirect_type": 302,
+  "redirect_mode": "splash",
+  "splash_delay_seconds": 7,
+  "splash_title": "Launch day",
+  "splash_message": "Welcome aboard",
+  "status": "active",
+  "is_expired": false,
+  "state": "active",
+  "is_custom_slug": true,
+  "last_clicked_at": "2026-02-11T09:00:00.000Z",
+  "created_at": "...",
+  "updated_at": "..."
+}
+```
+
+**Group limits.** Link creation is refused with `403` when the effective `max_urls` is exhausted.
+A group feature toggle blocks submitting the matching field on create (`slug`, `password`,
+`expires_at`, `max_clicks`, `tags`) and refuses to newly enable it on `PATCH`. Omitting a field
+keeps its current value, and clearing a blocked field is accepted; a non-empty link password is
+always a new value and is refused while passwords are blocked. The redirect-mode policy blocks a
+new `redirect_mode` (or switching to it on `PATCH`) but accepts keeping the current mode and
+clearing splash copy.
+
+---
+
+## SNS preview cards [#sns-preview-cards]
+
+Administrators control `preview_image_policy` at `/app/admin/settings` or with `PUT /api/v1/admin/settings`: `{"preview_image_policy":"none"}`. Values: `none` (no images), `url` (HTTPS URLs only), `upload` (uploads only), `both` (default). Invalid values return 422 without partial updates. The policy applies to administrators and members alike; API attempts to set a prohibited source return 403, and browser forms return a 422 retry page retaining text. Keeping/removing an image and editing text remain allowed. Existing disallowed images stay stored but are omitted from metadata and the response `image_url`; `image_uploaded` still describes the stored source. Uploaded-image URLs return 404 with no-store while uploads are disabled. Re-enabling restores delivery. Third-party copies/caches of previously public images cannot be revoked. Startup seeds only missing settings, and old settings forms that omit this field preserve the existing policy.
+
+Social platforms build link cards from the fetched page's Open Graph (`og:title`, `og:description`, `og:image`) and Twitter Card tags. Without custom preview settings, urlet keeps its redirect behavior and the platform may read metadata from the destination. Configured links serve metadata from the owner's saved preview fields to recognised social crawlers. The platform chooses the footer, layout and refresh timing; there is no arbitrary footer field in these tags.
+
+These endpoints require the link owner's session or API token; another owner's link returns 404. Existing CSRF rules apply to cookie requests. Create a short link first, then configure its optional public preview. The public shortener does not accept uploads or these extra fields.
+
+| Method | Path | Behavior |
+|--------|------|----------|
+| GET | `/api/v1/urls/{id}/preview` | Returns `{title, description, image_url, image_uploaded, enabled}`; an unconfigured preview returns null fields and false flags |
+| PATCH | `/api/v1/urls/{id}/preview` | JSON `{title?, description?, image_url?}`. Omitted fields stay unchanged; null or blank clears the field. Setting/clearing image_url replaces/removes any uploaded image. The response uses the GET shape |
+| POST | `/api/v1/urls/{id}/preview/image` | Multipart field `image`; replaces the image while preserving text, returns the GET shape |
+| DELETE | `/api/v1/urls/{id}/preview` | Clears all custom preview data and image bytes, returns 204 |
+
+```bash
+curl -X PATCH "$BASE/api/v1/urls/42/preview" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"title":"Read this","description":"A custom summary","image_url":"https://example.com/card.png"}'
+curl "$BASE/api/v1/urls/42/preview/image" \
+  -H "Authorization: Bearer $TOKEN" -F 'image=@card.png'
+```
+
+Title: 200 characters; description: 1000 characters. Image URLs must be absolute HTTPS, at most 2048 characters, without credentials/whitespace. Uploads: PNG/JPEG/GIF/WebP, at most 2 MiB and 4096 × 4096 pixels. MIME is detected from validated bytes, not the filename. Stored images use opaque public `/assets/link-previews/{key}` URLs; replacing/removing the image revokes old keys. Invalid fields return 422; malformed/oversized multipart requests return a 4xx error without changing stored data. Uploads share a per-account rate budget.
+
+Configured text/images are public even on password-protected links. A blank preview title uses the site name; private link title/notes and the destination are never used as fallbacks. No external metadata or image fetch occurs on the server. Known social crawlers (including Discord, X/Twitter, Meta, Telegram, Slack, LinkedIn and LINE markers) receive OG/Twitter HTML; unknown agents retain normal link behavior. Link lifecycle checks apply to both metadata and uploaded images. Custom preview fetches do not count as clicks. Third-party caches and layout are controlled by the platforms; changing settings does not guarantee an immediate refreshed card.
+
+---
+
+## Tags [#tags]
+
+### `GET /api/v1/tags` [#get-apiv1tags]
+
+`200` → `{ "items": [ { "id": 1, "name": "campaign", "color": null, "url_count": 4 } ] }`
+
+### `DELETE /api/v1/tags/{id}` [#delete-apiv1tagsid]
+
+`204`, deletes the tag (it only unlinks the tag from short links; the links themselves are
+untouched).
+
+---
+
+## Public endpoints [#public-endpoints]
+
+### `GET /` [#get-]
+
+The landing page: an introduction to the service with sign-in and sign-up entry points. It no
+longer redirects to `/app`; a visitor who is already signed in sees a button that opens the
+dashboard.
+
+When the visitor is allowed to create a link — see the `public_create_access` setting below — the
+page also carries the public shortener. `?shortened=<slug>&domain=<hostname>` renders the short URL
+of a link that was just created; the value is resolved against the database, so the result box never
+prints a query-string value verbatim and never discloses the destination.
+
+### `POST /` [#post-]
+
+The public shortener form (`application/x-www-form-urlencoded`), available on the canonical host
+only. It accepts `target_url` (required) plus the optional inputs the administrator enabled:
+`slug`, `title`, `tags` (comma separated), `password`, `expires_at`, `max_clicks`, `redirect_mode`,
+`splash_delay_seconds`, `splash_title`, `splash_message`, `domain`, and the provider token field
+(`cf-turnstile-response` or `g-recaptcha-response`).
+
+A successful submission is `303` to `/?shortened=<slug>&domain=<hostname>`. A failure is `303` to
+`/?err=<code>`, where `<code>` is one of `denied` (below the access level, or a disabled field),
+`guest_allowlist` (anonymous destination not allowed), `rate_limited`, `captcha`, `quota` (the `public_max_urls` budget of the Guest account is full),
+`conflict`, `slug`, `target`, `expiry`, `tags`, `password_rules`, `domain`, `mode_denied` or
+`invalid`. A non-numeric `max_clicks` or `splash_delay_seconds` is reported as `invalid` rather
+than silently dropped.
+
+The CSRF same-origin rule applies to the form, and the ordinary security headers are unchanged.
+
+### `POST /api/v1/public/urls` [#post-apiv1publicurls]
+
+The same operation as JSON, for scripts. No credential is required when `public_create_access` is
+`guest`; a session cookie or a Bearer token may be supplied instead, and the link is then owned by
+that account.
+
+Anonymous requests must also match the enabled guest destination allowlist; the example below is included in the built-in rules. Signed-in sessions and Bearer tokens use their existing account permissions.
+
+```json
+{
+  "target_url": "https://github.com/cxyfer/urlet",
+  "slug": "launch",
+  "title": "Launch day",
+  "captcha_token": "0.abc..."
+}
+```
+
+`201`:
+
+```json
+{
+  "domain": "s.example.com",
+  "slug": "launch",
+  "short_url": "https://s.example.com/launch",
+  "target_url": "https://github.com/cxyfer/urlet",
+  "created_at": "2026-10-22T12:00:00.000Z"
+}
+```
+
+The link id is deliberately not returned: the caller has no account to manage the link with.
+
+- `403` `forbidden` — the caller is below the access level, or submitted a field the administrator
+  disabled, or an anonymous destination is not on the enabled guest allowlist
+- `400` `captcha_failed` — the bot protection check failed (fail closed)
+- `429` `rate_limited` — the per-address or the shared visitor budget is exhausted (`Retry-After`)
+- `409` `conflict` — the requested slug is already taken
+- `422` `validation_error` — an invalid target URL or option
+
+### `GET /health` [#get-health]
+
+```json
+{ "status": "ok", "version": "1.4.0-rc.3", "database": "ok", "uptime_seconds": 42 }
+```
+
+When the database cannot be queried the response is `503` with `status` set to `degraded`.
+`/healthz` is an alias of the same endpoint.
+
+### `GET /{slug}` [#get-slug]
+
+- Valid, unprotected and `redirect_mode = direct` → `30x` + `Location` (301/308 send
+  `private, max-age=300`; 302/307 send `private, no-store`)
+- Valid, unprotected and `redirect_mode = splash` → `200` splash page (`no-store`). It
+  shows the custom copy, the destination host and a countdown, sends the visitor on with a
+  `<meta http-equiv="refresh">` and also offers a "Continue now" link. The click is recorded when
+  the splash page is served, not when the visitor leaves
+- Password protected → `200` password prompt (**the target URL is never disclosed**). After a
+  successful unlock the destination is served directly: the password page is the only
+  interstitial, so a splash page is never shown for a protected link
+- Expired or click limit reached → `410`
+- Missing / deleted / disabled → `404`
+
+### `POST /{slug}/unlock` [#post-slugunlock]
+
+Accepts `application/json` or `application/x-www-form-urlencoded`:
+
+```json
+{ "password": "linkpass" }
+```
+
+- Successful JSON request → `200` `{ "ok": true, "redirect": "/slug" }` + unlock cookie
+- Successful form request → `303` redirect to `/{slug}` + unlock cookie
+- Wrong password → JSON `401`; forms re-render the password page (`401`)
+- Rate limited → `429`
+
+### `GET /api/v1/public/urls/{slug}?domain=<hostname>` [#get-apiv1publicurlsslugdomainhostname]
+
+Public metadata without the target URL. Without `domain` the default domain is used, which keeps
+callers that predate multi-domain working for links on the default domain.
+
+```json
+{ "domain": "go.example.com", "slug": "promo", "title": "Launch", "has_password": true, "redirect_mode": "splash", "is_expired": false, "state": "active" }
+```
+
+### `GET /api/v1/domains` [#get-apiv1domains]
+
+Authenticated users can list the active domains available for new links, already filtered by
+their group policy. `is_default` marks the effective group default:
+
+```json
+[ { "id": 1, "hostname": "s.example.com", "is_default": true }, { "id": 2, "hostname": "go.example.com", "is_default": false } ]
+```
+
+---
+
+## Invite codes (member) [#invite-codes-member]
+
+Members can issue invite codes for their **own group** when that group has
+`allow_invites` enabled. Codes are pinned to the group, so anyone who redeems one
+joins it. The group's calendar quota (`max_invites` / `invite_period`) applies and
+is shared with administrator-issued codes. Revoking a code that nobody redeemed
+returns its slot; a redeemed code keeps it.
+
+### `GET /api/v1/invites` [#get-apiv1invites]
+
+`GET /api/v1/invites?page=&per_page=` → `200`: the caller's own codes (newest
+first), including the displayable code and its registration link, plus the
+effective quota.
+
+```json
+{
+  "items": [
+    { "id": 4, "prefix": "RW6M", "code": "RW6MF6C6JG",
+      "link": "https://s.example.com/app/register?invite=RW6MF6C6JG",
+      "note": "team", "group_id": 4, "max_uses": 2,
+      "used_count": 1, "remaining": 1, "expires_at": null, "status": "active",
+      "usable": true, "created_at": "2026-03-18T10:00:00.000Z" }
+  ],
+  "page": 1, "per_page": 20, "total": 1,
+  "quota": { "group_id": 4, "group_name": "Invite Team", "allowed": true,
+             "limit": 5, "period": "month", "used": 1, "remaining": 4 }
+}
+```
+
+`code` and `link` are `null` for codes created before sealed storage or after
+`URLET_SECRET` changed; `prefix` is always present. `link` is also `null` when
+the code is revoked, exhausted or expired, while `code` stays visible for
+history. `per_page` defaults to 20 and
+is capped at 100. `quota.allowed` is `false` when the group does not enable
+member invites: creating a code then returns `403`, but codes issued before the
+toggle was turned off remain listed and revocable. `remaining` is `null` when
+`limit` is `0` (unlimited). Accounts whose group link is missing fall back to the
+default group.
+
+Member issuance is throttled to 20 codes per hour per account (`429` when the
+burst is exhausted); the group's invite quota remains the primary limit. A group
+with no finite quota is otherwise unlimited.
+
+### `POST /api/v1/invites` [#post-apiv1invites]
+
+`{ "note"?: "team", "max_uses"?: 2 }` → `201`:
+
+```json
+{ "code": "RW6MF6C6JG", "link": "https://s.example.com/app/register?invite=RW6MF6C6JG",
+  "invite": { "...": "..." }, "quota": { "...": "..." } }
+```
+
+The code and link are also returned by `GET /api/v1/invites`, so they are not
+lost when the response is dismissed. The top-level `link` mirrors `invite.link`;
+both are `null` if the created code is already unusable. `max_uses` must be
+between 1 and 10 for
+member codes. `403` when the group does not allow invites or the period quota is
+exhausted (`error.code = "forbidden"`), and `429` when the hourly burst limit is
+exhausted.
+
+### `DELETE /api/v1/invites/{id}` [#delete-apiv1invitesid]
+
+`204`, revokes one of the caller's own codes. Another member's code is reported
+as `404`; administrators use `DELETE /api/v1/admin/invites/{id}` for any code.
+Revoking a code that nobody redeemed returns its quota slot; a code that was
+already redeemed keeps it.
+
+---
+
+## Administration (requires `role = admin`) [#administration-requires-role--admin]
+
+Every `/api/v1/admin/**` endpoint returns `403 forbidden` for non-administrators.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/admin/users?q=&role=&status=&group_id=&page=&per_page=` | User list (includes `link_count`, `group_id`, `group_name`) |
+| PATCH | `/admin/users/{id}` | `{ "role"?, "status"?, "display_name"?, "group_id"? }`; `group_id: null` makes the user ungrouped |
+| POST | `/admin/users/{id}/password` | `{ "new_password": "..." }` → `204`, revokes every session for that account |
+| DELETE | `/admin/users/{id}` | `204`, soft-deletes the account and all of its short links |
+| GET | `/admin/domains` | Every domain with link counts, status and source |
+| POST | `/admin/domains` | `{ "hostname": "go.example.com" }` → `201`, created as `pending` |
+| PATCH | `/admin/domains/{id}` | `{ "status"?: "active"\|"disabled", "is_default"?: true }` |
+| DELETE | `/admin/domains/{id}` | `204`; only a zero-link UI domain that is not the default |
+| GET | `/admin/groups?page=&per_page=` | Group list with member counts (paginated) |
+| POST | `/admin/groups` | `{ "name", "description"?, "max_urls"?, "max_api_tokens"?, "max_invites"?, "invite_period"?, "allow_invites"?, "allow_custom_slug"?, "allow_password"?, "allow_expiry"?, "allow_max_clicks"?, "allow_tags"?, "allow_api_tokens"?, "allow_domain_selection"?, "redirect_mode_policy"?, "default_domain_id"?, "restrict_domains"?, "domain_ids"?, "is_default"? }` → `201`; `default_domain_id` must reference an active domain; `domain_ids` must reference existing domains (disabled entries stay stored but are not selectable) |
+| PUT | `/admin/groups/{id}` | `name` is required; other omitted fields keep their current value; `max_urls` / `max_api_tokens` / `max_invites` set to `null` inherit the site quota; `description: null` clears it; `redirect_mode_policy` is `direct`, `splash` or `choice` and is omitted to keep the current value; `default_domain_id: null` means the site default; `domain_ids: null` or `[]` clears the allowlist; `is_default: true` moves the single default marker |
+| DELETE | `/admin/groups/{id}?reassign_to={id}` | `204`, moves the members then deletes; `409` for the default group or a missing/invalid target |
+| GET | `/admin/themes` | Theme catalogue (key, name, description, `enabled`, `default`, `appearance`, `dark_only`, `light_only`, `css_url`, `custom`) plus `switching` (`all` or `admin`); includes administrator uploads |
+| PUT | `/admin/themes` | `{ "enabled"?: ["verdant", ...], "default"?: "verdant", "switching"?: "all"\|"admin" }`; omitted fields keep their value; at least one enabled theme and an enabled default are required (`422` otherwise). `enabled` and `default` may name `custom-…` uploads |
+| GET | `/admin/urls?q=&status=&user_id=&page=&sort=&per_page=` | Every short link on the instance; `sort` accepts the same values as `GET /api/v1/urls` |
+| PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
+| DELETE | `/admin/urls/{id}` | `204` |
+| GET | `/admin/invites` | The 200 newest invite codes with `code`, `link`, `prefix`, `group_id` / `group_name`; there is no pagination. `code` and `link` are `null` for legacy or secret-rotated rows, and `link` is also `null` for revoked, exhausted or expired codes |
+| POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`; `link` mirrors `invite.link` and is `null` if the code is already unusable; the code stays available from `GET` and the link is returned while usable; `403` when the group's per-period invite quota is exhausted |
+| DELETE | `/admin/invites/{id}` | `204`, revoke; an unused code returns its quota slot, a redeemed code keeps it |
+| GET | `/admin/settings` | Current settings, including `theme_switching` (`all` or `admin`) |
+| PUT | `/admin/settings` | `{ "site_name": "...", "registration_mode": "invite", "theme_switching": "admin", ... }` |
+| GET | `/admin/audit?action=&target_type=&actor=&page=` | Audit log (`metadata` is parsed into JSON) |
+| GET | `/admin/stats` | User / short link / click totals, database size, version, uptime |
+
+Theme uploads are administrator-only browser multipart forms at `/app/admin/themes/custom` (create),
+`/app/admin/themes/custom/{id}` (edit/replace CSS) and `/app/admin/themes/custom/{id}/delete`. The
+JSON API deliberately has no file-upload endpoint. Uploads are CSS-only, at most 256 KiB, UTF-8;
+absolute external references and cross-origin `url(...)` are rejected, with the CSP as the second
+line of defence; see [`THEMES.md`](/en/docs/themes).
+
+`GroupDto` also returns `default_domain_id`, `default_domain` (the stored value, even if the domain
+is disabled), `restrict_domains`, `allowed_domain_ids` and `allowed_domains`, plus the invite
+quota (`max_invites`, `invite_period`) and its live counters (`invites_used`,
+`invites_remaining`; the latter is `null` when unlimited). The request field is
+`domain_ids` (`null` or `[]` clears it; omitting keeps it); the response uses `allowed_*`. `GET /api/v1/auth/me` returns the *effective* fallback
+default, which can differ from `default_domain` when the stored group default is disabled.
+
+**User groups.** A group object is
+`{ id, name, description, max_urls, max_api_tokens, max_invites, invite_period, allow_*,
+is_default, members, created_at, updated_at }`. `redirect_mode_policy` is `direct`, `splash` or
+`choice` (create default `choice`). `allow_invites` is opt-in (`false` on create) and
+lets the group's members issue their own codes, drawn from the same quota as administrator-issued
+codes.
+Quotas are nullable: `null` inherits the site-wide setting, `0` means unlimited. Feature toggles
+default to `true`; they gate new uses and never alter existing links or tokens. Administrators
+follow the same rules as other users. `PUT` accepts a partial group: omitted fields keep their
+current value, quotas set to `null` inherit the site quota, `description: null` clears it, and
+`is_default: true` moves the marker. `POST` keeps the create defaults (omitted toggles are allowed,
+omitted quotas inherit).
+
+**Invite quotas.** Each group may issue a limited number of invite codes per calendar period.
+`max_invites` is nullable (`null` inherits the site-wide `max_invites_per_period`, `0` is
+unlimited) and `invite_period` is `day`, `week` (Monday start) or `month`, evaluated in UTC.
+Issuing past the limit returns `403` with `error.code = "forbidden"` and a message naming the
+limit. The counter lives in an issuance ledger: revoking a code that nobody redeemed releases its
+slot, while a redeemed code keeps it. The quota resets by itself at the next period boundary.
+Upgrading releases codes that were already revoked and never redeemed, so the counter can drop once.
+Invites created without `group_id` consume the site-wide quota instead.
+
+**Guard rails**: an administrator cannot change their own role or status, cannot delete
+themselves, and the instance always keeps at least one active administrator (otherwise the
+request fails with `409`). The default group cannot be deleted; move the marker with `PUT` first.
+
+Editable setting keys: `site_name`, `registration_mode` (`open`/`invite`/`closed`),
+`default_slug_length` (4–16), `max_urls_per_user` (0 = unlimited),
+`max_api_tokens_per_user` (0 = unlimited, default 20),
+`max_invites_per_period` (0 = unlimited, default 0), `invite_period` (`day`/`week`/`month`,
+default `month`), `default_redirect_type` (301/302/307/308), `analytics_enabled`,
+`theme_switching` (`all`/`admin`, default `all`),
+`preview_image_policy` (`none`/`url`/`upload`/`both`, default `both`),
+`click_retention_days` (0 = keep forever), plus the bot verification keys
+`captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`,
+`captcha_on_login`, `captcha_on_create` and `captcha_allowed_hostnames`. The secret key is
+write-only: it is never returned in plaintext, and submitting it empty keeps the stored value.
+
+The public shortener adds `public_create_access` (`guest`/`user`/`admin`, default `user`),
+`public_captcha` (default `true`), `public_rate_limit_per_ip` (guest creations per period, default 20,
+`0` = unlimited), `public_rate_limit_per_ip_period` (default `hour`), `public_rate_limit_global`
+(shared guest creations per period, default 500, `0` = unlimited),
+`public_rate_limit_global_period` (default `hour`), `public_max_urls` (total links the reserved Guest account may own, default 1000, `0` =
+unlimited; separate from `max_urls_per_user`) and the field switches `public_allow_slug`, `public_allow_title` (both default `true`)
+plus `public_allow_tags`, `public_allow_password`, `public_allow_expiry`, `public_allow_max_clicks`,
+`public_allow_redirect` and `public_allow_domain` (all default `false`).
+
+Guest quota periods accept `minute`, `hour`, `day`, `week` or `month`. They use the server process timezone (`TZ`, otherwise the OS timezone); Docker Compose defaults `TZ` to `UTC`, and operators can set `TZ=Asia/Taipei`, for example. The admin page shows the timezone and reveals guest rate, total-link, captcha and destination allowlist settings only when `public_create_access=guest`. Hidden settings are preserved; without JavaScript, save the access level to reveal the fields. Public-form field switches remain visible because they also apply to signed-in callers.
+
+The guest destination policy adds two string settings:
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `guest_allowlist_enabled` | `"true"` | Restrict only anonymous creation; `"false"` explicitly disables the policy |
+| `guest_allowlist` | Built-in known-site rules | One ASCII hostname per line, optionally with a leading `*.` and a case-sensitive ASCII path, for example `*.example.com/articles/` |
+
+Use `PUT /api/v1/admin/settings` to edit either key. Hostnames are lowercased, blank lines and duplicates removed. Only a leading `*.` wildcard is accepted; no scheme, port, credentials, other wildcard, query, fragment, encoded rule path or dot segment is accepted. A bare host allows any path; `/articles` allows that path and its descendants, while `/articles/` requires the trailing slash. Query strings and fragments do not contribute to a match. Target paths with encoded separators or nested encoding are refused for path-scoped rules. Only HTTP/HTTPS with their standard ports are allowed. Without `*.`, hostnames match exactly. `*.example.com` matches `a.example.com` and `a.b.example.com` at DNS label boundaries, but excludes `example.com`, `evilexample.com` and `example.com.evil.test`. List `example.com` separately to include the root. The limits are 200 rules and 16 KiB; invalid edits return `422` and leave the entire settings batch unchanged.
+
+An enabled empty list denies all anonymous destinations. Disabling the policy preserves its list. Updates take effect immediately and persist across restarts; upgrades seed only missing keys. Existing guest links continue to redirect. The admin form offers the same controls and preserves these settings when an older form omits them. Visitors can inspect the current allowed destinations on the landing page; refused forms use `?err=guest_allowlist`.
+
+The built-in list has 43 host rules across 24 established services. These entries allow all paths on the listed hosts; administrators can still add optional path restrictions to their own rules. Root domains and subdomains are listed separately where needed. The default scope is:
+
+| Area | Services and allowed hosts |
+|------|----------------------------|
+| Knowledge and development | Wikipedia (`wikipedia.org`, `*.wikipedia.org`), GitHub (`github.com`), GitLab (`gitlab.com`), Stack Overflow (`stackoverflow.com`, `*.stackoverflow.com`), Stack Exchange (`stackexchange.com`, `*.stackexchange.com`), MDN (`developer.mozilla.org`), Python documentation (`docs.python.org`), Rust documentation (`doc.rust-lang.org`) |
+| Taiwan discussion | PTT (`ptt.cc`, `www.ptt.cc`), Dcard (`dcard.tw`, `www.dcard.tw`), Bahamut (`gamer.com.tw`, `*.gamer.com.tw`) |
+| Video and music | YouTube (`*.youtube.com`, `youtube.com`), Bilibili (`bilibili.com`, `*.bilibili.com`), Twitch (`twitch.tv`, `*.twitch.tv`), Spotify (`spotify.com`, `*.spotify.com`) |
+| Social | Reddit (`reddit.com`, `*.reddit.com`), Instagram (`instagram.com`, `www.instagram.com`), Facebook (`facebook.com`, `*.facebook.com`), X (`x.com`, `www.x.com`) |
+| News | CNA (`cna.com.tw`, `www.cna.com.tw`), BBC (`bbc.com`, `www.bbc.com`, `bbc.co.uk`, `www.bbc.co.uk`), Reuters (`reuters.com`, `www.reuters.com`) |
+| Product support | Apple (`support.apple.com`), Microsoft (`support.microsoft.com`) |
+
+Public website hosting domains such as `*.github.io`, `*.gitlab.io` and `sites.google.com` are not included. GitHub and GitLab document that users can publish their own sites on their Pages domains; allowing the main service does not imply allowing those separate hosting domains. See the official [GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages) and [GitLab Pages](https://docs.gitlab.com/user/project/pages/) documentation. This is a starting policy, not a safety certification: known hosts can carry user content or redirects. There is no reputation API, target fetch or redirect-chain inspection.
+
+---
+
+### Tracking parameter cleanup [#tracking-parameter-cleanup]
+
+Administrators can enable cleanup under **Admin → Settings** or with `PUT /api/v1/admin/settings`:
+
+```json
+{
+  "url_cleaning_enabled": "true",
+  "url_cleaning_rules": "example.com utm_* ref\nexample.org campaign_id"
+}
+```
+
+Both settings are returned by `GET /api/v1/admin/settings`; defaults are `"false"` and `""`. Setting values are strings, as with all other settings. Only administrators may read or change them. Invalid settings return `422`; a rejected batch changes neither the database nor the settings cache.
+
+Each rule is `hostname parameter [parameter ...]`, one per line. It matches the named host and its subdomains, ignoring ASCII case in hostnames and decoded parameter names. A final `*` on a nonempty parameter name matches a prefix. Blank lines and whole-line `#` comments are ignored. Limits: 8192 bytes total, 100 rules, 32 parameters per rule and 64 bytes per parameter (including `*`). Domains must be ASCII hostnames with at least two nonempty labels, at most 253 bytes total and 63 bytes per label; labels use letters, digits or hyphens and cannot start/end with a hyphen. Schemes, ports, paths, userinfo and wildcard domains are rejected. Parameters use letters, digits, `_`, `-` or `.`, optionally followed by one final `*`; bare `*` and regex are rejected.
+
+Built-in rules cover Facebook (`facebook.com`), Instagram, Threads (`threads.net`, `threads.com`), X/Twitter, YouTube (`youtube.com`, `youtu.be`), TikTok and Bilibili, including subdomains. They remove `utm_*` plus explicit platform tracking parameters, including `fbclid`, `igsh`, YouTube's `si` and Bilibili's `spm_id_from`; video IDs, playlists and playback times are kept. The complete list is visible in the administrator settings page. Custom rules add to built-ins; an empty custom setting keeps only built-ins. Unknown domains remain untouched unless a custom rule matches them. Custom rules can change meaningful content if they remove required parameters.
+
+Cleanup applies **only when creating links**, through `POST /api/v1/urls`, `POST /api/v1/public/urls`, the dashboard and the public form. For example, `https://youtu.be/ABC?si=tracking&t=90` is stored and returned as `https://youtu.be/ABC?t=90`. The original target must pass validation before cleanup. Kept query components retain their original encoding, values and order; fragments remain intact. Share shortlinks are not expanded and targets are never fetched. Existing links, target edits and redirects are unchanged. Disabling cleanup preserves custom rules for later use.
+
+---
+
+## Audit action codes [#audit-action-codes]
+
+| Action | Meaning |
+|--------|---------|
+| `auth.register` / `auth.login` / `auth.login_failed` / `auth.logout` | Authentication events |
+| `auth.password_changed` / `auth.session_revoked` / `user.profile_updated` | Account changes |
+| `url.created` / `url.updated` / `url.deleted` | Short link changes |
+| `token.created` / `token.revoked` | API tokens |
+| `invite.created` / `invite.revoked` / `invite.redeemed` | Invite codes |
+| `domain.created` / `domain.updated` / `domain.deleted` / `domain.default_changed` | Domain administration |
+| `admin.user_updated` / `admin.user_deleted` / `admin.password_reset` | Administrative actions |
+| `admin.group_created` / `admin.group_updated` / `admin.group_deleted` | Group changes |
+| `admin.url_updated` / `admin.settings_updated` / `admin.themes_updated` / `admin.theme_created` / `admin.theme_updated` / `admin.theme_deleted` | Administrative actions |
+
+---
+
+## Rate limits [#rate-limits]
+
+| Scope | Limit |
+|-------|-------|
+| Login | 10 attempts per 5 minutes per (IP, email), **and** 40 per 5 minutes per IP (across accounts) |
+| Registration | 5 attempts per hour per IP |
+| Short link unlock | 10 attempts per 5 minutes per (slug, IP) |
+| Short link creation | 120 per hour per user |
+| Public shortener | Anonymous visitors only: `public_rate_limit_per_ip` per `public_rate_limit_per_ip_period` and `public_rate_limit_global` per `public_rate_limit_global_period` (defaults: 20/hour and 500/hour). Periods are calendar minute/hour/day/week/month in the server timezone, with Monday-based weeks and actual calendar months. `0` disables either budget. The per-address budget is charged before bot protection, the shared one only after success. SQLite counters survive restart; `Retry-After` is the time to the next boundary. Signed-in callers retain group quotas and the existing per-account throttle, without consuming guest quotas |
+| Password change | 10 per hour per user |
+
+The persistent guest-quota table holds at most 50,000 rows across sources, shared budgets and periods. At capacity, new rows return `429`; existing counters keep their usage and limits. Reservations reclaim expired windows immediately, and maintenance also cleans them. Active counters are never evicted to make room for new addresses.
+
+Exceeding a limit returns `429` with `Retry-After` (seconds). The in-memory counters reset on
+restart, but **account lockout** is persistent: once one email accumulates 30 failures within
+15 minutes, even the correct password returns `429` (`Retry-After: 900`) until the window slides
+past.
+
+The IP used for login comes from `X-Real-IP` when `URLET_TRUST_PROXY=true`, falling back to the
+rightmost address in `X-Forwarded-For`.
+
+---
+
+## UI language [#ui-language]
+
+The web UI ships in English (`en`), Traditional Chinese (`zh-Hant`) and Simplified Chinese
+(`zh-Hans`). On a first visit the language is chosen from the browser's `Accept-Language`
+header; when nothing matches, English is used. The selection is stored in the `urlet_lang`
+cookie.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/app/lang/{code}?next=<path>` | Switch the UI language, set the `urlet_lang` cookie, then return `302` to `next` (or to `/app` when `next` is missing or not a same-site relative path) |
+
+`code` is one of `en`, `zh-Hant`, `zh-Hans`; `next` must be a same-site relative path.
+An unrecognized `code` falls back to English (it is never an error), and a visitor without a
+cookie is negotiated from `Accept-Language` instead — a present cookie always wins.
+
+The language setting only affects rendered HTML. **JSON responses are always English** and
+never change with the selected language.
+
+---
+
+## Bot verification [#bot-verification]
+
+urlet can require a CAPTCHA on the three public forms that create state: the web registration
+form, the web sign-in form, and the web create-short-link form. The JSON API endpoints
+`POST /api/v1/auth/register` and `POST /api/v1/auth/login` accept the widget token in the optional
+`captcha_token` field. It is off by default and configured either through environment variables or
+in the admin UI under **Admin → Settings**; a non-empty environment variable overrides the admin
+setting. See the deployment guide for the variables and for how to obtain provider keys.
+
+| Provider | `provider` value | Widget |
+|----------|------------------|--------|
+| Disabled (default) | `none` | None |
+| Cloudflare Turnstile | `turnstile` | Managed Turnstile widget |
+| Google reCAPTCHA v2 | `recaptcha` | "I'm not a robot" checkbox |
+
+Verification applies to a form only when all four conditions hold: the provider is not `none`,
+the site key is non-empty, the secret key is non-empty, and the matching per-form switch
+(`captcha_on_register`, `captcha_on_login` or `captcha_on_create`) is `true`.
+
+Failure is **closed**: a missing, malformed, expired or already-used token — including a timeout
+or any non-2xx response from the provider — rejects the submission.
+
+The `hostname` reported by the provider is also checked: it must equal the host of the instance's
+base URL or one of the extra hostnames in `captcha_allowed_hostnames` (comma-separated, up to 10).
+A response whose `hostname` is missing or empty is accepted, and a mismatch is rejected and logged
+at `WARN`.
+
+| Surface | Verification |
+|---------|--------------|
+| Web registration form (`POST /app/register`) | Applies when enabled for registration |
+| Web sign-in form (`POST /app/login`) | Applies when enabled for sign-in |
+| Web create-short-link form (`POST /app/urls`) | Applies when enabled for link creation |
+| `POST /api/v1/auth/register` | Applies when enabled for registration; send the widget token in `captcha_token`; failure returns `400` with `error.code = "captcha_failed"` |
+| `POST /api/v1/auth/login` | Applies when enabled for sign-in; send the widget token in `captcha_token`; failure returns `400` with `error.code = "captcha_failed"` |
+| `POST /api/v1/urls` | **API tokens only** — exempt when the request carries `Authorization: Bearer ur_...`; a session-cookie call is subject to the link-creation switch and takes an optional `captcha_token` |
+
+
+# urlet deployment guide (/en/docs/deployment)
+
+## 1. Requirements [#1-requirements]
+
+| Item | Minimum | Recommended |
+|------|---------|-------------|
+| CPU | 1 vCPU | 2 vCPU |
+| Memory | 128 MB | 256 MB |
+| Disk | 100 MB + data | 1 GB |
+| Docker | 24.x | Latest |
+| Docker Compose | 2.24 (`!override` / `!reset` are used by the overlays) | Latest |
+
+No external database, Redis or reverse proxy is needed. A single container can serve traffic on
+its own (putting a TLS terminator in front of it is recommended).
+
+## 2. Quick start (HTTP) [#2-quick-start-http]
+
+```bash
+git clone https://github.com/cxyfer/urlet urlet && cd urlet
+cp .env.example .env
+```
+
+Edit `.env`:
+
+```ini
+URLET_BASE_URL=http://localhost:8080      # public URL; use https:// once TLS is in front (§3)
+URLET_PORT=8080                            # host port to publish (read by docker compose only)
+URLET_ADMIN_EMAIL=admin@example.com
+URLET_ADMIN_PASSWORD=<strong password>
+URLET_REGISTRATION=invite                  # optional: open / invite / closed
+```
+
+> Keep the scheme of `URLET_BASE_URL` in step with how visitors actually reach the instance: an
+> `https://` value makes urlet mark the session cookie `Secure`, so serving plain HTTP while
+> `URLET_BASE_URL` says `https://` signs users out again immediately (§4, §12).
+
+Start it:
+
+```bash
+docker compose up -d --build
+docker compose logs -f urlet
+```
+
+Verify:
+
+```bash
+curl -fsS http://localhost:8080/health
+docker compose exec urlet /usr/local/bin/urlet healthcheck
+```
+
+### 2.1 Prebuilt image [#21-prebuilt-image]
+
+Every `v*` tag publishes a multi-arch image (`linux/amd64`, `linux/arm64`) to GHCR. To run a
+published release instead of building locally:
+
+```bash
+export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.3.0   # pin the release you want
+docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
+```
+
+- `URLET_IMAGE` defaults to `ghcr.io/cxyfer/urlet:latest`; pin an exact version in production
+  rather than tracking `latest`. When you do use `latest`, run `docker compose -f
+  docker-compose.yml -f docker-compose.image.yml pull` before `up -d` to fetch a newer release.
+- The overlay removes the `build` section, so compose pulls the image and never falls back to a
+  local Rust build.
+- The package defaults to **private**. Either authenticate (`docker login ghcr.io` with a token
+  that has `read:packages`) or make the package public under *Package settings → Change
+  visibility*.
+- The image runs as uid/gid `10001`, exactly like a locally built one, so the `/data` volume
+  permissions are unchanged.
+
+## 3. Automatic HTTPS (Caddy) [#3-automatic-https-caddy]
+
+```bash
+export URLET_DOMAIN=s.example.com
+docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
+```
+
+- Point the A/AAAA record for `s.example.com` at this host first; Caddy obtains and renews the
+  certificate automatically.
+- The overlay stops publishing the urlet port (it is only reachable inside the compose network)
+  and sets `URLET_BASE_URL`, `URLET_SECURE_COOKIES=true` and `URLET_TRUST_PROXY=true` for you.
+- Certificates live in the `urlet-caddy-data` volume.
+
+If you already run Nginx or Traefik, reverse proxy to `127.0.0.1:8080` yourself and set:
+
+```ini
+URLET_BASE_URL=https://s.example.com
+URLET_SECURE_COOKIES=true
+URLET_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-Forwarded-*
+```
+
+## 4. Configuration reference [#4-configuration-reference]
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `URLET_BASE_URL` | `http://localhost:8080` | Public URL; used to build short links, for the CSRF same-origin check and to decide whether cookies are `Secure`. The host must be ASCII (punycode for IDN); IPv6 literals and underscore service names are accepted for the canonical host only |
+| `URLET_DOMAINS` | Empty | Extra redirect-only hostnames, comma separated. Inserted as active on first boot; never overrides an existing status. Every domain must use the same http/https scheme as `URLET_BASE_URL` and needs DNS + TLS |
+| `URLET_BIND` | `0.0.0.0:8080` | Listen address |
+| `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite connection string |
+| `URLET_DATA_DIR` | Directory holding the database | Where the auto-generated secret is written |
+| `URLET_THEMES_DIR` | `<URLET_DATA_DIR>/themes` | Where uploaded theme stylesheets are stored. docker compose mounts the `urlet-themes` volume at `/data/themes` |
+| `URLET_SECRET` | Auto-generated | HMAC secret (at least 16 characters, 32+ recommended; the generated one is 44 characters of base64); **changing it invalidates every session and unlock cookie and makes existing invite codes unreadable, though they still redeem** |
+| `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` | — | Create or promote the administrator at startup |
+| `URLET_REGISTRATION` | Read from the settings table | Override the registration mode: `open` / `invite` / `closed`. `invite_only` is accepted as `invite` and `disabled`/`none` as `closed`; an unrecognised value falls back to `open` |
+| `URLET_SECURE_COOKIES` | Derived from `BASE_URL` | Force the `Secure` cookie flag. The compose files always pass a value through (default `false`), so in Docker set it to `true` explicitly when you terminate TLS yourself; the TLS overlay does that for you |
+| `URLET_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` / `X-Forwarded-Proto` |
+| `URLET_SESSION_TTL_HOURS` | `168` | Session lifetime |
+| `URLET_UNLOCK_TTL_MINUTES` | `30` | Lifetime of the short link unlock cookie |
+| `URLET_DEFAULT_SLUG_LENGTH` | Read from the settings table | Override the generated slug length (4–16) |
+| `URLET_CAPTCHA_PROVIDER` | `none` | Bot verification provider: `none` / `turnstile` / `recaptcha` |
+| `URLET_CAPTCHA_SITE_KEY` | Empty | Public site key rendered into the widget |
+| `URLET_CAPTCHA_SECRET_KEY` | Empty | Secret key used for server-side verification (server only; the admin UI never echoes it back) |
+| `URLET_CAPTCHA_ON_REGISTER` | `false` | Apply bot verification to the registration form |
+| `URLET_CAPTCHA_ON_LOGIN` | `false` | Apply bot verification to the sign-in form |
+| `URLET_CAPTCHA_ON_CREATE` | `false` | Apply bot verification to the create-short-link form |
+| `URLET_CAPTCHA_ALLOWED_HOSTNAMES` | Empty | Extra hostnames accepted in the provider's `hostname` response, comma-separated (up to 10); the host of `URLET_BASE_URL` is always accepted |
+| `URLET_LOG` | `info` | tracing filter, for example `urlet=debug,tower=warn`. `RUST_LOG`, when set, takes precedence (the binary tries `EnvFilter::try_from_default_env` first) |
+| `URLET_LOG_FORMAT` | `compact` | `compact` or `json` |
+| `URLET_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | Target of `urlet healthcheck` |
+| `TZ` | OS timezone (`UTC` in the image) | Server process timezone for guest calendar quotas, for example `Asia/Taipei`; read at startup. Docker Compose forwards it (`TZ: ${TZ:-UTC}`) |
+
+Three further variables are read by the compose files, not by the urlet binary:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `URLET_PORT` | `8080` | Host port that `docker-compose.yml` publishes (the container itself always listens on 8080) |
+| `URLET_DOMAIN` | — | Domain the `docker-compose.tls.yml` overlay requests a certificate for; required by that overlay |
+| `URLET_IMAGE` | `ghcr.io/cxyfer/urlet:latest` | Image used by the `docker-compose.image.yml` overlay (ignored without it) |
+
+Instance-level settings (site name, registration mode, quota, default redirect type, analytics
+switch, click retention) are edited in **Admin → Settings**; they are stored in the database and
+take effect immediately. A non-empty environment variable always overrides the value stored
+there.
+
+## 5. Multi-domain deployments [#5-multi-domain-deployments]
+
+> **Upgrading from 1.2 or older:** back up the SQLite database first. The multi-domain migration
+> (`0003_multi_domain`) rebuilds the `urls` table so the slug namespace becomes per domain; the
+> migration is tested to preserve clicks, tags and daily stats, but a backup is the only rollback.
+
+The canonical host keeps the application (`/`, `/app`, `/api/v1`). Extra domains are
+redirect-only: `/{slug}` and `/{slug}/unlock` work, `/` renders the theme-aware short landing page
+with the site tools, `/app` is redirected to the canonical host and `/api` returns 404. Each
+domain has its own slug namespace. The full design is in [`MULTI_DOMAIN.md`](/en/docs/multi-domain).
+
+- Seed extra domains with `URLET_DOMAINS=go.example.com,links.example.com`, or add them from
+  `/app/admin/domains`.
+- Domains added in the admin UI start as `pending`. Point DNS at this instance, add the hostname
+  to the Caddy site label (or your reverse proxy), verify `https://<domain>/health`, then press
+  **Activate**.
+- The canonical domain cannot be disabled or deleted. The current default domain must be replaced
+  before it can be disabled or deleted. If `URLET_BASE_URL` changes, the previous canonical domain
+  is demoted to ordinary admin management on the next boot (its links keep working) and the default
+  moves to the new canonical domain when the old one held it.
+- All domains must use the same scheme as `URLET_BASE_URL`; do not mix http and https domains.
+- The reverse proxy must preserve the original `Host` header. `X-Forwarded-Host` is not trusted in
+  this version.
+- `URLET_DOMAINS` is insert-only: disabling a seeded domain in the UI survives a restart. When the
+  variable is set, removing a hostname from it detaches that domain to ordinary admin management on
+  the next boot (status, links and default are preserved); it is not deleted automatically.
+  Docker Compose always passes the variable, so an empty `URLET_DOMAINS` is treated as an explicit
+  empty list.
+
+## 6. Bot verification (CAPTCHA) [#6-bot-verification-captcha]
+
+urlet can require a CAPTCHA on the three public forms that create state: the web registration
+form, the web sign-in form, and the web create-short-link form. The JSON API endpoints
+`POST /api/v1/auth/register` and `POST /api/v1/auth/login` are covered as well; they take the
+widget token in the optional `captcha_token` field. `POST /api/v1/urls` is covered too, but only
+for session-cookie calls (the link-creation switch); a call carrying
+`Authorization: Bearer ur_...` stays exempt, so automation keeps working. Verification is disabled
+by default.
+
+### Supported providers [#supported-providers]
+
+| Provider | Value | Notes |
+|----------|-------|-------|
+| Disabled | `none` | Default. No widget is rendered and nothing is verified |
+| Cloudflare Turnstile | `turnstile` | Privacy-friendly, free tier, usually invisible to the visitor |
+| Google reCAPTCHA v2 | `recaptcha` | The "I'm not a robot" checkbox |
+
+### Variables [#variables]
+
+All seven `URLET_CAPTCHA_*` variables are listed in the [configuration reference](#4-configuration-reference).
+The shipped `docker-compose.yml` passes every one of them through, so setting them in `.env` is
+enough — no compose edit is needed.
+
+Verification becomes active for a form only when **all four** conditions hold: the provider is
+not `none`, the site key is non-empty, the secret key is non-empty, and the matching `ON_*`
+switch (`URLET_CAPTCHA_ON_REGISTER`, `URLET_CAPTCHA_ON_LOGIN` or `URLET_CAPTCHA_ON_CREATE`) is
+`true`. Setting a provider without keys, or keys without a provider, silently leaves verification
+off.
+
+Failure is **closed**: a missing, malformed, expired or already-used token — including a timeout
+or any non-2xx response from the provider — rejects the submission. On the web forms the visitor
+sees a validation error; `POST /api/v1/auth/register`, `POST /api/v1/auth/login` and a
+session-cookie `POST /api/v1/urls` return `400` with `error.code = "captcha_failed"` when the
+matching switch is enabled.
+
+### Token hostname (deployments with several hostnames) [#token-hostname-deployments-with-several-hostnames]
+
+Both providers report the hostname the token was solved on in the `siteverify` response, and
+urlet verifies it: the token must have been solved **on this instance**. The reported hostname
+must therefore equal the host of `URLET_BASE_URL`, or one of the extra hostnames listed in
+`URLET_CAPTCHA_ALLOWED_HOSTNAMES`. A response whose `hostname` is missing or empty is accepted —
+not every provider or widget configuration returns the field.
+
+`URLET_CAPTCHA_ALLOWED_HOSTNAMES` takes a comma-separated list of bare hostnames: each item is
+trimmed and lowercased, empty items are dropped, and at most **10** items of 1–253 characters are
+kept. Entries must not contain whitespace, `/`, `:` or `@`. Leaving it empty means "only the host
+of `URLET_BASE_URL`", which is the right setting for the common single-domain deployment.
+
+> **If your instance serves the forms on more than one hostname** (for example a short-link domain
+> and a separate application domain, or an extra alias), list every one of those hostnames here.
+> Tokens solved on a hostname that is neither the `URLET_BASE_URL` host nor on the list are
+> rejected, which shows up as "the visitor solves the CAPTCHA but still cannot register or sign
+> in". On a mismatch urlet logs a `WARN` line containing the reported hostname and the list of
+> accepted candidates, which is the fastest way to find the missing entry.
+
+### Getting the keys [#getting-the-keys]
+
+**Cloudflare Turnstile**
+
+1. Sign in to the Cloudflare dashboard and open **Turnstile**.
+2. Choose **Add widget**, name it, and add the hostname(s) visitors will use to reach urlet
+   (for example `s.example.com`; add `localhost` as well if you want to test locally).
+3. Pick a widget mode (Managed is a good default) and create the widget.
+4. Copy the **Site Key** and the **Secret Key**.
+
+**Google reCAPTCHA v2**
+
+1. Open the reCAPTCHA admin console and register a new site.
+2. Select **reCAPTCHA v2** → **"I'm not a robot" Checkbox**.
+3. Add the domain(s) of your instance.
+4. Copy the **Site key** and the **Secret key**.
+
+### Configuring it [#configuring-it]
+
+In `.env` (docker compose):
+
+```ini
+URLET_CAPTCHA_PROVIDER=turnstile
+URLET_CAPTCHA_SITE_KEY=0x4AAAAAAA...
+URLET_CAPTCHA_SECRET_KEY=0x4AAAAAAA...
+URLET_CAPTCHA_ON_REGISTER=true
+URLET_CAPTCHA_ON_LOGIN=true
+URLET_CAPTCHA_ON_CREATE=true
+# Optional: extra hostnames whose tokens are accepted (comma-separated)
+# URLET_CAPTCHA_ALLOWED_HOSTNAMES=www.example.com,alt.example.com
+```
+
+Then `docker compose up -d` to recreate the container.
+
+The same values can be entered in the admin UI under **Admin → Settings**, which takes effect
+without a restart. The secret key is write-only there: the stored value is never displayed, and
+leaving the field blank keeps it as it is. Remember that a non-empty environment variable wins
+over the admin setting, so configure each value in exactly one place.
+
+### `remoteip` behind a reverse proxy [#remoteip-behind-a-reverse-proxy]
+
+Server-side verification sends the visitor's IP address as `remoteip` so the provider can score
+the request. urlet resolves that address exactly like the rate limiter does:
+
+- `URLET_TRUST_PROXY=false` (the default) — the address is the direct peer, which is the proxy
+  itself when one sits in front of urlet. Every visitor then looks like the same client to the
+  provider, and only the token's own signals are used for scoring.
+- `URLET_TRUST_PROXY=true` — `X-Real-IP` is preferred, falling back to the rightmost entry of
+  `X-Forwarded-For`. The shipped `deploy/Caddyfile` sets
+  `header_up X-Real-IP {remote_host}`, so Caddy passes the real visitor address.
+- When no address can be determined, `remoteip` is omitted; both provider APIs treat it as
+  optional, so verification still works.
+
+Only enable `URLET_TRUST_PROXY` when the proxy is guaranteed to overwrite `X-Real-IP` /
+`X-Forwarded-For`; otherwise a client can forge its address and also evade the rate limits.
+
+## 7. Data and backups [#7-data-and-backups]
+
+All state lives in `/data`: the `urlet-data` volume holds the database and secret, and the
+`urlet-themes` volume (mounted at `/data/themes`) holds uploaded theme stylesheets:
+
+```
+/data/urlet.db          # main database
+/data/urlet.db-wal      # write-ahead log
+/data/urlet.db-shm
+/data/secret.key         # auto-generated secret when URLET_SECRET is unset (0600)
+/data/themes/*.css       # uploaded themes (urlet-themes volume)
+```
+
+### Backup [#backup]
+
+SQLite runs in WAL mode, so copying the main file on its own can miss transactions that are still
+in the WAL. Two safe approaches:
+
+**Option A (host has `sqlite3`, no downtime)**
+
+```bash
+VOL=$(docker volume inspect -f '{{ .Mountpoint }}' urlet-data)
+sudo sqlite3 "$VOL/urlet.db" ".backup '/tmp/urlet-$(date +%F).db'"
+mv /tmp/urlet-$(date +%F).db ./backups/
+```
+
+`.backup` uses the SQLite online backup API and produces a consistent snapshot.
+
+**Option B (no `sqlite3`)**
+
+```bash
+docker compose stop urlet          # a clean shutdown checkpoints the WAL
+docker run --rm -v urlet-data:/data -v "$PWD":/backup alpine \
+  cp /data/urlet.db "/backup/urlet-$(date +%F).db"
+docker compose start urlet
+```
+
+Do not forget `secret.key`: if you rely on the auto-generated secret, back it up (or switch to the
+`URLET_SECRET` environment variable), otherwise every session and unlock cookie is invalidated
+after a restore and existing invite codes can no longer be displayed (they still redeem). A
+data-directory backup contains both the database and that key, and invite codes are low-entropy, so
+treat the whole backup as sensitive.
+
+Uploaded themes are split across two volumes: the database holds the catalogue row and metadata,
+while the CSS files live in `urlet-themes`. Back up both, otherwise a restore lists themes whose
+stylesheets return 404. For example:
+
+```bash
+docker run --rm -v urlet-themes:/themes -v "$PWD":/backup alpine \
+  tar -czf "/backup/urlet-themes-$(date +%F).tar.gz" -C /themes .
+```
+
+Restore them with the same helper and fix ownership (`chown -R 10001:10001`).
+
+### Restore [#restore]
+
+```bash
+docker compose down
+docker run --rm -v urlet-data:/data -v "$PWD":/backup alpine \
+  sh -c 'rm -f /data/urlet.db*; cp /backup/urlet-YYYY-MM-DD.db /data/urlet.db; chown 10001:10001 /data/urlet.db'
+docker run --rm -v urlet-themes:/themes -v "$PWD":/backup alpine \
+  sh -c 'rm -rf /themes/*; tar -xzf /backup/urlet-themes-YYYY-MM-DD.tar.gz -C /themes; chown -R 10001:10001 /themes'
+docker compose up -d
+```
+
+## 8. Upgrading [#8-upgrading]
+
+```bash
+git pull
+docker compose up -d --build      # migrations are applied at startup
+```
+
+With a prebuilt image, change `URLET_IMAGE` to the new version and recreate the container:
+
+```bash
+export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.3.0
+docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
+```
+
+Migrations are forward-only additive files (`migrations/`), and applied files are checksum
+protected: editing one makes startup fail instead of silently diverging. Back up before
+upgrading.
+
+## 9. Storage and disk usage [#9-storage-and-disk-usage]
+
+| Data | Growth |
+|------|--------|
+| `urls` | About 300 bytes per row |
+| `clicks` | About 150 bytes per row (can be pruned with `click_retention_days`) |
+| `url_daily_stats` | One row per short link per day |
+| `audit_logs` | About 200 bytes per row, retained for 180 days |
+| `sessions` | Removed within a day of expiring or being revoked |
+| `login_attempts` | Retained for 30 days |
+
+100,000 clicks take roughly 15 MB. If you never prune, set `click_retention_days`.
+
+## 10. Reverse proxy notes [#10-reverse-proxy-notes]
+
+- Always set `URLET_BASE_URL` to the URL users actually see, otherwise short links point at the
+  wrong domain.
+- Only enable `URLET_TRUST_PROXY` when the proxy is **guaranteed to overwrite**
+  `X-Forwarded-For` / `X-Real-IP`; otherwise clients can forge their IP and bypass the rate
+  limits. The application prefers `X-Real-IP` (set by the proxy itself) and otherwise takes the
+  rightmost entry of `X-Forwarded-For`, so appending proxies are safe too. The shipped
+  `deploy/Caddyfile` already sets `header_up X-Real-IP {remote_host}`.
+- `Host`, `X-Forwarded-For` and `X-Forwarded-Proto` must be forwarded; Caddy handles this
+  automatically.
+- Invite links carry the code in `?invite=`; reverse-proxy access logs that record query strings
+  expose it. Restrict or redact those logs, or share the code instead.
+
+## 11. Monitoring [#11-monitoring]
+
+- Health check: `GET /health` (200 = healthy, 503 = database problem)
+- The container ships a `HEALTHCHECK` that runs `urlet healthcheck` (the image needs no curl)
+- Logs go to stdout; `URLET_LOG_FORMAT=json` pairs well with a collector such as Loki or
+  CloudWatch
+- Every request carries an `x-request-id` response header, and the same id is written to the log
+- **Admin → Overview** in the admin UI shows the user count, short link count, total clicks and
+  database size
+
+## 12. Troubleshooting [#12-troubleshooting]
+
+| Symptom | Cause and fix |
+|---------|---------------|
+| Startup fails with a migration checksum mismatch | A file in `migrations/` that was already applied has been edited; restore it or add a new migration instead |
+| Signed out immediately after signing in | `URLET_BASE_URL` does not match the real URL, or `URLET_SECURE_COOKIES=true` while browsing over HTTP |
+| Short links point at `http://localhost:8080` | `URLET_BASE_URL` is not set |
+| `/health` returns 503 after the container starts | Volume permission problem: `/data` must be writable (the container runs as uid 10001) |
+| Rate limits hit legitimate users (many users behind NAT) | Loosen the limits or switch those clients to API tokens; limits are counted per IP |
+| Login returns 429 even with the correct password | The account is temporarily locked (30 failures within 15 minutes). Wait for the window to slide past, or run `sqlite3 /data/urlet.db "DELETE FROM login_attempts"` to clear it immediately |
+| The CAPTCHA widget never appears | All four conditions must hold: a provider other than `none`, both keys, and the matching `ON_*` switch set to `true` |
+| Every submission fails with `captcha_failed` | The secret key does not belong to the configured provider, the widget's hostname list does not include the domain users visit, or an API client forgot to send the widget token as `captcha_token` |
+| The visitor solves the CAPTCHA but registration or sign-in still fails | The token was solved on a hostname that urlet does not accept: add it to `URLET_CAPTCHA_ALLOWED_HOSTNAMES` (the `WARN` log line names the reported hostname and the accepted candidates) |
+| Want token access after forgetting the admin password | Resetting a password revokes every API token for that account (by design); create a new token afterwards |
+| Forgot the admin password | The startup bootstrap runs only when **both** `URLET_ADMIN_EMAIL` and `URLET_ADMIN_PASSWORD` are non-empty, and for an account that already exists it merely promotes it to administrator — it does **not** change the password (the password is used only when the account does not exist yet). To recover, point `URLET_ADMIN_EMAIL` at another account you can still sign in to (any non-empty `URLET_ADMIN_PASSWORD` makes the bootstrap run), restart, and use that account; or overwrite the password hash directly with `sqlite3` |
+| A short link expired and you want it back | Open `/app/urls/{id}` and extend it, or clear the expiry under "Edit settings"; the data was never deleted |
+| Want to reuse a slug after deleting a short link | Deliberately not allowed (so old links cannot be hijacked); pick a new slug |
+
+## 13. Security checklist [#13-security-checklist]
+
+- [ ] `URLET_BASE_URL` uses `https://`
+- [ ] `URLET_ADMIN_PASSWORD` is a strong password, changed at `/app/account` after the first sign-in
+- [ ] `URLET_SECRET` is set (at least 32 random characters), or the auto-generated `secret.key` (0600) is backed up
+- [ ] Only 80/443 are reachable from the internet. The base compose file publishes `${URLET_PORT:-8080}:8080` on every interface; the TLS overlay removes that publish, so use the overlay or firewall the port
+- [ ] `URLET_TRUST_PROXY` matches the actual proxy behavior
+- [ ] The registration mode is `invite` or `closed` (unless you really want open registration)
+- [ ] `click_retention_days` and a backup schedule are planned
+- [ ] A regular update routine exists (rebuild locally or pull a new `URLET_IMAGE` tag), with a
+      backup before each upgrade
+- [ ] Bot verification is enabled on registration and sign-in if the instance is reachable by the public internet
+
+
+# Documentation (/en/docs)
+
+urlet is a self-hosted URL shortener: one Rust binary and one SQLite file, with no external database, cache or frontend build step.
+
+- [urlet deployment guide](/en/docs/deployment)
+- [Themes](/en/docs/themes)
+- [Multi-domain support](/en/docs/multi-domain)
+- [urlet JSON API reference](/en/docs/api)
+
+
+# Multi-domain support (/en/docs/multi-domain)
+
+Status: implemented (shipped since v1.3.0)
+Last updated: 2026-10-28
+
+## 1. Summary [#1-summary]
+
+urlet serves short links on one **canonical host** plus any number of **extra
+domains**. The canonical host keeps the full application (`/`, `/app/*`,
+`/api/v1/*`). Extra domains are redirect-only: they answer `GET /{slug}` and
+`POST /{slug}/unlock`, render the theme-aware short landing page at `/`, and
+send everything else back to the canonical host (or reject it).
+
+Each domain owns its own slug namespace: `(domain_id, slug)` is unique. The same
+slug may exist on `a.example.com` and `b.example.com` and resolve to different
+targets.
+
+## 2. Product decisions [#2-product-decisions]
+
+| # | Decision | Choice |
+|---|----------|--------|
+| 1 | Extra-domain scope | Redirect-only. `/app/*` GET/HEAD → 308 to canonical; other methods → 404. `/api/v1/*` → 404 JSON. |
+| 2 | Extra-domain root | The theme-aware short landing page (`noindex`) in all six themes, with the site tools (theme picker, language switcher); not the canonical marketing page and not a 404. |
+| 3 | Default domain | Administrators may change it among active domains. The canonical host always exists and is always active, but need not be the default. |
+| 4 | New domains | Created as `pending`; an administrator activates them after DNS/TLS is ready. Only `active` domains are selectable. |
+| 5 | Scheme | One scheme for the whole instance, inherited from `URLET_BASE_URL`. No per-domain scheme column. |
+| 6 | Public metadata API | Add an optional `?domain=<hostname>` parameter; omitted means the default domain. |
+| 7 | Environment seed | `URLET_DOMAINS` inserts missing domains only; it never changes status, default or verification of existing rows. |
+
+Implementation defaults agreed for the open points:
+
+- Domains seeded through `URLET_DOMAINS` are inserted as `active` and verified:
+  they are declared by the operator in deployment configuration.
+- The short landing page is theme-aware (all six themes) and shows the site name,
+  one explanatory sentence, a link to the canonical host and the site tools
+  (theme picker, language switcher). No login, registration or slug input.
+- The current default domain cannot be disabled or deleted until another active
+  domain is made default.
+- `domains.source` distinguishes `system`, `env` and `ui`. The system/canonical
+  domain can be neither disabled nor deleted; environment-managed domains can be
+  disabled but not deleted from the UI.
+
+## 3. Host roles and routing [#3-host-roles-and-routing]
+
+| Host | `/` | `/{slug}` | `/app/*` | `/api/v1/*` | `/health` |
+|------|-----|-----------|----------|-------------|-----------|
+| canonical | existing landing page | redirect | full app | full API | 200 |
+| extra, `active` | theme-aware short landing page | redirect | GET/HEAD 308 to canonical; other methods 404 | 404 JSON | 200 |
+| extra, `pending`/`disabled` | 404 | 404 | 404 | 404 JSON | 200 |
+| unknown host | 404 | 404 | 404 | 404 JSON | 200 |
+
+`/assets/*`, `/favicon.ico`, `/favicon.svg`, `/health` and `/healthz` bypass the
+host gate so that error pages and container health checks keep working on every
+host.
+
+## 4. Data model [#4-data-model]
+
+### `domains` [#domains]
+
+Added by migration `0003_multi_domain`:
+
+| Column | Meaning |
+|--------|---------|
+| `status` | `pending`, `active` or `disabled` |
+| `source` | `system` (canonical), `env` (`URLET_DOMAINS`) or `ui` |
+| `updated_at` | Last lifecycle change |
+
+`hostname` is stored lower-case without a trailing dot and with an optional
+non-default port. A `NOCASE` unique index backs case-insensitive lookups. The
+existing `is_default` partial unique index keeps exactly one default domain.
+
+### `urls` [#urls]
+
+- `domain_id INTEGER NOT NULL REFERENCES domains(id) ON DELETE RESTRICT`
+- `UNIQUE (domain_id, slug)` with the existing `COLLATE NOCASE` on `slug`
+- legacy `NULL` values are back-filled to the default domain
+- soft-deleted rows keep their `(domain_id, slug)` reservation
+
+Migration `0005_group_domains` adds the per-group domain policy:
+`user_groups.default_domain_id`, `restrict_domains` and the `group_domains`
+allowlist decide each member's effective default and selectable domains.
+
+## 5. Migration `0003_multi_domain` [#5-migration-0003_multi_domain]
+
+Before renaming, the migration normalises hostnames into a temporary mapping and
+merges rows that become identical (case, trailing dot, default port). The
+survivor is the default row when the group has one, otherwise the lowest id;
+`urls.domain_id` is remapped to it and duplicate rows are deleted. This handles
+a v2 installation that changed `URLET_BASE_URL` from `example.com:443` to
+`example.com` and therefore already had both rows.
+
+SQLite cannot drop the inline `UNIQUE` on `urls.slug`, so the table is rebuilt
+with the official 12-step procedure. Because `clicks`, `url_tags` and
+`url_daily_stats` reference `urls` with `ON DELETE CASCADE`, the rebuild runs on
+a dedicated connection with `PRAGMA foreign_keys = OFF` **outside** the
+transaction. The migration runner distinguishes transactional migrations from
+rebuild migrations and always restores `PRAGMA foreign_keys = ON` before the
+connection is closed. `PRAGMA foreign_key_check` must return no rows before
+commit.
+
+Before upgrading: back up the SQLite file. The migration has no down migration;
+rollback is restoring the backup and the previous binary. Tests seed a v2
+database with URLs, clicks, tags and daily stats, apply `0003`, and assert row
+counts, foreign keys, back-filled domains, per-domain slug uniqueness and a
+working `sqlite_sequence`.
+
+## 6. Host resolution [#6-host-resolution]
+
+- Read the `Host` header. An absent `Host` (HTTP/1.0 and tests) is treated as the
+  canonical host. A present but undecodable/invalid `Host` is an unknown host.
+- Normalise: trim, lower-case, strip a trailing dot, strip `:80`/`:443`, keep
+  other ports, reject schemes, paths and control characters.
+- The canonical host may be an IPv6 literal or a Docker-style underscore service
+  name; those are matched through an opaque ASCII fallback because extra domains
+  still have to be normal hostnames. A Unicode canonical host must be supplied
+  as punycode; an unparseable Unicode `URLET_BASE_URL` fails startup instead of
+  silently serving 404s.
+- `X-Forwarded-Host` is not trusted in this version. The reverse proxy must
+  preserve the original `Host` (Caddy does by default).
+- A `DomainRegistry` snapshot in `AppState` maps hostnames and ids to domains and
+  remembers the active host list and default id. It is loaded during bootstrap
+  and reloaded after every admin mutation. Direct database edits are picked up
+  on the next restart.
+- The domain gate runs after locale negotiation and before CSRF. It inserts a
+  `HostContext` extension (`canonical` or `active` domain) for handlers.
+- Unknown, pending and disabled hosts never reach redirect handlers.
+
+## 7. Creating and displaying links [#7-creating-and-displaying-links]
+
+- `CreateInput` and `POST /api/v1/urls` accept an optional `domain` hostname.
+  Omitted resolves through the domain policy to the caller's group default (the
+  site-wide default when the group has none, or the group's choice is no longer
+  active). The target must be `active` and allowed by the caller's policy;
+  `pending` and `disabled` domains are rejected.
+- The public creation paths `POST /` and `POST /api/v1/public/urls` also accept
+  `domain`; the form echoes the resolved hostname back in its redirect, and the
+  API returns `domain` alongside `short_url`.
+- All slug checks, generated-slug retries and update checks are scoped to the
+  selected domain. Conflicts are reported with the hostname.
+- `PATCH /api/v1/urls/{id}` accepts `domain`; moving a link re-checks the slug on
+  the target domain and returns `409` on a conflict.
+- `UrlDto` gains `domain`; `short_url` is `{scheme}://{hostname}/{slug}` using the
+  instance scheme.
+- HTML create and edit forms show a domain select populated from the domains the
+  caller's policy allows; the dashboard and detail pages open `short_url` rather
+  than a relative path.
+- `GET /api/v1/domains` returns the active domains the caller's group domain
+  policy allows, with `is_default` marking the group's effective default rather
+  than the site-wide one.
+- `GET /api/v1/public/urls/{slug}?domain=<hostname>` resolves the default domain
+  when the parameter is absent, preserving existing callers. The response gains
+  `domain`.
+
+## 8. Administration [#8-administration]
+
+- New `/app/admin/domains` page and `/api/v1/admin/domains` endpoints.
+- Actions: add (`pending`), activate, disable, set default, delete.
+- Rules:
+  - canonical (`source = system`) is always active and cannot be disabled or
+    deleted. If `URLET_BASE_URL` changes, bootstrap creates the new canonical
+    row, transfers the default when the previous system row held it, and demotes
+    the previous system row to `ui`; its links keep resolving until an
+    administrator disables it;
+  - `pending`/`disabled` domains cannot be default;
+  - the current default cannot be disabled or deleted until another active domain
+    is made default;
+  - `source = env` domains cannot be deleted from the UI (they would be
+    re-seeded); they can be disabled, and detach to `ui` when removed from
+    `URLET_DOMAINS`. The `system` domain can be neither disabled nor deleted;
+  - a `ui` domain can be deleted only when it has no links at all, including
+    soft-deleted links.
+- Every mutation is audited (`domain.created`, `domain.updated`,
+  `domain.deleted`, `domain.default_changed`) and reloads the registry.
+
+## 9. Security [#9-security]
+
+- Session cookies remain host-only; login and the application live on the
+  canonical host only.
+- Unlock tokens and cookie names bind both hostname and slug, so a token issued
+  for `a.example.com/promo` cannot unlock `b.example.com/promo`.
+- Click recording excludes every active hostname (plus the canonical host,
+  `localhost` and `127.0.0.1`) from referrer statistics.
+- The unlock rate-limit key includes the domain.
+- Redirect `Location` values always come from the stored target or configured
+  canonical base URL; request `Host` is never used to build a redirect.
+- Captcha flows remain canonical-only in this version; a custom-domain
+  white-label app would need per-domain site keys.
+- The existing CSRF same-origin check already accepts `Origin`/`Referer` that
+  match the request `Host`, which covers the unlock form on extra domains.
+
+## 10. Deployment [#10-deployment]
+
+- `URLET_BASE_URL` remains the canonical host and the only scheme source.
+- `URLET_DOMAINS=go.example.com,links.example.com` seeds extra domains. Seed
+  rows are inserted as `active`, `source = env`, verified. They are never
+  updated by the seed. When `URLET_DOMAINS` is set, removing a hostname from it
+  detaches that domain to `source = ui` on the next boot (status, links and
+  default are preserved); it is not deleted automatically.
+- Every added domain needs DNS pointing at the instance and a matching Caddy
+  site block (automatic TLS). Caddy must be reloaded after adding a domain
+  outside `URLET_DOMAINS`.
+- All domains must use the same http/https scheme as `URLET_BASE_URL`. An
+  http-only extra domain cannot be represented while the canonical host is
+  https.
+- The registry is in-process; this remains a single-instance SQLite deployment.
+
+## 11. Tests [#11-tests]
+
+| Area | Cases |
+|------|-------|
+| Migration | v2 seeded DB → 0003; clicks/tags/stats preserved; FK check empty; NULL back-fill; new insert id |
+| Redirect | canonical/active/pending/disabled/unknown hosts; same slug on two domains; `/app` 308; `/api` 404; `/health` any host |
+| API | create with/without domain; invalid/disabled domain; slug conflict; PATCH move; public metadata `?domain=` |
+| Admin | add/activate/disable/default/delete; canonical and default protections; source rules; audit |
+| Security | unlock cookie A does not unlock B; `X-Forwarded-Host` ignored; open redirect |
+| UI | domain selects; dashboard/detail open correct host; three locales |
+
+## 12. Out of scope (P2) [#12-out-of-scope-p2]
+
+- DNS TXT ownership verification and automatic activation.
+- Per-domain branding, themes or settings.
+- Per-user domain exceptions. Group-level defaults and allowlists are implemented
+  by migration `0005_group_domains` (`user_groups.default_domain_id`,
+  `restrict_domains`, `group_domains`); only per-user overrides are out of scope.
+- Full white-label application on extra domains (login/dashboard/API).
+- Dynamic Caddy configuration from the admin UI.
+- Per-domain scheme and per-domain captcha keys.
+
+
+# Themes (/en/docs/themes)
+
+urlet ships six visual themes inside the single binary, and an administrator can
+upload additional stylesheet-only themes at runtime. A **compiled-in theme** is
+code: an Askama template directory under `templates/themes/<key>/` plus one
+embedded CSS file. An **uploaded theme** is a CSS file stored on the persistent
+volume; it reuses the base page layout because Askama templates are compiled into
+the binary and cannot be added at runtime.
+
+| Key | Name | Notes |
+|-----|------|-------|
+| `verdant` | Verdant Systems | The v1.2 production design; also the base templates and fallback. Ships both palettes and the persisted light/dark control |
+| `aurora` | Aurora Glass | Dark glass command centre with a fixed sidebar. Dark-only: no light palette, so the light/dark control is hidden |
+| `paper` | Paper Ledger | Editorial paper ledger. Ships both palettes and the light/dark control |
+| `signal` | Signal | Brutalist signal board. Ships both palettes and the light/dark control |
+| `gilded` | Gilded Circuit | Art Deco ivory/emerald/gold. Ships both palettes and the light/dark control |
+| `swiss` | Swiss Telemetry | Swiss grid with numbered sections. Ships both palettes and the light/dark control |
+| `custom-…` | Uploaded | A stylesheet added from **Admin → Themes**; reuses the Verdant templates |
+
+The five non-default compiled-in themes are the designs proposed in the closed
+pull requests #5, #6, #7, #9 and #10. They were ported to the v1.2 page model
+rather than frozen at their original feature set.
+
+Every design except Aurora follows `prefers-color-scheme` until the visitor picks
+a mode, and then honours that choice in both directions: its stylesheet carries
+the dark palette twice, once behind `@media (prefers-color-scheme: dark)` guarded
+by `:not([data-theme="light"])` and once behind `:root[data-theme="dark"]`. A new
+port that skips the second copy still follows the operating system, but its
+light/dark control would be a lie — the test
+`every_dual_palette_design_serves_the_system_and_the_explicit_palette` catches
+that.
+
+The browser chrome is the one surface CSS cannot reach: a `theme-color` meta tag
+is selected by a media query, and a media query cannot see `data-theme`. A design
+that paints the chrome (Signal) therefore marks its two tags with
+`data-theme-mode="light"`/`"dark"`; the media queries stay the no-JavaScript
+path, and `theme.js` switches the matching tag on once the mode is resolved.
+
+## How a visitor's theme is chosen [#how-a-visitors-theme-is-chosen]
+
+1. `urlet_theme` cookie, when it names an enabled theme (compiled in or uploaded).
+2. Otherwise the administrator's default.
+3. A cookie for a disabled or unknown theme is ignored and the default is used.
+
+The picker is a native `<details>` element and works without JavaScript. When
+switching is open to everyone, a visitor who is not signed in sees it too, so a
+look chosen on the landing page survives the sign-in that follows. The
+cookie is `HttpOnly`, `SameSite=Lax`, lives for one year, and is `Secure` when
+the instance is configured for secure cookies. It is a cosmetic preference, not
+a per-user database column; a new browser starts at the default. The picker's
+**Site default** entry clears the cookie and follows the administrator's default
+again.
+
+Like the language picker, the switch endpoint is a `GET`. It only writes a
+cosmetic cookie; it never changes data or permissions. A cross-site top-level
+navigation can therefore change the look, but cannot grant access or alter an
+account.
+
+## Templates and the fallback [#templates-and-the-fallback]
+
+`templates/` at the repository root is **both** the Verdant theme and the
+fallback. It also owns the shared chrome: the footer in `templates/base.html`
+carries the two user-visible links every design keeps — the attribution link to
+the upstream repository (`partials/repo_link.html`, labelled **GitHub**) and the
+API reference at `/docs` (`partials/api_docs_link.html`, labelled **API**). A
+compiled-in theme directory may override any page:
+
+```
+templates/
+├── base.html                 # Verdant base / fallback
+├── app_base.html
+├── dashboard.html
+├── ...
+├── content/                  # Shared v1.2 page bodies (macros)
+│   ├── dashboard.html
+│   └── admin/...
+└── themes/
+    ├── aurora/
+    │   ├── base.html
+    │   ├── app_base.html
+    │   ├── landing.html
+    │   ├── link_splash.html   # public interstitial page
+    │   ├── dashboard.html     # thin wrapper around content/dashboard.html
+    │   └── ...
+    ├── paper/
+    └── ...
+```
+
+Pages with a large amount of v1.2-only state (quotas, domains, groups, invites,
+settings) are shared through Askama macros in `templates/content/`. A theme
+overrides the chrome and the public/auth pages from its original design, and
+wraps the shared body in its own shell. This keeps every theme feature-complete
+when the product grows, at the cost of the older designs looking more like the
+base content on dense admin pages. The shared `src/assets/theme-ui.css` fills in
+classes those older stylesheets did not know about; it uses `:where()` so the
+original design always wins where it has an opinion.
+
+The template is selected at compile time by `themed_page!` in
+`src/routes/pages/themed.rs`. Each page context gets `.themed()`, and the macro
+generates one small wrapper per theme that dereferences to the same context.
+Askama's compile-time field checking therefore still applies to every theme.
+Uploaded themes select the Verdant wrapper at compile time and only replace the
+stylesheet URL; they join the catalogue through the administrator workflow below.
+
+## Administrator workflow [#administrator-workflow]
+
+1. Open **Admin → Themes** (`/app/admin/themes`).
+2. Upload a custom stylesheet: give it a name, an optional description, then
+   drag a `.css` file onto the drop zone (or click it to choose a file). Choose
+   an appearance — **Follow system**, **Light only (white)** or **Dark only
+   (black)**. The upload appears in the catalogue immediately, enabled.
+3. Tick the designs that should be offered. At least one theme must stay enabled.
+4. Pick the **Default** theme. It must be enabled; visitors without a cookie see it.
+5. Choose **Who can change their theme**:
+   - `Everyone` — members and visitors may switch (the default). A visitor
+     without a session gets the same picker on the pages that carry site chrome:
+     the landing page, sign-in and registration, and error pages.
+   - `Administrators only` — administrators keep the picker for previews; members
+     do not see it, and a direct switch returns `403`. A visitor without a
+     session is sent to the sign-in screen instead.
+6. **Preview** applies a theme to the current administrator only, then returns to
+   the theme page.
+7. Save. The selection is applied immediately; no restart is needed.
+
+An uploaded theme can be renamed, have its appearance and stylesheet
+replaced from its edit page. **Delete** removes the catalogue row and the CSS
+file; a theme that is currently the default cannot be deleted, so choose another
+default first. The original file name is kept for display only; the stored path
+is derived from a generated key and the content hash.
+
+The policy is enforced when pages render, not only by hiding the picker. Under
+**Administrators only**, non-admin accounts and anonymous visitors always render
+the site default; an existing `urlet_theme` cookie (including one set while the
+policy was `Everyone`) is ignored. Administrators keep the picker and can use
+**Preview** to inspect any theme, including one that is not enabled yet, without
+changing the visitor-facing default. The preview cookie lasts one hour. A normal
+picker click or **Stop preview** leaves preview mode.
+
+The redirect surface — a short link, its password prompt and the splash pages —
+never offers the picker, even under `Everyone`. Those pages stay minimal and only
+follow a cookie the visitor already has; the picker is one click away on the
+landing page they point back to.
+
+The same selection is available as `GET/PUT /api/v1/admin/themes`. The JSON API
+accepts `enabled`, `default` and `switching`; omitted fields keep their value.
+Uploads themselves are a browser multipart form: the JSON API is read/update for
+the catalogue, not a file-upload endpoint. `GET` includes uploaded themes with
+`"custom": true` and a hashed `css_url`.
+
+## Custom theme storage [#custom-theme-storage]
+
+| Item | Location |
+|------|----------|
+| Metadata | `custom_themes` table in the SQLite database |
+| Catalogue state | A matching `themes` row (`key`, enabled, default, order) |
+| Stylesheet | `<URLET_THEMES_DIR>/<key>-<content hash>.css` |
+| Default directory | `<URLET_DATA_DIR>/themes` |
+| Docker | The `urlet-themes` volume, mounted at `/data/themes` |
+
+The content hash is part of `/assets/custom-themes/{key}?v=<hash>`, so replacing
+a stylesheet changes the URL and cannot be masked by the one-hour asset cache.
+The metadata and the file live on the persistent `/data` volume; a restart
+rebuilds the in-memory registry from the database and the upload remains
+selectable.
+
+The upload is deliberately restricted:
+
+- a CSS file: the upload field expects one; `accept=".css,text/css"` and the
+  drop zone's filename check are browser-side conveniences, and the server never
+  looks at the extension. Validation runs on the content: UTF-8, 256 KiB at
+  most, no control characters, and at least one `{` and one `}`;
+- at most 32 custom themes per instance;
+- absolute external references and cross-origin `url(...)` are rejected:
+  `http://`, `https://`, `ftp://`, `data:text/html` and `data:image/svg` are
+  refused anywhere in the file, and a `url(...)` may not point at another origin.
+  CSS escapes and comments are decoded first, so `u\72l(` cannot smuggle one
+  past. The scan matches text rather than parsing CSS, so a protocol-relative
+  reference inside another functional notation — `image-set("//host/a.png")`,
+  for example — is not caught; the CSP is the second line of defence;
+- no `@import`, `expression(...)` or legacy `behavior`;
+- served as `text/css` with `X-Content-Type-Options: nosniff`, so it cannot turn
+  into an HTML document.
+
+An upload also chooses how the palette behaves:
+
+- **Follow system** keeps the ordinary light/dark control and follows the
+  operating system until the visitor picks a mode.
+- **Light only** and **Dark only** force `data-theme="light"`/`"dark"` on the
+  server, hide the light/dark control, and cannot be overridden by a saved
+  browser preference. This is the "pure white" / "pure black" choice.
+
+Uploaded CSS is served **after** the Verdant stylesheet, so a small colour or
+layout override composes with the default design and wins the cascade. The base
+stylesheet is linked from the upload panel for reference. Custom uploads never
+change the document templates: they can restyle every page, but cannot add
+markup or scripts.
+
+## Adding a compiled-in theme [#adding-a-compiled-in-theme]
+
+1. Add a variant to `ThemeKey` in `src/services/theme.rs` (key, name key,
+   description key, CSS URL, palette policy). A design that ships only one
+   palette declares it through `is_dark_only`/`is_light_only`; `appearance()` is
+   the single source of truth for the catalogue's `appearance` field and its
+   light-only/dark-only badges.
+2. Add the CSS under `src/assets/themes/<key>.css` and register it in
+   `src/assets.rs` and the `/assets/themes/{key}` route.
+3. Add the catalogue strings to the three `src/i18n/*.json` files.
+4. Create `templates/themes/<key>/` with at least `base.html`, `app_base.html`,
+   `landing.html`, the auth/link/splash/error pages, the admin tabs and the app pages.
+   Reuse the content macros for the dense app pages. Load `theme.js` in `base.html`'s
+   `<head>`, and render the picker and the light/dark switch exactly once per page: in
+   the top bar of `landing.html` and `app_base.html`, and through
+   `partials/site_tools.html` (switch, picker plus language switcher) wherever the design
+   keeps its footer tools. A design that empties `footer_lang` for its own top bar must put
+   the tools there instead, as Swiss's auth pages do. Copy the `data-theme`/`data-theme-lock`
+   attributes of `templates/base.html` onto `<html>`, so a forced palette is marked on the
+   document as well as in the catalogue.
+5. Add `templates/themes/<key>/...` paths to every `themed_page!` call. Keep the
+   `Verdant` entry in each invocation: it is also the fallback used when a page
+   has not listed a newly added theme yet.
+6. With the key, templates and CSS registered, add the theme to `ALL` and the
+   admin tests, then let `db::themes::ensure_defaults` insert the catalogue row
+   at startup. Leave the migration seed untouched: released migrations are
+   checksum-protected, and startup seeding covers new and existing databases.
+7. Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
+   `cargo test` and `scripts/smoke.sh`.
+
+## Deliberate limits [#deliberate-limits]
+
+- Uploads are stylesheets, not templates. The CSP stays `default-src 'self'` and
+  the binary stays self-contained; a custom theme cannot add markup or scripts.
+- Uploads are administrator-only. There is no per-user theme marketplace or
+  per-account upload quota; the site-wide catalogue stays the single source of
+  truth.
+- No remote theme fetch: the server never downloads a stylesheet, and external
+  `url(...)` / `@import` are rejected in addition to being blocked by the CSP.
+- No fine-grained per-account permission: the policy is site-wide (`all` or
+  `admin`). The existing user-group feature toggles cover per-group data
+  capabilities, not cosmetics.
+- Every design except Aurora ships both palettes and the same persisted
+  light/dark control; the control is a cosmetic preference, so it never needs a
+  per-account column. Aurora is dark-only by design and has no light palette to
+  offer, so it hides the control instead of shipping a dead one.

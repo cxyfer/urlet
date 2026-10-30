@@ -1,0 +1,47 @@
+1:"$Sreact.fragment"
+2:"/urlet/_next/static/chunks/0qq2kxxvs-rkd.js"
+3:I[39756,["$2"],"default"]
+4:I[37457,["$2"],"default"]
+d:I[97367,["$2"],"OutletBoundary"]
+e:"$Sreact.suspense"
+10:"ViewportBoundary"
+11:I[97367,["$2"],"$10"]
+13:"MetadataBoundary"
+14:I[97367,["$2"],"$13"]
+16:I[68027,[],"default",1]
+:HL["/urlet/_next/static/chunks/0kaqhrg-t9898.css","style"]
+5:X
+b:[["children",{"s":"__PAGE__","h":512,"d":{"r":["$","$1","c",{"children":["$Lc",[["$","script","script-0",{"src":"/urlet/_next/static/chunks/3nsr4t-0tz_0u.js","async":true,"nonce":"$undefined"}],["$","script","script-1",{"src":"/urlet/_next/static/chunks/0j0b-z1_g0sza.js","async":true,"nonce":"$undefined"}]],["$","$Ld",null,{"children":["$","$e",null,{"name":"Next.MetadataOutlet","children":"$@f"}]}]]}],"p":false,"v":null}}]]
+a:[["children",{"s":{"n":"slug","t":"oc","k":"","s":[]},"h":512,"d":{"r":["$","$1","c",{"children":[null,["$","$L3",null,{"parallelRouterKey":"children","error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$L4",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":"$undefined","forbidden":"$undefined","unauthorized":"$undefined"}]]}],"p":false,"v":"$5"},"c":"$Qb"}]]
+8:[["children",{"s":"docs","h":512,"d":{"r":["$","$1","c",{"children":[[["$","script","script-0",{"src":"/urlet/_next/static/chunks/3vcrbjdf-4nfq.js","async":true,"nonce":"$undefined"}],["$","script","script-1",{"src":"/urlet/_next/static/chunks/0gvk6h96q0eoi.js","async":true,"nonce":"$undefined"}],["$","script","script-2",{"src":"/urlet/_next/static/chunks/04-18fgs13q8s.js","async":true,"nonce":"$undefined"}]],"$L9"]}],"p":false,"v":null},"c":"$Qa"}]]
+6:[["children",{"s":{"n":"lang","t":"d","k":"zh-TW","s":["api"]},"h":528,"d":{"r":["$","$1","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"/urlet/_next/static/chunks/0kaqhrg-t9898.css","precedence":"next","crossOrigin":"$undefined","nonce":"$undefined"}],["$","script","script-0",{"src":"/urlet/_next/static/chunks/0ogrtb7ke5i-2.js","async":true,"nonce":"$undefined"}],["$","script","script-1",{"src":"/urlet/_next/static/chunks/0xwf8sskyqr50.js","async":true,"nonce":"$undefined"}],["$","script","script-2",{"src":"/urlet/_next/static/chunks/41uhrw00nx-kf.js","async":true,"nonce":"$undefined"}],["$","script","script-3",{"src":"/urlet/_next/static/chunks/27vi-gkkp7gwj.js","async":true,"nonce":"$undefined"}]],"$L7"]}],"p":false,"v":null},"c":"$Q8"}]]
+0:{"P":null,"c":["","zh-TW","docs",""],"q":"","i":false,"t":{"t":{"s":"","h":528,"d":{"r":["$","$1","c",{"children":[null,["$","$L3",null,{"parallelRouterKey":"children","error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$L4",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":[[["$","title",null,{"children":"404: This page could not be found."}],["$","div",null,{"style":{"fontFamily":"system-ui,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif,\"Apple Color Emoji\",\"Segoe UI Emoji\"","height":"100vh","textAlign":"center","display":"flex","flexDirection":"column","alignItems":"center","justifyContent":"center"},"children":["$","div",null,{"children":[["$","style",null,{"dangerouslySetInnerHTML":{"__html":"body{color:#000;background:#fff;margin:0}.next-error-h1{border-right:1px solid rgba(0,0,0,.3)}@media (prefers-color-scheme:dark){body{color:#fff;background:#000}.next-error-h1{border-right:1px solid rgba(255,255,255,.3)}}"}}],["$","h1",null,{"className":"next-error-h1","style":{"display":"inline-block","margin":"0 20px 0 0","padding":"0 23px 0 0","fontSize":24,"fontWeight":500,"verticalAlign":"top","lineHeight":"49px"},"children":404}],["$","div",null,{"style":{"display":"inline-block"},"children":["$","h2",null,{"style":{"fontSize":14,"fontWeight":400,"lineHeight":"49px","margin":0},"children":"This page could not be found."}]}]]}]}]],[]],"forbidden":"$undefined","unauthorized":"$undefined"}]]}],"p":false,"v":"$5"},"c":"$Q6"},"h":{"r":["$","$1","h",{"children":[null,["$","$L11",null,{"children":"$L12"}],["$","$L14",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$e",null,{"name":"Next.Metadata","children":"$L15"}]}],null]}],null]}],"p":false,"v":null}},"m":"$undefined","G":["$16",[]],"S":true,"r":"$undefined","s":"$undefined","a":"$undefined","l":"$undefined","p":"$undefined","d":"$undefined","b":"SSJOvbsfXSXnkTAFTNVjm"}
+17:"/urlet/_next/static/chunks/0ogrtb7ke5i-2.js"
+18:"/urlet/_next/static/chunks/0xwf8sskyqr50.js"
+19:"/urlet/_next/static/chunks/41uhrw00nx-kf.js"
+1a:"/urlet/_next/static/chunks/27vi-gkkp7gwj.js"
+1b:I[98117,["$17","$18","$19","$1a"],"Provider"]
+1c:"/urlet/_next/static/chunks/3vcrbjdf-4nfq.js"
+1d:"/urlet/_next/static/chunks/0gvk6h96q0eoi.js"
+1e:"/urlet/_next/static/chunks/04-18fgs13q8s.js"
+1f:I[63199,["$17","$18","$19","$1a","$1c","$1d","$1e"],"LayoutBody"]
+20:"/urlet/_next/static/chunks/3nsr4t-0tz_0u.js"
+21:"/urlet/_next/static/chunks/0j0b-z1_g0sza.js"
+22:I[98330,["$17","$18","$19","$1a","$1c","$1d","$1e","$20","$21"],"DocsPage"]
+23:I[98330,["$17","$18","$19","$1a","$1c","$1d","$1e","$20","$21"],"DocsTitle"]
+24:I[98330,["$17","$18","$19","$1a","$1c","$1d","$1e","$20","$21"],"DocsDescription"]
+25:"MarkdownCopyButton"
+26:I[98330,["$17","$18","$19","$1a","$1c","$1d","$1e","$20","$21"],"$25"]
+27:I[98330,["$17","$18","$19","$1a","$1c","$1d","$1e","$20","$21"],"DocsBody"]
+5:C
+7:["$","html",null,{"lang":"zh-TW","suppressHydrationWarning":true,"children":["$","body",null,{"className":"flex flex-col min-h-screen","children":["$","$L1b",null,{"i18n":{"locale":"zh-TW","defaultLanguage":"en","hideLocale":"never","translations":{"displayName":"繁體中文","search":"搜尋文件","searchNoResult":"沒有符合的結果","toc":"本頁目錄","tocNoHeadings":"沒有標題","lastUpdate":"最後更新","chooseTheme":"主題","chooseLanguage":"語言","nextPage":"下一頁","previousPage":"上一頁","editOnGithub":"在 GitHub 編輯"},"locales":[{"locale":"en","name":"English"},{"locale":"zh-TW","name":"繁體中文"}]},"children":["$","$L3",null,{"parallelRouterKey":"children","error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$L4",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":"$undefined","forbidden":"$undefined","unauthorized":"$undefined"}]}]}]}]
+9:["$","$L1f",null,{"tree":{"type":"root","$ref":{"folder":"","meta":"meta.json"},"$id":"zh-TW:root","name":"文件","description":"$undefined","children":[{"$id":"zh-TW:index.mdx","type":"page","name":"文件","description":"$undefined","icon":"$undefined","url":"/zh-TW/docs","$ref":"index.mdx"},{"$id":"zh-TW:deployment.mdx","type":"page","name":"urlet 部署指南","description":"$undefined","icon":"$undefined","url":"/zh-TW/docs/deployment","$ref":"deployment.mdx"},{"$id":"zh-TW:themes.mdx","type":"page","name":"佈景主題","description":"$undefined","icon":"$undefined","url":"/zh-TW/docs/themes","$ref":"themes.mdx"},{"$id":"zh-TW:multi-domain.mdx","type":"page","name":"多網域支援設計","description":"$undefined","icon":"$undefined","url":"/zh-TW/docs/multi-domain","$ref":"multi-domain.mdx"},{"$id":"zh-TW:api.mdx","type":"page","name":"urlet JSON API 參考","description":"$undefined","icon":"$undefined","url":"/zh-TW/docs/api","$ref":"api.mdx"}]},"tabs":[],"tabMode":"$undefined","sidebar":{},"nav":{"title":"urlet"},"githubUrl":"https://github.com/cxyfer/urlet","children":["$","$L3",null,{"parallelRouterKey":"children","error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$L4",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":"$undefined","forbidden":"$undefined","unauthorized":"$undefined"}]}]
+c:["$","$L22",null,{"toc":[],"full":"$undefined","children":[["$","$L23",null,{"children":"文件"}],["$","$L24",null,{"className":"mb-0","children":"$undefined"}],["$","div",null,{"className":"flex flex-row gap-2 items-center border-b pb-6","children":["$","$L26",null,{"markdownUrl":"/zh-TW/llms.mdx/docs/content.md"}]}],["$","$L27",null,{"children":[["$","p",null,{"children":"urlet 是自架的多用戶短網址服務：單一 Rust 執行檔與單一 SQLite 檔案，沒有外部資料庫、快取或前端建置步驟。"}],"\n",["$","ul",null,{"children":["\n",["$","li",null,{"children":"$L28"}],"\n",["$","li",null,{"children":"$L29"}],"\n",["$","li",null,{"children":"$L2a"}],"\n",["$","li",null,{"children":"$L2b"}],"\n"]}]]}]]}]
+2c:I[47873,["$17","$18","$19","$1a","$1c","$1d","$1e","$20","$21"],"default"]
+28:["$","$L2c",null,{"href":"/zh-TW/docs/deployment","children":"urlet 部署指南"}]
+29:["$","$L2c",null,{"href":"/zh-TW/docs/themes","children":"佈景主題"}]
+2a:["$","$L2c",null,{"href":"/zh-TW/docs/multi-domain","children":"多網域支援設計"}]
+2b:["$","$L2c",null,{"href":"/zh-TW/docs/api","children":"urlet JSON API 參考"}]
+12:[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]
+f:null
+15:[["$","title","0",{"children":"文件"}],["$","meta","1",{"property":"og:title","content":"文件"}],["$","meta","2",{"property":"og:image","content":"http://localhost:3000/zh-TW/og/docs/image.png"}],["$","meta","3",{"name":"twitter:card","content":"summary_large_image"}],["$","meta","4",{"name":"twitter:title","content":"文件"}],["$","meta","5",{"name":"twitter:image","content":"http://localhost:3000/zh-TW/og/docs/image.png"}]]

@@ -1,0 +1,53 @@
+1:"$Sreact.fragment"
+2:"/urlet/_next/static/chunks/0qq2kxxvs-rkd.js"
+3:I[39756,["$2"],"default"]
+4:I[37457,["$2"],"default"]
+9:"/urlet/_next/static/chunks/0ogrtb7ke5i-2.js"
+a:"/urlet/_next/static/chunks/0xwf8sskyqr50.js"
+b:"/urlet/_next/static/chunks/41uhrw00nx-kf.js"
+c:"/urlet/_next/static/chunks/27vi-gkkp7gwj.js"
+d:I[98117,["$9","$a","$b","$c"],"Provider"]
+10:"/urlet/_next/static/chunks/3vcrbjdf-4nfq.js"
+11:"/urlet/_next/static/chunks/0gvk6h96q0eoi.js"
+12:"/urlet/_next/static/chunks/04-18fgs13q8s.js"
+13:I[63199,["$9","$a","$b","$c","$10","$11","$12"],"LayoutBody"]
+18:"/urlet/_next/static/chunks/3nsr4t-0tz_0u.js"
+19:"/urlet/_next/static/chunks/0j0b-z1_g0sza.js"
+1a:I[98330,["$9","$a","$b","$c","$10","$11","$12","$18","$19"],"DocsPage"]
+1b:I[98330,["$9","$a","$b","$c","$10","$11","$12","$18","$19"],"DocsTitle"]
+1c:I[98330,["$9","$a","$b","$c","$10","$11","$12","$18","$19"],"DocsDescription"]
+1d:"MarkdownCopyButton"
+1e:I[98330,["$9","$a","$b","$c","$10","$11","$12","$18","$19"],"$1d"]
+1f:I[98330,["$9","$a","$b","$c","$10","$11","$12","$18","$19"],"DocsBody"]
+20:I[47873,["$9","$a","$b","$c","$10","$11","$12","$18","$19"],"default"]
+27:"ViewportBoundary"
+28:I[97367,["$2"],"$27"]
+29:"MetadataBoundary"
+2a:I[97367,["$2"],"$29"]
+2b:"$Sreact.suspense"
+:HL["/urlet/_next/static/chunks/0kaqhrg-t9898.css","style"]
+6:X
+6:C
+7:X
+17:[["children",{"s":"__PAGE__","h":160,"d":{"r":["$","$1","c",{"children":[["$","$L1a",null,{"toc":[],"children":[["$","$L1b",null,{"children":"Documentation"}],["$","$L1c",null,{"className":"mb-0"}],["$","div",null,{"className":"flex flex-row gap-2 items-center border-b pb-6","children":["$","$L1e",null,{"markdownUrl":"/en/llms.mdx/docs/content.md"}]}],["$","$L1f",null,{"children":[["$","p",null,{"children":"urlet is a self-hosted URL shortener: one Rust binary and one SQLite file, with no external database, cache or frontend build step."}],"\n",["$","ul",null,{"children":["\n",["$","li",null,{"children":["$","$L20",null,{"href":"/en/docs/deployment","children":"urlet deployment guide"}]}],"\n",["$","li",null,{"children":["$","$L20",null,{"href":"/en/docs/themes","children":"Themes"}]}],"\n","$L21","\n","$L22","\n"]}]]}]]}],["$L23","$L24"],"$L25"]}],"p":"$@26","v":null,"s":"$7"}}]]
+15:[["children",{"s":{"n":"slug","t":"oc","k":"","s":[]},"h":96,"d":{"r":["$","$1","c",{"children":[null,["$","$L3",null,{"parallelRouterKey":"children","template":["$","$L4",null,{}]}]]}],"p":"$@16","v":"$6","s":"$7"},"c":"$Q17"}]]
+f:[["children",{"s":"docs","h":96,"d":{"r":["$","$1","c",{"children":[[["$","script","script-0",{"src":"/urlet/_next/static/chunks/3vcrbjdf-4nfq.js","async":true}],["$","script","script-1",{"src":"/urlet/_next/static/chunks/0gvk6h96q0eoi.js","async":true}],["$","script","script-2",{"src":"/urlet/_next/static/chunks/04-18fgs13q8s.js","async":true}]],["$","$L13",null,{"tree":{"type":"root","$ref":{"folder":"","meta":"meta.json"},"$id":"en:root","name":"Documentation","children":[{"$id":"en:index.mdx","type":"page","name":"Documentation","url":"/en/docs","$ref":"index.mdx"},{"$id":"en:deployment.mdx","type":"page","name":"urlet deployment guide","url":"/en/docs/deployment","$ref":"deployment.mdx"},{"$id":"en:themes.mdx","type":"page","name":"Themes","url":"/en/docs/themes","$ref":"themes.mdx"},{"$id":"en:multi-domain.mdx","type":"page","name":"Multi-domain support","url":"/en/docs/multi-domain","$ref":"multi-domain.mdx"},{"$id":"en:api.mdx","type":"page","name":"urlet JSON API reference","url":"/en/docs/api","$ref":"api.mdx"}]},"tabs":[],"sidebar":{},"nav":{"title":"urlet"},"githubUrl":"https://github.com/cxyfer/urlet","children":["$","$L3",null,{"parallelRouterKey":"children","template":["$","$L4",null,{}]}]}]]}],"p":"$@14","v":null,"s":"$7"},"c":"$Q15"}]]
+8:[["children",{"s":{"n":"lang","t":"d","k":"en","s":["api"]},"h":112,"d":{"r":["$","$1","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"/urlet/_next/static/chunks/0kaqhrg-t9898.css","precedence":"next"}],["$","script","script-0",{"src":"/urlet/_next/static/chunks/0ogrtb7ke5i-2.js","async":true}],["$","script","script-1",{"src":"/urlet/_next/static/chunks/0xwf8sskyqr50.js","async":true}],["$","script","script-2",{"src":"/urlet/_next/static/chunks/41uhrw00nx-kf.js","async":true}],["$","script","script-3",{"src":"/urlet/_next/static/chunks/27vi-gkkp7gwj.js","async":true}]],["$","html",null,{"lang":"en","suppressHydrationWarning":true,"children":["$","body",null,{"className":"flex flex-col min-h-screen","children":["$","$Ld",null,{"i18n":{"locale":"en","defaultLanguage":"en","hideLocale":"never","translations":{"displayName":"English","search":"Search","searchNoResult":"No results","toc":"On this page","tocNoHeadings":"No headings","lastUpdate":"Last updated","chooseTheme":"Theme","chooseLanguage":"Language","nextPage":"Next","previousPage":"Previous","editOnGithub":"Edit on GitHub"},"locales":[{"locale":"en","name":"English"},{"locale":"zh-TW","name":"繁體中文"}]},"children":["$","$L3",null,{"parallelRouterKey":"children","template":["$","$L4",null,{}]}]}]}]}]]}],"p":"$@e","v":null,"s":"$7"},"c":"$Qf"}]]
+0:{"t":{"t":{"s":"","h":80,"d":{"r":["$","$1","c",{"children":[null,["$","$L3",null,{"parallelRouterKey":"children","template":["$","$L4",null,{}],"notFound":[[["$","title",null,{"children":"404: This page could not be found."}],["$","div",null,{"style":{"fontFamily":"system-ui,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif,\"Apple Color Emoji\",\"Segoe UI Emoji\"","height":"100vh","textAlign":"center","display":"flex","flexDirection":"column","alignItems":"center","justifyContent":"center"},"children":["$","div",null,{"children":[["$","style",null,{"dangerouslySetInnerHTML":{"__html":"body{color:#000;background:#fff;margin:0}.next-error-h1{border-right:1px solid rgba(0,0,0,.3)}@media (prefers-color-scheme:dark){body{color:#fff;background:#000}.next-error-h1{border-right:1px solid rgba(255,255,255,.3)}}"}}],["$","h1",null,{"className":"next-error-h1","style":{"display":"inline-block","margin":"0 20px 0 0","padding":"0 23px 0 0","fontSize":24,"fontWeight":500,"verticalAlign":"top","lineHeight":"49px"},"children":404}],["$","div",null,{"style":{"display":"inline-block"},"children":["$","h2",null,{"style":{"fontSize":14,"fontWeight":400,"lineHeight":"49px","margin":0},"children":"This page could not be found."}]}]]}]}]],[]]}]]}],"p":"$@5","v":"$6","s":"$7"},"c":"$Q8"},"h":{"r":["$","$1","h",{"children":[null,["$","$L28",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","$L2a",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$2b",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"Documentation"}],["$","meta","1",{"property":"og:title","content":"Documentation"}],["$","meta","2",{"property":"og:image","content":"http://localhost:3000/en/og/docs/image.png"}],["$","meta","3",{"name":"twitter:card","content":"summary_large_image"}],["$","meta","4",{"name":"twitter:title","content":"Documentation"}],["$","meta","5",{"name":"twitter:image","content":"http://localhost:3000/en/og/docs/image.png"}]]}]}],null]}],null]}],"p":"$@2c","v":null,"s":"$7"}},"a":"$@2d","u":"$@2e","b":"SSJOvbsfXSXnkTAFTNVjm"}
+2f:I[97367,["$2"],"OutletBoundary"]
+21:["$","li",null,{"children":["$","$L20",null,{"href":"/en/docs/multi-domain","children":"Multi-domain support"}]}]
+22:["$","li",null,{"children":["$","$L20",null,{"href":"/en/docs/api","children":"urlet JSON API reference"}]}]
+23:["$","script","script-0",{"src":"/urlet/_next/static/chunks/3nsr4t-0tz_0u.js","async":true}]
+24:["$","script","script-1",{"src":"/urlet/_next/static/chunks/0j0b-z1_g0sza.js","async":true}]
+25:["$","$L2f",null,{"children":["$","$2b",null,{"name":"Next.MetadataOutlet","children":"$@30"}]}]
+7:300
+30:null
+2e:true
+7:C
+2d:0
+16:"$undefined"
+14:"$undefined"
+e:"$undefined"
+5:"$undefined"
+2c:"$undefined"
+26:"$undefined"

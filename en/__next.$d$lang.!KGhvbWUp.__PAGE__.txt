@@ -1,0 +1,38 @@
+1:"$Sreact.fragment"
+2:"/urlet/_next/static/chunks/0qq2kxxvs-rkd.js"
+3:I[39756,["$2"],"default"]
+4:I[37457,["$2"],"default"]
+9:"/urlet/_next/static/chunks/0ogrtb7ke5i-2.js"
+a:"/urlet/_next/static/chunks/0xwf8sskyqr50.js"
+b:"/urlet/_next/static/chunks/41uhrw00nx-kf.js"
+c:"/urlet/_next/static/chunks/27vi-gkkp7gwj.js"
+d:I[98117,["$9","$a","$b","$c"],"Provider"]
+10:"/urlet/_next/static/chunks/3nsr4t-0tz_0u.js"
+11:"/urlet/_next/static/chunks/0gvk6h96q0eoi.js"
+12:"/urlet/_next/static/chunks/3sityr9i68sxu.js"
+13:I[64345,["$9","$a","$b","$c","$10","$11","$12"],"HomeLayout"]
+16:I[22016,["$9","$a","$b","$c","$10","$11","$12"],""]
+17:I[97367,["$2"],"OutletBoundary"]
+18:"$Sreact.suspense"
+1b:"ViewportBoundary"
+1c:I[97367,["$2"],"$1b"]
+1d:"MetadataBoundary"
+1e:I[97367,["$2"],"$1d"]
+:HL["/urlet/_next/static/chunks/0kaqhrg-t9898.css","style"]
+6:X
+6:C
+7:X
+15:[["children",{"s":"__PAGE__","h":160,"d":{"r":["$","$1","c",{"children":[["$","div",null,{"className":"flex flex-col justify-center text-center flex-1 gap-4 px-6","children":[["$","h1",null,{"className":"text-3xl font-bold","children":"urlet"}],["$","p",null,{"className":"text-fd-muted-foreground","children":"Documentation for urlet, a self-hosted URL shortener."}],["$","p",null,{"className":"text-sm text-fd-muted-foreground","children":"One Rust binary and one SQLite file. No external database, no cache, no frontend build step."}],["$","p",null,{"className":"flex flex-wrap justify-center gap-4","children":["$","$L16",null,{"href":"/en/docs","className":"font-medium underline","children":"Read the documentation"}]}],["$","p",null,{"className":"text-sm text-fd-muted-foreground","children":"Every instance also serves its own API reference at /docs"}],["$","p",null,{"className":"text-xs text-fd-muted-foreground","children":[["$","span","en",{"children":[false,["$","$L16",null,{"href":"/en","className":"underline","children":"en"}]]}],["$","span","zh-TW",{"children":[" · ",["$","$L16",null,{"href":"/zh-TW","className":"underline","children":"zh-TW"}]]}]]}]]}],null,["$","$L17",null,{"children":["$","$18",null,{"name":"Next.MetadataOutlet","children":"$@19"}]}]]}],"p":"$@1a","v":null,"s":"$7"}}]]
+f:[["children",{"s":"(home)","h":96,"d":{"r":["$","$1","c",{"children":[[["$","script","script-0",{"src":"/urlet/_next/static/chunks/3nsr4t-0tz_0u.js","async":true}],["$","script","script-1",{"src":"/urlet/_next/static/chunks/0gvk6h96q0eoi.js","async":true}],["$","script","script-2",{"src":"/urlet/_next/static/chunks/3sityr9i68sxu.js","async":true}]],["$","$L13",null,{"nav":{"title":"urlet"},"githubUrl":"https://github.com/cxyfer/urlet","children":["$","$L3",null,{"parallelRouterKey":"children","template":["$","$L4",null,{}]}]}]]}],"p":"$@14","v":null,"s":"$7"},"c":"$Q15"}]]
+8:[["children",{"s":{"n":"lang","t":"d","k":"en","s":["api"]},"h":112,"d":{"r":["$","$1","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"/urlet/_next/static/chunks/0kaqhrg-t9898.css","precedence":"next"}],["$","script","script-0",{"src":"/urlet/_next/static/chunks/0ogrtb7ke5i-2.js","async":true}],["$","script","script-1",{"src":"/urlet/_next/static/chunks/0xwf8sskyqr50.js","async":true}],["$","script","script-2",{"src":"/urlet/_next/static/chunks/41uhrw00nx-kf.js","async":true}],["$","script","script-3",{"src":"/urlet/_next/static/chunks/27vi-gkkp7gwj.js","async":true}]],["$","html",null,{"lang":"en","suppressHydrationWarning":true,"children":["$","body",null,{"className":"flex flex-col min-h-screen","children":["$","$Ld",null,{"i18n":{"locale":"en","defaultLanguage":"en","hideLocale":"never","translations":{"displayName":"English","search":"Search","searchNoResult":"No results","toc":"On this page","tocNoHeadings":"No headings","lastUpdate":"Last updated","chooseTheme":"Theme","chooseLanguage":"Language","nextPage":"Next","previousPage":"Previous","editOnGithub":"Edit on GitHub"},"locales":[{"locale":"en","name":"English"},{"locale":"zh-TW","name":"繁體中文"}]},"children":["$","$L3",null,{"parallelRouterKey":"children","template":["$","$L4",null,{}]}]}]}]}]]}],"p":"$@e","v":null,"s":"$7"},"c":"$Qf"}]]
+0:{"t":{"t":{"s":"","h":80,"d":{"r":["$","$1","c",{"children":[null,["$","$L3",null,{"parallelRouterKey":"children","template":["$","$L4",null,{}],"notFound":[[["$","title",null,{"children":"404: This page could not be found."}],["$","div",null,{"style":{"fontFamily":"system-ui,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif,\"Apple Color Emoji\",\"Segoe UI Emoji\"","height":"100vh","textAlign":"center","display":"flex","flexDirection":"column","alignItems":"center","justifyContent":"center"},"children":["$","div",null,{"children":[["$","style",null,{"dangerouslySetInnerHTML":{"__html":"body{color:#000;background:#fff;margin:0}.next-error-h1{border-right:1px solid rgba(0,0,0,.3)}@media (prefers-color-scheme:dark){body{color:#fff;background:#000}.next-error-h1{border-right:1px solid rgba(255,255,255,.3)}}"}}],["$","h1",null,{"className":"next-error-h1","style":{"display":"inline-block","margin":"0 20px 0 0","padding":"0 23px 0 0","fontSize":24,"fontWeight":500,"verticalAlign":"top","lineHeight":"49px"},"children":404}],["$","div",null,{"style":{"display":"inline-block"},"children":["$","h2",null,{"style":{"fontSize":14,"fontWeight":400,"lineHeight":"49px","margin":0},"children":"This page could not be found."}]}]]}]}]],[]]}]]}],"p":"$@5","v":"$6","s":"$7"},"c":"$Q8"},"h":{"r":["$","$1","h",{"children":[null,["$","$L1c",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","$L1e",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$18",null,{"name":"Next.Metadata","children":[]}]}],null]}],null]}],"p":"$@1f","v":null,"s":"$7"}},"a":"$@20","u":"$@21","b":"SSJOvbsfXSXnkTAFTNVjm"}
+19:null
+7:300
+21:true
+7:C
+20:0
+14:"$undefined"
+e:"$undefined"
+5:"$undefined"
+1f:"$undefined"
+1a:"$undefined"
