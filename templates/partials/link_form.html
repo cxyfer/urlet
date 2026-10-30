@@ -1,0 +1,271 @@
+{# 短網址新增／編輯共用表單（見 src/routes/pages/link_form.rs）。
+
+   第一眼只有目標網址與幾個基本欄位，其餘設定收在兩個展開區塊：
+   「詳細設定」（密碼、到期、點擊上限、轉址與中轉頁）與「SNS 預覽」。
+   儀表板、首頁公開表單與編輯懸浮窗都渲染這一份，欄位因此不會各自分歧。 #}
+{% let p = link_form.prefix %}
+<form method="post" action="{{ link_form.action }}" class="link-form" data-link-form
+      {% if link_form.multipart() %}enctype="multipart/form-data"{% endif %}>
+    {% if !link_form.error.is_empty() %}
+    <div class="alert alert-error" role="alert">{{ link_form.error }}</div>
+    {% endif %}
+    {% if !link_form.next.is_empty() %}<input type="hidden" name="next" value="{{ link_form.next }}">{% endif %}
+    {% if !link_form.notice.is_empty() %}<p class="hint">{{ lang.t(link_form.notice) }}</p>{% endif %}
+
+    <div class="form-grid link-form-basic">
+        <div class="field span-2">
+            <label class="label" for="{{ p }}target_url">{{ lang.t("dashboard.new.destination") }}</label>
+            <input class="input" type="text" id="{{ p }}target_url" name="target_url" value="{{ link_form.target_url }}"
+                   placeholder="{{ lang.t("dashboard.new.destination_placeholder") }}" required>
+            {% if !link_form.is_edit %}<span class="hint">{{ lang.t("dashboard.new.destination_hint") }}</span>{% endif %}
+        </div>
+        {% if link_form.show_domain %}
+        <div class="field">
+            <label class="label" for="{{ p }}domain">{{ lang.t("dashboard.new.domain") }}</label>
+            <select class="select" id="{{ p }}domain" name="domain">
+                {% for domain in link_form.domains %}
+                <option value="{{ domain.hostname }}" {% if domain.hostname == link_form.domain %}selected{% endif %}>{{ domain.hostname }}{% if domain.is_default %} · {{ lang.t("dashboard.new.domain_default") }}{% endif %}</option>
+                {% endfor %}
+            </select>
+            {% if link_form.is_edit %}
+            <span class="hint">{{ lang.t("url_detail.settings.domain_hint") }}</span>
+            {% else %}
+            <span class="hint">{{ lang.t("dashboard.new.domain_hint") }}</span>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% if link_form.show_slug %}
+        <div class="field">
+            {% if link_form.is_edit %}
+            <label class="label" for="{{ p }}slug">{{ lang.t("common.slug") }}</label>
+            {% else %}
+            <label class="label" for="{{ p }}slug">{{ lang.t("dashboard.new.slug") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
+            {% endif %}
+            <input class="input" type="text" id="{{ p }}slug" name="slug" maxlength="64" value="{{ link_form.slug }}"
+                   placeholder="{{ lang.t("dashboard.new.slug_placeholder") }}">
+            {% if link_form.is_edit %}
+            <span class="hint">{{ lang.t("url_detail.settings.slug_hint") }}</span>
+            {% else %}
+            <span class="hint">{{ lang.t("dashboard.new.slug_hint") }}</span>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% if link_form.show_title %}
+        <div class="field">
+            <label class="label" for="{{ p }}title">{{ lang.t("dashboard.new.title") }} <span class="muted">{{ lang.t("common.optional") }}</span></label>
+            <input class="input" type="text" id="{{ p }}title" name="title" maxlength="200" value="{{ link_form.title }}">
+        </div>
+        {% endif %}
+        {% if link_form.show_tags %}
+        <div class="field">
+            <label class="label" for="{{ p }}tags">{{ lang.t("dashboard.new.tags") }} <span class="muted">{{ lang.t("dashboard.new.tags_suffix") }}</span></label>
+            <input class="input" type="text" id="{{ p }}tags" name="tags" value="{{ link_form.tags }}"
+                   placeholder="{{ lang.t("dashboard.new.tags_placeholder") }}">
+        </div>
+        {% else if link_form.is_edit && !link_form.tags.is_empty() %}
+        <div class="field">
+            <span class="label">{{ lang.t("dashboard.new.tags") }}</span>
+            <label class="checkbox">
+                <input type="checkbox" name="clear_tags" value="on" {% if link_form.clear_tags %}checked{% endif %}>
+                {{ lang.t("url_detail.settings.remove_tags") }}
+            </label>
+            <span class="hint">{{ link_form.tags }}</span>
+        </div>
+        {% endif %}
+        {% if link_form.show_status %}
+        <div class="field">
+            <label class="label" for="{{ p }}status">{{ lang.t("common.status") }}</label>
+            <select class="select" id="{{ p }}status" name="status">
+                <option value="active" {% if link_form.status != "disabled" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
+                <option value="disabled" {% if link_form.status == "disabled" %}selected{% endif %}>{{ lang.t("common.disabled") }}</option>
+            </select>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if link_form.has_advanced() %}
+    <details class="advanced link-section" {% if link_form.advanced_open %}open{% endif %}>
+        <summary>
+            <span class="link-section-text">
+                <span class="link-section-title">{{ lang.t("link_form.advanced") }}</span>
+                <span class="link-section-sub">{{ lang.t("dashboard.advanced.summary") }}</span>
+            </span>
+            {% if !link_form.advanced_badges.is_empty() %}
+            <span class="link-section-badges">
+                {% for badge in link_form.advanced_badges %}<span class="badge">{{ badge }}</span>{% endfor %}
+            </span>
+            {% endif %}
+        </summary>
+        <div class="advanced-body">
+            <div class="form-grid">
+                {% if link_form.show_password %}
+                <div class="field">
+                    {% if link_form.is_edit %}
+                    <label class="label" for="{{ p }}password">{{ lang.t("url_detail.settings.new_password") }}</label>
+                    <input class="input" type="password" id="{{ p }}password" name="password"
+                           autocomplete="new-password" minlength="4" placeholder="{{ lang.t("url_detail.settings.password_placeholder") }}">
+                    {% if link_form.has_password %}
+                    <label class="checkbox">
+                        <input type="checkbox" name="clear_password" value="on" {% if link_form.clear_password %}checked{% endif %}>
+                        {{ lang.t("url_detail.settings.remove_password") }}
+                    </label>
+                    <span class="hint">{{ lang.t("url_detail.settings.password_protected") }}</span>
+                    {% endif %}
+                    {% else %}
+                    <label class="label" for="{{ p }}password">{{ lang.t("dashboard.advanced.link_password") }}</label>
+                    <input class="input" type="password" id="{{ p }}password" name="password"
+                           autocomplete="new-password" minlength="4">
+                    <span class="hint">{{ lang.t("dashboard.advanced.link_password_hint") }}</span>
+                    {% endif %}
+                </div>
+                {% else if link_form.has_password %}
+                <div class="field">
+                    <span class="label">{{ lang.t("url_detail.settings.new_password") }}</span>
+                    <label class="checkbox">
+                        <input type="checkbox" name="clear_password" value="on" {% if link_form.clear_password %}checked{% endif %}>
+                        {{ lang.t("url_detail.settings.remove_password") }}
+                    </label>
+                    <span class="hint">{{ lang.t("url_detail.settings.password_protected") }}</span>
+                </div>
+                {% endif %}
+
+                {% if link_form.show_expiry %}
+                <div class="field">
+                    <label class="label" for="{{ p }}expires_at">{{ lang.t("common.expires_at") }}</label>
+                    <input class="input" type="text" id="{{ p }}expires_at" name="expires_at" value="{{ link_form.expires_at }}"
+                           placeholder="{{ lang.t("common.password_placeholder") }}">
+                    {% if link_form.is_edit %}
+                    <label class="checkbox">
+                        <input type="checkbox" name="clear_expiry" value="on" {% if link_form.clear_expiry %}checked{% endif %}>
+                        {{ lang.t("url_detail.settings.no_expiry") }}
+                    </label>
+                    {% else %}
+                    <span class="hint">{{ lang.t("dashboard.advanced.expires_hint") }}</span>
+                    {% endif %}
+                </div>
+                {% else if link_form.is_edit && !link_form.expires_at.is_empty() %}
+                <div class="field">
+                    <span class="label">{{ lang.t("common.expires_at") }}</span>
+                    <p class="small">{{ link_form.expires_at }}</p>
+                    <label class="checkbox">
+                        <input type="checkbox" name="clear_expiry" value="on" {% if link_form.clear_expiry %}checked{% endif %}>
+                        {{ lang.t("url_detail.settings.no_expiry") }}
+                    </label>
+                </div>
+                {% endif %}
+
+                {% if link_form.show_max_clicks %}
+                <div class="field">
+                    <label class="label" for="{{ p }}max_clicks">{{ lang.t("dashboard.advanced.max_clicks") }}</label>
+                    <input class="input" type="number" id="{{ p }}max_clicks" name="max_clicks" min="1" value="{{ link_form.max_clicks }}">
+                    {% if link_form.is_edit %}
+                    <label class="checkbox">
+                        <input type="checkbox" name="clear_max_clicks" value="on" {% if link_form.clear_max_clicks %}checked{% endif %}>
+                        {{ lang.t("url_detail.settings.unlimited") }}
+                    </label>
+                    {% else %}
+                    <span class="hint">{{ lang.t("dashboard.advanced.max_clicks_hint") }}</span>
+                    {% endif %}
+                </div>
+                {% else if link_form.is_edit && !link_form.max_clicks.is_empty() %}
+                <div class="field">
+                    <span class="label">{{ lang.t("dashboard.advanced.max_clicks") }}</span>
+                    <p class="small">{{ link_form.max_clicks }}</p>
+                    <label class="checkbox">
+                        <input type="checkbox" name="clear_max_clicks" value="on" {% if link_form.clear_max_clicks %}checked{% endif %}>
+                        {{ lang.t("url_detail.settings.unlimited") }}
+                    </label>
+                </div>
+                {% endif %}
+
+                {% if link_form.show_redirect_type %}
+                <div class="field">
+                    <label class="label" for="{{ p }}redirect_type">{{ lang.t("dashboard.advanced.redirect_type") }}</label>
+                    <select class="select" id="{{ p }}redirect_type" name="redirect_type">
+                        <option value="302" {% if link_form.redirect_type == 302 %}selected{% endif %}>{{ lang.t("dashboard.redirect.302") }}{% if link_form.default_redirect_type == 302 %} · {{ lang.t("dashboard.redirect.instance_default") }}{% endif %}</option>
+                        <option value="301" {% if link_form.redirect_type == 301 %}selected{% endif %}>{{ lang.t("dashboard.redirect.301") }}{% if link_form.default_redirect_type == 301 %} · {{ lang.t("dashboard.redirect.instance_default") }}{% endif %}</option>
+                        <option value="307" {% if link_form.redirect_type == 307 %}selected{% endif %}>{{ lang.t("dashboard.redirect.307") }}{% if link_form.default_redirect_type == 307 %} · {{ lang.t("dashboard.redirect.instance_default") }}{% endif %}</option>
+                        <option value="308" {% if link_form.redirect_type == 308 %}selected{% endif %}>{{ lang.t("dashboard.redirect.308") }}{% if link_form.default_redirect_type == 308 %} · {{ lang.t("dashboard.redirect.instance_default") }}{% endif %}</option>
+                    </select>
+                </div>
+                {% endif %}
+
+                {% if link_form.show_redirect_mode %}
+                <div class="field">
+                    <label class="label" for="{{ p }}redirect_mode">{{ lang.t("dashboard.advanced.redirect_mode") }}</label>
+                    <select class="select" id="{{ p }}redirect_mode" name="redirect_mode" data-mode-select>
+                        {% if !link_form.mode_known %}
+                        <option value="" selected disabled>{{ lang.t("url_detail.settings.mode_unknown") }} ({{ link_form.redirect_mode }})</option>
+                        {% endif %}
+                        {% if link_form.allow_direct_mode %}
+                        <option value="direct" {% if link_form.redirect_mode == "direct" %}selected{% endif %}>{{ lang.t("dashboard.advanced.redirect_mode_direct") }}</option>
+                        {% endif %}
+                        {% if link_form.allow_splash_mode %}
+                        <option value="splash" {% if link_form.redirect_mode == "splash" %}selected{% endif %}>{{ lang.t("dashboard.advanced.redirect_mode_splash") }}</option>
+                        {% endif %}
+                    </select>
+                    {% if link_form.mode_locked %}
+                    <span class="hint">{{ lang.t("dashboard.advanced.redirect_mode_locked") }}</span>
+                    {% else %}
+                    <span class="hint">{{ lang.t("dashboard.advanced.redirect_mode_hint") }}</span>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+
+            {% if link_form.show_redirect_mode && link_form.allow_splash_mode %}
+            {# 中轉頁的設定只在選擇中轉頁時顯示（JS 切換）；無 JS 時一律顯示。 #}
+            <div class="form-grid link-form-splash" data-splash-fields>
+                <div class="field">
+                    <label class="label" for="{{ p }}splash_delay_seconds">{{ lang.t("dashboard.advanced.splash_delay") }}</label>
+                    <input class="input" type="number" id="{{ p }}splash_delay_seconds" name="splash_delay_seconds"
+                           min="1" max="60" value="{{ link_form.splash_delay_seconds }}">
+                    <span class="hint">{{ lang.t("dashboard.advanced.splash_delay_hint") }}</span>
+                </div>
+                <div class="field">
+                    <label class="label" for="{{ p }}splash_title">{{ lang.t("dashboard.advanced.splash_title") }}</label>
+                    <input class="input" type="text" id="{{ p }}splash_title" name="splash_title" maxlength="120"
+                           value="{{ link_form.splash_title }}" placeholder="{{ lang.t("dashboard.advanced.splash_title_placeholder") }}">
+                    <span class="hint">{{ lang.t("dashboard.advanced.splash_hint") }}</span>
+                </div>
+                <div class="field span-2">
+                    <label class="label" for="{{ p }}splash_message">{{ lang.t("dashboard.advanced.splash_message") }}</label>
+                    <textarea class="textarea" id="{{ p }}splash_message" name="splash_message" maxlength="500" rows="3"
+                              placeholder="{{ lang.t("dashboard.advanced.splash_message_placeholder") }}">{{ link_form.splash_message }}</textarea>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </details>
+    {% endif %}
+
+    {% match link_form.preview %}
+    {% when Some with (preview) %}
+    <details class="advanced link-section" data-preview-form {% if link_form.preview_open %}open{% endif %}>
+        <summary>
+            <span class="link-section-text">
+                <span class="link-section-title">{{ lang.t("preview.heading") }}</span>
+                <span class="link-section-sub">{{ lang.t("link_form.preview_sub") }}</span>
+            </span>
+            {% if !link_form.preview_badges.is_empty() %}
+            <span class="link-section-badges">
+                {% for badge in link_form.preview_badges %}<span class="badge">{{ badge }}</span>{% endfor %}
+            </span>
+            {% endif %}
+        </summary>
+        <div class="advanced-body">
+            {% include "partials/preview_fields.html" %}
+        </div>
+    </details>
+    {% when None %}
+    {% endmatch %}
+
+    {% if !link_form.is_edit %}{% include "partials/captcha.html" %}{% endif %}
+
+    <div class="form-actions">
+        {% if link_form.is_edit %}
+        <a class="btn btn-ghost" href="{{ link_form.action }}" data-link-dialog-close>{{ lang.t("common.cancel") }}</a>
+        {% endif %}
+        <button class="btn btn-primary" type="submit">{{ lang.t(link_form.submit_label) }}</button>
+    </div>
+</form>

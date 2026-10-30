@@ -530,15 +530,21 @@ async fn guest_links_are_labelled_and_the_account_is_protected() {
 async fn the_first_glance_is_destination_slug_and_button() {
     let app = TestApp::spawn().await;
     open_to_guests(&app).await;
+    set(&app, "public_allow_password", "true").await;
+    set(&app, "public_allow_expiry", "true").await;
 
     let page = app.get("/").await;
     let details = page
         .body
-        .find("class=\"advanced\"")
-        .expect("the more-options disclosure");
+        .find("class=\"advanced link-section\"")
+        .expect("the advanced settings disclosure");
+    // The same layout as the signed-in form: destination, slug and title
+    // first, the access and redirect options behind the disclosure.
+    assert!(app.state.settings.public_fields().title);
     for (id, name) in [
         ("public_target_url", "destination"),
         ("public_slug", "slug"),
+        ("public_title", "title"),
     ] {
         let at = page
             .body
@@ -546,14 +552,16 @@ async fn the_first_glance_is_destination_slug_and_button() {
             .unwrap_or_else(|| panic!("the {name} field is rendered"));
         assert!(at < details, "the {name} field is on the first glance");
     }
-    // Everything else is behind the disclosure, even though it is enabled.
-    assert!(app.state.settings.public_fields().title);
-    for id in ["public_title", "public_password", "public_expires_at"] {
-        if let Some(at) = page.body.find(&format!("id=\"{id}\"")) {
-            assert!(at > details, "{id} lives behind More options");
-        }
+    for id in ["public_password", "public_expires_at"] {
+        let at = page
+            .body
+            .find(&format!("id=\"{id}\""))
+            .unwrap_or_else(|| panic!("{id} is enabled"));
+        assert!(at > details, "{id} lives behind Advanced settings");
     }
-    assert!(page.body.contains("More options"));
+    assert!(page.body.contains("Advanced settings"));
+    // Guests own no link, so the public form has no SNS preview section.
+    assert!(!page.body.contains("name=\"preview_title\""));
 }
 
 #[tokio::test]

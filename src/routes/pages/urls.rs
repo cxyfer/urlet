@@ -9,6 +9,8 @@ use axum::Form;
 use serde::Deserialize;
 
 use crate::db::clicks::{self, Click, Dimension};
+use crate::db::url_previews::{Changes, Preview};
+use crate::db::users::User;
 use crate::db::{tags, urls};
 use crate::error::AppError;
 use crate::i18n::{self, Lang};
@@ -16,10 +18,12 @@ use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::routes::api_stats::{click_dto, summary_dto};
 use crate::routes::dto::{StatsSummaryDto, UrlDto};
 use crate::routes::pages::dashboard::{bar_rows, BarRow};
+use crate::routes::pages::link_form::{LinkForm, LinkSubmission, Submission};
 use crate::routes::pages::{
-    captcha_rejected, flash_from_query, redirect_err, redirect_ok, redirect_to_login, Chrome,
-    UrlRow,
+    captcha_rejected, flash_from_query, redirect_err, redirect_ok, redirect_to_login, safe_next,
+    Chrome, UrlRow,
 };
+use crate::routes::previews::{self, PreviewFields};
 use crate::services::captcha::CaptchaFlow;
 use crate::services::domain_policy;
 use crate::services::domains::DomainOption;
@@ -31,7 +35,6 @@ use crate::themed_page;
 
 #[derive(Debug)]
 pub struct UrlDetailPage {
-    pub preview: crate::routes::previews::FormView,
     pub site_name: String,
     pub chrome: Chrome,
     pub url: UrlRow,
@@ -43,29 +46,12 @@ pub struct UrlDetailPage {
     pub browsers: Vec<BarRow>,
     pub operating_systems: Vec<BarRow>,
     pub clicks: Vec<ClickRow>,
-    pub tags_csv: String,
     pub days: i64,
-    /// Domains selectable in the edit form.
-    pub domains: Vec<DomainOption>,
-    /// Hostname the link currently uses.
-    pub current_domain: String,
-    pub allow_custom_slug: bool,
-    pub allow_password: bool,
+    /// The quick "extend" actions follow the group's switches.
     pub allow_expiry: bool,
     pub allow_max_clicks: bool,
-    pub allow_tags: bool,
-    pub allow_domain_selection: bool,
-    /// `direct`, `splash` or `choice`: the group's redirect-mode policy.
-    pub redirect_mode_policy: String,
-    /// Whether the edit form may offer immediate redirects (the current mode is
-    /// always offered, so an existing link can keep it).
-    pub allow_direct_mode: bool,
-    /// Whether the edit form may offer the splash page.
-    pub allow_splash_mode: bool,
-    /// False when the stored mode is not `direct`/`splash`; the form then keeps
-    /// the raw value selected through a disabled placeholder instead of
-    /// silently rewriting it on the next save.
-    pub mode_known: bool,
+    /// Whether the link has a custom SNS preview.
+    pub has_preview: bool,
     /// Localised "30 days ago" label of the chart axis.
     pub days_label: String,
     /// Localised "42 clicks in this window; grey segments are bots" legend.
@@ -80,6 +66,28 @@ themed_page!(url_detail_templates, UrlDetailView, UrlDetailPage,
     Signal => "themes/signal/url_detail.html",
     Gilded => "themes/gilded/url_detail.html",
     Swiss => "themes/swiss/url_detail.html",
+);
+
+/// The link editor: the dialog loads this page, and it is the whole editor
+/// when JavaScript is unavailable.
+#[derive(Debug)]
+pub struct UrlEditPage {
+    pub site_name: String,
+    pub chrome: Chrome,
+    pub url: UrlRow,
+    pub link_form: LinkForm,
+    /// Always `None`: the shared form only shows bot protection when creating.
+    pub captcha: Option<crate::services::captcha::CaptchaWidget>,
+    pub lang: Lang,
+}
+
+themed_page!(url_edit_templates, UrlEditView, UrlEditPage,
+    Verdant => "url_edit.html",
+    Aurora => "themes/aurora/url_edit.html",
+    Paper => "themes/paper/url_edit.html",
+    Signal => "themes/signal/url_edit.html",
+    Gilded => "themes/gilded/url_edit.html",
+    Swiss => "themes/swiss/url_edit.html",
 );
 
 /// One row of the recent click log.
@@ -175,6 +183,12 @@ pub struct CreateForm {
     pub recaptcha_token: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct EditQuery {
+    #[serde(default)]
+    pub next: Option<String>,
+}
+
 /// Quick actions offered next to an expired or capped link (spec FR-EXP-3).
 #[derive(Debug, Deserialize)]
 pub struct ExtendForm {
@@ -184,8 +198,11 @@ pub struct ExtendForm {
     pub clicks: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct UpdateForm {
+    /// Page to return to after saving; see [`return_path`].
+    #[serde(default)]
+    pub next: Option<String>,
     #[serde(default)]
     pub target_url: Option<String>,
     #[serde(default)]
@@ -269,12 +286,16 @@ pub async fn create(
     State(state): State<AppState>,
     client: ClientInfo,
     MaybeUser(current): MaybeUser,
-    form: std::result::Result<Form<CreateForm>, FormRejection>,
+    Submission(submission): Submission<CreateForm>,
 ) -> Result<Response, AppError> {
     let Some(current) = current else {
         return Ok(redirect_to_login(Some("/app")).into_response());
     };
-    let Ok(Form(payload)) = form else {
+    let Ok(LinkSubmission {
+        form: payload,
+        preview,
+    }) = submission
+    else {
         return Ok(redirect_err("/app", "invalid").into_response());
     };
 
@@ -302,6 +323,14 @@ pub async fn create(
     {
         return Ok(redirect_err("/app", "captcha").into_response());
     }
+
+    // The preview is checked before the link exists, so a rejected image does
+    // not leave a half-configured link behind.
+    let preview_changes = match preview_changes(&state, &current.user, preview.as_ref(), None).await
+    {
+        Ok(changes) => changes,
+        Err(err) => return Ok(redirect_err("/app", preview_error_code(&err)).into_response()),
+    };
 
     let context = UrlContext {
         pool: &state.db,
@@ -344,13 +373,21 @@ pub async fn create(
         })
         .await;
 
-    Ok(match outcome {
-        Ok(url) => redirect_ok(&format!("/app/urls/{}", url.id), "created").into_response(),
-        Err(err) => redirect_err("/app", error_code(&err)).into_response(),
-    })
+    let url = match outcome {
+        Ok(url) => url,
+        Err(err) => return Ok(redirect_err("/app", error_code(&err)).into_response()),
+    };
+    let detail_page = format!("/app/urls/{}", url.id);
+    if let Some(changes) = preview_changes {
+        if let Err(err) = previews::save(&state, &current, url.id, changes).await {
+            return Ok(redirect_err(&detail_page, preview_error_code(&err)).into_response());
+        }
+    }
+    Ok(redirect_ok(&detail_page, "created").into_response())
 }
 
-/// `GET /app/urls/{id}`
+/// `GET /app/urls/{id}` — the link's statistics. Editing happens in the
+/// dialog (or on [`edit`] without JavaScript).
 pub async fn detail(
     State(state): State<AppState>,
     MaybeUser(current): MaybeUser,
@@ -396,45 +433,14 @@ pub async fn detail(
     let recent = clicks::recent_for_url(&state.db, url.id, 50, 0)
         .await
         .map_err(AppError::from)?;
-    let tag_names: Vec<String> = tags::for_url(&state.db, url.id)
-        .await
-        .map_err(AppError::from)?
-        .into_iter()
-        .map(|tag| tag.name)
-        .collect();
-
-    let current_domain = state.domain_hostname(url.domain_id);
-    let policy = domain_policy::effective(&state.db, &user).await?;
-    let mut domains = policy.options(&state.domains);
-    if !domains
-        .iter()
-        .any(|domain| domain.hostname == current_domain)
-    {
-        // Keep a link on a disabled domain editable without moving it.
-        domains.insert(
-            0,
-            DomainOption {
-                id: url.domain_id,
-                hostname: current_domain.clone(),
-                is_default: false,
-            },
-        );
-    }
-    let dto = UrlDto::new(
-        &url,
-        &current_domain,
-        &state.config.base_scheme,
-        tag_names.clone(),
-    );
+    let row = url_row(&state, &url).await?;
     let lang = i18n::current();
     let effective = crate::services::limits::effective(&state.db, &state.settings, &user).await?;
-    let mode_policy = effective.redirect_mode_policy;
-    let mode_known = matches!(url.redirect_mode.as_str(), "direct" | "splash");
-    let current_mode = crate::services::redirect_mode::RedirectMode::from_db(&url.redirect_mode);
     let daily_total: i64 = daily.iter().map(|point| point.clicks).sum();
-    let preview = crate::db::url_previews::find(&state.db, url.id).await?;
+    let has_preview = crate::db::url_previews::find(&state.db, url.id)
+        .await?
+        .is_some();
     let page = UrlDetailPage {
-        preview: crate::routes::previews::FormView::new(url.id, preview, &state),
         site_name: state.settings.site_name(),
         chrome: Chrome::new(
             &state,
@@ -442,7 +448,7 @@ pub async fn detail(
             "dashboard",
             flash_from_query(query.ok.as_deref(), query.err.as_deref()),
         ),
-        url: UrlRow::new(&dto),
+        url: row,
         summary: summary_dto(&summary),
         chart: chart::svg_bars(&daily),
         daily_total,
@@ -454,22 +460,10 @@ pub async fn detail(
             .iter()
             .map(|click| ClickRow::new(click, lang))
             .collect(),
-        tags_csv: tag_names.join(", "),
         days,
-        domains,
-        current_domain,
-        allow_custom_slug: effective.allow_custom_slug,
-        allow_password: effective.allow_password,
         allow_expiry: effective.allow_expiry,
         allow_max_clicks: effective.allow_max_clicks,
-        allow_tags: effective.allow_tags,
-        allow_domain_selection: policy.allow_selection,
-        redirect_mode_policy: mode_policy.as_str().to_string(),
-        allow_direct_mode: mode_policy.allows(crate::services::redirect_mode::RedirectMode::Direct)
-            || current_mode == crate::services::redirect_mode::RedirectMode::Direct,
-        allow_splash_mode: mode_policy.allows(crate::services::redirect_mode::RedirectMode::Splash)
-            || current_mode == crate::services::redirect_mode::RedirectMode::Splash,
-        mode_known,
+        has_preview,
         days_label: i18n::format(
             lang,
             "url_detail.chart.days_ago",
@@ -490,19 +484,211 @@ pub async fn detail(
     }
 }
 
+/// `GET /app/urls/{id}/edit`
+pub async fn edit(
+    State(state): State<AppState>,
+    MaybeUser(current): MaybeUser,
+    Path(id): Path<i64>,
+    Query(query): Query<EditQuery>,
+) -> Result<Response, AppError> {
+    let Some(current) = current else {
+        return Ok(redirect_to_login(Some(&format!("/app/urls/{id}/edit"))).into_response());
+    };
+    let next = return_path(query.next.as_deref()).unwrap_or_default();
+    render_editor(&state, &current.user, id, StatusCode::OK, |form| {
+        form.next = next;
+    })
+    .await
+}
+
+/// Render the link editor after a rejected submission. `adjust` puts the
+/// submitted values and the error back into the form.
+pub(crate) async fn render_edit(
+    state: &AppState,
+    user: &User,
+    id: i64,
+    adjust: impl FnOnce(&mut LinkForm),
+) -> Result<Response, AppError> {
+    render_editor(state, user, id, StatusCode::UNPROCESSABLE_ENTITY, adjust).await
+}
+
+async fn render_editor(
+    state: &AppState,
+    user: &User,
+    id: i64,
+    status: StatusCode,
+    adjust: impl FnOnce(&mut LinkForm),
+) -> Result<Response, AppError> {
+    let Some(url) = urls::find_owned(&state.db, id, user.id)
+        .await
+        .map_err(AppError::from)?
+    else {
+        return Ok(redirect_err("/app", "not_found").into_response());
+    };
+    let row = url_row(state, &url).await?;
+    let lang = i18n::current();
+    let current_domain = state.domain_hostname(url.domain_id);
+    let policy = domain_policy::effective(&state.db, user).await?;
+    let mut domains = policy.options(&state.domains);
+    if !domains
+        .iter()
+        .any(|domain| domain.hostname == current_domain)
+    {
+        // Keep a link on a disabled domain editable without moving it.
+        domains.insert(
+            0,
+            DomainOption {
+                id: url.domain_id,
+                hostname: current_domain.clone(),
+                is_default: false,
+            },
+        );
+    }
+    let effective = crate::services::limits::effective(&state.db, &state.settings, user).await?;
+    let preview = crate::db::url_previews::find(&state.db, url.id).await?;
+    let mut link_form = LinkForm::edit(
+        state,
+        &row,
+        current_domain,
+        domains,
+        &effective,
+        policy.allow_selection,
+        preview,
+        lang,
+    );
+    adjust(&mut link_form);
+    let page = UrlEditPage {
+        site_name: state.settings.site_name(),
+        chrome: Chrome::new(state, user, "dashboard", None),
+        url: row,
+        link_form,
+        captcha: None,
+        lang,
+    }
+    .themed();
+    match page.render() {
+        Ok(html) => Ok((status, Html(html)).into_response()),
+        Err(err) => Err(AppError::internal(format!("template error: {err}"))),
+    }
+}
+
+/// The page row of one stored link, with its tags.
+async fn url_row(state: &AppState, url: &urls::Url) -> Result<UrlRow, AppError> {
+    let tag_names: Vec<String> = tags::for_url(&state.db, url.id)
+        .await
+        .map_err(AppError::from)?
+        .into_iter()
+        .map(|tag| tag.name)
+        .collect();
+    let dto = UrlDto::new(
+        url,
+        &state.domain_hostname(url.domain_id),
+        &state.config.base_scheme,
+        tag_names,
+    );
+    Ok(UrlRow::new(&dto))
+}
+
+/// Where a saved edit returns to: a page of the signed-in app, never another
+/// site. Without one the editor returns to the link's statistics.
+fn return_path(next: Option<&str>) -> Option<String> {
+    safe_next(next)
+        .filter(|path| path == "/app" || path.starts_with("/app/") || path.starts_with("/app?"))
+}
+
+/// Validate the submitted preview section and drop it when it changes
+/// nothing, so saving a link does not rewrite an untouched preview.
+async fn preview_changes(
+    state: &AppState,
+    user: &User,
+    fields: Option<&PreviewFields>,
+    existing: Option<&Preview>,
+) -> Result<Option<Changes>, AppError> {
+    let Some(fields) = fields else {
+        return Ok(None);
+    };
+    if fields.image_mode == "upload" {
+        previews::upload_limit(state, user.id)?;
+    }
+    let changes = previews::form_changes(fields, state.settings.preview_image_policy()).await?;
+    Ok((!previews::is_noop(&changes, existing)).then_some(changes))
+}
+
+/// Flash code of a rejected preview on the create form, which redirects
+/// instead of re-rendering.
+fn preview_error_code(err: &AppError) -> &'static str {
+    match err {
+        AppError::RateLimited { .. } => "rate_limited",
+        err if previews::is_form_error(err) => match previews::error_key(err) {
+            "preview.error_policy" => "preview_policy",
+            "preview.error_title" => "preview_title",
+            "preview.error_description" => "preview_description",
+            "preview.error_url" => "preview_url",
+            _ => "preview_image",
+        },
+        _ => "invalid",
+    }
+}
+
+/// Put the submitted link values back into the editor after a rejection.
+fn retain_submission(form: &mut LinkForm, payload: &UpdateForm) {
+    fn set(target: &mut String, value: &Option<String>) {
+        if let Some(value) = value {
+            *target = value.clone();
+        }
+    }
+    set(&mut form.target_url, &payload.target_url);
+    set(&mut form.domain, &payload.domain);
+    set(&mut form.slug, &payload.slug);
+    set(&mut form.title, &payload.title);
+    set(&mut form.tags, &payload.tags);
+    set(&mut form.expires_at, &payload.expires_at);
+    set(&mut form.max_clicks, &payload.max_clicks);
+    set(
+        &mut form.splash_delay_seconds,
+        &payload.splash_delay_seconds,
+    );
+    set(&mut form.splash_title, &payload.splash_title);
+    set(&mut form.splash_message, &payload.splash_message);
+    set(&mut form.status, &payload.status);
+    if let Some(value) = payload
+        .redirect_mode
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        form.redirect_mode = value.to_string();
+    }
+    if let Some(value) = payload
+        .redirect_type
+        .as_deref()
+        .and_then(|value| value.trim().parse().ok())
+    {
+        form.redirect_type = value;
+    }
+    form.clear_password = checkbox(&payload.clear_password);
+    form.clear_expiry = checkbox(&payload.clear_expiry);
+    form.clear_max_clicks = checkbox(&payload.clear_max_clicks);
+    form.clear_tags = checkbox(&payload.clear_tags);
+    form.next = return_path(payload.next.as_deref()).unwrap_or_default();
+}
+
 /// `POST /app/urls/{id}`
 pub async fn update(
     State(state): State<AppState>,
     client: ClientInfo,
     MaybeUser(current): MaybeUser,
     Path(id): Path<i64>,
-    form: std::result::Result<Form<UpdateForm>, FormRejection>,
+    Submission(submission): Submission<UpdateForm>,
 ) -> Result<Response, AppError> {
     let Some(current) = current else {
         return Ok(redirect_to_login(Some(&format!("/app/urls/{id}"))).into_response());
     };
     let target_page = format!("/app/urls/{id}");
-    let Ok(Form(payload)) = form else {
+    let Ok(LinkSubmission {
+        form: payload,
+        preview,
+    }) = submission
+    else {
         return Ok(redirect_err(&target_page, "invalid").into_response());
     };
 
@@ -516,6 +702,62 @@ pub async fn update(
     let existing = match context.find_owned(id).await {
         Ok(url) => url,
         Err(_) => return Ok(redirect_err("/app", "not_found").into_response()),
+    };
+
+    // A rejected edit renders the editor again with the submitted values, so
+    // nothing has to be typed twice; the dialog shows it in place.
+    let reject_link = |code: &'static str| {
+        let message = flash_from_query(None, Some(code))
+            .map(|flash| flash.message)
+            .unwrap_or_default();
+        let advanced = matches!(code, "expiry" | "password_rules" | "mode_denied");
+        let payload = payload.clone();
+        let preview = preview.as_ref();
+        move |form: &mut LinkForm| {
+            retain_submission(form, &payload);
+            if let (Some(view), Some(fields)) = (form.preview.as_mut(), preview) {
+                view.retain(fields);
+            }
+            form.error = message;
+            form.advanced_open = advanced;
+        }
+    };
+    let reject_preview = |err: &AppError| {
+        let payload = payload.clone();
+        let preview = preview.as_ref();
+        let key = previews::error_key(err);
+        move |form: &mut LinkForm| {
+            retain_submission(form, &payload);
+            if let Some(view) = form.preview.as_mut() {
+                if let Some(fields) = preview {
+                    view.retain(fields);
+                }
+                view.reject(key);
+            }
+            form.preview_open = true;
+        }
+    };
+
+    let stored_preview = match preview {
+        Some(_) => crate::db::url_previews::find(&state.db, id).await?,
+        None => None,
+    };
+    let preview_changes = match preview_changes(
+        &state,
+        &current.user,
+        preview.as_ref(),
+        stored_preview.as_ref(),
+    )
+    .await
+    {
+        Ok(changes) => changes,
+        Err(err @ AppError::RateLimited { .. }) => {
+            return render_edit(&state, &current.user, id, reject_link(error_code(&err))).await
+        }
+        Err(err) if previews::is_form_error(&err) => {
+            return render_edit(&state, &current.user, id, reject_preview(&err)).await
+        }
+        Err(err) => return Err(err),
     };
 
     // The password field is empty by default: only touch it when a value was
@@ -543,7 +785,9 @@ pub async fn update(
     } else {
         match number_field(&payload.max_clicks, "max_clicks") {
             Ok(value) => value.map(Some),
-            Err(err) => return Ok(redirect_err(&target_page, error_code(&err)).into_response()),
+            Err(err) => {
+                return render_edit(&state, &current.user, id, reject_link(error_code(&err))).await
+            }
         }
     };
 
@@ -561,7 +805,7 @@ pub async fn update(
     ) {
         (Ok(redirect_type), Ok(splash_delay_seconds)) => (redirect_type, splash_delay_seconds),
         (Err(err), _) | (_, Err(err)) => {
-            return Ok(redirect_err(&target_page, error_code(&err)).into_response())
+            return render_edit(&state, &current.user, id, reject_link(error_code(&err))).await
         }
     };
 
@@ -569,9 +813,9 @@ pub async fn update(
         .update(
             &existing,
             UpdateInput {
-                target_url: payload.target_url,
-                domain: payload.domain,
-                slug: payload.slug,
+                target_url: payload.target_url.clone(),
+                domain: payload.domain.clone(),
+                slug: payload.slug.clone(),
                 title: Some(payload.title.clone()),
                 notes: payload.notes.as_ref().map(|_| payload.notes.clone()),
                 tags,
@@ -581,6 +825,7 @@ pub async fn update(
                 redirect_type,
                 redirect_mode: payload
                     .redirect_mode
+                    .clone()
                     .filter(|value| !value.trim().is_empty()),
                 splash_delay_seconds,
                 splash_title: payload
@@ -591,15 +836,26 @@ pub async fn update(
                     .splash_message
                     .as_ref()
                     .map(|_| payload.splash_message.clone()),
-                status: payload.status,
+                status: payload.status.clone(),
             },
         )
         .await;
+    if let Err(err) = outcome {
+        return render_edit(&state, &current.user, id, reject_link(error_code(&err))).await;
+    }
 
-    Ok(match outcome {
-        Ok(_) => redirect_ok(&target_page, "updated").into_response(),
-        Err(err) => redirect_err(&target_page, error_code(&err)).into_response(),
-    })
+    if let Some(changes) = preview_changes {
+        match previews::save(&state, &current, id, changes).await {
+            Ok(_) => {}
+            Err(err) if previews::is_form_error(&err) => {
+                return render_edit(&state, &current.user, id, reject_preview(&err)).await
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    let back = return_path(payload.next.as_deref()).unwrap_or(target_page);
+    Ok(redirect_ok(&back, "updated").into_response())
 }
 
 /// `POST /app/urls/{id}/delete`

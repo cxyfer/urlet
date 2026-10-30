@@ -887,6 +887,120 @@ footer.colophon .theme-menu {
     .form-dialog-body { padding: 1rem; }
 }
 
+/* ---------------------------------------------------------------------------
+   共用的短網址表單（新增、公開表單、編輯懸浮窗）。兩個展開區塊沿用各主題的
+   details.advanced 外觀，這裡只補上標題、說明與摘要徽章的排版，並以主題變數
+   搭配後備值，讓每個設計都能直接套用。 */
+.link-form > .link-section { margin-top: .9rem; }
+.link-form > .link-section + .link-section { margin-top: .6rem; }
+.link-section > summary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .45rem .7rem;
+}
+.link-section-text {
+    display: flex;
+    flex-direction: column;
+    gap: .12rem;
+    flex: 1 1 14rem;
+    min-width: 0;
+}
+.link-section-title { font-weight: 600; }
+.link-section-sub {
+    font-size: .8rem;
+    font-weight: 400;
+    opacity: .72;
+}
+.link-section-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .3rem;
+    justify-content: flex-end;
+}
+.link-form-splash {
+    margin-top: .2rem;
+    padding-top: .85rem;
+    border-top: 1px dashed var(--hairline, var(--line, rgb(127 127 127 / .28)));
+}
+[data-splash-fields][hidden] { display: none; }
+.link-form > .alert { margin-bottom: 1rem; }
+
+/* 編輯懸浮窗比群組表單窄一些：欄位最多兩欄，太寬反而難讀。手機版維持滿版。 */
+@media (min-width: 701px) {
+    .link-dialog { width: min(46rem, calc(100vw - 2rem)); }
+}
+
+/* 編輯器底部的刪除區。 */
+.danger-zone {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: .75rem 1rem;
+    margin-top: 1.4rem;
+    padding: .85rem 1rem;
+    border: 1px solid color-mix(in srgb, var(--danger, #b4483c) 35%, transparent);
+    border-radius: var(--r-md, .75rem);
+    background: color-mix(in srgb, var(--danger, #b4483c) 6%, transparent);
+}
+.danger-zone-text {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+    min-width: 0;
+}
+.danger-zone-text .hint { margin: 0; }
+.danger-zone form { margin: 0; }
+
+/* 統計頁的設定摘要。 */
+.page-subtitle {
+    margin: .15rem 0 .55rem;
+    opacity: .78;
+    overflow-wrap: anywhere;
+}
+/* 以 flex 換行而非 grid：最後一列的格子會自動撐滿，不會留下空白格。 */
+.link-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px;
+    margin: 0 0 1.2rem;
+    padding: 0;
+    border: 1px solid var(--hairline, var(--line, rgb(127 127 127 / .28)));
+    border-radius: var(--r-md, .75rem);
+    background: var(--hairline, var(--line, rgb(127 127 127 / .28)));
+    overflow: hidden;
+}
+.link-fact {
+    flex: 1 1 9.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+    min-width: 0;
+    margin: 0;
+    padding: .7rem .9rem;
+    background: var(--surface, var(--paper-2, var(--bg-1, #fff)));
+}
+.link-fact-wide { flex-basis: 100%; }
+.link-fact dt { margin: 0; }
+.link-fact dd {
+    margin: 0;
+    min-width: 0;
+    font-size: .9rem;
+    overflow-wrap: anywhere;
+}
+.link-fact dd a.truncate {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.link-fact-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25rem;
+}
+
 /* 主題的 .field display 不得蓋過預覽來源欄位的 hidden 狀態。 */
 [data-preview-input][hidden] {
   display: none;

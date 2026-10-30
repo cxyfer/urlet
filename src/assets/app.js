@@ -288,7 +288,21 @@
             setBusy(false);
         }
 
+        /* Carry the page the dialog was opened from, so a saved edit returns
+           there instead of to the form's default page. The banner of the
+           previous submission is dropped so it is not shown twice. */
+        function withNext(url) {
+            if (!config.carryNext || url.indexOf("next=") !== -1) { return url; }
+            var params = new URLSearchParams(window.location.search);
+            params.delete("ok");
+            params.delete("err");
+            var query = params.toString();
+            var next = window.location.pathname + (query ? "?" + query : "");
+            return url + (url.indexOf("?") === -1 ? "?" : "&") + "next=" + encodeURIComponent(next);
+        }
+
         function open(url) {
+            url = withNext(url);
             sequence += 1;
             var ticket = sequence;
             if (!dialog.open) { dialog.showModal(); }
@@ -546,8 +560,11 @@
     });
 
     /* 預覽來源只啟用對應欄位；無 JS 時仍可明確選擇來源並提交。 */
-    document.querySelectorAll("[data-preview-form]").forEach(function (form) {
+    function initPreviewForm(form) {
+        if (form.hasAttribute("data-preview-ready")) { return; }
+        form.setAttribute("data-preview-ready", "");
         var source = form.querySelector("[data-preview-source]");
+        if (!source) { return; }
         function updatePreviewSource() {
             form.querySelectorAll("[data-preview-input]").forEach(function (group) {
                 var active = group.getAttribute("data-preview-input") === source.value;
@@ -559,6 +576,41 @@
         }
         source.addEventListener("change", updatePreviewSource);
         updatePreviewSource();
+    }
+
+    /* 中轉頁的倒數與文案只在選擇中轉頁時顯示。隱藏的欄位照常送出，
+       切回直接跳轉再切回來時先前輸入的文案仍在。 */
+    function initSplashFields(form) {
+        if (form.hasAttribute("data-splash-ready")) { return; }
+        form.setAttribute("data-splash-ready", "");
+        var select = form.querySelector("[data-mode-select]");
+        var fields = form.querySelector("[data-splash-fields]");
+        if (!select || !fields) { return; }
+        function refresh() {
+            fields.hidden = select.value !== "splash";
+        }
+        select.addEventListener("change", refresh);
+        refresh();
+    }
+
+    function initLinkForms(root) {
+        root.querySelectorAll("[data-preview-form]").forEach(initPreviewForm);
+        root.querySelectorAll("form[data-link-form]").forEach(initSplashFields);
+    }
+
+    initLinkForms(document);
+
+    initFormDialog({
+        root: "[data-link-dialog-root]",
+        open: "data-link-dialog",
+        close: "data-link-dialog-close",
+        body: "[data-link-dialog-body]",
+        heading: "#link-dialog-title",
+        panel: "[data-link-form-panel]",
+        form: "form[data-link-form]",
+        multipart: true,
+        carryNext: true,
+        enhance: initLinkForms
     });
 
     /* Dismiss alerts after a while so success banners do not pile up. */

@@ -890,5 +890,22 @@
   "admin.settings.public_period.hour": "每小时",
   "admin.settings.public_period.day": "每日",
   "admin.settings.public_period.week": "每周",
-  "admin.settings.public_period.month": "每月"
+  "admin.settings.public_period.month": "每月",
+  "link_form.advanced": "详细设置",
+  "link_form.preview_sub": "分享到社交平台时显示的标题、说明与图片",
+  "link_form.badge.password": "密码保护",
+  "link_form.badge.expires": "{when}到期",
+  "link_form.badge.max_clicks": "上限 {count} 次",
+  "link_form.badge.preview_text": "自定义文字",
+  "link_form.badge.preview_image": "图片",
+  "url_edit.heading": "编辑短网址",
+  "url_edit.back": "返回统计",
+  "url_edit.danger_heading": "删除这个短网址",
+  "url_edit.danger_hint": "短网址名称会保留，统计数据也不会删除。",
+  "url_detail.edit": "编辑设置",
+  "url_detail.facts.access": "访问",
+  "url_detail.facts.public": "公开",
+  "url_detail.facts.preview_custom": "已自定义",
+  "url_detail.facts.preview_default": "默认",
+  "dashboard.table.stats": "统计"
 }

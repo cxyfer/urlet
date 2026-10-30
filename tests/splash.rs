@@ -297,7 +297,7 @@ async fn an_unknown_stored_mode_falls_back_to_direct_and_the_form_preserves_it()
     );
 
     // The edit form exposes the raw value and does not preselect direct.
-    let page = app.get_as(&format!("/app/urls/{id}"), &cookie).await;
+    let page = app.get_as(&format!("/app/urls/{id}/edit"), &cookie).await;
     assert_eq!(page.status, StatusCode::OK, "{}", page.body);
     assert!(page.body.contains("Unrecognised mode"));
     assert!(page.body.contains("(legacy)"));
@@ -591,7 +591,8 @@ async fn a_direct_only_group_blocks_splash_creation_but_keeps_existing_links() {
         .await;
     assert_eq!(refused.status, StatusCode::FORBIDDEN, "{}", refused.body);
 
-    // A crafted browser form gets the same refusal and a localised flash code.
+    // A crafted browser form gets the same refusal, rendered back into the
+    // editor with a localised message and the submitted values.
     let refused_form = app
         .send(post_form_as(
             &format!("/app/urls/{legacy_id}"),
@@ -599,10 +600,20 @@ async fn a_direct_only_group_blocks_splash_creation_but_keeps_existing_links() {
             &member_cookie,
         ))
         .await;
-    assert_eq!(refused_form.status, StatusCode::SEE_OTHER);
-    assert_eq!(
-        refused_form.header("location").as_deref(),
-        Some(format!("/app/urls/{legacy_id}?err=mode_denied").as_str())
+    assert_eq!(refused_form.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        refused_form.body.contains("data-link-form-panel"),
+        "{}",
+        refused_form.body
+    );
+    assert!(refused_form
+        .body
+        .contains("value=\"https://example.com/legacy\""));
+    let mode_denied = urlet::i18n::Lang::En.t("flash.err.mode_denied");
+    assert!(
+        refused_form.body.contains(mode_denied),
+        "{}",
+        refused_form.body
     );
 
     // The browser form hides the blocked option.
@@ -722,10 +733,12 @@ async fn the_web_form_creates_a_splash_link_and_the_group_form_sets_the_policy()
     assert!(page.body.contains("Welcome aboard"));
     assert!(page.body.contains("Redirecting in 9 seconds"));
 
-    let detail = app.get_as(&format!("/app/urls/{id}"), &member_cookie).await;
-    assert_eq!(detail.status, StatusCode::OK, "{}", detail.body);
-    assert!(detail.body.contains("Launch day"));
-    assert!(detail.body.contains("value=\"9\""));
+    let editor = app
+        .get_as(&format!("/app/urls/{id}/edit"), &member_cookie)
+        .await;
+    assert_eq!(editor.status, StatusCode::OK, "{}", editor.body);
+    assert!(editor.body.contains("Launch day"));
+    assert!(editor.body.contains("value=\"9\""));
 
     // The admin group form stores the policy too.
     let group = app

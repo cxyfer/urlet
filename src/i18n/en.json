@@ -890,5 +890,22 @@
   "admin.settings.public_period.hour": "Every hour",
   "admin.settings.public_period.day": "Every day",
   "admin.settings.public_period.week": "Every week",
-  "admin.settings.public_period.month": "Every month"
+  "admin.settings.public_period.month": "Every month",
+  "link_form.advanced": "Advanced settings",
+  "link_form.preview_sub": "Title, description and image shown when the link is shared",
+  "link_form.badge.password": "Password protected",
+  "link_form.badge.expires": "Expires {when}",
+  "link_form.badge.max_clicks": "Up to {count} clicks",
+  "link_form.badge.preview_text": "Custom text",
+  "link_form.badge.preview_image": "Image",
+  "url_edit.heading": "Edit link",
+  "url_edit.back": "Back to statistics",
+  "url_edit.danger_heading": "Delete this link",
+  "url_edit.danger_hint": "The slug stays reserved and the statistics are kept.",
+  "url_detail.edit": "Edit settings",
+  "url_detail.facts.access": "Access",
+  "url_detail.facts.public": "Open to everyone",
+  "url_detail.facts.preview_custom": "Customised",
+  "url_detail.facts.preview_default": "Default",
+  "dashboard.table.stats": "Stats"
 }

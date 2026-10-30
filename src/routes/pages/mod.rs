@@ -11,6 +11,7 @@ pub mod auth;
 pub mod dashboard;
 pub mod home;
 pub mod invites;
+pub mod link_form;
 pub mod themed;
 pub mod urls;
 
@@ -143,6 +144,13 @@ pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
             "password_rules" => "flash.err.password_rules",
             "tags" => "flash.err.tags",
             "captcha" => "flash.err.captcha",
+            // A rejected SNS preview on the create form reuses the messages
+            // the editor shows next to the preview fields.
+            "preview_policy" => "preview.error_policy",
+            "preview_title" => "preview.error_title",
+            "preview_description" => "preview.error_description",
+            "preview_url" => "preview.error_url",
+            "preview_image" => "preview.error_image",
             "theme" => "flash.err.theme",
             "theme_upload" => "flash.err.theme_upload",
             "theme_failed" => "flash.err.theme_failed",
@@ -438,8 +446,21 @@ pub fn router() -> Router<AppState> {
             get(auth::register_page).post(auth::register_submit),
         )
         .route("/logout", post(auth::logout))
-        .route("/urls", post(urls::create))
-        .route("/urls/{id}", get(urls::detail).post(urls::update))
+        .route(
+            "/urls",
+            post(urls::create).layer(DefaultBodyLimit::max(
+                crate::services::url_preview::MAX_BODY_BYTES,
+            )),
+        )
+        .route(
+            "/urls/{id}",
+            get(urls::detail)
+                .post(urls::update)
+                .layer(DefaultBodyLimit::max(
+                    crate::services::url_preview::MAX_BODY_BYTES,
+                )),
+        )
+        .route("/urls/{id}/edit", get(urls::edit))
         .route("/urls/{id}/delete", post(urls::delete))
         .route(
             "/urls/{id}/preview",

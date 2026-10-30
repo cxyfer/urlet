@@ -3,6 +3,7 @@
     <div class="page-head-main">
         <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ lang.t("nav.links") }}</span>
         <h1 class="page-title mono">{{ url.slug }}</h1>
+        {% match url.title %}{% when Some with (title) %}<p class="page-subtitle">{{ title }}</p>{% when None %}{% endmatch %}
         <div class="slug-bar">
             <span class="slug-value" id="short-url">{{ url.short_url }}</span>
             <button class="btn btn-sm btn-sage" type="button" data-copy="#short-url">{{ lang.t("common.copy") }}</button>
@@ -12,9 +13,49 @@
     <div class="page-head-side">
         <span class="badge {{ url.state_class }}">{{ url.state_label }}</span>
         {% if url.is_splash %}<span class="badge">{{ lang.t("url.mode.splash") }}</span>{% endif %}
+        <a class="btn btn-primary" href="/app/urls/{{ url.id }}/edit"
+           data-link-dialog aria-haspopup="dialog">{{ lang.t("url_detail.edit") }}</a>
         <a class="btn btn-ghost" href="/app">{{ lang.t("url_detail.back") }}</a>
     </div>
 </div>
+
+{# 設定摘要：不用打開編輯器就能看到連結目前的狀態。 #}
+<dl class="link-facts">
+    <div class="link-fact link-fact-wide">
+        <dt class="label">{{ lang.t("common.destination") }}</dt>
+        <dd><a class="truncate" href="{{ url.target_url }}" title="{{ url.target_url }}" target="_blank" rel="noopener noreferrer">{{ url.target_display }}</a></dd>
+    </div>
+    <div class="link-fact">
+        <dt class="label">{{ lang.t("common.created") }}</dt>
+        <dd>{{ url.created_human }}</dd>
+    </div>
+    <div class="link-fact">
+        <dt class="label">{{ lang.t("common.expiry") }}</dt>
+        <dd>{% match url.expires_human %}{% when Some with (human) %}{{ human }}{% when None %}<span class="muted">{{ lang.t("common.never") }}</span>{% endmatch %}</dd>
+    </div>
+    <div class="link-fact">
+        <dt class="label">{{ lang.t("dashboard.advanced.max_clicks") }}</dt>
+        <dd>{% match url.max_clicks %}{% when Some with (limit) %}{{ url.click_count }} / {{ limit }}{% when None %}<span class="muted">{{ lang.t("common.unlimited") }}</span>{% endmatch %}</dd>
+    </div>
+    <div class="link-fact">
+        <dt class="label">{{ lang.t("dashboard.advanced.redirect_type") }}</dt>
+        <dd>{{ url.redirect_type }} · {% if url.is_splash %}{{ lang.t("url.mode.splash") }}{% else %}{{ lang.t("dashboard.advanced.redirect_mode_direct") }}{% endif %}</dd>
+    </div>
+    <div class="link-fact">
+        <dt class="label">{{ lang.t("url_detail.facts.access") }}</dt>
+        <dd>{% if url.has_password %}{{ lang.t("link_form.badge.password") }}{% else %}<span class="muted">{{ lang.t("url_detail.facts.public") }}</span>{% endif %}</dd>
+    </div>
+    <div class="link-fact">
+        <dt class="label">{{ lang.t("preview.heading") }}</dt>
+        <dd>{% if has_preview %}{{ lang.t("url_detail.facts.preview_custom") }}{% else %}<span class="muted">{{ lang.t("url_detail.facts.preview_default") }}</span>{% endif %}</dd>
+    </div>
+    {% if url.tags.len() > 0 %}
+    <div class="link-fact">
+        <dt class="label">{{ lang.t("dashboard.new.tags") }}</dt>
+        <dd class="link-fact-tags">{% for item in url.tags %}<span class="badge">{{ item }}</span>{% endfor %}</dd>
+    </div>
+    {% endif %}
+</dl>
 
 <div class="stat-grid">
     <div class="stat">
@@ -172,201 +213,6 @@
     </div>
 </div>
 
-<div class="panel">
-    <div class="panel-head">
-        <h2>{{ lang.t("url_detail.settings.heading") }}</h2>
-        <span class="panel-sub" aria-hidden="true">CFG / 06</span>
-    </div>
-    <form method="post" action="/app/urls/{{ url.id }}">
-        {% if !allow_custom_slug || !allow_password || !allow_expiry || !allow_max_clicks || !allow_tags || !allow_domain_selection || redirect_mode_policy != "choice" %}
-        <p class="hint">{{ lang.t("url_detail.settings.restricted") }}</p>
-        {% endif %}
-        <div class="form-grid">
-            <div class="field">
-                <label class="label" for="target_url">{{ lang.t("dashboard.new.destination") }}</label>
-                <input class="input" type="text" id="target_url" name="target_url" value="{{ url.target_url }}" required>
-            </div>
-            {% if allow_domain_selection %}
-            <div class="field">
-                <label class="label" for="domain">{{ lang.t("url_detail.settings.domain") }}</label>
-                <select class="select" id="domain" name="domain">
-                    {% for domain in domains %}
-                    <option value="{{ domain.hostname }}" {% if domain.hostname == current_domain %}selected{% endif %}>{{ domain.hostname }}</option>
-                    {% endfor %}
-                </select>
-                <span class="hint">{{ lang.t("url_detail.settings.domain_hint") }}</span>
-            </div>
-            {% endif %}
-            {% if allow_custom_slug %}
-            <div class="field">
-                <label class="label" for="slug">{{ lang.t("common.slug") }}</label>
-                <input class="input" type="text" id="slug" name="slug" value="{{ url.slug }}" maxlength="64">
-                <span class="hint">{{ lang.t("url_detail.settings.slug_hint") }}</span>
-            </div>
-            {% endif %}
-            <div class="field">
-                <label class="label" for="title">{{ lang.t("dashboard.new.title") }}</label>
-                <input class="input" type="text" id="title" name="title" maxlength="200"
-                       value="{% match url.title %}{% when Some with (title) %}{{ title }}{% when None %}{% endmatch %}">
-            </div>
-            {% if allow_tags %}
-            <div class="field">
-                <label class="label" for="tags">{{ lang.t("dashboard.new.tags") }}</label>
-                <input class="input" type="text" id="tags" name="tags" value="{{ tags_csv }}">
-            </div>
-            {% else %}
-            {% if url.tags.len() > 0 %}
-            <div class="field">
-                <label class="label">{{ lang.t("dashboard.new.tags") }}</label>
-                <label class="checkbox">
-                    <input type="checkbox" name="clear_tags" value="on">
-                    {{ lang.t("url_detail.settings.remove_tags") }}
-                </label>
-                <span class="hint">{{ tags_csv }}</span>
-            </div>
-            {% endif %}
-            {% endif %}
-        </div>
-
-        <div class="form-grid">
-            {% if allow_password %}
-            <div class="field">
-                <label class="label" for="password">{{ lang.t("url_detail.settings.new_password") }}</label>
-                <input class="input" type="password" id="password" name="password"
-                       autocomplete="new-password" minlength="4" placeholder="{{ lang.t("url_detail.settings.password_placeholder") }}">
-                <label class="checkbox">
-                    <input type="checkbox" name="clear_password" value="on">
-                    {{ lang.t("url_detail.settings.remove_password") }}
-                </label>
-                {% if url.has_password %}<span class="hint">{{ lang.t("url_detail.settings.password_protected") }}</span>{% endif %}
-            </div>
-            {% else %}
-            {% if url.has_password %}
-            <div class="field">
-                <label class="label">{{ lang.t("url_detail.settings.new_password") }}</label>
-                <label class="checkbox">
-                    <input type="checkbox" name="clear_password" value="on">
-                    {{ lang.t("url_detail.settings.remove_password") }}
-                </label>
-                <span class="hint">{{ lang.t("url_detail.settings.password_protected") }}</span>
-            </div>
-            {% endif %}
-            {% endif %}
-            {% if allow_expiry %}
-            <div class="field">
-                <label class="label" for="expires_at">{{ lang.t("common.expires_at") }}</label>
-                <input class="input" type="text" id="expires_at" name="expires_at"
-                       value="{% match url.expires_at %}{% when Some with (value) %}{{ value }}{% when None %}{% endmatch %}"
-                       placeholder="{{ lang.t("common.password_placeholder") }}">
-                <label class="checkbox">
-                    <input type="checkbox" name="clear_expiry" value="on">
-                    {{ lang.t("url_detail.settings.no_expiry") }}
-                </label>
-            </div>
-            {% else %}
-            {% match url.expires_at %}
-            {% when Some with (value) %}
-            <div class="field">
-                <label class="label">{{ lang.t("common.expires_at") }}</label>
-                <p class="small">{{ value }}</p>
-                <label class="checkbox">
-                    <input type="checkbox" name="clear_expiry" value="on">
-                    {{ lang.t("url_detail.settings.no_expiry") }}
-                </label>
-            </div>
-            {% when None %}{% endmatch %}
-            {% endif %}
-            {% if allow_max_clicks %}
-            <div class="field">
-                <label class="label" for="max_clicks">{{ lang.t("dashboard.advanced.max_clicks") }}</label>
-                <input class="input" type="number" id="max_clicks" name="max_clicks" min="1"
-                       value="{% match url.max_clicks %}{% when Some with (limit) %}{{ limit }}{% when None %}{% endmatch %}">
-                <label class="checkbox">
-                    <input type="checkbox" name="clear_max_clicks" value="on">
-                    {{ lang.t("url_detail.settings.unlimited") }}
-                </label>
-            </div>
-            {% else %}
-            {% match url.max_clicks %}
-            {% when Some with (limit) %}
-            <div class="field">
-                <label class="label">{{ lang.t("dashboard.advanced.max_clicks") }}</label>
-                <p class="small">{{ limit }}</p>
-                <label class="checkbox">
-                    <input type="checkbox" name="clear_max_clicks" value="on">
-                    {{ lang.t("url_detail.settings.unlimited") }}
-                </label>
-            </div>
-            {% when None %}{% endmatch %}
-            {% endif %}
-            <div class="field">
-                <label class="label" for="redirect_type">{{ lang.t("dashboard.advanced.redirect_type") }}</label>
-                <select class="select" id="redirect_type" name="redirect_type">
-                    <option value="302" {% if url.redirect_type == 302 %}selected{% endif %}>{{ lang.t("dashboard.redirect.302") }}</option>
-                    <option value="301" {% if url.redirect_type == 301 %}selected{% endif %}>{{ lang.t("dashboard.redirect.301") }}</option>
-                    <option value="307" {% if url.redirect_type == 307 %}selected{% endif %}>{{ lang.t("dashboard.redirect.307") }}</option>
-                    <option value="308" {% if url.redirect_type == 308 %}selected{% endif %}>{{ lang.t("dashboard.redirect.308") }}</option>
-                </select>
-                <label class="label" for="status">{{ lang.t("common.status") }}</label>
-                <select class="select" id="status" name="status">
-                    <option value="active" {% if url.state != "disabled" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
-                    <option value="disabled" {% if url.state == "disabled" %}selected{% endif %}>{{ lang.t("common.disabled") }}</option>
-                </select>
-            </div>
-            <div class="field">
-                <label class="label" for="redirect_mode">{{ lang.t("dashboard.advanced.redirect_mode") }}</label>
-                <select class="select" id="redirect_mode" name="redirect_mode">
-                    {% if !mode_known %}
-                    <option value="" selected disabled>{{ lang.t("url_detail.settings.mode_unknown") }} ({{ url.redirect_mode }})</option>
-                    {% endif %}
-                    {% if allow_direct_mode %}
-                    <option value="direct" {% if url.redirect_mode == "direct" %}selected{% endif %}>{{ lang.t("dashboard.advanced.redirect_mode_direct") }}</option>
-                    {% endif %}
-                    {% if allow_splash_mode %}
-                    <option value="splash" {% if url.redirect_mode == "splash" %}selected{% endif %}>{{ lang.t("dashboard.advanced.redirect_mode_splash") }}</option>
-                    {% endif %}
-                </select>
-                {% if redirect_mode_policy == "choice" %}
-                <span class="hint">{{ lang.t("dashboard.advanced.redirect_mode_hint") }}</span>
-                {% else %}
-                <span class="hint">{{ lang.t("dashboard.advanced.redirect_mode_locked") }}</span>
-                {% endif %}
-            </div>
-            {% if allow_splash_mode %}
-            <div class="field">
-                <label class="label" for="splash_delay_seconds">{{ lang.t("dashboard.advanced.splash_delay") }}</label>
-                <input class="input" type="number" id="splash_delay_seconds" name="splash_delay_seconds"
-                       min="1" max="60" value="{{ url.splash_delay_seconds }}">
-                <span class="hint">{{ lang.t("dashboard.advanced.splash_delay_hint") }}</span>
-            </div>
-            <div class="field">
-                <label class="label" for="splash_title">{{ lang.t("dashboard.advanced.splash_title") }}</label>
-                <input class="input" type="text" id="splash_title" name="splash_title" maxlength="120"
-                       value="{{ url.splash_title }}" placeholder="{{ lang.t("dashboard.advanced.splash_title_placeholder") }}">
-                <span class="hint">{{ lang.t("dashboard.advanced.splash_hint") }}</span>
-            </div>
-            <div class="field">
-                <label class="label" for="splash_message">{{ lang.t("dashboard.advanced.splash_message") }}</label>
-                <textarea class="textarea" id="splash_message" name="splash_message" maxlength="500" rows="3"
-                          placeholder="{{ lang.t("dashboard.advanced.splash_message_placeholder") }}">{{ url.splash_message }}</textarea>
-            </div>
-            {% endif %}
-        </div>
-
-        <div class="form-actions">
-            <button class="btn btn-primary" type="submit">{{ lang.t("url_detail.save") }}</button>
-        </div>
-    </form>
-
-    <div class="section-rule"></div>
-    <form method="post" action="/app/urls/{{ url.id }}/delete" class="row row-end">
-        <button class="btn btn-danger" type="submit"
-                data-confirm="{{ lang.t("url_detail.delete_confirm") }}">
-            {{ lang.t("url_detail.delete") }}
-        </button>
-    </form>
-</div>
-
 <div class="panel panel-flush">
     <div class="table-toolbar">
         <h2>{{ lang.t("url_detail.clicks.heading") }}</h2>
@@ -396,5 +242,5 @@
     <p class="empty">{{ lang.t("dashboard.chart.empty") }}</p>
     {% endif %}
 </div>
-{% include "partials/preview_form.html" %}
+{% include "partials/link_dialog.html" %}
 {% endmacro %}

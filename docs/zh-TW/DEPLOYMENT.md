@@ -379,7 +379,7 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 | 使用者填完驗證碼仍無法註冊或登入 | token 解出的主機名稱不被 urlet 接受：請把它加入 `URLET_CAPTCHA_ALLOWED_HOSTNAMES`（`WARN` 日誌會列出回報的 hostname 與目前接受的候選清單） |
 | 忘記管理員密碼後想用 Token 存取 | 重設密碼會撤銷該帳號所有 API Token（安全性設計），請重新建立 |
 | 忘記管理員密碼 | 啟動時的 bootstrap 必須 `URLET_ADMIN_EMAIL` 與 `URLET_ADMIN_PASSWORD` **兩者皆非空**才會執行；對已存在的帳號只會提權，**不會**變更密碼（密碼僅在帳號不存在時使用）。救援方式：把 `URLET_ADMIN_EMAIL` 指向另一個你仍登得入的帳號（`URLET_ADMIN_PASSWORD` 隨便填一個非空值即可讓 bootstrap 執行），重啟後以該帳號登入；或直接用 `sqlite3` 覆寫密碼雜湊 |
-| 短網址已過期想復原 | 到 `/app/urls/{id}` 清除或延長到期時間；資料未被刪除 |
+| 短網址已過期想復原 | 到 `/app/urls/{id}` 延長，或在「編輯設定」中清除到期時間；資料未被刪除 |
 | 刪除短網址後想重用同一個 slug | 刻意不允許（避免舊連結被劫持）；請改用新 slug |
 
 ## 13. 安全檢查清單

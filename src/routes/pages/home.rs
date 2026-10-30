@@ -19,11 +19,11 @@ use crate::error::AppError;
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::MaybeUser;
 use crate::middleware::domain::HostContext;
+use crate::routes::pages::link_form::LinkForm;
 use crate::routes::pages::{captcha_widget, flash_from_query, Flash};
 use crate::services::captcha::CaptchaWidget;
-use crate::services::domains::{self as domain_service, DomainOption};
+use crate::services::domains::{self as domain_service};
 use crate::services::public_urls;
-use crate::services::settings::PublicFields;
 use crate::services::theme::ThemeView;
 use crate::state::AppState;
 use crate::themed_page;
@@ -52,10 +52,6 @@ pub struct ShortenView {
     pub show: bool,
     /// The short URL of the link that was just created, if any.
     pub result: Option<String>,
-    /// Optional inputs the administrator enabled.
-    pub fields: PublicFields,
-    /// Domains offered by the form; empty unless the domain switch is on.
-    pub domains: Vec<DomainOption>,
     /// 僅對受限的未登入訪客顯示，避免提交前猜測允許哪些目標。
     pub guest_allowlist: Option<Vec<String>>,
 }
@@ -76,6 +72,8 @@ pub struct LandingPage {
     pub captcha: Option<CaptchaWidget>,
     /// The public shortener (see [`ShortenView`]).
     pub shorten: ShortenView,
+    /// The public form, with the optional inputs the administrator enabled.
+    pub link_form: LinkForm,
 }
 
 themed_page!(landing_templates, LandingView, LandingPage,
@@ -200,11 +198,10 @@ pub async fn home(
         theme,
         flash: flash_from_query(query.ok.as_deref(), query.err.as_deref()),
         captcha,
+        link_form: LinkForm::public(&fields, domains),
         shorten: ShortenView {
             show: allowed,
             result,
-            fields,
-            domains,
             guest_allowlist: (anonymous && state.settings.guest_allowlist_enabled()).then(|| {
                 state
                     .settings

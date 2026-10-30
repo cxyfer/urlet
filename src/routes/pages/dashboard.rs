@@ -12,12 +12,12 @@ use crate::error::AppError;
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::MaybeUser;
 use crate::routes::dto::{DailyPointDto, DimensionDto, OverviewDto, TagDto, TopLinkDto, UrlDto};
+use crate::routes::pages::link_form::LinkForm;
 use crate::routes::pages::{
     flash_from_query, page_links, redirect_to_login, Chrome, Flash, PageLink, UrlRow,
 };
 use crate::services::captcha::CaptchaFlow;
 use crate::services::domain_policy;
-use crate::services::domains::DomainOption;
 use crate::services::{chart, limits, time};
 use crate::state::AppState;
 use crate::themed_page;
@@ -43,26 +43,11 @@ pub struct DashboardPage {
     pub used: i64,
     /// Name of the user's group, empty when the account is ungrouped.
     pub group_name: String,
-    pub allow_custom_slug: bool,
-    pub allow_password: bool,
-    pub allow_expiry: bool,
-    pub allow_max_clicks: bool,
-    pub allow_tags: bool,
-    pub allow_domain_selection: bool,
     /// False when the site-wide access level reserves creation for
     /// administrators; the create form is then replaced by a notice.
     pub can_create: bool,
-    pub default_redirect_type: i64,
-    /// `direct`, `splash` or `choice`: the group's redirect-mode policy.
-    pub redirect_mode_policy: String,
-    /// Whether the mode select may offer immediate redirects.
-    pub allow_direct_mode: bool,
-    /// Whether the mode select may offer the splash page.
-    pub allow_splash_mode: bool,
-    /// Mode preselected in the create form.
-    pub default_redirect_mode: String,
-    /// Domains selectable in the create form.
-    pub domains: Vec<DomainOption>,
+    /// The create form.
+    pub link_form: LinkForm,
     /// Provider widget for the create form, or `None` when it is not protected.
     pub captcha: Option<crate::services::captcha::CaptchaWidget>,
     /// Localised "3 of 10 links used" line.
@@ -206,28 +191,14 @@ pub async fn dashboard(
         quota,
         used,
         group_name,
-        allow_custom_slug: effective.allow_custom_slug,
-        allow_password: effective.allow_password,
-        allow_expiry: effective.allow_expiry,
-        allow_max_clicks: effective.allow_max_clicks,
-        allow_tags: effective.allow_tags,
-        allow_domain_selection: policy.allow_selection,
         // The site-wide access level may restrict creation to administrators.
         can_create: state.settings.public_create_access().allows(Some(&user)),
-        default_redirect_type: state.settings.default_redirect_type(),
-        redirect_mode_policy: effective.redirect_mode_policy.as_str().to_string(),
-        allow_direct_mode: effective
-            .redirect_mode_policy
-            .allows(crate::services::redirect_mode::RedirectMode::Direct),
-        allow_splash_mode: effective
-            .redirect_mode_policy
-            .allows(crate::services::redirect_mode::RedirectMode::Splash),
-        default_redirect_mode: effective
-            .redirect_mode_policy
-            .default_mode()
-            .as_str()
-            .to_string(),
-        domains: policy.options(&state.domains),
+        link_form: LinkForm::create(
+            &state,
+            &effective,
+            policy.allow_selection,
+            policy.options(&state.domains),
+        ),
         captcha: crate::routes::pages::captcha_widget(&state, CaptchaFlow::Create),
         usage: i18n::format(
             lang,

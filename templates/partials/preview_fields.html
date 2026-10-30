@@ -1,0 +1,42 @@
+{# SNS 預覽欄位，嵌在共用連結表單的展開區塊內（變數 preview、p 由外層提供）。
+   欄位名稱帶 preview_ 前綴，與連結本身的 title 等欄位區隔。 #}
+{% if !preview.error.is_empty() %}<div class="alert alert-error" role="alert">{{ lang.t(preview.error.as_str()) }}</div>{% endif %}
+<div class="form-grid">
+    <div class="field span-2">
+        <label class="label" for="{{ p }}preview-title">{{ lang.t("preview.title") }}</label>
+        <input class="input" id="{{ p }}preview-title" name="preview_title" maxlength="200" value="{{ preview.title }}">
+    </div>
+    <div class="field span-2">
+        <label class="label" for="{{ p }}preview-description">{{ lang.t("preview.description") }}</label>
+        <textarea class="textarea" id="{{ p }}preview-description" name="preview_description" maxlength="1000" rows="3">{{ preview.description }}</textarea>
+    </div>
+    <div class="field">
+        <label class="label" for="{{ p }}preview-image-mode">{{ lang.t("preview.image_source") }}</label>
+        <select class="select" id="{{ p }}preview-image-mode" name="preview_image_mode" data-preview-source aria-describedby="{{ p }}preview-policy">
+            <option value="none" {% if preview.image_mode == "none" %}selected{% endif %}>{{ lang.t("preview.none") }}</option>
+            {% if !preview.current_image.is_empty() || preview.image_suppressed || preview.image_mode == "keep" %}
+            <option value="keep" {% if preview.image_mode == "keep" %}selected{% endif %}>{{ lang.t("preview.keep") }}</option>
+            {% endif %}
+            {% if preview.allow_url %}<option value="url" {% if preview.image_mode == "url" %}selected{% endif %}>{{ lang.t("preview.url") }}</option>{% endif %}
+            {% if preview.allow_upload %}<option value="upload" {% if preview.image_mode == "upload" %}selected{% endif %}>{{ lang.t("preview.upload") }}</option>{% endif %}
+        </select>
+        <span class="hint" id="{{ p }}preview-policy">{{ lang.t("preview.policy_label") }} {{ lang.t(preview.policy_key.as_str()) }}</span>
+    </div>
+    {% if preview.allow_url %}
+    <div class="field" data-preview-input="url">
+        <label class="label" for="{{ p }}preview-image-url">{{ lang.t("preview.url") }}</label>
+        <input class="input" type="url" id="{{ p }}preview-image-url" name="preview_image_url" maxlength="2048" placeholder="https://example.com/image.png" value="{{ preview.image_url }}">
+    </div>
+    {% endif %}
+    {% if preview.allow_upload %}
+    <div class="field" data-preview-input="upload">
+        <label class="label" for="{{ p }}preview-image">{{ lang.t("preview.upload") }}</label>
+        <input class="input" type="file" id="{{ p }}preview-image" name="preview_image" accept="image/png,image/jpeg,image/gif,image/webp" aria-describedby="{{ p }}preview-image-hint">
+        <span class="hint" id="{{ p }}preview-image-hint">{{ lang.t("preview.image_hint") }}</span>
+    </div>
+    {% endif %}
+</div>
+{% if preview.image_suppressed %}<p class="hint">{{ lang.t("preview.image_suppressed") }}</p>{% endif %}
+{% if !preview.current_image.is_empty() %}<p class="small"><a href="{{ preview.current_image }}" target="_blank" rel="noopener noreferrer">{{ lang.t("preview.current_image") }}</a></p>{% endif %}
+<p class="hint">{{ lang.t("preview.public_hint") }}</p>
+<p class="hint">{{ lang.t("preview.clear_hint") }}</p>
