@@ -115,7 +115,7 @@ URLET_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-*
 | `URLET_LOG` | `info` | tracing 過濾器，例如 `urlet=debug,tower=warn`。若有設定 `RUST_LOG`，它以 `RUST_LOG` 為準（程式會先嘗試 `EnvFilter::try_from_default_env`） |
 | `URLET_LOG_FORMAT` | `compact` | `compact` 或 `json` |
 | `URLET_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | `urlet healthcheck` 的目標 |
-| `TZ` | 系統時區（映像內為 `UTC`） | 遊客日曆配額使用的伺服器時區，例如 `Asia/Taipei`；啟動時讀取。Docker Compose 會轉傳（`TZ: ${TZ:-UTC}`） |
+| `TZ` | 系統時區（映像內為 `UTC`） | 遊客日曆配額與 landing 頁時鐘使用的伺服器時區，例如 `Asia/Taipei`；啟動時讀取。Docker Compose 會轉傳（`TZ: ${TZ:-UTC}`）。即使首頁時鐘設為 UTC 或隱藏，訪客配額仍跟隨此值 |
 
 另外三個變數由 compose 檔讀取，urlet 二進位檔本身不會讀取：
 

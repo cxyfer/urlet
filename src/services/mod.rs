@@ -6,6 +6,7 @@ pub mod auth;
 pub mod captcha;
 pub mod chart;
 pub mod click;
+pub mod clock;
 pub mod cookies;
 pub mod custom_theme;
 pub mod domain_policy;

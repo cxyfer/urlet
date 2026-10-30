@@ -580,6 +580,65 @@ async fn settings_can_be_read_and_updated() {
 }
 
 #[tokio::test]
+async fn the_landing_clock_setting_controls_what_the_public_page_reveals() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = admin(&app).await;
+
+    // The default publishes the configured zone together with the clock. The
+    // test configuration pins that zone to UTC, so the zone name is "UTC" here;
+    // the choice between "server" and "utc" is covered by the unit test on
+    // `clock::for_landing`.
+    let landing = app.get("/").await;
+    assert!(landing.body.contains("data-server-clock"));
+    assert!(landing.body.contains("data-zone=\"UTC\""));
+    assert!(landing.body.contains(">+00:00<"));
+
+    // UTC keeps a clock but drops the location hint.
+    let updated = app
+        .send(put_json_as(
+            "/api/v1/admin/settings",
+            json!({ "landing_clock": "utc" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(updated.status, StatusCode::OK, "{}", updated.body);
+    assert_eq!(updated.json()["landing_clock"], "utc");
+    let landing = app.get("/").await;
+    assert!(landing.body.contains("data-server-clock"));
+    assert!(landing.body.contains("data-zone=\"UTC\""));
+
+    // Off removes the clock and the offset, and keeps the rest of the strip:
+    // the version and the uptime say nothing about where the host is.
+    let updated = app
+        .send(put_json_as(
+            "/api/v1/admin/settings",
+            json!({ "landing_clock": "off" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(updated.status, StatusCode::OK, "{}", updated.body);
+    let landing = app.get("/").await;
+    assert!(!landing.body.contains("data-server-clock"));
+    assert!(!landing.body.contains("UTC offset"));
+    assert!(landing.body.contains("This server"));
+    assert!(landing.body.contains("Uptime"));
+
+    // An unknown value is refused, and the stored policy stays where it was.
+    let invalid = app
+        .send(put_json_as(
+            "/api/v1/admin/settings",
+            json!({ "landing_clock": "local" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(invalid.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        app.state.settings.landing_clock(),
+        urlet::services::settings::LandingClock::Off
+    );
+}
+
+#[tokio::test]
 async fn settings_form_persists_values() {
     let app = TestApp::spawn().await;
     let (cookie, _) = admin(&app).await;

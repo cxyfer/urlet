@@ -44,6 +44,13 @@ pub struct HomeQuery {
     pub err: Option<String>,
 }
 
+/// Number of feature cards every landing template renders.
+///
+/// The templates print this instead of a literal, and the catalogue test in
+/// `tests/i18n.rs` keeps it in step with `landing.feature.*`, so the index a
+/// visitor reads cannot drift away from the copy it indexes.
+pub const LANDING_FEATURES: usize = 6;
+
 /// The public shortener as the landing page renders it.
 #[derive(Debug)]
 pub struct ShortenView {
@@ -74,6 +81,18 @@ pub struct LandingPage {
     pub shorten: ShortenView,
     /// The public form, with the optional inputs the administrator enabled.
     pub link_form: LinkForm,
+    /// Build version from `Cargo.toml`; the readouts print it, nothing else.
+    pub version: &'static str,
+    /// Feature cards on this page (see [`LANDING_FEATURES`]).
+    pub feature_count: usize,
+    /// Server clock, refreshed on every request; `None` when the administrator
+    /// set `landing_clock=off`.
+    pub clock: Option<crate::services::clock::Reading>,
+    /// Calendar year in the server zone, for the labels that print one.
+    pub year: String,
+    /// Compact process uptime. It says nothing about where the host is, so it
+    /// stays visible whichever clock policy is in force.
+    pub uptime: String,
 }
 
 themed_page!(landing_templates, LandingView, LandingPage,
@@ -199,6 +218,17 @@ pub async fn home(
         flash: flash_from_query(query.ok.as_deref(), query.err.as_deref()),
         captcha,
         link_form: LinkForm::public(&fields, domains),
+        // Real readouts only: the build version, the number of feature cards
+        // this page actually renders, and the server clock. Everything else
+        // that looks like an instrument is marked as illustrative.
+        version: crate::VERSION,
+        feature_count: LANDING_FEATURES,
+        clock: crate::services::clock::for_landing(
+            state.settings.landing_clock(),
+            &state.config.timezone,
+        ),
+        year: crate::services::clock::year(&state.config.timezone),
+        uptime: crate::services::clock::format_uptime(state.uptime_seconds()),
         shorten: ShortenView {
             show: allowed,
             result,

@@ -727,6 +727,11 @@ pages, so the database file does not automatically shrink.
   (`source=system`, always active). It is made the default only when no default exists, so an
   administrator can choose another default. `URLET_DOMAINS` inserts missing domains as
   `active`/`env`; it never changes an existing row.
+- `settings` (landing clock): `landing_clock=server` (`server`, `utc` or `off`). It decides what the
+  strip at the end of the public landing page reveals — the clock in the process zone (`TZ`), the
+  same clock pinned to UTC, or no clock — because a zone name is a coarse location hint. The version
+  and the uptime stay visible either way, and guest quota periods always follow `TZ`, so the setting
+  never changes the instance's notion of local time.
 
 ---
 

@@ -620,3 +620,47 @@ async fn dashboard_placeholder_is_translated() {
         .contains("dashboard.new.destination_placeholder"));
     assert!(!chinese.body.contains("lang.t("));
 }
+
+#[tokio::test]
+async fn every_catalogue_ships_the_features_the_landing_counts() {
+    // The landing pages print `LANDING_FEATURES` next to the feature grid. If a
+    // catalogue gains or loses a feature, the count and the copy disagree, and
+    // the index a visitor reads becomes a lie. Tie the two together here.
+    let catalogues = [
+        ("en", include_str!("../src/i18n/en.json")),
+        ("zh-Hant", include_str!("../src/i18n/zh-Hant.json")),
+        ("zh-Hans", include_str!("../src/i18n/zh-Hans.json")),
+    ];
+    for (name, json) in catalogues {
+        let value: serde_json::Value = serde_json::from_str(json).expect("catalogue is JSON");
+        let titles = value
+            .as_object()
+            .expect("catalogue is an object")
+            .keys()
+            .filter(|key| key.starts_with("landing.feature.") && key.ends_with(".title"))
+            .count();
+        assert_eq!(
+            titles,
+            urlet::routes::pages::home::LANDING_FEATURES,
+            "{name} ships {titles} features, the landing page prints LANDING_FEATURES"
+        );
+    }
+
+    // The decorative label has to exist in every language: a missing key would
+    // print the key itself next to a drawing that is already easy to misread.
+    for (name, json) in catalogues {
+        let value: serde_json::Value = serde_json::from_str(json).expect("catalogue is JSON");
+        let keys = value.as_object().expect("catalogue is an object");
+        for key in [
+            "landing.pulse.label",
+            "landing.pulse.offset",
+            "landing.pulse.version",
+            "landing.pulse.uptime",
+            "landing.decorative.badge",
+            "landing.decorative.note",
+            "landing.hero.chip",
+        ] {
+            assert!(keys.contains_key(key), "{name} is missing {key}");
+        }
+    }
+}

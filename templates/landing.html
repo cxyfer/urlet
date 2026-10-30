@@ -58,7 +58,7 @@
         <div class="hero-copy">
             <span class="hero-chip">
                 <span class="status-dot" aria-hidden="true"></span>
-                <span aria-hidden="true">01 · 06 / SYS</span>
+                <span>{{ lang.t("landing.hero.chip") }}</span>
             </span>
             <h1>{{ site_name }}<span class="hero-dot" aria-hidden="true"></span></h1>
             <p class="landing-tagline">{{ lang.t("landing.tagline") }}</p>
@@ -71,15 +71,12 @@
                 <a class="btn btn-sage" href="/app/login">{{ lang.t("landing.cta.sign_in") }}</a>
                 {% endif %}
             </div>
-            <div class="hero-meta" aria-hidden="true">
-                <span><i></i>01 / 06</span>
-                <span><i class="water"></i>0.94</span>
-                <span><i class="clay"></i>24°</span>
-            </div>
         </div>
 
-        {# Decorative specimen panel: a petri dish of contours, a growth curve
-           and instrument readouts. Numbers and glyphs only. #}
+        {# Decorative specimen panel: a petri dish of contours and a growth
+           curve. It carries no readouts: anything that looks like a
+           measurement on this page has to come from the server, so the panel
+           is marked illustrative instead of inventing numbers. #}
         <div class="specimen" aria-hidden="true">
             <div class="specimen-orb"></div>
             <svg class="specimen-disc" viewBox="0 0 420 420" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -122,18 +119,12 @@
                 <!-- speculative baseline -->
                 <path class="specimen-cross" d="M74 306h272" stroke-dasharray="2 5"></path>
                 <path class="specimen-cross" d="M74 306V96" stroke-dasharray="2 5"></path>
-
-                <!-- readouts -->
-                <text class="specimen-readout" x="66" y="332">Y0 / 00</text>
-                <text class="specimen-readout strong lime" x="286" y="120">0.942</text>
-                <text class="specimen-readout" x="66" y="96">Δ 12.4</text>
-                <text class="specimen-readout" x="306" y="330">N 06</text>
-                <text class="specimen-readout" x="152" y="54">01 · 06</text>
             </svg>
             <div class="specimen-float">
                 <span class="status-dot"></span>
-                <span>0.94 · 06</span>
+                <span>{{ lang.t("landing.decorative.badge") }}</span>
             </div>
+            <p class="decorative-note">{{ lang.t("landing.decorative.note") }}</p>
         </div>
     </section>
 
@@ -142,7 +133,7 @@
 
     <section class="features" aria-labelledby="landing-highlights">
         <div class="section-head">
-            <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>06</span>
+            <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ feature_count }}</span>
             <h2 id="landing-highlights">{{ lang.t("landing.features.heading") }}</h2>
             <p class="muted">{{ lang.t("landing.features.subtitle") }}</p>
         </div>
@@ -231,26 +222,33 @@
         </div>
     </section>
 
-    {# System pulse: a quiet instrument strip at the end of the page. #}
-    <section class="pulse" aria-hidden="true">
-        <svg class="pulse-contour" viewBox="0 0 1200 240" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
+    {# Server strip: the only place on this page that reports the instance
+       itself. Every value is read on this request — the response is `no-store`
+       — so the clock is the server's clock, not a picture of one. #}
+    <section class="pulse" aria-label="{{ lang.t("landing.pulse.label") }}">
+        <svg class="pulse-contour" aria-hidden="true" viewBox="0 0 1200 240" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path class="contour-a" d="M-40 210C140 210 200 140 340 140s200 54 340 54 200-78 340-78 180 26 240 34"></path>
             <path class="contour-b" d="M-40 228C150 228 214 166 352 166s208 44 344 44 198-64 336-64 176 20 232 28"></path>
             <path class="contour-c" d="M-40 190C132 190 196 116 344 116s196 66 336 66 196-92 340-92 170 32 232 42"></path>
         </svg>
         <div class="pulse-content">
-            <span class="pulse-label"><span class="status-dot"></span>SYS · 01 / 06</span>
+            <span class="pulse-label"><span class="status-dot" aria-hidden="true"></span>{{ lang.t("landing.pulse.label") }}</span>
             <div class="pulse-cells">
-                <div class="pulse-cell"><b>0.982</b><span>SIG</span></div>
-                <div class="pulse-cell"><b>01:06</b><span>UTC</span></div>
-                <div class="pulse-cell"><b>24.0</b><span>AMB</span></div>
-                <div class="pulse-cell"><b>99.9</b><span>SLO</span></div>
+                {% if let Some(clock) = clock %}
+                <div class="pulse-cell">
+                    <b data-server-clock data-epoch-ms="{{ clock.epoch_ms }}" data-zone="{{ clock.zone }}">{{ clock.time }}</b>
+                    <span>{{ clock.zone }}</span>
+                </div>
+                <div class="pulse-cell"><b>{{ clock.offset }}</b><span>{{ lang.t("landing.pulse.offset") }}</span></div>
+                {% endif %}
+                <div class="pulse-cell"><b>v{{ version }}</b><span>{{ lang.t("landing.pulse.version") }}</span></div>
+                <div class="pulse-cell"><b>{{ uptime }}</b><span>{{ lang.t("landing.pulse.uptime") }}</span></div>
             </div>
         </div>
-        <div class="pulse-track">
-            <span>01</span>
+        <div class="pulse-track" aria-hidden="true">
+            <span>{{ year }}</span>
             <span class="pulse-line"></span>
-            <span>06</span>
+            <span>v{{ version }}</span>
         </div>
     </section>
 </main>
