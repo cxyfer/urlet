@@ -729,6 +729,8 @@
   "theme.description.signal": "Brutalist signal board: black rules, cobalt data and red accents.",
   "theme.description.gilded": "Art Deco salon in ivory, emerald and champagne gold.",
   "theme.description.swiss": "Swiss telemetry grid with numbered sections and hairline rules.",
+  "theme.name.cosmos": "Cosmos Observatory",
+  "theme.description.cosmos": "Deep-space observatory with a drifting nebula, orbital rings and a starlit command deck.",
   "admin.tabs.themes": "Themes",
   "admin.themes.title": "Themes",
   "admin.themes.heading": "Themes",

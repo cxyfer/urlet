@@ -63,6 +63,7 @@ themed_page!(invites_templates, InvitesView, InvitesPage,
     Signal => "themes/signal/invites.html",
     Gilded => "themes/gilded/invites.html",
     Swiss => "themes/swiss/invites.html",
+    Cosmos => "themes/cosmos/invites.html",
 );
 
 #[derive(Debug, Clone)]

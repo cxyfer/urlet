@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="{{ lang.html_lang() }}"{% if self.theme_is_light_only() %} data-theme="light"{% endif %}{% if self.theme_is_dark_only() %} data-theme="dark"{% endif %}{% if self.theme_has_lock() %} data-theme-lock="{{ self.theme_lock() }}"{% endif %}>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#03040a">
+    <meta name="color-scheme" content="dark">
+    <title>{% block title %}{{ site_name }}{% endblock %}</title>
+    <link rel="stylesheet" href="{{ self.theme_css_url() }}?v={{ self.asset_version() }}">
+    <link rel="stylesheet" href="/assets/theme-ui.css?v={{ self.asset_version() }}">
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+    {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}" data-theme-key="{{ self.theme_key() }}">
+{% block topbar %}{% endblock %}
+{% block body %}
+<main class="wrap">
+    {% block content %}{% endblock %}
+</main>
+{% endblock %}
+<footer class="site">
+    <span class="footer-tagline">{{ site_name }} — {{ lang.t("footer.tagline") }}</span>
+    {% include "partials/api_docs_link.html" %}
+    {% include "partials/repo_link.html" %}
+    {% block footer_lang %}{% include "partials/site_tools.html" %}{% endblock %}
+</footer>
+<script src="/assets/app.js?v={{ self.asset_version() }}" defer></script>
+</body>
+</html>

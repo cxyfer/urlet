@@ -66,6 +66,7 @@ themed_page!(url_detail_templates, UrlDetailView, UrlDetailPage,
     Signal => "themes/signal/url_detail.html",
     Gilded => "themes/gilded/url_detail.html",
     Swiss => "themes/swiss/url_detail.html",
+    Cosmos => "themes/cosmos/url_detail.html",
 );
 
 /// The link editor: the dialog loads this page, and it is the whole editor

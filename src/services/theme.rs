@@ -115,17 +115,20 @@ pub enum ThemeKey {
     Gilded,
     /// Swiss telemetry grid (PR #9).
     Swiss,
+    /// Deep-space observatory with an animated star chart.
+    Cosmos,
 }
 
 /// Every compiled-in theme, in the order used by the migration and the
 /// fallback picker.
-pub const ALL: [ThemeKey; 6] = [
+pub const ALL: [ThemeKey; 7] = [
     ThemeKey::Verdant,
     ThemeKey::Aurora,
     ThemeKey::Paper,
     ThemeKey::Signal,
     ThemeKey::Gilded,
     ThemeKey::Swiss,
+    ThemeKey::Cosmos,
 ];
 
 impl ThemeKey {
@@ -138,6 +141,7 @@ impl ThemeKey {
             Self::Signal => "signal",
             Self::Gilded => "gilded",
             Self::Swiss => "swiss",
+            Self::Cosmos => "cosmos",
         }
     }
 
@@ -152,6 +156,7 @@ impl ThemeKey {
             "signal" => Some(Self::Signal),
             "gilded" => Some(Self::Gilded),
             "swiss" => Some(Self::Swiss),
+            "cosmos" => Some(Self::Cosmos),
             _ => None,
         }
     }
@@ -165,6 +170,7 @@ impl ThemeKey {
             Self::Signal => "theme.name.signal",
             Self::Gilded => "theme.name.gilded",
             Self::Swiss => "theme.name.swiss",
+            Self::Cosmos => "theme.name.cosmos",
         }
     }
 
@@ -177,6 +183,7 @@ impl ThemeKey {
             Self::Signal => "theme.description.signal",
             Self::Gilded => "theme.description.gilded",
             Self::Swiss => "theme.description.swiss",
+            Self::Cosmos => "theme.description.cosmos",
         }
     }
 
@@ -190,14 +197,15 @@ impl ThemeKey {
             Self::Signal => "/assets/themes/signal",
             Self::Gilded => "/assets/themes/gilded",
             Self::Swiss => "/assets/themes/swiss",
+            Self::Cosmos => "/assets/themes/cosmos",
         }
     }
 
-    /// Whether the design ships only a dark palette. Aurora is dark-only by
-    /// design; every other theme ships both palettes and keeps the light/dark
-    /// control.
+    /// Whether the design ships only a dark palette. Aurora and Cosmos are
+    /// dark-only by design; every other theme ships both palettes and keeps the
+    /// light/dark control.
     pub const fn is_dark_only(self) -> bool {
-        matches!(self, Self::Aurora)
+        matches!(self, Self::Aurora | Self::Cosmos)
     }
 
     /// Whether the design ships only a light palette. No compiled-in theme is
@@ -842,8 +850,9 @@ mod tests {
     }
 
     #[test]
-    fn only_aurora_ships_a_single_palette_and_the_catalogue_agrees() {
+    fn only_the_two_dark_designs_ship_a_single_palette_and_the_catalogue_agrees() {
         assert_eq!(ThemeKey::Aurora.appearance(), ThemeAppearance::Dark);
+        assert_eq!(ThemeKey::Cosmos.appearance(), ThemeAppearance::Dark);
         for key in ALL {
             // The badge flags must agree with the appearance the catalogue
             // publishes, so a design cannot be listed as `auto` while a badge

@@ -2,7 +2,7 @@
 
 # Themes
 
-urlet ships six visual themes inside the single binary, and an administrator can
+urlet ships seven visual themes inside the single binary, and an administrator can
 upload additional stylesheet-only themes at runtime. A **compiled-in theme** is
 code: an Askama template directory under `templates/themes/<key>/` plus one
 embedded CSS file. An **uploaded theme** is a CSS file stored on the persistent
@@ -17,13 +17,14 @@ the binary and cannot be added at runtime.
 | `signal` | Signal | Brutalist signal board. Ships both palettes and the light/dark control |
 | `gilded` | Gilded Circuit | Art Deco ivory/emerald/gold. Ships both palettes and the light/dark control |
 | `swiss` | Swiss Telemetry | Swiss grid with numbered sections. Ships both palettes and the light/dark control |
+| `cosmos` | Cosmos Observatory | Deep-space observatory with a drifting nebula, an animated star chart and orbital rings. Dark-only: no light palette, so the light/dark control is hidden |
 | `custom-…` | Uploaded | A stylesheet added from **Admin → Themes**; reuses the Verdant templates |
 
-The five non-default compiled-in themes are the designs proposed in the closed
-pull requests #5, #6, #7, #9 and #10. They were ported to the v1.2 page model
-rather than frozen at their original feature set.
+The six non-default compiled-in themes are the designs proposed in the closed
+pull requests #5, #6, #7, #9 and #10, plus Cosmos. They were ported to the v1.2
+page model rather than frozen at their original feature set.
 
-Every design except Aurora follows `prefers-color-scheme` until the visitor picks
+Every design except Aurora and Cosmos follows `prefers-color-scheme` until the visitor picks
 a mode, and then honours that choice in both directions: its stylesheet carries
 the dark palette twice, once behind `@media (prefers-color-scheme: dark)` guarded
 by `:not([data-theme="light"])` and once behind `:root[data-theme="dark"]`. A new
@@ -31,6 +32,13 @@ port that skips the second copy still follows the operating system, but its
 light/dark control would be a lie — the test
 `every_dual_palette_design_serves_the_system_and_the_explicit_palette` catches
 that.
+
+Cosmos is the one design whose landing page moves. Its star field breathes, the
+orbital rings turn, a comet crosses the chart and the hero text settles in
+sequence. The motion is CSS-only — no extra script, no canvas, no external
+asset — and every animation is removed under `prefers-reduced-motion: reduce`,
+leaving the same copy, links and controls on a static star chart. That is a
+design choice, not a shared theme requirement: the other skins stay quiet.
 
 The browser chrome is the one surface CSS cannot reach: a `theme-color` meta tag
 is selected by a media query, and a media query cannot see `data-theme`. A design
@@ -85,6 +93,7 @@ templates/
     │   ├── dashboard.html     # thin wrapper around content/dashboard.html
     │   └── ...
     ├── paper/
+    ├── cosmos/                # deep-space observatory, dark only
     └── ...
 ```
 
@@ -239,7 +248,8 @@ markup or scripts.
 - No fine-grained per-account permission: the policy is site-wide (`all` or
   `admin`). The existing user-group feature toggles cover per-group data
   capabilities, not cosmetics.
-- Every design except Aurora ships both palettes and the same persisted
-  light/dark control; the control is a cosmetic preference, so it never needs a
-  per-account column. Aurora is dark-only by design and has no light palette to
-  offer, so it hides the control instead of shipping a dead one.
+- Every design except Aurora and Cosmos ships both palettes and the same
+  persisted light/dark control; the control is a cosmetic preference, so it
+  never needs a per-account column. Aurora and Cosmos are dark-only by design
+  and have no light palette to offer, so they hide the control instead of
+  shipping a dead one.

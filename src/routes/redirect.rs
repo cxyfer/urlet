@@ -38,6 +38,7 @@ themed_page!(link_password_templates, PasswordPageView, PasswordPage,
     Signal => "themes/signal/link_password.html",
     Gilded => "themes/gilded/link_password.html",
     Swiss => "themes/swiss/link_password.html",
+    Cosmos => "themes/cosmos/link_password.html",
 );
 
 /// 404/410 page for a link that cannot be followed.
@@ -58,6 +59,7 @@ themed_page!(link_error_templates, LinkErrorPageView, LinkErrorPage,
     Signal => "themes/signal/link_error.html",
     Gilded => "themes/gilded/link_error.html",
     Swiss => "themes/swiss/link_error.html",
+    Cosmos => "themes/cosmos/link_error.html",
 );
 
 /// Splash/interstitial page shown before the destination.
@@ -85,6 +87,7 @@ themed_page!(link_splash_templates, SplashPageView, SplashPage,
     Signal => "themes/signal/link_splash.html",
     Gilded => "themes/gilded/link_splash.html",
     Swiss => "themes/swiss/link_splash.html",
+    Cosmos => "themes/cosmos/link_splash.html",
 );
 
 #[derive(Debug, Deserialize)]

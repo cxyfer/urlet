@@ -173,6 +173,7 @@ themed_page!(error_templates, ErrorView, ErrorTemplate,
     Signal => "themes/signal/error.html",
     Gilded => "themes/gilded/error.html",
     Swiss => "themes/swiss/error.html",
+    Cosmos => "themes/cosmos/error.html",
 );
 
 impl IntoResponse for AppError {

@@ -22,7 +22,7 @@ targets.
 | # | Decision | Choice |
 |---|----------|--------|
 | 1 | Extra-domain scope | Redirect-only. `/app/*` GET/HEAD → 308 to canonical; other methods → 404. `/api/v1/*` → 404 JSON. |
-| 2 | Extra-domain root | The theme-aware short landing page (`noindex`) in all six themes, with the site tools (theme picker, language switcher); not the canonical marketing page and not a 404. |
+| 2 | Extra-domain root | The theme-aware short landing page (`noindex`) in all seven themes, with the site tools (theme picker, language switcher); not the canonical marketing page and not a 404. |
 | 3 | Default domain | Administrators may change it among active domains. The canonical host always exists and is always active, but need not be the default. |
 | 4 | New domains | Created as `pending`; an administrator activates them after DNS/TLS is ready. Only `active` domains are selectable. |
 | 5 | Scheme | One scheme for the whole instance, inherited from `URLET_BASE_URL`. No per-domain scheme column. |
@@ -33,7 +33,7 @@ Implementation defaults agreed for the open points:
 
 - Domains seeded through `URLET_DOMAINS` are inserted as `active` and verified:
   they are declared by the operator in deployment configuration.
-- The short landing page is theme-aware (all six themes) and shows the site name,
+- The short landing page is theme-aware (all seven themes) and shows the site name,
   one explanatory sentence, a link to the canonical host and the site tools
   (theme picker, language switcher). No login, registration or slug input.
 - The current default domain cannot be disabled or deleted until another active

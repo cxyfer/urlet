@@ -64,6 +64,7 @@ themed_page!(dashboard_templates, DashboardView, DashboardPage,
     Signal => "themes/signal/dashboard.html",
     Gilded => "themes/gilded/dashboard.html",
     Swiss => "themes/swiss/dashboard.html",
+    Cosmos => "themes/cosmos/dashboard.html",
 );
 
 #[derive(Debug, Clone, Default, Deserialize)]

@@ -1,0 +1,74 @@
+{% extends "themes/cosmos/app_base.html" %}
+
+{% block title %}{{ lang.t("admin.overview.title") }} — {{ site_name }}{% endblock %}
+
+{% block content %}
+{% include "themes/cosmos/admin/tabs.html" %}
+
+<header class="page-head">
+    <div>
+        <p class="eyebrow" aria-hidden="true"><span class="status-dot"></span><span class="eyebrow-line"></span></p>
+        <h1>{{ lang.t("admin.overview.heading") }}</h1>
+    </div>
+    <div class="page-head-side console-meta">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span class="mono">v{{ stats.version }}</span>
+        <span aria-hidden="true">·</span>
+        <span>{{ lang.t("admin.overview.up") }} {{ stats.uptime }}</span>
+    </div>
+</header>
+
+<div class="stat-grid">
+    <div class="stat stat-primary">
+        <div class="stat-label">{{ lang.t("admin.overview.stat.users") }}</div>
+        <div class="stat-value">{{ stats.users }}</div>
+    </div>
+    <div class="stat stat-primary">
+        <div class="stat-label">{{ lang.t("admin.overview.stat.admins") }}</div>
+        <div class="stat-value">{{ stats.admins }}</div>
+    </div>
+    <div class="stat stat-primary">
+        <div class="stat-label">{{ lang.t("admin.overview.stat.links") }}</div>
+        <div class="stat-value">{{ stats.links }}</div>
+    </div>
+    <div class="stat stat-primary">
+        <div class="stat-label">{{ lang.t("admin.overview.stat.expired_links") }}</div>
+        <div class="stat-value">{{ stats.expired_links }}</div>
+    </div>
+    <div class="stat">
+        <div class="stat-label">{{ lang.t("admin.overview.stat.total_clicks") }}</div>
+        <div class="stat-value">{{ stats.total_clicks }}</div>
+    </div>
+    <div class="stat">
+        <div class="stat-label">{{ lang.t("admin.overview.stat.unique_visitors") }}</div>
+        <div class="stat-value">{{ stats.unique_clicks }}</div>
+    </div>
+    <div class="stat">
+        <div class="stat-label">{{ lang.t("admin.overview.stat.bot_clicks") }}</div>
+        <div class="stat-value">{{ stats.bot_clicks }}</div>
+    </div>
+    <div class="stat">
+        <div class="stat-label">{{ lang.t("admin.overview.stat.active_invites") }}</div>
+        <div class="stat-value">{{ stats.active_invites }}</div>
+    </div>
+</div>
+
+<section class="card mt" aria-labelledby="instance-heading">
+    <div class="panel-head">
+        <h2 id="instance-heading">{{ lang.t("admin.overview.instance") }}</h2>
+        <span class="console-meta" aria-hidden="true">
+            <span class="mono">spec</span>
+            <span>— 01</span>
+        </span>
+    </div>
+    <dl class="meta">
+        <dt>{{ lang.t("admin.overview.registration") }}</dt><dd>{{ stats.registration_mode }}</dd>
+        <dt>{{ lang.t("admin.overview.database_size") }}</dt><dd>{{ stats.database_size }}</dd>
+        <dt>{{ lang.t("admin.overview.uptime") }}</dt><dd>{{ stats.uptime }}</dd>
+        <dt>{{ lang.t("admin.overview.version") }}</dt><dd>{{ stats.version }}</dd>
+    </dl>
+    <p class="hint mt">
+        {{ lang.t("admin.overview.retention_hint")|safe }}
+    </p>
+</section>
+{% endblock %}

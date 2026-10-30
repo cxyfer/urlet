@@ -61,9 +61,10 @@ pub async fn find(pool: &SqlitePool, key: &str) -> Result<Option<ThemeRow>, sqlx
 
 /// Insert any theme that is compiled in but missing from the table.
 ///
-/// Migration 0009 seeds the initial six. This helper keeps a later release that
-/// adds a theme usable without a migration rewrite, and an upgrade from an
-/// older database gains the new row with its default enabled state.
+/// Migration 0010 seeds the original six. This helper keeps a later release
+/// that adds another compiled-in theme usable without a new migration, and an
+/// upgrade from an older database gains the new row with its default enabled
+/// state.
 pub async fn ensure_defaults(
     pool: &SqlitePool,
     keys: &[&str],

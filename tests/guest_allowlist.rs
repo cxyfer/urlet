@@ -477,7 +477,9 @@ async fn every_theme_displays_the_controls_and_guest_rules() {
     let app = TestApp::spawn().await;
     let (admin, _) = app.register("admin@example.com", "supersecret").await;
     open(&app).await;
-    for theme in ["verdant", "aurora", "paper", "signal", "gilded", "swiss"] {
+    for theme in [
+        "verdant", "aurora", "paper", "signal", "gilded", "swiss", "cosmos",
+    ] {
         let page = app.get_as("/", &format!("urlet_theme={theme}")).await;
         assert_eq!(page.status, StatusCode::OK);
         assert!(page.body.contains("View allowed destinations"), "{theme}");

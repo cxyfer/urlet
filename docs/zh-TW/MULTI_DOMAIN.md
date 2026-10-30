@@ -20,7 +20,7 @@ urlet 以一個 **canonical host** 提供完整應用，並可加上任意數量
 | # | 決策 | 選擇 |
 |---|------|------|
 | 1 | 額外網域範圍 | 只做轉址。`/app/*` 的 GET/HEAD → 308 回 canonical；其他方法 → 404。`/api/v1/*` → 404 JSON。 |
-| 2 | 額外網域根路徑 | 主題感知的短網址首頁（`noindex`），六個主題皆適用，並提供站台工具（主題選擇器、語言切換）；不是 canonical 的行銷首頁，也不是 404。 |
+| 2 | 額外網域根路徑 | 主題感知的短網址首頁（`noindex`），七個主題皆適用，並提供站台工具（主題選擇器、語言切換）；不是 canonical 的行銷首頁，也不是 404。 |
 | 3 | 預設網域 | 管理員可在 active 網域之間改動。Canonical host 永遠存在且永遠 active，但不一定是預設。 |
 | 4 | 新網域 | 建立後為 `pending`；管理員確認 DNS/TLS 後再啟用。只有 `active` 網域可被選用。 |
 | 5 | Scheme | 全站單一 scheme，繼承 `URLET_BASE_URL`；不新增 per-domain scheme 欄位。 |
@@ -31,7 +31,7 @@ urlet 以一個 **canonical host** 提供完整應用，並可加上任意數量
 
 - 由 `URLET_DOMAINS` seed 的網域直接插入為 `active`、已驗證，因為那是營運者
   在部署設定中的明確宣告。
-- 短網址首頁會依六個主題呈現，顯示站名、一句說明、回 canonical 的連結，以及
+- 短網址首頁會依七個主題呈現，顯示站名、一句說明、回 canonical 的連結，以及
   站台工具（主題選擇器、語言切換）；沒有登入、註冊或短碼輸入框。
 - 目前的預設網域不能停用或刪除，必須先把另一個 active 網域設為預設。
 - `domains.source` 區分 `system`、`env`、`ui`。System/canonical 網域不可停用、

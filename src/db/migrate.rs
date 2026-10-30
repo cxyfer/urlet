@@ -1204,7 +1204,10 @@ mod tests {
                 .fetch_one(&pool)
                 .await
                 .expect("theme policy");
-        assert_eq!(themes, 6, "the upgrade seeds every compiled-in theme");
+        assert_eq!(
+            themes, 6,
+            "the migrations seed the historical catalogue; startup adds later compiled-in themes"
+        );
         assert_eq!(default, "verdant");
         assert_eq!(switching, "all");
         let sealed: i64 = sqlx::query_scalar(

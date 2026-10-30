@@ -68,6 +68,7 @@ pub async fn theme_css(Path(key): Path<String>) -> Response {
         "signal" => assets::SIGNAL_CSS,
         "gilded" => assets::GILDED_CSS,
         "swiss" => assets::SWISS_CSS,
+        "cosmos" => assets::COSMOS_CSS,
         _ => return StatusCode::NOT_FOUND.into_response(),
     };
     asset("text/css; charset=utf-8", body)

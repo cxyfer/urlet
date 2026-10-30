@@ -63,6 +63,7 @@ themed_page!(overview_templates, OverviewPageView, OverviewPage,
     Signal => "themes/signal/admin/overview.html",
     Gilded => "themes/gilded/admin/overview.html",
     Swiss => "themes/swiss/admin/overview.html",
+    Cosmos => "themes/cosmos/admin/overview.html",
 );
 
 /// Numbers rendered on the overview page.
@@ -112,6 +113,7 @@ themed_page!(users_templates, UsersPageView, UsersPage,
     Signal => "themes/signal/admin/users.html",
     Gilded => "themes/gilded/admin/users.html",
     Swiss => "themes/swiss/admin/users.html",
+    Cosmos => "themes/cosmos/admin/users.html",
 );
 
 /// One group as a filter option or assignment target.
@@ -176,6 +178,7 @@ themed_page!(admin_urls_templates, AdminUrlsPageView, AdminUrlsPage,
     Signal => "themes/signal/admin/urls.html",
     Gilded => "themes/gilded/admin/urls.html",
     Swiss => "themes/swiss/admin/urls.html",
+    Cosmos => "themes/cosmos/admin/urls.html",
 );
 
 /// One row of the admin link table.
@@ -203,6 +206,7 @@ themed_page!(domains_templates, DomainsPageView, DomainsPage,
     Signal => "themes/signal/admin/domains.html",
     Gilded => "themes/gilded/admin/domains.html",
     Swiss => "themes/swiss/admin/domains.html",
+    Cosmos => "themes/cosmos/admin/domains.html",
 );
 
 /// One row of the domain table.
@@ -296,6 +300,7 @@ themed_page!(admin_invites_templates, InvitesPageView, InvitesPage,
     Signal => "themes/signal/admin/invites.html",
     Gilded => "themes/gilded/admin/invites.html",
     Swiss => "themes/swiss/admin/invites.html",
+    Cosmos => "themes/cosmos/admin/invites.html",
 );
 
 /// One row of the invite table.
@@ -333,6 +338,7 @@ themed_page!(groups_templates, GroupsPageView, GroupsPage,
     Signal => "themes/signal/admin/groups.html",
     Gilded => "themes/gilded/admin/groups.html",
     Swiss => "themes/swiss/admin/groups.html",
+    Cosmos => "themes/cosmos/admin/groups.html",
 );
 
 /// Create and edit page for a user group.
@@ -362,6 +368,7 @@ themed_page!(group_form_templates, GroupFormPageView, GroupFormPage,
     Signal => "themes/signal/admin/group_form.html",
     Gilded => "themes/gilded/admin/group_form.html",
     Swiss => "themes/swiss/admin/group_form.html",
+    Cosmos => "themes/cosmos/admin/group_form.html",
 );
 
 /// One row of the group table, carrying both display and form values.
@@ -795,6 +802,7 @@ themed_page!(settings_templates, SettingsPageView, SettingsPage,
     Signal => "themes/signal/admin/settings.html",
     Gilded => "themes/gilded/admin/settings.html",
     Swiss => "themes/swiss/admin/settings.html",
+    Cosmos => "themes/cosmos/admin/settings.html",
 );
 
 /// Current values of every editable setting.
@@ -871,6 +879,7 @@ themed_page!(themes_templates, ThemesPageView, ThemesPage,
     Signal => "themes/signal/admin/themes.html",
     Gilded => "themes/gilded/admin/themes.html",
     Swiss => "themes/swiss/admin/themes.html",
+    Cosmos => "themes/cosmos/admin/themes.html",
 );
 
 /// One uploaded theme as the shared create/edit form needs it.
@@ -950,6 +959,7 @@ themed_page!(custom_theme_form_templates, CustomThemeFormPageView, CustomThemeFo
     Signal => "themes/signal/admin/theme_form.html",
     Gilded => "themes/gilded/admin/theme_form.html",
     Swiss => "themes/swiss/admin/theme_form.html",
+    Cosmos => "themes/cosmos/admin/theme_form.html",
 );
 
 /// Audit page.
@@ -980,6 +990,7 @@ themed_page!(audit_templates, AuditPageView, AuditPage,
     Signal => "themes/signal/admin/audit.html",
     Gilded => "themes/gilded/admin/audit.html",
     Swiss => "themes/swiss/admin/audit.html",
+    Cosmos => "themes/cosmos/admin/audit.html",
 );
 
 /// One row of the audit table.

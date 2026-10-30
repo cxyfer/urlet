@@ -93,7 +93,7 @@ Non-Goal，v1.2 起納入配額與功能開關（見 §4.13），但仍不做逐
 | 生效額度 (Effective limits) | 實際套用到使用者的配額與開關：群組有設定就用群組值，否則用全站預設 |
 | 主題 (Theme) | 視覺識別。內建主題是 Askama 模板覆寫目錄加上一份內嵌 CSS；上傳主題是管理員提供的 CSS 檔，存放於持久化 volume，並以基底模板呈現 |
 | 預設主題 (Default theme) | 訪客沒有 cookie，或 cookie 指向已停用/未知主題時所使用的唯一已啟用主題 |
-| 主題目錄 (Theme catalogue) | 六個內建主題（Verdant、Aurora、Paper、Signal、Gilded、Swiss）加上管理員上傳（`custom-…`） |
+| 主題目錄 (Theme catalogue) | 七個內建主題（Verdant、Aurora、Paper、Signal、Gilded、Swiss、Cosmos）加上管理員上傳（`custom-…`） |
 | 中轉頁 (Splash page) | `redirect_mode` 為 `splash` 的連結所顯示的中間頁；呈現選填的宣傳文案、目的地主機與倒數，之後再前往目標 |
 | 轉址方式 (Redirect mode) | 連結如何把訪客交給目標：`direct`（立刻回 30x）或 `splash`（先顯示中轉頁）。儲存在 `urls.redirect_mode` |
 | 轉址方式政策 (Redirect-mode policy) | 群組上的 `redirect_mode_policy`（`direct`、`splash` 或 `choice`），限制**新**連結可用的模式；既有連結維持原模式 |
@@ -411,14 +411,14 @@ v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大
 
 | ID | 需求 | 說明 |
 |----|------|------|
-| FR-THEME-1 | 主題目錄 | binary 內建六個主題：`verdant`（v1.2 預設）、`aurora`、`paper`、`signal`、`gilded`、`swiss`。每個主題擁有 `templates/themes/<key>/` 模板目錄與內嵌 CSS。管理員另可註冊 `custom-…` 主題：它們是 CSS 檔、沿用 Verdant 模板，永不新增或修改模板 |
+| FR-THEME-1 | 主題目錄 | binary 內建七個主題：`verdant`（v1.2 預設）、`aurora`、`paper`、`signal`、`gilded`、`swiss`、`cosmos`。每個主題擁有 `templates/themes/<key>/` 模板目錄與內嵌 CSS。管理員另可註冊 `custom-…` 主題：它們是 CSS 檔、沿用 Verdant 模板，永不新增或修改模板 |
 | FR-THEME-2 | 管理 | `/app/admin/themes` 與 `GET/PUT /api/v1/admin/themes` 列出所有主題（內建與上傳）、啟用/停用、選擇唯一預設與設定 `theme_switching`。上傳主題可於管理頁建立、編輯與刪除。至少要有一個啟用主題，且預設必須啟用；違反時回 `422 validation_error`。預設標記由 partial unique index 保護 |
 | FR-THEME-3 | 選擇 | `GET /app/theme/{key}` 需要切換權限，僅接受已啟用的 key，設定 `urlet_theme` cookie（`Path=/`、`SameSite=Lax`、`HttpOnly`、一年，設定時加 `Secure`），並轉往同站 `next`、否則 `Referer` 路徑、否則已登入帳號為 `/app`、訪客為 `/`。未知或已停用的 key 回 404；無權限的訪客帶著 `next` 導向登入頁。`?preview=1` 設定獨立的管理員預覽 cookie，可指向已停用主題；`/app/theme/default` 清除兩種 cookie，`/app/theme/preview/stop` 結束預覽 |
 | FR-THEME-4 | 權限 | `theme_switching` 為 `all`（預設）或 `admin`。`all` 就是字面上的每個人：已登入成員與未登入訪客，在具備站台外框的頁面（首頁、登入與註冊、錯誤頁）都看得到切換器並可切換。政策在頁面渲染時強制執行：設為 `admin` 時，非管理員帳號與未登入訪客一律顯示預設、忽略既有 cookie、不提供切換器，非管理員的直接切換回 403，訪客則導向登入頁。管理員永遠看得到切換器，並可透過獨立的預覽 cookie 檢視任何已編譯主題（包含已停用者）。轉址介面（短連結、密碼與 splash 頁）永遠不提供切換器，只跟隨 cookie。停用主題不會刪除資料 |
 | FR-THEME-5 | 預設與回退 | 恰有一個已啟用主題標記為預設。沒有 cookie、未知 key 或 key 已被停用時一律使用預設；切換器依 migration 的順序列出已啟用主題，並提供會清除 cookie 的**網站預設**項目；管理員可在不改變預設的情況下預覽已停用主題 |
 | FR-THEME-6 | 模板 | `templates/` 下的基底模板即 Verdant 主題與回退。主題目錄可覆寫任一頁面；未覆寫的頁面與共享的 v1.2 頁面內容仍可使用。主題模板由 `themed_page!` 在編譯期選擇，絕不使用請求提供的路徑 |
 | FR-THEME-7 | 資產 | `/assets/themes/{key}` 只提供固定的內建 key；`/assets/custom-themes/{key}` 依資料庫資料列提供上傳樣式表（前面接上 Verdant 基礎 CSS，讓上傳能與預設設計疊加），URL 帶有 `/assets/custom-themes/{key}?v=<內容雜湊>`；`/assets/theme-ui.css` 提供切換器與管理目錄的共用樣式。不引入外部字型、圖片、腳本或 CDN，維持 `default-src 'self'` CSP 與零建置部署 |
-| FR-THEME-8 | 外觀 | 除了 Aurora，每個內建設計都提供兩種色系與持久化的明暗控制：訪客選定模式之前跟隨 `prefers-color-scheme`，選定後 `data-theme` 兩個方向都生效，因此儲存的淺色偏好也能勝過深色的作業系統。Aurora 僅有深色，在 `<html>` 標記 `data-theme="dark"`／`data-theme-lock="dark"` 並隱藏控制項，而不是放一個無效的按鈕。目錄的 `appearance` 欄位與「僅淺色／僅深色」徽章都來自同一份 `ThemeKey` 政策，不寫死旗標。上傳主題有管理員選擇的外觀：`auto` 保留明暗控制，`light`／`dark` 透過 `data-theme`／`data-theme-lock` 強制調色盤、隱藏控制，且瀏覽器儲存的偏好無法覆寫 |
+| FR-THEME-8 | 外觀 | 除了 Aurora 與 Cosmos，每個內建設計都提供兩種色系與持久化的明暗控制：訪客選定模式之前跟隨 `prefers-color-scheme`，選定後 `data-theme` 兩個方向都生效，因此儲存的淺色偏好也能勝過深色的作業系統。Aurora 與 Cosmos 僅有深色，在 `<html>` 標記 `data-theme="dark"`／`data-theme-lock="dark"` 並隱藏控制項，而不是放一個無效的按鈕。目錄的 `appearance` 欄位與「僅淺色／僅深色」徽章都來自同一份 `ThemeKey` 政策，不寫死旗標。上傳主題有管理員選擇的外觀：`auto` 保留明暗控制，`light`／`dark` 透過 `data-theme`／`data-theme-lock` 強制調色盤、隱藏控制，且瀏覽器儲存的偏好無法覆寫 |
 | FR-THEME-9 | 持久化 | 選擇存在 cookie，而非每位使用者的資料庫欄位。已停用的主題在下一個請求即被拒絕，管理員可隨時為沒有偏好的訪客更改預設。上傳主題的中介資料在 `custom_themes`、樣式表在持久化 volume 的 `URLET_THEMES_DIR`、目錄狀態在 `themes`，重啟後仍可選用。主題切換不觸碰任何連結、使用者或點擊資料 |
 | FR-THEME-10 | 上傳 | 上傳、編輯與刪除僅限管理員。上傳內容為單一 UTF-8 `.css` 檔、最大 256 KiB；名稱 1–60 字元、說明最多 200 字元、外觀為 `auto`／`light`／`dark`；每個執行個體最多 32 個上傳。CSS 以 `text/css` 與 `nosniff` 提供，接在 Verdant 基礎樣式表之後，且不可使用外部 `url(...)`、`@import`、`expression(...)` 或舊式 `behavior`。替換樣式表會改變內容雜湊 URL；刪除會移除檔案；預設主題不可刪除 |
 | FR-THEME-11 | 頁尾署名 | 每個設計的頁尾都連向上游 repo，讓自架執行個體能標明自己是從哪個專案建置的。URL 來自 `Cargo.toml` 的 `repository` 欄位，以 `urlet::REPOSITORY` 提供，並由 `templates/partials/repo_link.html` 渲染；每個 base 模板都納入它，包含 Gilded 獨立的首頁頁尾與額外網域的簡短首頁。標籤使用品牌名 `GitHub`，在每份 catalogue 都保持原文；圖示是 inline SVG，因為 CSP 不允許遠端圖片，且專案沒有圖示字型。連結以新分頁開啟並帶 `rel="noopener"`；共用的 `.footer-link` 規則放在 `/assets/theme-ui.css`（`.footer-repo` 保留為別名，讓已上傳且針對它撰寫的樣式表繼續運作），各主題的擺放位置與字級則緊鄰該設計自己的頁尾規則 |
@@ -464,7 +464,7 @@ v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大
 | FR-CLEAN-4 | 驗證 | 上限 8192 bytes、100 條規則，每條 32 個參數，每個參數 64 bytes（含 `*`）。網域為 ASCII hostname，至少兩個非空分段，總長最多 253 bytes、每段 63 bytes；每段限英文字母、數字及連字號，且不能以連字號開頭或結尾。不接受 scheme、port、路徑、帳密或萬用網域。參數名稱限英文字母、數字、`_`、`-` 或 `.`，尾端可加一個 `*`，拒絕單獨 `*` 及正規表示式。非法批次不寫入資料庫或快取 |
 | FR-CLEAN-5 | 網址保留 | 先驗證原始目標，只移除符合規則的 query 元件（含重複者），保留其餘元件原始編碼、順序、值、路徑及 fragment。移除後 query 為空時不保留問號。不展開分享短鏈、不讀取目標、不改寫網域／路徑，也不在重新導向時清理 |
 | FR-CLEAN-6 | 相容性 | 僅建立時清理並儲存／回傳清理後目標。既有連結與明確的目標網址編輯不受後續設定改變影響。停用功能仍保存自訂規則，供日後重新啟用。不新增資料表或 migration，啟動時只補入缺少的設定，不覆寫現值 |
-| FR-CLEAN-7 | 管理介面 | 六個主題共用開關、規則文字框、格式／上限／風險提示及可展開的內建規則，支援三語。非法規則送出後回傳 422 頁面，保留經 HTML 跳脫的輸入及本地化錯誤，不儲存任何設定 |
+| FR-CLEAN-7 | 管理介面 | 七個主題共用開關、規則文字框、格式／上限／風險提示及可展開的內建規則，支援三語。非法規則送出後回傳 422 頁面，保留經 HTML 跳脫的輸入及本地化錯誤，不儲存任何設定 |
 
 內建規則唯一來源為 `src/rules/url-cleaning.txt`，以與自訂規則相同的格式獨立於 Rust 邏輯維護。透過 `include_str!` 在編譯時嵌入執行檔，清理器與管理介面共用此清單；更新內建規則需修改清單並重新建置，部署時無需額外規則檔。自訂規則可能移除必要參數，因此介面提醒管理員只移除已知追蹤名稱。
 
@@ -930,7 +930,7 @@ v1.2 新增項目：
 
 v1.4 新增項目：
 
-- [x] `themes`（19 張表、35 個索引）：六個內建設計與管理員 CSS 上傳、啟用/預設切換、全站切換權限、`urlet_theme` cookie、各主題模板目錄，以及持久化於 `/data/themes` 的 `custom_themes` 目錄與檔案
+- [x] `themes`（19 張表、35 個索引）：七個內建設計與管理員 CSS 上傳、啟用/預設切換、全站切換權限、`urlet_theme` cookie、各主題模板目錄，以及持久化於 `/data/themes` 的 `custom_themes` 目錄與檔案
 
 v1.5 新增項目：
 
@@ -938,7 +938,7 @@ v1.5 新增項目：
 - [x] 中轉頁連結回 200 中間頁，顯示自訂或在地化文案、目的地主機、倒數、meta refresh 與立即前往按鈕；送出時記錄點擊、設定 `no-store`，且不載入外部資源
 - [x] 受密碼保護的連結以密碼頁為唯一中間頁，解鎖後直接前往目標
 - [x] `user_groups.redirect_mode_policy`（`direct` / `splash` / `choice`，預設 `choice`）只把關建立與模式切換，透過 `GET /api/v1/auth/me` 曝光，兩個網頁表單都會隱藏被封鎖的選項
-- [x] 六個主題皆提供中轉頁模板，三份語言目錄涵蓋所有新字串
+- [x] 七個主題皆提供中轉頁模板，三份語言目錄涵蓋所有新字串
 - [x] `cargo test`、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`scripts/smoke.sh` 與 `scripts/merge-check.sh` 全綠
 
 v1.6 新增項目：
@@ -951,7 +951,7 @@ v1.6 新增項目：
 - [x] `public_rate_limit_per_ip` 與 `public_rate_limit_global` 只限制匿名建立，週期可各自選擇分鐘／時／日／週／月（預設每自然小時 20／500 次），`0` 會停用任一項，被拒絕時回 `429` / `?err=rate_limited`
 - [x] `POST /api/v1/public/urls` 回 `201 {domain, slug, short_url, target_url, created_at}`，且不提供連結 id
 - [x] `?shortened=<slug>` 以資料庫解析，因此結果框永不逐字印出查詢字串的值，也永不洩漏目的地
-- [x] 三份語言目錄與六個導覽首頁模板都帶有新字串與共用的表單 partial
+- [x] 三份語言目錄與七個導覽首頁模板都帶有新字串與共用的表單 partial
 - [x] `cargo test`、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`scripts/smoke.sh` 與 `scripts/merge-check.sh` 全綠
 
 ---

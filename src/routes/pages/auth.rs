@@ -43,6 +43,7 @@ themed_page!(login_templates, LoginView, LoginPage,
     Signal => "themes/signal/login.html",
     Gilded => "themes/gilded/login.html",
     Swiss => "themes/swiss/login.html",
+    Cosmos => "themes/cosmos/login.html",
 );
 
 #[derive(Debug)]
@@ -69,6 +70,7 @@ themed_page!(register_templates, RegisterView, RegisterPage,
     Signal => "themes/signal/register.html",
     Gilded => "themes/gilded/register.html",
     Swiss => "themes/swiss/register.html",
+    Cosmos => "themes/cosmos/register.html",
 );
 
 #[derive(Debug, Clone, Default, Deserialize)]

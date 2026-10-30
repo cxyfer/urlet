@@ -729,6 +729,8 @@
   "theme.description.signal": "粗獷訊號看板：黑色分隔線、鈷藍數據與紅色重點。",
   "theme.description.gilded": "象牙白、祖母綠與香檳金裝飾藝術沙龍。",
   "theme.description.swiss": "編號區塊與細線構成的瑞士遙測網格。",
+  "theme.name.cosmos": "星穹觀測站",
+  "theme.description.cosmos": "漂移星雲、軌道環與星光指揮甲板的深空觀測站。",
   "admin.tabs.themes": "主題",
   "admin.themes.title": "主題",
   "admin.themes.heading": "主題",

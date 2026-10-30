@@ -912,7 +912,9 @@ async fn form_saves_both_image_sources_preserves_upload_and_retains_text_after_e
 #[tokio::test]
 async fn link_editor_and_retry_form_render_in_all_themes_and_locales() {
     let (app, cookie, id) = setup().await;
-    for theme in ["verdant", "aurora", "paper", "signal", "gilded", "swiss"] {
+    for theme in [
+        "verdant", "aurora", "paper", "signal", "gilded", "swiss", "cosmos",
+    ] {
         for lang in ["en", "zh-Hant", "zh-Hans"] {
             let cookies = format!("{cookie}; urlet_theme={theme}; urlet_lang={lang}");
             let response = app.get_as(&format!("/app/urls/{id}/edit"), &cookies).await;

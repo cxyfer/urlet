@@ -12,6 +12,7 @@ pub const PAPER_CSS: &str = include_str!("assets/themes/paper.css");
 pub const SIGNAL_CSS: &str = include_str!("assets/themes/signal.css");
 pub const GILDED_CSS: &str = include_str!("assets/themes/gilded.css");
 pub const SWISS_CSS: &str = include_str!("assets/themes/swiss.css");
+pub const COSMOS_CSS: &str = include_str!("assets/themes/cosmos.css");
 pub const FAVICON: &str = include_str!("assets/favicon.svg");
 
 // The API reference. Scalar is vendored rather than pulled from a CDN: the

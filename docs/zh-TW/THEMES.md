@@ -2,7 +2,7 @@
 
 # 佈景主題
 
-urlet 在單一 binary 內建六套視覺主題，管理員另可在執行期上傳「純樣式表」主題。
+urlet 在單一 binary 內建七套視覺主題，管理員另可在執行期上傳「純樣式表」主題。
 **內建主題**是程式碼：`templates/themes/<key>/` 下的 Askama 模板目錄與一個內嵌
 CSS 檔。**上傳主題**則是存放於持久化 volume 的 CSS 檔；由於 Askama 模板在編譯期
 固定，上傳主題沿用基礎頁面結構，只替換樣式表。
@@ -15,18 +15,25 @@ CSS 檔。**上傳主題**則是存放於持久化 volume 的 CSS 檔；由於 A
 | `signal` | Signal | 粗獷訊號看板；兩種色系齊備並支援明暗切換 |
 | `gilded` | Gilded Circuit | 象牙白、祖母綠與香檳金裝飾藝術；兩種色系齊備並支援明暗切換 |
 | `swiss` | Swiss Telemetry | 編號區塊的瑞士遙測網格；兩種色系齊備並支援明暗切換 |
+| `cosmos` | 星穹觀測站 | 漂移星雲、動態星圖與軌道環的深空觀測站；僅深色，因此不顯示明暗切換 |
 | `custom-…` | 自訂 | 由 **管理 → 主題** 上傳的樣式表，沿用 Verdant 模板 |
 
-五個非預設的內建主題來自已關閉的 PR #5、#6、#7、#9、#10，並已移植到 v1.2
-頁面模型，而非凍結在原本的功能集。
+六個非預設的內建主題來自已關閉的 PR #5、#6、#7、#9、#10 與 Cosmos，並已移植
+到 v1.2 頁面模型，而非凍結在原本的功能集。
 
-除了 Aurora，每套設計在訪客選擇模式之前跟隨 `prefers-color-scheme`，選定後
+除了 Aurora 與 Cosmos，每套設計在訪客選擇模式之前跟隨 `prefers-color-scheme`，選定後
 兩個方向都生效：樣式表把深色調色盤寫兩次，一次在
 `@media (prefers-color-scheme: dark)` 內並以 `:not([data-theme="light"])` 守衛，
 一次掛在 `:root[data-theme="dark"]`。新的移植若漏掉第二份，仍然跟隨作業系統，
 但明暗切換會是騙人的；測試
 `every_dual_palette_design_serves_the_system_and_the_explicit_palette`
 會抓到這件事。
+
+Cosmos 是唯一讓首頁動起來的設計：星場緩慢呼吸、軌道環旋轉、彗星掠過星圖，
+主視覺文字依序進場。這些動態全部只用 CSS，沒有額外腳本、canvas 或外部資源；
+在 `prefers-reduced-motion: reduce` 下每一段動畫都會移除，留下同樣的文案、連結與
+控制項，靜態星圖仍然完整。這是該設計的選擇，不是所有主題的共同要求；其他外觀
+維持靜態。
 
 瀏覽器外框是 CSS 唯一構不到的表面：`theme-color` meta 標籤由媒體查詢決定，
 而媒體查詢看不到 `data-theme`。因此會替瀏覽器外框上色的設計（Signal）在兩個
@@ -74,6 +81,7 @@ templates/
     │   ├── dashboard.html     # content/dashboard.html 的薄包裝
     │   └── ...
     ├── paper/
+    ├── cosmos/                # deep-space observatory, dark only
     └── ...
 ```
 
@@ -196,6 +204,6 @@ volume；重啟後 registry 會從資料庫重建，上傳主題仍可選用。
   `@import` 也會被拒絕。
 - 沒有細緻的個人權限：政策是全站 `all`／`admin`。既有的使用者群組功能開關負責
   各群組的資料能力，不負責外觀。
-- 除了 Aurora，每套設計都提供兩種色系與同一組持久化明暗控制；控制項只是外觀偏好，
-  因此不需要每位使用者的資料欄位。Aurora 依設計僅提供深色，沒有淺色調色盤可給，
-  因此隱藏控制項，而不是放一個無效的按鈕。
+- 除了 Aurora 與 Cosmos，每套設計都提供兩種色系與同一組持久化明暗控制；控制項
+  只是外觀偏好，因此不需要每位使用者的資料欄位。Aurora 與 Cosmos 依設計僅提供
+  深色，沒有淺色調色盤可給，因此隱藏控制項，而不是放一個無效的按鈕。

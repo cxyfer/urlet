@@ -28,14 +28,14 @@ async fn the_theme_catalogue_is_seeded_and_listed_by_the_admin_api() {
     let body = response.json();
     assert_eq!(body["switching"], "all");
     let themes = body["themes"].as_array().expect("themes");
-    assert_eq!(themes.len(), 6);
+    assert_eq!(themes.len(), 7);
     let names: Vec<&str> = themes
         .iter()
         .map(|theme| theme["key"].as_str().expect("key"))
         .collect();
     assert_eq!(
         names,
-        vec!["verdant", "aurora", "paper", "signal", "gilded", "swiss"]
+        vec!["verdant", "aurora", "paper", "signal", "gilded", "swiss", "cosmos"]
     );
     assert_eq!(themes[0]["default"], true);
     assert_eq!(themes[0]["enabled"], true);
@@ -221,19 +221,27 @@ async fn every_design_marks_its_own_palette_policy() {
         assert!(!page.body.contains("data-theme=\"dark\""), "{key}");
     }
 
-    // Aurora is dark-only: the page carries the server-side marker and offers
-    // no control, because a switch could not change anything.
-    let aurora = app
-        .get_as("/app", &format!("{cookie}; urlet_theme=aurora"))
-        .await;
-    assert_eq!(aurora.status, StatusCode::OK);
-    assert!(
-        aurora.body.contains("data-theme=\"dark\""),
-        "{}",
-        aurora.body
-    );
-    assert!(aurora.body.contains("data-theme-lock=\"dark\""));
-    assert!(!aurora.body.contains("data-theme-toggle"));
+    // Aurora and Cosmos are dark-only: the page carries the server-side marker
+    // and offers no control, because a switch could not change anything.
+    for key in ["aurora", "cosmos"] {
+        let dark = app
+            .get_as("/app", &format!("{cookie}; urlet_theme={key}"))
+            .await;
+        assert_eq!(dark.status, StatusCode::OK, "{key}");
+        assert!(
+            dark.body.contains("data-theme=\"dark\""),
+            "{key}: {}",
+            dark.body
+        );
+        assert!(
+            dark.body.contains("data-theme-lock=\"dark\""),
+            "{key} must lock the dark palette"
+        );
+        assert!(
+            !dark.body.contains("data-theme-toggle"),
+            "{key} must not offer a light/dark switch"
+        );
+    }
 }
 
 #[tokio::test]
@@ -361,6 +369,53 @@ async fn a_design_that_paints_the_browser_chrome_follows_the_resolved_mode() {
             .contains("meta[name=\"theme-color\"][data-theme-mode]"),
         "theme.js must select the marked theme-color tags"
     );
+}
+
+#[tokio::test]
+async fn the_cosmos_landing_carries_its_animated_chart_and_a_reduced_motion_path() {
+    let app = TestApp::spawn().await;
+
+    let landing = app.get_as("/", "urlet_theme=cosmos").await;
+    assert_eq!(landing.status, StatusCode::OK, "{}", landing.body);
+    for marker in [
+        "class=\"star-chart\"",
+        "class=\"orbit-system\"",
+        "class=\"chart-comet\"",
+        "class=\"orbit-divider\"",
+        "class=\"hero-meta mono\"",
+    ] {
+        assert!(
+            landing.body.contains(marker),
+            "the Cosmos landing page is missing {marker}"
+        );
+    }
+    // Decorative motion is hidden from assistive technology and the copy that
+    // matters is ordinary text, not an image.
+    assert!(landing.body.contains("aria-hidden=\"true\""));
+    assert!(landing.body.contains("<h1>"));
+
+    let css = app.get("/assets/themes/cosmos").await;
+    assert_eq!(css.status, StatusCode::OK);
+    for animation in [
+        "@keyframes orbit-spin",
+        "@keyframes comet-fly",
+        "@keyframes chart-enter",
+        "@keyframes hero-rise",
+        "@keyframes star-breathe",
+    ] {
+        assert!(css.body.contains(animation), "missing {animation}");
+    }
+    assert!(css.body.contains("@media (prefers-reduced-motion: reduce)"));
+    assert!(css
+        .body
+        .contains("body::before, body::after { animation: none !important; }"));
+    assert!(css
+        .body
+        .contains(".orbit-outer, .orbit-mid, .chart-comet, .chart-live i, .chart-bars i,"));
+    // The palette is dark-only, so the stylesheet must never follow the OS
+    // light palette; the server pins data-theme and hides the switch instead.
+    assert!(!css.body.contains("prefers-color-scheme"));
+    assert!(!css.body.contains("url(http"));
 }
 
 #[tokio::test]
@@ -1186,7 +1241,7 @@ async fn catalogue_and_policy_roll_back_together() {
         .fetch_one(&app.state.db)
         .await
         .expect("default key");
-    assert_eq!(enabled, 6, "the enabled set must roll back with the policy");
+    assert_eq!(enabled, 7, "the enabled set must roll back with the policy");
     assert_eq!(
         default, "verdant",
         "the default must roll back with the policy"
@@ -1385,7 +1440,7 @@ async fn theme_updates_are_audited() {
 #[tokio::test]
 async fn ported_themes_keep_the_optional_invite_field() {
     let app = TestApp::spawn().await;
-    for key in ["aurora", "paper", "signal", "gilded", "swiss"] {
+    for key in ["aurora", "paper", "signal", "gilded", "swiss", "cosmos"] {
         let page = app
             .get_as("/app/register", &format!("urlet_theme={key}"))
             .await;
@@ -2167,7 +2222,9 @@ async fn every_theme_renders_the_splash_page() {
         .await;
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
 
-    for key in ["verdant", "aurora", "paper", "signal", "gilded", "swiss"] {
+    for key in [
+        "verdant", "aurora", "paper", "signal", "gilded", "swiss", "cosmos",
+    ] {
         let switched = app
             .send(get_as(&format!("/app/theme/{key}?next=/app"), &cookie))
             .await;

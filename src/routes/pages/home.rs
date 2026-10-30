@@ -83,6 +83,7 @@ themed_page!(landing_templates, LandingView, LandingPage,
     Signal => "themes/signal/landing.html",
     Gilded => "themes/gilded/landing.html",
     Swiss => "themes/swiss/landing.html",
+    Cosmos => "themes/cosmos/landing.html",
 );
 
 /// `templates/short_landing.html`
@@ -101,6 +102,7 @@ themed_page!(short_landing_templates, ShortLandingView, ShortLandingPage,
     Signal => "themes/signal/short_landing.html",
     Gilded => "themes/gilded/short_landing.html",
     Swiss => "themes/swiss/short_landing.html",
+    Cosmos => "themes/cosmos/short_landing.html",
 );
 
 /// `GET /` — the public landing page.

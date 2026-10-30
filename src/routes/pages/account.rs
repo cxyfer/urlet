@@ -49,6 +49,7 @@ themed_page!(account_templates, AccountView, AccountPage,
     Signal => "themes/signal/account.html",
     Gilded => "themes/gilded/account.html",
     Swiss => "themes/swiss/account.html",
+    Cosmos => "themes/cosmos/account.html",
 );
 
 /// One row of the session table.
