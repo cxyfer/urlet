@@ -712,7 +712,7 @@ pub async fn update(
             multipart: true,
             partial,
             ..
-        }) => match partial {
+        }) => match partial.map(|partial| *partial) {
             Some(LinkSubmission { form, preview }) => (form, preview, true),
             None => (UpdateForm::default(), None, true),
         },

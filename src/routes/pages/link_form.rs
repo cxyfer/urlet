@@ -327,7 +327,7 @@ pub struct Rejected<T> {
     /// whose declared length is over the limit is refused before any field is
     /// read, so this is often `None`; the browser checks the file size before
     /// sending for exactly that reason.
-    pub partial: Option<LinkSubmission<T>>,
+    pub partial: Option<Box<LinkSubmission<T>>>,
 }
 
 /// 解析失敗不在 extractor 內回應，交給 handler 決定要導回哪一頁。
@@ -395,9 +395,11 @@ async fn read_multipart<T: DeserializeOwned>(
             Err(Rejected {
                 error,
                 multipart: true,
-                partial: form.map(|form| LinkSubmission {
-                    form,
-                    preview: has_preview.then_some(preview),
+                partial: form.map(|form| {
+                    Box::new(LinkSubmission {
+                        form,
+                        preview: has_preview.then_some(preview),
+                    })
                 }),
             })
         }
