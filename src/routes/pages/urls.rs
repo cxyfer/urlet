@@ -18,7 +18,7 @@ use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::routes::api_stats::{click_dto, summary_dto};
 use crate::routes::dto::{StatsSummaryDto, UrlDto};
 use crate::routes::pages::dashboard::{bar_rows, BarRow};
-use crate::routes::pages::link_form::{LinkForm, LinkSubmission, Submission};
+use crate::routes::pages::link_form::{LinkForm, LinkSubmission, Rejected, Submission};
 use crate::routes::pages::{
     captcha_rejected, flash_from_query, redirect_err, redirect_ok, redirect_to_login, safe_next,
     Chrome, UrlRow,
@@ -291,12 +291,14 @@ pub async fn create(
     let Some(current) = current else {
         return Ok(redirect_to_login(Some("/app")).into_response());
     };
-    let Ok(LinkSubmission {
-        form: payload,
-        preview,
-    }) = submission
-    else {
-        return Ok(redirect_err("/app", "invalid").into_response());
+    let (payload, preview) = match submission {
+        Ok(LinkSubmission { form, preview }) => (form, preview),
+        // A multipart body only fails to read when it is over the size limit,
+        // which means the preview image.
+        Err(Rejected {
+            multipart: true, ..
+        }) => return Ok(redirect_err("/app", "preview_image").into_response()),
+        Err(_) => return Ok(redirect_err("/app", "invalid").into_response()),
     };
 
     if state
@@ -379,8 +381,14 @@ pub async fn create(
     };
     let detail_page = format!("/app/urls/{}", url.id);
     if let Some(changes) = preview_changes {
-        if let Err(err) = previews::save(&state, &current, url.id, changes).await {
-            return Ok(redirect_err(&detail_page, preview_error_code(&err)).into_response());
+        // The preview was validated before the link was created, so this only
+        // fails on a policy change racing the request or a database error.
+        // The link exists by now; say so instead of reporting a plain failure.
+        if previews::save(&state, &current, url.id, changes)
+            .await
+            .is_err()
+        {
+            return Ok(redirect_err(&detail_page, "preview_not_saved").into_response());
         }
     }
     Ok(redirect_ok(&detail_page, "created").into_response())
@@ -592,7 +600,9 @@ async fn url_row(state: &AppState, url: &urls::Url) -> Result<UrlRow, AppError> 
 /// Where a saved edit returns to: a page of the signed-in app, never another
 /// site. Without one the editor returns to the link's statistics.
 fn return_path(next: Option<&str>) -> Option<String> {
+    // A fragment would swallow the `?ok=` flash appended after it.
     safe_next(next)
+        .filter(|path| !path.contains('#'))
         .filter(|path| path == "/app" || path.starts_with("/app/") || path.starts_with("/app?"))
 }
 
@@ -627,6 +637,15 @@ fn preview_error_code(err: &AppError) -> &'static str {
             _ => "preview_image",
         },
         _ => "invalid",
+    }
+}
+
+/// Put a rejected submission — the link values and the preview section —
+/// back into the editor.
+fn restore_submission(form: &mut LinkForm, payload: &UpdateForm, preview: Option<&PreviewFields>) {
+    retain_submission(form, payload);
+    if let (Some(view), Some(fields)) = (form.preview.as_mut(), preview) {
+        view.retain(fields);
     }
 }
 
@@ -684,12 +703,20 @@ pub async fn update(
         return Ok(redirect_to_login(Some(&format!("/app/urls/{id}"))).into_response());
     };
     let target_page = format!("/app/urls/{id}");
-    let Ok(LinkSubmission {
-        form: payload,
-        preview,
-    }) = submission
-    else {
-        return Ok(redirect_err(&target_page, "invalid").into_response());
+    // A multipart body only fails to read when it is over the size limit,
+    // which means the preview image. The fields read before the failure (if
+    // any) are shown again; the rest come from the stored link.
+    let (payload, preview, cut_short) = match submission {
+        Ok(LinkSubmission { form, preview }) => (form, preview, false),
+        Err(Rejected {
+            multipart: true,
+            partial,
+            ..
+        }) => match partial {
+            Some(LinkSubmission { form, preview }) => (form, preview, true),
+            None => (UpdateForm::default(), None, true),
+        },
+        Err(_) => return Ok(redirect_err(&target_page, "invalid").into_response()),
     };
 
     let context = UrlContext {
@@ -711,32 +738,33 @@ pub async fn update(
             .map(|flash| flash.message)
             .unwrap_or_default();
         let advanced = matches!(code, "expiry" | "password_rules" | "mode_denied");
-        let payload = payload.clone();
-        let preview = preview.as_ref();
+        let (payload, preview) = (&payload, preview.as_ref());
         move |form: &mut LinkForm| {
-            retain_submission(form, &payload);
-            if let (Some(view), Some(fields)) = (form.preview.as_mut(), preview) {
-                view.retain(fields);
-            }
+            restore_submission(form, payload, preview);
             form.error = message;
             form.advanced_open = advanced;
         }
     };
-    let reject_preview = |err: &AppError| {
-        let payload = payload.clone();
-        let preview = preview.as_ref();
-        let key = previews::error_key(err);
+    let reject_preview = |key: &'static str| {
+        let (payload, preview) = (&payload, preview.as_ref());
         move |form: &mut LinkForm| {
-            retain_submission(form, &payload);
+            restore_submission(form, payload, preview);
             if let Some(view) = form.preview.as_mut() {
-                if let Some(fields) = preview {
-                    view.retain(fields);
-                }
                 view.reject(key);
             }
             form.preview_open = true;
         }
     };
+
+    if cut_short {
+        return render_edit(
+            &state,
+            &current.user,
+            id,
+            reject_preview("preview.error_image"),
+        )
+        .await;
+    }
 
     let stored_preview = match preview {
         Some(_) => crate::db::url_previews::find(&state.db, id).await?,
@@ -755,7 +783,13 @@ pub async fn update(
             return render_edit(&state, &current.user, id, reject_link(error_code(&err))).await
         }
         Err(err) if previews::is_form_error(&err) => {
-            return render_edit(&state, &current.user, id, reject_preview(&err)).await
+            return render_edit(
+                &state,
+                &current.user,
+                id,
+                reject_preview(previews::error_key(&err)),
+            )
+            .await
         }
         Err(err) => return Err(err),
     };
@@ -845,12 +879,27 @@ pub async fn update(
     }
 
     if let Some(changes) = preview_changes {
-        match previews::save(&state, &current, id, changes).await {
-            Ok(_) => {}
-            Err(err) if previews::is_form_error(&err) => {
-                return render_edit(&state, &current.user, id, reject_preview(&err)).await
-            }
-            Err(err) => return Err(err),
+        // The preview was validated before the link changed, so this only
+        // fails on a policy change racing the request or a database error.
+        // The link is saved by now: the editor says so, shows the stored link
+        // and keeps the preview input, so a retry only applies the preview.
+        if let Err(err) = previews::save(&state, &current, id, changes).await {
+            let key = previews::is_form_error(&err).then(|| previews::error_key(&err));
+            let message = flash_from_query(None, Some("preview_not_saved"))
+                .map(|flash| flash.message)
+                .unwrap_or_default();
+            return render_edit(&state, &current.user, id, |form| {
+                if let (Some(view), Some(fields)) = (form.preview.as_mut(), preview.as_ref()) {
+                    view.retain(fields);
+                    if let Some(key) = key {
+                        view.reject(key);
+                    }
+                }
+                form.next = return_path(payload.next.as_deref()).unwrap_or_default();
+                form.error = message;
+                form.preview_open = true;
+            })
+            .await;
         }
     }
 

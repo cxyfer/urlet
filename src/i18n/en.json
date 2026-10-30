@@ -907,5 +907,6 @@
   "url_detail.facts.public": "Open to everyone",
   "url_detail.facts.preview_custom": "Customised",
   "url_detail.facts.preview_default": "Default",
-  "dashboard.table.stats": "Stats"
+  "dashboard.table.stats": "Stats",
+  "flash.err.preview_not_saved": "The link settings were saved, but the SNS preview was not. Check it and save again."
 }

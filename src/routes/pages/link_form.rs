@@ -317,8 +317,21 @@ pub struct LinkSubmission<T> {
     pub preview: Option<PreviewFields>,
 }
 
+/// A submission that could not be read in full.
+pub struct Rejected<T> {
+    pub error: AppError,
+    /// The body was multipart. A browser form only fails to read when it is
+    /// over the size limit, which in practice means the preview image.
+    pub multipart: bool,
+    /// The fields read before the failure, when they still decode. A body
+    /// whose declared length is over the limit is refused before any field is
+    /// read, so this is often `None`; the browser checks the file size before
+    /// sending for exactly that reason.
+    pub partial: Option<LinkSubmission<T>>,
+}
+
 /// 解析失敗不在 extractor 內回應，交給 handler 決定要導回哪一頁。
-pub struct Submission<T>(pub Result<LinkSubmission<T>, AppError>);
+pub struct Submission<T>(pub Result<LinkSubmission<T>, Rejected<T>>);
 
 impl<S, T> FromRequest<S> for Submission<T>
 where
@@ -333,18 +346,23 @@ where
             .get(header::CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
             .is_some_and(|value| value.starts_with("multipart/form-data"));
+        let invalid = |multipart| Rejected {
+            error: AppError::bad_request("invalid form"),
+            multipart,
+            partial: None,
+        };
         if !is_multipart {
             return Ok(Self(match Form::<T>::from_request(req, state).await {
                 Ok(Form(form)) => Ok(LinkSubmission {
                     form,
                     preview: None,
                 }),
-                Err(_) => Err(AppError::bad_request("invalid form")),
+                Err(_) => Err(invalid(false)),
             }));
         }
         let multipart = match Multipart::from_request(req, state).await {
             Ok(multipart) => multipart,
-            Err(_) => return Ok(Self(Err(AppError::bad_request("invalid form")))),
+            Err(_) => return Ok(Self(Err(invalid(true)))),
         };
         Ok(Self(read_multipart(multipart).await))
     }
@@ -354,11 +372,45 @@ where
 /// urlencoded form) and the `preview_*` fields.
 async fn read_multipart<T: DeserializeOwned>(
     mut multipart: Multipart,
-) -> Result<LinkSubmission<T>, AppError> {
+) -> Result<LinkSubmission<T>, Rejected<T>> {
     let mut pairs: Vec<(String, String)> = Vec::new();
     let mut preview = PreviewFields::default();
-    let mut seen = std::collections::HashSet::new();
     let mut has_preview = false;
+    let read = read_fields(&mut multipart, &mut pairs, &mut preview, &mut has_preview).await;
+    let decoded = serde_urlencoded::to_string(&pairs)
+        .ok()
+        .and_then(|encoded| serde_urlencoded::from_str::<T>(&encoded).ok());
+    match (read, decoded) {
+        (Ok(()), Some(form)) => Ok(LinkSubmission {
+            form,
+            preview: has_preview.then_some(preview),
+        }),
+        (Ok(()), None) => Err(Rejected {
+            error: AppError::bad_request("invalid form"),
+            multipart: false,
+            partial: None,
+        }),
+        (Err(error), form) => {
+            preview.image = None;
+            Err(Rejected {
+                error,
+                multipart: true,
+                partial: form.map(|form| LinkSubmission {
+                    form,
+                    preview: has_preview.then_some(preview),
+                }),
+            })
+        }
+    }
+}
+
+async fn read_fields(
+    multipart: &mut Multipart,
+    pairs: &mut Vec<(String, String)>,
+    preview: &mut PreviewFields,
+    has_preview: &mut bool,
+) -> Result<(), AppError> {
+    let mut seen = std::collections::HashSet::new();
     while let Some(field) = multipart
         .next_field()
         .await
@@ -369,7 +421,7 @@ async fn read_multipart<T: DeserializeOwned>(
             if !seen.insert(name.clone()) {
                 return Err(AppError::bad_request("duplicate preview field"));
             }
-            has_preview = true;
+            *has_preview = true;
             if key == "image" {
                 let bytes = field
                     .bytes()
@@ -402,12 +454,5 @@ async fn read_multipart<T: DeserializeOwned>(
             pairs.push((name, value));
         }
     }
-    let encoded =
-        serde_urlencoded::to_string(&pairs).map_err(|_| AppError::bad_request("invalid form"))?;
-    let form =
-        serde_urlencoded::from_str(&encoded).map_err(|_| AppError::bad_request("invalid form"))?;
-    Ok(LinkSubmission {
-        form,
-        preview: has_preview.then_some(preview),
-    })
+    Ok(())
 }

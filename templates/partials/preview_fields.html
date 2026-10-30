@@ -31,7 +31,8 @@
     {% if preview.allow_upload %}
     <div class="field" data-preview-input="upload">
         <label class="label" for="{{ p }}preview-image">{{ lang.t("preview.upload") }}</label>
-        <input class="input" type="file" id="{{ p }}preview-image" name="preview_image" accept="image/png,image/jpeg,image/gif,image/webp" aria-describedby="{{ p }}preview-image-hint">
+        <input class="input" type="file" id="{{ p }}preview-image" name="preview_image" accept="image/png,image/jpeg,image/gif,image/webp" aria-describedby="{{ p }}preview-image-hint"
+               data-max-bytes="{{ preview.max_image_bytes }}" data-too-large="{{ lang.t("preview.error_image") }}">
         <span class="hint" id="{{ p }}preview-image-hint">{{ lang.t("preview.image_hint") }}</span>
     </div>
     {% endif %}

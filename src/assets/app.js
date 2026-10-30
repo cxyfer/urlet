@@ -395,6 +395,12 @@
 
         document.addEventListener("click", function (event) {
             var link = event.target.closest("[" + config.open + "]");
+            // A modified or middle click keeps the browser's own behaviour, so
+            // the form page can still be opened in a new tab.
+            if (link && (event.button !== 0 || event.metaKey || event.ctrlKey
+                || event.shiftKey || event.altKey)) {
+                return;
+            }
             if (link) {
                 event.preventDefault();
                 open(link.getAttribute("href"));
@@ -592,6 +598,34 @@
         select.addEventListener("change", refresh);
         refresh();
     }
+
+    /* 圖片超過上限時在瀏覽器端就攔下，不必把整份表單送出才得知失敗。
+       以 capture 階段執行，先於懸浮窗的送出處理。 */
+    document.addEventListener("submit", function (event) {
+        var form = event.target;
+        if (!form.matches || !form.matches("form[data-link-form]")) { return; }
+        var inputs = form.querySelectorAll('input[type="file"][data-max-bytes]');
+        for (var i = 0; i < inputs.length; i += 1) {
+            var input = inputs[i];
+            var limit = parseInt(input.getAttribute("data-max-bytes"), 10);
+            var file = input.files && input.files[0];
+            if (!input.disabled && file && limit && file.size > limit) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                var section = input.closest("details");
+                if (section) { section.open = true; }
+                input.setCustomValidity(input.getAttribute("data-too-large") || "");
+                input.reportValidity();
+                return;
+            }
+        }
+    }, true);
+
+    document.addEventListener("change", function (event) {
+        if (event.target.matches && event.target.matches('input[type="file"][data-max-bytes]')) {
+            event.target.setCustomValidity("");
+        }
+    });
 
     function initLinkForms(root) {
         root.querySelectorAll("[data-preview-form]").forEach(initPreviewForm);

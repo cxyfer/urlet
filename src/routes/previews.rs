@@ -275,6 +275,9 @@ pub struct FormView {
     pub allow_upload: bool,
     pub policy_key: String,
     pub image_suppressed: bool,
+    /// Largest accepted upload, so the browser can refuse a bigger file before
+    /// sending it.
+    pub max_image_bytes: usize,
 }
 
 impl FormView {
@@ -300,6 +303,7 @@ impl FormView {
             allow_url: policy.allows_url(),
             allow_upload: policy.allows_upload(),
             policy_key: format!("preview.policy.{}", policy.as_str()),
+            max_image_bytes: service::MAX_IMAGE_BYTES,
         }
     }
 }
@@ -506,4 +510,65 @@ async fn public_image_inner(state: &AppState, key: &str) -> Result<Response, App
         image.image_data,
     )
         .into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stored() -> Preview {
+        Preview {
+            url_id: 1,
+            title: Some("Title".into()),
+            description: Some("Description".into()),
+            image_url: None,
+            image_key: Some("key".into()),
+        }
+    }
+
+    fn changes(title: Option<&str>, description: Option<&str>, image: Option<Image>) -> Changes {
+        Changes {
+            title: Some(title.map(str::to_string)),
+            description: Some(description.map(str::to_string)),
+            image,
+        }
+    }
+
+    #[test]
+    fn resubmitting_the_stored_preview_is_a_noop() {
+        let existing = stored();
+        assert!(is_noop(
+            &changes(Some("Title"), Some("Description"), None),
+            Some(&existing)
+        ));
+    }
+
+    #[test]
+    fn an_empty_section_without_a_stored_preview_is_a_noop() {
+        assert!(is_noop(&changes(None, None, Some(Image::default())), None));
+    }
+
+    #[test]
+    fn changed_text_or_a_removed_image_is_a_change() {
+        let existing = stored();
+        assert!(!is_noop(
+            &changes(None, Some("Description"), None),
+            Some(&existing)
+        ));
+        assert!(!is_noop(
+            &changes(Some("Title"), Some("Other"), None),
+            Some(&existing)
+        ));
+        // "No image" while an image is stored removes it.
+        assert!(!is_noop(
+            &changes(Some("Title"), Some("Description"), Some(Image::default())),
+            Some(&existing)
+        ));
+        // A new image is always a change.
+        let image = Image {
+            url: Some("https://images.example/a.png".into()),
+            ..Default::default()
+        };
+        assert!(!is_noop(&changes(None, None, Some(image)), None));
+    }
 }

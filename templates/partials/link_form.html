@@ -264,7 +264,7 @@
 
     <div class="form-actions">
         {% if link_form.is_edit %}
-        <a class="btn btn-ghost" href="{{ link_form.action }}" data-link-dialog-close>{{ lang.t("common.cancel") }}</a>
+        <a class="btn btn-ghost" href="{% if link_form.next.is_empty() %}{{ link_form.action }}{% else %}{{ link_form.next }}{% endif %}" data-link-dialog-close>{{ lang.t("common.cancel") }}</a>
         {% endif %}
         <button class="btn btn-primary" type="submit">{{ lang.t(link_form.submit_label) }}</button>
     </div>

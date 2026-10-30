@@ -151,6 +151,7 @@ pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
             "preview_description" => "preview.error_description",
             "preview_url" => "preview.error_url",
             "preview_image" => "preview.error_image",
+            "preview_not_saved" => "flash.err.preview_not_saved",
             "theme" => "flash.err.theme",
             "theme_upload" => "flash.err.theme_upload",
             "theme_failed" => "flash.err.theme_failed",

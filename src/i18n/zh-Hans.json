@@ -907,5 +907,6 @@
   "url_detail.facts.public": "公开",
   "url_detail.facts.preview_custom": "已自定义",
   "url_detail.facts.preview_default": "默认",
-  "dashboard.table.stats": "统计"
+  "dashboard.table.stats": "统计",
+  "flash.err.preview_not_saved": "链接设置已保存，但 SNS 预览没有保存。请确认后再保存一次。"
 }

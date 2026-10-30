@@ -1133,13 +1133,6 @@ fn link_form(
         .unwrap()
 }
 
-async fn audit_count(app: &TestApp) -> i64 {
-    sqlx::query_scalar("SELECT COUNT(*) FROM audit_logs")
-        .fetch_one(&app.state.db)
-        .await
-        .unwrap()
-}
-
 #[tokio::test]
 async fn the_link_editor_saves_link_and_preview_in_one_submission() {
     let (app, cookie, id) = setup().await;
@@ -1223,7 +1216,6 @@ async fn a_rejected_preview_leaves_the_link_untouched_and_keeps_the_input() {
 #[tokio::test]
 async fn an_untouched_preview_section_writes_nothing() {
     let (app, cookie, id) = setup().await;
-    let before = audit_count(&app).await;
     let response = app
         .send(link_form(
             &format!("/app/urls/{id}"),
@@ -1249,7 +1241,6 @@ async fn an_untouched_preview_section_writes_nothing() {
             .await
             .unwrap();
     assert_eq!(previews, 0);
-    assert!(audit_count(&app).await >= before);
 }
 
 #[tokio::test]
@@ -1358,4 +1349,136 @@ async fn a_saved_edit_returns_to_the_page_it_was_opened_from() {
             "{next}"
         );
     }
+}
+
+#[tokio::test]
+async fn an_oversized_image_is_reported_in_the_editor() {
+    let (app, cookie, id) = setup().await;
+    configure_images(&app, &cookie, "both").await;
+    // The browser refuses such a file before sending; this is the path
+    // without JavaScript. The body is refused before any field is read.
+    let huge = vec![0u8; urlet::services::url_preview::MAX_BODY_BYTES + 1];
+    let response = app
+        .send(link_form(
+            &format!("/app/urls/{id}"),
+            &cookie,
+            &[
+                ("target_url", "https://destination.example/typed"),
+                ("preview_title", "Typed card"),
+                ("preview_image_mode", "upload"),
+            ],
+            Some(&huge),
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(response.body.contains("data-link-form-panel"));
+    assert!(response
+        .body
+        .contains(urlet::i18n::Lang::En.t("preview.error_image")));
+    // The editor reopens on the preview section, with the size limit attached
+    // to the file input for the browser-side check.
+    assert!(response.body.contains("data-preview-form open"));
+    assert!(response.body.contains(&format!(
+        "data-max-bytes=\"{}\"",
+        urlet::services::url_preview::MAX_IMAGE_BYTES
+    )));
+    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(target, "https://destination.example/private-path");
+
+    // The create form reports the same problem by its flash code.
+    let created = app
+        .send(link_form(
+            "/app/urls",
+            &cookie,
+            &[
+                ("target_url", "https://destination.example/new"),
+                ("preview_image_mode", "upload"),
+            ],
+            Some(&huge),
+        ))
+        .await;
+    assert_eq!(
+        created.header("location").as_deref(),
+        Some("/app?err=preview_image")
+    );
+}
+
+#[tokio::test]
+async fn malformed_link_forms_are_refused() {
+    let (app, cookie, id) = setup().await;
+    // A preview field sent twice.
+    let duplicate = app
+        .send(link_form(
+            &format!("/app/urls/{id}"),
+            &cookie,
+            &[
+                ("target_url", "https://destination.example/dup"),
+                ("preview_title", "One"),
+                ("preview_title", "Two"),
+                ("preview_image_mode", "none"),
+            ],
+            None,
+        ))
+        .await;
+    assert_eq!(duplicate.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // An empty file part, as a browser sends when no file was chosen, is fine.
+    let empty = app
+        .send(link_form(
+            &format!("/app/urls/{id}"),
+            &cookie,
+            &[
+                ("target_url", "https://destination.example/empty"),
+                ("preview_image_mode", "none"),
+            ],
+            Some(&[]),
+        ))
+        .await;
+    assert_eq!(empty.status, StatusCode::SEE_OTHER, "{}", empty.body);
+    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(target, "https://destination.example/empty");
+}
+
+#[tokio::test]
+async fn another_users_link_cannot_be_opened_or_saved_in_the_editor() {
+    let (app, _, id) = setup().await;
+    let (intruder, _) = app.register("intruder@example.com", "supersecret").await;
+    let editor = app.get_as(&format!("/app/urls/{id}/edit"), &intruder).await;
+    assert_eq!(
+        editor.header("location").as_deref(),
+        Some("/app?err=not_found")
+    );
+    let saved = app
+        .send(link_form(
+            &format!("/app/urls/{id}"),
+            &intruder,
+            &[
+                ("target_url", "https://evil.example/"),
+                ("preview_title", "Hijacked"),
+                ("preview_image_mode", "none"),
+            ],
+            None,
+        ))
+        .await;
+    assert_eq!(
+        saved.header("location").as_deref(),
+        Some("/app?err=not_found")
+    );
+    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(target, "https://destination.example/private-path");
+    assert!(urlet::db::url_previews::find(&app.state.db, id)
+        .await
+        .unwrap()
+        .is_none());
 }
