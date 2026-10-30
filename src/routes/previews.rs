@@ -1,9 +1,8 @@
 //! SNS 預覽管理及公開圖片。使用者只能編輯自己短網址的預覽。
-use askama::Template;
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Path, State},
     http::{header, StatusCode},
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
     Router,
 };
 use serde::{Deserialize, Serialize};
@@ -11,12 +10,11 @@ use serde::{Deserialize, Serialize};
 use crate::{
     db::url_previews::{self, Changes, Image, Preview},
     error::{ApiError, AppError},
-    i18n::{self, Lang},
     middleware::auth::{CurrentUser, MaybeUser},
     routes::extract::Json,
     routes::{
         dto::double_option,
-        pages::{redirect_ok, redirect_to_login, Chrome},
+        pages::{redirect_ok, redirect_to_login},
     },
     services::{
         audit::{action, Audit},
@@ -25,7 +23,6 @@ use crate::{
         url_preview as service,
     },
     state::AppState,
-    themed_page,
 };
 
 #[derive(Debug, Default, Deserialize)]
@@ -151,7 +148,7 @@ pub async fn clear(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn save(
+pub(crate) async fn save(
     state: &AppState,
     user: &CurrentUser,
     id: i64,
@@ -176,7 +173,7 @@ async fn save(
     Ok(row)
 }
 
-fn upload_limit(state: &AppState, user_id: i64) -> Result<(), AppError> {
+pub(crate) fn upload_limit(state: &AppState, user_id: i64) -> Result<(), AppError> {
     state
         .limiter
         .check(
@@ -187,17 +184,18 @@ fn upload_limit(state: &AppState, user_id: i64) -> Result<(), AppError> {
         .map_err(AppError::rate_limited)
 }
 
-#[derive(Default)]
-struct Fields {
-    title: String,
-    description: String,
-    image_url: String,
-    image_mode: String,
-    image: Option<Vec<u8>>,
+/// SNS 預覽表單的欄位。合併在連結表單時欄位名稱帶 `preview_` 前綴。
+#[derive(Debug, Default)]
+pub struct PreviewFields {
+    pub title: String,
+    pub description: String,
+    pub image_url: String,
+    pub image_mode: String,
+    pub image: Option<Vec<u8>>,
 }
 
-async fn read_form(mut multipart: Multipart) -> Result<Fields, AppError> {
-    let mut fields = Fields::default();
+async fn read_form(mut multipart: Multipart) -> Result<PreviewFields, AppError> {
+    let mut fields = PreviewFields::default();
     let mut seen = std::collections::HashSet::new();
     while let Some(field) = multipart
         .next_field()
@@ -264,7 +262,7 @@ pub async fn upload_api(
 }
 
 /// 共用欄位同時用於詳情頁及驗證失敗後的重試頁。
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct FormView {
     pub url_id: i64,
     pub title: String,
@@ -277,6 +275,9 @@ pub struct FormView {
     pub allow_upload: bool,
     pub policy_key: String,
     pub image_suppressed: bool,
+    /// Largest accepted upload, so the browser can refuse a bigger file before
+    /// sending it.
+    pub max_image_bytes: usize,
 }
 
 impl FormView {
@@ -302,26 +303,87 @@ impl FormView {
             allow_url: policy.allows_url(),
             allow_upload: policy.allows_upload(),
             policy_key: format!("preview.policy.{}", policy.as_str()),
+            max_image_bytes: service::MAX_IMAGE_BYTES,
         }
     }
 }
 
-pub struct EditPage {
-    pub site_name: String,
-    pub chrome: Chrome,
-    pub preview: FormView,
-    pub lang: Lang,
+impl FormView {
+    /// 把送出的值放回表單，驗證失敗時使用者不必重填。
+    pub fn retain(&mut self, fields: &PreviewFields) {
+        self.title = fields.title.clone();
+        self.description = fields.description.clone();
+        if fields.image_mode == "url" {
+            self.image_url = fields.image_url.clone();
+        }
+        self.image_mode = fields.image_mode.clone();
+    }
+
+    /// Record why the preview was rejected. A source the policy no longer
+    /// offers falls back to keeping the stored image, so the select still has
+    /// a valid choice.
+    pub fn reject(&mut self, key: &'static str) {
+        self.error = key.into();
+        if (self.image_mode == "url" && !self.allow_url)
+            || (self.image_mode == "upload" && !self.allow_upload)
+        {
+            self.image_mode = "keep".into();
+        }
+    }
 }
 
-themed_page!(preview_edit_templates, EditView, EditPage,
-    Verdant => "preview_edit.html",
-    Aurora => "themes/aurora/preview_edit.html",
-    Paper => "themes/paper/preview_edit.html",
-    Signal => "themes/signal/preview_edit.html",
-    Gilded => "themes/gilded/preview_edit.html",
-    Swiss => "themes/swiss/preview_edit.html",
-);
+/// Whether `err` is a problem with the submitted preview, reported next to the
+/// fields, rather than a server failure.
+pub(crate) fn is_form_error(err: &AppError) -> bool {
+    matches!(
+        err,
+        AppError::Validation { .. } | AppError::BadRequest(_) | AppError::Forbidden(_)
+    )
+}
 
+/// Catalogue key of the message shown for a rejected preview.
+pub(crate) fn error_key(err: &AppError) -> &'static str {
+    match err {
+        AppError::Forbidden(_) => "preview.error_policy",
+        AppError::Validation { field: "title", .. } => "preview.error_title",
+        AppError::Validation {
+            field: "description",
+            ..
+        } => "preview.error_description",
+        AppError::Validation {
+            field: "image_url", ..
+        } => "preview.error_url",
+        _ => "preview.error_image",
+    }
+}
+
+/// 連結表單每次儲存都會送出預覽欄位；內容沒變就不寫入，避免多出空白預覽列與
+/// 不必要的稽核紀錄。
+pub(crate) fn is_noop(changes: &Changes, existing: Option<&Preview>) -> bool {
+    let empty = Preview::default();
+    let existing = existing.unwrap_or(&empty);
+    let same_text = |change: &Option<Option<String>>, current: &Option<String>| match change {
+        None => true,
+        Some(value) => value == current,
+    };
+    let same_image = match &changes.image {
+        None => true,
+        Some(image) => {
+            image.url.is_none()
+                && image.key.is_none()
+                && existing.image_url.is_none()
+                && existing.image_key.is_none()
+        }
+    };
+    same_text(&changes.title, &existing.title)
+        && same_text(&changes.description, &existing.description)
+        && same_image
+}
+
+/// `POST /app/urls/{id}/preview` — the standalone preview form of earlier
+/// releases. The link editor now saves the preview together with the link;
+/// this route stays for pages and scripts that still post here, and renders
+/// the link editor when the preview is rejected.
 pub async fn save_form(
     State(state): State<AppState>,
     MaybeUser(user): MaybeUser,
@@ -333,20 +395,15 @@ pub async fn save_form(
     };
     service::owned(&state.db, user.user.id, id).await?;
     upload_limit(&state, user.user.id)?;
-    let old = url_previews::find(&state.db, id).await?;
-    let mut view = FormView::new(id, old, &state);
+    let mut submitted = None;
     let result = match multipart {
         Err(_) => Err(AppError::bad_request("invalid or oversized preview form")),
         Ok(multipart) => match read_form(multipart).await {
             Err(err) => Err(err),
             Ok(fields) => {
-                view.title = fields.title.clone();
-                view.description = fields.description.clone();
-                if fields.image_mode == "url" {
-                    view.image_url = fields.image_url.clone();
-                }
-                view.image_mode = fields.image_mode.clone();
-                form_changes(fields, state.settings.preview_image_policy()).await
+                let changes = form_changes(&fields, state.settings.preview_image_policy()).await;
+                submitted = Some(fields);
+                changes
             }
         },
     };
@@ -356,45 +413,26 @@ pub async fn save_form(
     };
     match result {
         Ok(()) => Ok(redirect_ok(&format!("/app/urls/{id}"), "saved").into_response()),
-        Err(err)
-            if matches!(
-                err,
-                AppError::Validation { .. } | AppError::BadRequest(_) | AppError::Forbidden(_)
-            ) =>
-        {
-            view.error = match err {
-                AppError::Forbidden(_) => "preview.error_policy",
-                AppError::Validation { field: "title", .. } => "preview.error_title",
-                AppError::Validation {
-                    field: "description",
-                    ..
-                } => "preview.error_description",
-                AppError::Validation {
-                    field: "image_url", ..
-                } => "preview.error_url",
-                _ => "preview.error_image",
-            }
-            .into();
-            if (view.image_mode == "url" && !view.allow_url)
-                || (view.image_mode == "upload" && !view.allow_upload)
-            {
-                view.image_mode = "keep".into();
-            }
-            let page = EditPage {
-                site_name: state.settings.site_name(),
-                chrome: Chrome::new(&state, &user.user, "dashboard", None),
-                preview: view,
-                lang: i18n::current(),
-            }
-            .themed();
-            let html = page.render().map_err(AppError::internal)?;
-            Ok((StatusCode::UNPROCESSABLE_ENTITY, Html(html)).into_response())
+        Err(err) if is_form_error(&err) => {
+            crate::routes::pages::urls::render_edit(&state, &user.user, id, |form| {
+                if let Some(view) = form.preview.as_mut() {
+                    if let Some(fields) = &submitted {
+                        view.retain(fields);
+                    }
+                    view.reject(error_key(&err));
+                }
+                form.preview_open = true;
+            })
+            .await
         }
         Err(err) => Err(err),
     }
 }
 
-async fn form_changes(fields: Fields, policy: PreviewImagePolicy) -> Result<Changes, AppError> {
+pub(crate) async fn form_changes(
+    fields: &PreviewFields,
+    policy: PreviewImagePolicy,
+) -> Result<Changes, AppError> {
     let title = service::text(&fields.title, "title", service::MAX_TITLE)?;
     let description = service::text(&fields.description, "description", service::MAX_DESCRIPTION)?;
     let image = match fields.image_mode.as_str() {
@@ -420,6 +458,7 @@ async fn form_changes(fields: Fields, policy: PreviewImagePolicy) -> Result<Chan
                 service::upload(
                     fields
                         .image
+                        .clone()
                         .ok_or_else(|| AppError::validation("image", "choose an image"))?,
                 )
                 .await?,
@@ -471,4 +510,65 @@ async fn public_image_inner(state: &AppState, key: &str) -> Result<Response, App
         image.image_data,
     )
         .into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stored() -> Preview {
+        Preview {
+            url_id: 1,
+            title: Some("Title".into()),
+            description: Some("Description".into()),
+            image_url: None,
+            image_key: Some("key".into()),
+        }
+    }
+
+    fn changes(title: Option<&str>, description: Option<&str>, image: Option<Image>) -> Changes {
+        Changes {
+            title: Some(title.map(str::to_string)),
+            description: Some(description.map(str::to_string)),
+            image,
+        }
+    }
+
+    #[test]
+    fn resubmitting_the_stored_preview_is_a_noop() {
+        let existing = stored();
+        assert!(is_noop(
+            &changes(Some("Title"), Some("Description"), None),
+            Some(&existing)
+        ));
+    }
+
+    #[test]
+    fn an_empty_section_without_a_stored_preview_is_a_noop() {
+        assert!(is_noop(&changes(None, None, Some(Image::default())), None));
+    }
+
+    #[test]
+    fn changed_text_or_a_removed_image_is_a_change() {
+        let existing = stored();
+        assert!(!is_noop(
+            &changes(None, Some("Description"), None),
+            Some(&existing)
+        ));
+        assert!(!is_noop(
+            &changes(Some("Title"), Some("Other"), None),
+            Some(&existing)
+        ));
+        // "No image" while an image is stored removes it.
+        assert!(!is_noop(
+            &changes(Some("Title"), Some("Description"), Some(Image::default())),
+            Some(&existing)
+        ));
+        // A new image is always a change.
+        let image = Image {
+            url: Some("https://images.example/a.png".into()),
+            ..Default::default()
+        };
+        assert!(!is_noop(&changes(None, None, Some(image)), None));
+    }
 }

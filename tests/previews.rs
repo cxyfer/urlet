@@ -354,10 +354,16 @@ async fn image_policy_controls_render_for_every_theme_locale_and_policy() {
         for theme in urlet::services::theme::ALL {
             for locale in ["en", "zh-Hant", "zh-Hans"] {
                 let cookie = format!("{admin}; urlet_theme={}; urlet_lang={locale}", theme.key());
-                let editor = app.get_as(&format!("/app/urls/{id}"), &cookie).await;
+                let editor = app.get_as(&format!("/app/urls/{id}/edit"), &cookie).await;
                 assert_eq!(editor.status, StatusCode::OK);
-                assert_eq!(editor.body.contains("id=\"preview-image-url\""), allow_url);
-                assert_eq!(editor.body.contains("id=\"preview-image\""), allow_upload);
+                assert_eq!(
+                    editor.body.contains("id=\"edit_preview-image-url\""),
+                    allow_url
+                );
+                assert_eq!(
+                    editor.body.contains("id=\"edit_preview-image\""),
+                    allow_upload
+                );
                 assert!(!editor.body.contains("preview.policy."));
                 let settings = app.get_as("/app/admin/settings", &cookie).await;
                 assert_eq!(settings.status, StatusCode::OK);
@@ -909,15 +915,26 @@ async fn link_editor_and_retry_form_render_in_all_themes_and_locales() {
     for theme in ["verdant", "aurora", "paper", "signal", "gilded", "swiss"] {
         for lang in ["en", "zh-Hant", "zh-Hans"] {
             let cookies = format!("{cookie}; urlet_theme={theme}; urlet_lang={lang}");
-            let response = app.get_as(&format!("/app/urls/{id}"), &cookies).await;
+            let response = app.get_as(&format!("/app/urls/{id}/edit"), &cookies).await;
             assert_eq!(
                 response.status,
                 StatusCode::OK,
                 "{theme} {lang}: {}",
                 response.body
             );
-            assert!(response.body.contains("id=\"preview-image\""));
+            assert!(response.body.contains("id=\"edit_preview-image\""));
+            assert!(response.body.contains("data-link-form-panel"));
             assert!(!response.body.contains("preview.heading"));
+            assert!(!response.body.contains("link_form."));
+            // The statistics page opens the same editor in a dialog.
+            let detail = app.get_as(&format!("/app/urls/{id}"), &cookies).await;
+            assert_eq!(detail.status, StatusCode::OK, "{theme} {lang}");
+            assert!(detail.body.contains("data-link-dialog-root"));
+            assert!(detail
+                .body
+                .contains(&format!("href=\"/app/urls/{id}/edit\"")));
+            assert!(!detail.body.contains("name=\"target_url\""));
+            assert!(!detail.body.contains("url_detail.facts."));
             let response = app
                 .send(multipart(
                     &format!("/app/urls/{id}/preview"),
@@ -1087,4 +1104,381 @@ async fn custom_domains_splash_and_password_unlock_keep_existing_browser_behavio
         followed.header("cache-control").as_deref(),
         Some("no-store")
     );
+}
+
+/// The link editor posts the link and its SNS preview as one multipart form.
+fn link_form(
+    uri: &str,
+    cookie: &str,
+    fields: &[(&str, &str)],
+    image: Option<&[u8]>,
+) -> Request<Body> {
+    let mut body = Vec::new();
+    for (name, value) in fields {
+        body.extend_from_slice(format!("--linkboundary\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n").as_bytes());
+    }
+    if let Some(bytes) = image {
+        body.extend_from_slice(b"--linkboundary\r\nContent-Disposition: form-data; name=\"preview_image\"; filename=\"card.png\"\r\nContent-Type: image/png\r\n\r\n");
+        body.extend_from_slice(bytes);
+        body.extend_from_slice(b"\r\n");
+    }
+    body.extend_from_slice(b"--linkboundary--\r\n");
+    Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "multipart/form-data; boundary=linkboundary")
+        .header("cookie", cookie)
+        .header("origin", "http://localhost:8080")
+        .body(Body::from(body))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn the_link_editor_saves_link_and_preview_in_one_submission() {
+    let (app, cookie, id) = setup().await;
+    configure_images(&app, &cookie, "both").await;
+    let response = app
+        .send(link_form(
+            &format!("/app/urls/{id}"),
+            &cookie,
+            &[
+                ("target_url", "https://destination.example/updated"),
+                ("title", "Renamed"),
+                ("preview_title", "Card title"),
+                ("preview_description", "Card description"),
+                ("preview_image_mode", "upload"),
+            ],
+            Some(&png()),
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some(format!("/app/urls/{id}?ok=updated").as_str())
+    );
+    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(target, "https://destination.example/updated");
+    let preview = urlet::db::url_previews::find(&app.state.db, id)
+        .await
+        .unwrap()
+        .expect("preview saved");
+    assert_eq!(preview.title.as_deref(), Some("Card title"));
+    assert_eq!(preview.description.as_deref(), Some("Card description"));
+    assert!(preview.image_key.is_some());
+
+    // The editor summarises the configured preview.
+    let editor = app.get_as(&format!("/app/urls/{id}/edit"), &cookie).await;
+    assert!(editor.body.contains("Custom text"));
+    assert!(editor.body.contains("value=\"keep\" selected"));
+}
+
+#[tokio::test]
+async fn a_rejected_preview_leaves_the_link_untouched_and_keeps_the_input() {
+    let (app, cookie, id) = setup().await;
+    configure_images(&app, &cookie, "both").await;
+    let response = app
+        .send(link_form(
+            &format!("/app/urls/{id}"),
+            &cookie,
+            &[
+                ("target_url", "https://destination.example/should-not-save"),
+                ("preview_title", "Kept title"),
+                ("preview_image_mode", "upload"),
+            ],
+            None,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(response.body.contains("data-link-form-panel"));
+    assert!(response.body.contains("Kept title"));
+    assert!(response
+        .body
+        .contains("value=\"https://destination.example/should-not-save\""));
+    assert!(response
+        .body
+        .contains(urlet::i18n::Lang::En.t("preview.error_image")));
+    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(target, "https://destination.example/private-path");
+    assert!(urlet::db::url_previews::find(&app.state.db, id)
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn an_untouched_preview_section_writes_nothing() {
+    let (app, cookie, id) = setup().await;
+    let response = app
+        .send(link_form(
+            &format!("/app/urls/{id}"),
+            &cookie,
+            &[
+                ("target_url", "https://destination.example/private-path"),
+                ("preview_title", ""),
+                ("preview_description", ""),
+                ("preview_image_mode", "none"),
+            ],
+            None,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    assert!(urlet::db::url_previews::find(&app.state.db, id)
+        .await
+        .unwrap()
+        .is_none());
+    // Only the link update is audited, not an empty preview.
+    let previews: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM audit_logs WHERE metadata LIKE '%preview%'")
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap();
+    assert_eq!(previews, 0);
+}
+
+#[tokio::test]
+async fn the_create_form_can_set_the_preview_too() {
+    let (app, cookie, _) = setup().await;
+    let dashboard = app.get_as("/app", &cookie).await;
+    assert!(dashboard.body.contains("enctype=\"multipart/form-data\""));
+    assert!(dashboard.body.contains("name=\"preview_title\""));
+    assert!(dashboard.body.contains("data-link-dialog-root"));
+    let response = app
+        .send(link_form(
+            "/app/urls",
+            &cookie,
+            &[
+                ("target_url", "https://destination.example/new"),
+                ("slug", "with-card"),
+                ("preview_title", "Fresh card"),
+                ("preview_description", ""),
+                ("preview_image_mode", "none"),
+            ],
+            None,
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    let location = response.header("location").unwrap();
+    assert!(location.ends_with("?ok=created"), "{location}");
+    let id: i64 = location
+        .trim_start_matches("/app/urls/")
+        .split('?')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let preview = urlet::db::url_previews::find(&app.state.db, id)
+        .await
+        .unwrap()
+        .expect("preview saved with the new link");
+    assert_eq!(preview.title.as_deref(), Some("Fresh card"));
+
+    // A rejected preview is reported before the link is created.
+    let rejected = app
+        .send(link_form(
+            "/app/urls",
+            &cookie,
+            &[
+                ("target_url", "https://destination.example/never"),
+                ("slug", "never-created"),
+                ("preview_title", &"x".repeat(201)),
+                ("preview_image_mode", "none"),
+            ],
+            None,
+        ))
+        .await;
+    assert_eq!(
+        rejected.header("location").as_deref(),
+        Some("/app?err=preview_title")
+    );
+    let missing: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE slug = 'never-created'")
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(missing, 0);
+}
+
+#[tokio::test]
+async fn a_saved_edit_returns_to_the_page_it_was_opened_from() {
+    let (app, cookie, id) = setup().await;
+    let editor = app
+        .get_as(
+            &format!("/app/urls/{id}/edit?next=%2Fapp%3Fpage%3D2"),
+            &cookie,
+        )
+        .await;
+    assert!(editor.body.contains("name=\"next\" value=\"/app?page=2\""));
+    let response = app
+        .send(post_form_as(
+            &format!("/app/urls/{id}"),
+            "next=%2Fapp%3Fpage%3D2&target_url=https%3A%2F%2Fdestination.example%2Fback",
+            &cookie,
+        ))
+        .await;
+    assert_eq!(
+        response.header("location").as_deref(),
+        Some("/app?page=2&ok=updated")
+    );
+    // Anything outside the signed-in app falls back to the statistics page.
+    for next in [
+        "https%3A%2F%2Fevil.example%2F",
+        "%2F%2Fevil.example",
+        "%2Fdocs",
+    ] {
+        let editor = app
+            .get_as(&format!("/app/urls/{id}/edit?next={next}"), &cookie)
+            .await;
+        assert!(!editor.body.contains("name=\"next\""), "{next}");
+        let response = app
+            .send(post_form_as(
+                &format!("/app/urls/{id}"),
+                &format!("next={next}&target_url=https%3A%2F%2Fdestination.example%2Fback"),
+                &cookie,
+            ))
+            .await;
+        assert_eq!(
+            response.header("location").as_deref(),
+            Some(format!("/app/urls/{id}?ok=updated").as_str()),
+            "{next}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_oversized_image_is_reported_in_the_editor() {
+    let (app, cookie, id) = setup().await;
+    configure_images(&app, &cookie, "both").await;
+    // The browser refuses such a file before sending; this is the path
+    // without JavaScript. The body is refused before any field is read.
+    let huge = vec![0u8; urlet::services::url_preview::MAX_BODY_BYTES + 1];
+    let response = app
+        .send(link_form(
+            &format!("/app/urls/{id}"),
+            &cookie,
+            &[
+                ("target_url", "https://destination.example/typed"),
+                ("preview_title", "Typed card"),
+                ("preview_image_mode", "upload"),
+            ],
+            Some(&huge),
+        ))
+        .await;
+    assert_eq!(response.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(response.body.contains("data-link-form-panel"));
+    assert!(response
+        .body
+        .contains(urlet::i18n::Lang::En.t("preview.error_image")));
+    // The editor reopens on the preview section, with the size limit attached
+    // to the file input for the browser-side check.
+    assert!(response.body.contains("data-preview-form open"));
+    assert!(response.body.contains(&format!(
+        "data-max-bytes=\"{}\"",
+        urlet::services::url_preview::MAX_IMAGE_BYTES
+    )));
+    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(target, "https://destination.example/private-path");
+
+    // The create form reports the same problem by its flash code.
+    let created = app
+        .send(link_form(
+            "/app/urls",
+            &cookie,
+            &[
+                ("target_url", "https://destination.example/new"),
+                ("preview_image_mode", "upload"),
+            ],
+            Some(&huge),
+        ))
+        .await;
+    assert_eq!(
+        created.header("location").as_deref(),
+        Some("/app?err=preview_image")
+    );
+}
+
+#[tokio::test]
+async fn malformed_link_forms_are_refused() {
+    let (app, cookie, id) = setup().await;
+    // A preview field sent twice.
+    let duplicate = app
+        .send(link_form(
+            &format!("/app/urls/{id}"),
+            &cookie,
+            &[
+                ("target_url", "https://destination.example/dup"),
+                ("preview_title", "One"),
+                ("preview_title", "Two"),
+                ("preview_image_mode", "none"),
+            ],
+            None,
+        ))
+        .await;
+    assert_eq!(duplicate.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // An empty file part, as a browser sends when no file was chosen, is fine.
+    let empty = app
+        .send(link_form(
+            &format!("/app/urls/{id}"),
+            &cookie,
+            &[
+                ("target_url", "https://destination.example/empty"),
+                ("preview_image_mode", "none"),
+            ],
+            Some(&[]),
+        ))
+        .await;
+    assert_eq!(empty.status, StatusCode::SEE_OTHER, "{}", empty.body);
+    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(target, "https://destination.example/empty");
+}
+
+#[tokio::test]
+async fn another_users_link_cannot_be_opened_or_saved_in_the_editor() {
+    let (app, _, id) = setup().await;
+    let (intruder, _) = app.register("intruder@example.com", "supersecret").await;
+    let editor = app.get_as(&format!("/app/urls/{id}/edit"), &intruder).await;
+    assert_eq!(
+        editor.header("location").as_deref(),
+        Some("/app?err=not_found")
+    );
+    let saved = app
+        .send(link_form(
+            &format!("/app/urls/{id}"),
+            &intruder,
+            &[
+                ("target_url", "https://evil.example/"),
+                ("preview_title", "Hijacked"),
+                ("preview_image_mode", "none"),
+            ],
+            None,
+        ))
+        .await;
+    assert_eq!(
+        saved.header("location").as_deref(),
+        Some("/app?err=not_found")
+    );
+    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(target, "https://destination.example/private-path");
+    assert!(urlet::db::url_previews::find(&app.state.db, id)
+        .await
+        .unwrap()
+        .is_none());
 }

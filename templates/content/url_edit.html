@@ -1,0 +1,30 @@
+{% macro content() %}
+<div class="page-head">
+    <div class="page-head-main">
+        <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ lang.t("nav.links") }}</span>
+        <h1 class="page-title">{{ lang.t("url_edit.heading") }} · <span class="mono">{{ url.slug }}</span></h1>
+        <div class="slug-bar">
+            <span class="slug-value">{{ url.short_url }}</span>
+        </div>
+    </div>
+    <div class="page-head-side">
+        <a class="btn btn-ghost" href="/app/urls/{{ url.id }}">{{ lang.t("url_edit.back") }}</a>
+    </div>
+</div>
+
+{# 編輯懸浮窗只取出這個 panel；無 JavaScript 時這一頁就是完整的編輯器。 #}
+<div class="panel link-editor" data-link-form-panel>
+    {% include "partials/link_form.html" %}
+
+    <div class="danger-zone">
+        <div class="danger-zone-text">
+            <strong>{{ lang.t("url_edit.danger_heading") }}</strong>
+            <span class="hint">{{ lang.t("url_edit.danger_hint") }}</span>
+        </div>
+        <form method="post" action="/app/urls/{{ url.id }}/delete">
+            <button class="btn btn-sm btn-danger" type="submit"
+                    data-confirm="{{ lang.t("url_detail.delete_confirm") }}">{{ lang.t("url_detail.delete") }}</button>
+        </form>
+    </div>
+</div>
+{% endmacro %}

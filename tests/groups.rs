@@ -1929,13 +1929,14 @@ async fn admin_group_pages_and_restricted_user_views_render() {
     .await;
     assert_eq!(link.status, StatusCode::CREATED, "{}", link.body);
     let url_id = link.json()["id"].as_i64().expect("id");
-    let detail = app
-        .get_as(&format!("/app/urls/{url_id}"), &member_cookie)
+    let editor = app
+        .get_as(&format!("/app/urls/{url_id}/edit"), &member_cookie)
         .await;
-    assert_eq!(detail.status, StatusCode::OK, "{}", detail.body);
-    assert!(!detail.body.contains("id=\"slug\""));
-    assert!(!detail.body.contains("id=\"tags\""));
-    assert!(detail.body.contains("unavailable for your group"));
+    assert_eq!(editor.status, StatusCode::OK, "{}", editor.body);
+    assert!(editor.body.contains("name=\"target_url\""));
+    assert!(!editor.body.contains("name=\"slug\""));
+    assert!(!editor.body.contains("name=\"tags\""));
+    assert!(editor.body.contains("unavailable for your group"));
 
     // Turning token creation off hides the account form as well.
     let updated = app
@@ -2272,11 +2273,11 @@ async fn detail_page_can_clear_tags_when_tags_are_disabled() {
     .await;
     assert_eq!(locked.status, StatusCode::OK, "{}", locked.body);
 
-    let detail = app
-        .get_as(&format!("/app/urls/{url_id}"), &member_cookie)
+    let editor = app
+        .get_as(&format!("/app/urls/{url_id}/edit"), &member_cookie)
         .await;
-    assert_eq!(detail.status, StatusCode::OK, "{}", detail.body);
-    assert!(detail.body.contains("name=\"clear_tags\""));
+    assert_eq!(editor.status, StatusCode::OK, "{}", editor.body);
+    assert!(editor.body.contains("name=\"clear_tags\""));
 
     let cleared = app
         .send(post_form_as(

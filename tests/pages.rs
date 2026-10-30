@@ -301,8 +301,19 @@ async fn short_link_forms_create_update_and_delete() {
     assert!(detail.body.contains("example.com/landing"));
     assert!(detail.body.contains("Launch"));
     assert!(detail.body.contains("campaign"));
-    assert!(detail.body.contains("25"), "click limit is rendered");
-    assert!(detail.body.contains("2030-01-01"), "expiry is rendered");
+    assert!(detail.body.contains("0 / 25"), "click limit is summarised");
+    let editor_path = location.replace("?ok=created", "/edit");
+    assert!(
+        detail.body.contains(&format!("href=\"{editor_path}\"")),
+        "the statistics page links to the editor"
+    );
+    let editor = app.get_as(&editor_path, &cookie).await;
+    assert_eq!(editor.status, StatusCode::OK, "{}", editor.body);
+    assert!(editor.body.contains("2030-01-01"), "expiry is editable");
+    assert!(
+        editor.body.contains("value=\"25\""),
+        "click limit is editable"
+    );
 
     let id: i64 = location
         .trim_start_matches("/app/urls/")
@@ -330,7 +341,9 @@ async fn short_link_forms_create_update_and_delete() {
     let detail = app.get_as(&format!("/app/urls/{id}"), &cookie).await;
     assert!(detail.body.contains("Renamed"));
     assert!(detail.body.contains("example.com/updated"));
-    assert!(detail.body.contains("currently password protected"));
+    assert!(detail.body.contains("Password protected"));
+    let editor = app.get_as(&format!("/app/urls/{id}/edit"), &cookie).await;
+    assert!(editor.body.contains("currently password protected"));
 
     // A cross-site form submission must be refused.
     let blocked = app

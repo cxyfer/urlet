@@ -1,0 +1,13 @@
+{# 短網址編輯懸浮窗。「編輯」按鈕仍是一般連結（/app/urls/{id}/edit），
+   app.js 攔截後把編輯頁的表單載入這裡；無 JavaScript 時直接開啟編輯頁。 #}
+<dialog class="form-dialog link-dialog" data-link-dialog-root
+        data-loading="{{ lang.t("common.loading") }}"
+        data-error="{{ lang.t("common.error") }}"
+        aria-labelledby="link-dialog-title">
+    <div class="form-dialog-head">
+        <h2 id="link-dialog-title"></h2>
+        <button class="btn btn-sm btn-ghost form-dialog-close" type="button"
+                data-link-dialog-close aria-label="{{ lang.t("common.close") }}">✕</button>
+    </div>
+    <div class="form-dialog-body" data-link-dialog-body></div>
+</dialog>

@@ -288,7 +288,21 @@
             setBusy(false);
         }
 
+        /* Carry the page the dialog was opened from, so a saved edit returns
+           there instead of to the form's default page. The banner of the
+           previous submission is dropped so it is not shown twice. */
+        function withNext(url) {
+            if (!config.carryNext || url.indexOf("next=") !== -1) { return url; }
+            var params = new URLSearchParams(window.location.search);
+            params.delete("ok");
+            params.delete("err");
+            var query = params.toString();
+            var next = window.location.pathname + (query ? "?" + query : "");
+            return url + (url.indexOf("?") === -1 ? "?" : "&") + "next=" + encodeURIComponent(next);
+        }
+
         function open(url) {
+            url = withNext(url);
             sequence += 1;
             var ticket = sequence;
             if (!dialog.open) { dialog.showModal(); }
@@ -381,6 +395,12 @@
 
         document.addEventListener("click", function (event) {
             var link = event.target.closest("[" + config.open + "]");
+            // A modified or middle click keeps the browser's own behaviour, so
+            // the form page can still be opened in a new tab.
+            if (link && (event.button !== 0 || event.metaKey || event.ctrlKey
+                || event.shiftKey || event.altKey)) {
+                return;
+            }
             if (link) {
                 event.preventDefault();
                 open(link.getAttribute("href"));
@@ -546,8 +566,11 @@
     });
 
     /* 預覽來源只啟用對應欄位；無 JS 時仍可明確選擇來源並提交。 */
-    document.querySelectorAll("[data-preview-form]").forEach(function (form) {
+    function initPreviewForm(form) {
+        if (form.hasAttribute("data-preview-ready")) { return; }
+        form.setAttribute("data-preview-ready", "");
         var source = form.querySelector("[data-preview-source]");
+        if (!source) { return; }
         function updatePreviewSource() {
             form.querySelectorAll("[data-preview-input]").forEach(function (group) {
                 var active = group.getAttribute("data-preview-input") === source.value;
@@ -559,6 +582,69 @@
         }
         source.addEventListener("change", updatePreviewSource);
         updatePreviewSource();
+    }
+
+    /* 中轉頁的倒數與文案只在選擇中轉頁時顯示。隱藏的欄位照常送出，
+       切回直接跳轉再切回來時先前輸入的文案仍在。 */
+    function initSplashFields(form) {
+        if (form.hasAttribute("data-splash-ready")) { return; }
+        form.setAttribute("data-splash-ready", "");
+        var select = form.querySelector("[data-mode-select]");
+        var fields = form.querySelector("[data-splash-fields]");
+        if (!select || !fields) { return; }
+        function refresh() {
+            fields.hidden = select.value !== "splash";
+        }
+        select.addEventListener("change", refresh);
+        refresh();
+    }
+
+    /* 圖片超過上限時在瀏覽器端就攔下，不必把整份表單送出才得知失敗。
+       以 capture 階段執行，先於懸浮窗的送出處理。 */
+    document.addEventListener("submit", function (event) {
+        var form = event.target;
+        if (!form.matches || !form.matches("form[data-link-form]")) { return; }
+        var inputs = form.querySelectorAll('input[type="file"][data-max-bytes]');
+        for (var i = 0; i < inputs.length; i += 1) {
+            var input = inputs[i];
+            var limit = parseInt(input.getAttribute("data-max-bytes"), 10);
+            var file = input.files && input.files[0];
+            if (!input.disabled && file && limit && file.size > limit) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                var section = input.closest("details");
+                if (section) { section.open = true; }
+                input.setCustomValidity(input.getAttribute("data-too-large") || "");
+                input.reportValidity();
+                return;
+            }
+        }
+    }, true);
+
+    document.addEventListener("change", function (event) {
+        if (event.target.matches && event.target.matches('input[type="file"][data-max-bytes]')) {
+            event.target.setCustomValidity("");
+        }
+    });
+
+    function initLinkForms(root) {
+        root.querySelectorAll("[data-preview-form]").forEach(initPreviewForm);
+        root.querySelectorAll("form[data-link-form]").forEach(initSplashFields);
+    }
+
+    initLinkForms(document);
+
+    initFormDialog({
+        root: "[data-link-dialog-root]",
+        open: "data-link-dialog",
+        close: "data-link-dialog-close",
+        body: "[data-link-dialog-body]",
+        heading: "#link-dialog-title",
+        panel: "[data-link-form-panel]",
+        form: "form[data-link-form]",
+        multipart: true,
+        carryNext: true,
+        enhance: initLinkForms
     });
 
     /* Dismiss alerts after a while so success banners do not pile up. */

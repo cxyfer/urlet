@@ -411,7 +411,7 @@ upgrading.
 | The visitor solves the CAPTCHA but registration or sign-in still fails | The token was solved on a hostname that urlet does not accept: add it to `URLET_CAPTCHA_ALLOWED_HOSTNAMES` (the `WARN` log line names the reported hostname and the accepted candidates) |
 | Want token access after forgetting the admin password | Resetting a password revokes every API token for that account (by design); create a new token afterwards |
 | Forgot the admin password | The startup bootstrap runs only when **both** `URLET_ADMIN_EMAIL` and `URLET_ADMIN_PASSWORD` are non-empty, and for an account that already exists it merely promotes it to administrator — it does **not** change the password (the password is used only when the account does not exist yet). To recover, point `URLET_ADMIN_EMAIL` at another account you can still sign in to (any non-empty `URLET_ADMIN_PASSWORD` makes the bootstrap run), restart, and use that account; or overwrite the password hash directly with `sqlite3` |
-| A short link expired and you want it back | Open `/app/urls/{id}` and clear or extend the expiry; the data was never deleted |
+| A short link expired and you want it back | Open `/app/urls/{id}` and extend it, or clear the expiry under "Edit settings"; the data was never deleted |
 | Want to reuse a slug after deleting a short link | Deliberately not allowed (so old links cannot be hijacked); pick a new slug |
 
 ## 13. Security checklist

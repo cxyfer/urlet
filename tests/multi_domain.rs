@@ -64,13 +64,13 @@ async fn extra_domains_are_redirect_only() {
     );
     assert!(dashboard.body.contains("go.example.com"));
     assert!(dashboard.body.contains("http://go.example.com/promo"));
-    let detail = app
-        .get_as(&format!("/app/urls/{}", created["id"]), &admin)
+    let editor = app
+        .get_as(&format!("/app/urls/{}/edit", created["id"]), &admin)
         .await;
-    assert_eq!(detail.status, StatusCode::OK);
-    assert!(detail.body.contains("name=\"domain\""), "{}", detail.body);
-    assert!(detail.body.contains("go.example.com"));
-    assert!(detail.body.contains("http://go.example.com/promo"));
+    assert_eq!(editor.status, StatusCode::OK);
+    assert!(editor.body.contains("name=\"domain\""), "{}", editor.body);
+    assert!(editor.body.contains("go.example.com"));
+    assert!(editor.body.contains("http://go.example.com/promo"));
 
     let redirect = app.get_with_host("/promo", "go.example.com").await;
     assert_eq!(redirect.status, StatusCode::FOUND);

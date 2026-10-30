@@ -1,0 +1,8 @@
+{% extends "themes/swiss/app_base.html" %}
+
+{% block title %}{{ lang.t("url_edit.heading") }} · {{ url.slug }} — {{ chrome.site_name }}{% endblock %}
+
+{% import "content/url_edit.html" as content %}
+{% block content %}
+{% call content::content() %}
+{% endblock %}
