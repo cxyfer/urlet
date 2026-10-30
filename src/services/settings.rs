@@ -105,6 +105,7 @@ pub const EDITABLE_KEYS: &[&str] = &[
     "captcha_on_login",
     "captcha_on_create",
     "theme_switching",
+    "landing_clock",
     "public_create_access",
     "guest_allowlist_enabled",
     "guest_allowlist",
@@ -165,6 +166,44 @@ impl PublicCreateAccess {
             Self::Guest => true,
             Self::User => user.is_some(),
             Self::Admin => user.map(|user| user.is_admin()).unwrap_or(false),
+        }
+    }
+}
+
+/// What the landing page reveals about the time.
+///
+/// The strip reports the server's own clock; which zone it prints is a
+/// disclosure decision, because a zone name is a coarse location hint. This
+/// setting only changes what the public page reveals — the instance's notion of
+/// local time (guest quota periods, the admin page) keeps following `TZ`, so
+/// the two never disagree about what "today" means.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LandingClock {
+    /// The configured server zone; the default, and the most verifiable.
+    Server,
+    /// UTC, which reveals nothing about where the host is.
+    Utc,
+    /// No clock on the landing page at all.
+    Off,
+}
+
+impl LandingClock {
+    /// Parse a stored value. An unknown value keeps the default rather than
+    /// hiding or relocating the clock by accident.
+    pub fn parse(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "utc" | "gmt" | "z" => Self::Utc,
+            "off" | "none" | "hide" | "hidden" => Self::Off,
+            _ => Self::Server,
+        }
+    }
+
+    /// Canonical name, as stored in the settings table.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Server => "server",
+            Self::Utc => "utc",
+            Self::Off => "off",
         }
     }
 }
@@ -451,6 +490,11 @@ impl Settings {
     /// Who may switch to another theme. Administrators are never restricted.
     pub fn theme_switching(&self) -> ThemeSwitching {
         ThemeSwitching::parse(&self.raw("theme_switching").unwrap_or_default())
+    }
+
+    /// What the landing page reveals about the server clock (see [`LandingClock`]).
+    pub fn landing_clock(&self) -> LandingClock {
+        LandingClock::parse(&self.raw("landing_clock").unwrap_or_default())
     }
 
     /// Who may create a short link (see [`PublicCreateAccess`]).
@@ -793,6 +837,10 @@ fn validate_value(key: &str, value: &str) -> Result<String> {
             "admin" | "admins" | "admin_only" | "admin-only" => Ok("admin".to_string()),
             _ => Err(invalid("theme switching must be 'all' or 'admin'")),
         },
+        "landing_clock" => match value.trim().to_ascii_lowercase().as_str() {
+            "server" | "utc" | "off" => Ok(LandingClock::parse(value).as_str().to_string()),
+            _ => Err(invalid("landing clock must be server, utc or off")),
+        },
         "public_create_access" => match value.to_ascii_lowercase().as_str() {
             "guest" | "guests" | "anyone" | "public" | "anonymous" => Ok("guest".to_string()),
             "user" | "users" | "member" | "members" => Ok("user".to_string()),
@@ -973,6 +1021,24 @@ mod tests {
             "admin"
         );
         assert!(validate_value("theme_switching", "some").is_err());
+        assert_eq!(validate_value("landing_clock", "UTC").expect("ok"), "utc");
+        assert_eq!(validate_value("landing_clock", "off").expect("ok"), "off");
+        assert_eq!(
+            validate_value("landing_clock", "server").expect("ok"),
+            "server"
+        );
+        assert!(validate_value("landing_clock", "local").is_err());
+    }
+
+    #[test]
+    fn landing_clock_falls_back_to_the_server_zone() {
+        assert_eq!(LandingClock::parse(""), LandingClock::Server);
+        assert_eq!(LandingClock::parse("nonsense"), LandingClock::Server);
+        assert_eq!(LandingClock::parse(" UTC "), LandingClock::Utc);
+        assert_eq!(LandingClock::parse("hidden"), LandingClock::Off);
+        assert_eq!(LandingClock::Server.as_str(), "server");
+        assert_eq!(LandingClock::Utc.as_str(), "utc");
+        assert_eq!(LandingClock::Off.as_str(), "off");
     }
 
     #[test]

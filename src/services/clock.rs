@@ -2,36 +2,52 @@
 //!
 //! The landing page used to print instrument-shaped constants (`01:06 UTC`,
 //! `99.9 SLO`) that nobody could verify. This module produces the subset the
-//! process can actually state: the wall clock in the configured zone, that
-//! zone's current UTC offset, the calendar year and how long the process has
-//! been running.
+//! process can actually state: the wall clock, that zone's current UTC offset,
+//! the calendar year and how long the process has been running.
 //!
 //! Everything is computed once per request, so the values are fresh on every
 //! render — the landing response is `no-store`. `assets/app.js` advances the
 //! clock from the `epoch_ms` anchor when the zone is an IANA name; without
 //! JavaScript the rendered time is still correct at the moment it was rendered.
+//!
+//! Which zone is published is the administrator's call (see
+//! [`crate::services::settings::LandingClock`]): the configured server zone, UTC,
+//! or no clock at all. The instance's own idea of local time — guest quota
+//! periods, the admin page — always follows `TZ`; this setting only decides what
+//! the public page reveals.
 
 use jiff::tz::TimeZone;
+
+use crate::services::settings::LandingClock;
 
 /// A truthful reading of the server clock, ready for the template.
 #[derive(Debug, Clone)]
 pub struct Reading {
-    /// `HH:MM:SS` in the configured zone.
+    /// `HH:MM:SS` in the printed zone.
     pub time: String,
     /// IANA zone name, or the UTC offset when the zone has no name.
     pub zone: String,
     /// Current UTC offset, e.g. `+08:00`.
     pub offset: String,
-    /// Calendar year in the configured zone.
-    pub year: String,
     /// Unix epoch milliseconds: the anchor the browser ticks forward from.
     pub epoch_ms: i64,
-    /// Compact process uptime, e.g. `3d 04h`.
-    pub uptime: String,
+}
+
+/// The reading the landing page should print, or `None` when the administrator
+/// chose not to publish a clock.
+///
+/// `Server` follows the configured zone, `Utc` pins the zone so the page says
+/// nothing about where the host is, and `Off` drops the clock entirely.
+pub fn for_landing(mode: LandingClock, zone: &TimeZone) -> Option<Reading> {
+    match mode {
+        LandingClock::Server => Some(reading(zone)),
+        LandingClock::Utc => Some(reading(&TimeZone::UTC)),
+        LandingClock::Off => None,
+    }
 }
 
 /// Read the clock for `zone`, anchored at "now".
-pub fn reading(zone: &TimeZone, uptime_seconds: i64) -> Reading {
+pub fn reading(zone: &TimeZone) -> Reading {
     let now = jiff::Timestamp::now().to_zoned(zone.clone());
     let offset = format_offset(now.offset().seconds());
     Reading {
@@ -41,10 +57,19 @@ pub fn reading(zone: &TimeZone, uptime_seconds: i64) -> Reading {
             .map(str::to_string)
             .unwrap_or_else(|| offset.clone()),
         offset,
-        year: now.year().to_string(),
         epoch_ms: now.timestamp().as_millisecond(),
-        uptime: format_uptime(uptime_seconds),
     }
+}
+
+/// Calendar year in `zone`, for the labels that print one.
+///
+/// Kept separate from [`Reading`] because the year is not a clock: the landing
+/// pages print it even when the clock is hidden.
+pub fn year(zone: &TimeZone) -> String {
+    jiff::Timestamp::now()
+        .to_zoned(zone.clone())
+        .year()
+        .to_string()
 }
 
 /// `+08:00`, `-03:30`, `+00:00`.
@@ -93,19 +118,36 @@ mod tests {
     #[test]
     fn a_named_zone_reports_its_name_and_offset() {
         let zone = TimeZone::get("Asia/Taipei").expect("zone");
-        let reading = reading(&zone, 90);
+        let reading = reading(&zone);
         assert_eq!(reading.zone, "Asia/Taipei");
         assert_eq!(reading.offset, "+08:00");
         assert_eq!(reading.time.len(), 8, "HH:MM:SS");
-        assert_eq!(reading.year.len(), 4);
-        assert_eq!(reading.uptime, "1m 30s");
         assert!(reading.epoch_ms > 0);
+        assert_eq!(year(&zone).len(), 4);
     }
 
     #[test]
     fn utc_reports_the_utc_offset() {
-        let reading = reading(&TimeZone::UTC, 0);
+        let reading = reading(&TimeZone::UTC);
         assert_eq!(reading.offset, "+00:00");
         assert_eq!(reading.zone, "UTC");
+    }
+
+    #[test]
+    fn the_setting_decides_which_zone_the_landing_page_prints() {
+        let zone = TimeZone::get("Asia/Taipei").expect("zone");
+
+        // Default: the configured zone, so a visitor can tell whose clock this is.
+        let server = for_landing(LandingClock::Server, &zone).expect("a reading");
+        assert_eq!(server.zone, "Asia/Taipei");
+        assert_eq!(server.offset, "+08:00");
+
+        // UTC: the same instant, with nothing said about where the host is.
+        let utc = for_landing(LandingClock::Utc, &zone).expect("a reading");
+        assert_eq!(utc.zone, "UTC");
+        assert_eq!(utc.offset, "+00:00");
+
+        // Off: no clock cell at all.
+        assert!(for_landing(LandingClock::Off, &zone).is_none());
     }
 }

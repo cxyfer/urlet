@@ -234,17 +234,19 @@
         <div class="pulse-content">
             <span class="pulse-label"><span class="status-dot" aria-hidden="true"></span>{{ lang.t("landing.pulse.label") }}</span>
             <div class="pulse-cells">
+                {% if let Some(clock) = clock %}
                 <div class="pulse-cell">
                     <b data-server-clock data-epoch-ms="{{ clock.epoch_ms }}" data-zone="{{ clock.zone }}">{{ clock.time }}</b>
                     <span>{{ clock.zone }}</span>
                 </div>
                 <div class="pulse-cell"><b>{{ clock.offset }}</b><span>{{ lang.t("landing.pulse.offset") }}</span></div>
+                {% endif %}
                 <div class="pulse-cell"><b>v{{ version }}</b><span>{{ lang.t("landing.pulse.version") }}</span></div>
-                <div class="pulse-cell"><b>{{ clock.uptime }}</b><span>{{ lang.t("landing.pulse.uptime") }}</span></div>
+                <div class="pulse-cell"><b>{{ uptime }}</b><span>{{ lang.t("landing.pulse.uptime") }}</span></div>
             </div>
         </div>
         <div class="pulse-track" aria-hidden="true">
-            <span>{{ clock.year }}</span>
+            <span>{{ year }}</span>
             <span class="pulse-line"></span>
             <span>v{{ version }}</span>
         </div>

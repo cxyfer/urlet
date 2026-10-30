@@ -85,8 +85,14 @@ pub struct LandingPage {
     pub version: &'static str,
     /// Feature cards on this page (see [`LANDING_FEATURES`]).
     pub feature_count: usize,
-    /// Server clock in the configured zone, refreshed on every request.
-    pub clock: crate::services::clock::Reading,
+    /// Server clock, refreshed on every request; `None` when the administrator
+    /// set `landing_clock=off`.
+    pub clock: Option<crate::services::clock::Reading>,
+    /// Calendar year in the server zone, for the labels that print one.
+    pub year: String,
+    /// Compact process uptime. It says nothing about where the host is, so it
+    /// stays visible whichever clock policy is in force.
+    pub uptime: String,
 }
 
 themed_page!(landing_templates, LandingView, LandingPage,
@@ -217,7 +223,12 @@ pub async fn home(
         // that looks like an instrument is marked as illustrative.
         version: crate::VERSION,
         feature_count: LANDING_FEATURES,
-        clock: crate::services::clock::reading(&state.config.timezone, state.uptime_seconds()),
+        clock: crate::services::clock::for_landing(
+            state.settings.landing_clock(),
+            &state.config.timezone,
+        ),
+        year: crate::services::clock::year(&state.config.timezone),
+        uptime: crate::services::clock::format_uptime(state.uptime_seconds()),
         shorten: ShortenView {
             show: allowed,
             result,

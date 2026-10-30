@@ -687,6 +687,10 @@ v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表�
 - `domains`：啟動時依 `URLET_BASE_URL` 的 host 插入/更新 canonical 網域（`source=system`，永遠 active）。
   只有在沒有任何預設網域時才會設為預設，讓管理員可以改選其他預設。`URLET_DOMAINS` 只插入缺少的
   網域（`active`/`env`），不改既有資料。
+- `settings`（首頁時鐘）：`landing_clock=server`（`server`、`utc` 或 `off`）。它決定公開首頁底部資訊條
+  要顯示什麼——行程時區（`TZ`）的時鐘、固定為 UTC 的同一時鐘，或完全不顯示時鐘——因為時區名是粗略的
+  位置線索。不論哪一種，版本與運行時間都會保留；訪客配額的週期一律跟隨 `TZ`，所以此設定不會改變實例
+  對「本地時間」的定義。
 
 ---
 
