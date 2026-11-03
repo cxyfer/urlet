@@ -2407,7 +2407,8 @@ dl.meta dd {
 
     .spec-head,
     .spec-diagram,
-    .spec-note {
+    .spec-note,
+    .decorative-note {
         grid-column: span 2;
     }
 
