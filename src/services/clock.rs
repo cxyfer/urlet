@@ -16,7 +16,7 @@
 //! periods, the admin page — always follows `TZ`; this setting only decides what
 //! the public page reveals.
 
-use jiff::tz::TimeZone;
+use jiff::{tz::TimeZone, Timestamp};
 
 use crate::services::settings::LandingClock;
 
@@ -29,6 +29,8 @@ pub struct Reading {
     pub zone: String,
     /// Current UTC offset, e.g. `+08:00`.
     pub offset: String,
+    /// Current UTC offset in seconds, including for zones without an IANA name.
+    pub offset_seconds: i32,
     /// Unix epoch milliseconds: the anchor the browser ticks forward from.
     pub epoch_ms: i64,
 }
@@ -48,8 +50,14 @@ pub fn for_landing(mode: LandingClock, zone: &TimeZone) -> Option<Reading> {
 
 /// Read the clock for `zone`, anchored at "now".
 pub fn reading(zone: &TimeZone) -> Reading {
-    let now = jiff::Timestamp::now().to_zoned(zone.clone());
-    let offset = format_offset(now.offset().seconds());
+    reading_at(zone, Timestamp::now())
+}
+
+/// Read the clock for `zone` at a known instant.
+pub fn reading_at(zone: &TimeZone, instant: Timestamp) -> Reading {
+    let now = instant.to_zoned(zone.clone());
+    let offset_seconds = now.offset().seconds();
+    let offset = format_offset(offset_seconds);
     Reading {
         time: format!("{:02}:{:02}:{:02}", now.hour(), now.minute(), now.second()),
         zone: zone
@@ -57,6 +65,7 @@ pub fn reading(zone: &TimeZone) -> Reading {
             .map(str::to_string)
             .unwrap_or_else(|| offset.clone()),
         offset,
+        offset_seconds,
         epoch_ms: now.timestamp().as_millisecond(),
     }
 }
@@ -121,6 +130,7 @@ mod tests {
         let reading = reading(&zone);
         assert_eq!(reading.zone, "Asia/Taipei");
         assert_eq!(reading.offset, "+08:00");
+        assert_eq!(reading.offset_seconds, 28_800);
         assert_eq!(reading.time.len(), 8, "HH:MM:SS");
         assert!(reading.epoch_ms > 0);
         assert_eq!(year(&zone).len(), 4);
@@ -130,7 +140,32 @@ mod tests {
     fn utc_reports_the_utc_offset() {
         let reading = reading(&TimeZone::UTC);
         assert_eq!(reading.offset, "+00:00");
+        assert_eq!(reading.offset_seconds, 0);
         assert_eq!(reading.zone, "UTC");
+    }
+
+    #[test]
+    fn offsets_preserve_the_sign_and_non_hour_minutes() {
+        assert_eq!(format_offset(-12_600), "-03:30");
+        assert_eq!(format_offset(20_700), "+05:45");
+    }
+
+    #[test]
+    fn fixed_offset_readings_publish_seconds_without_an_iana_name() {
+        let instant: Timestamp = "2026-12-31T20:00:00Z".parse().expect("timestamp");
+        for (seconds, offset, time) in [
+            (-12_600, "-03:30", "16:30:00"),
+            (20_700, "+05:45", "01:45:00"),
+        ] {
+            let zone = TimeZone::fixed(jiff::tz::Offset::from_seconds(seconds).expect("offset"));
+            assert!(zone.iana_name().is_none());
+            let reading = reading_at(&zone, instant);
+            assert_eq!(reading.zone, offset);
+            assert_eq!(reading.offset, offset);
+            assert_eq!(reading.offset_seconds, seconds);
+            assert_eq!(reading.time, time);
+            assert_eq!(reading.epoch_ms, instant.as_millisecond());
+        }
     }
 
     #[test]
