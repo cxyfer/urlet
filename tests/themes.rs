@@ -2212,6 +2212,28 @@ async fn no_landing_prints_a_metric_the_server_cannot_produce() {
     for key in ["verdant", "aurora", "paper", "signal", "gilded", "swiss"] {
         let landing = app.get_as("/", &format!("urlet_theme={key}")).await;
         assert_eq!(landing.status, StatusCode::OK, "{key} landing");
+        assert!(
+            landing.body.contains(&format!("data-theme-key=\"{key}\"")),
+            "{key} did not render its own shell"
+        );
+        let feature_cards = landing
+            .body
+            .split("class=\"")
+            .skip(1)
+            .filter(|classes| {
+                classes
+                    .split('"')
+                    .next()
+                    .expect("class attribute")
+                    .split_whitespace()
+                    .any(|class| class == "landing-feature")
+            })
+            .count();
+        assert_eq!(
+            feature_cards,
+            urlet::routes::pages::home::LANDING_FEATURES,
+            "{key} feature cards"
+        );
 
         if with_panel.contains(&key) {
             assert!(
@@ -2221,8 +2243,8 @@ async fn no_landing_prints_a_metric_the_server_cannot_produce() {
         }
 
         for invented in [
-            ">86.4<", ">86.4%<", ">12.4k<", ">3.2<", ">042<", ">+128<", ">0.842<", ">0.664<",
-            ">MMXXVI<", "a7f3k", ">SLO<", ">AMB<",
+            ">86.4<", ">86.4%<", ">12.4k<", ">3.2<", ">042<", ">+128<", "+ 0.842", "+ 0.664",
+            "MMXXVI", "a7f3k", ">SLO<", ">AMB<", ">24<", "6.1k", "2.8k", "— 1280",
         ] {
             assert!(
                 !landing.body.contains(invented),
