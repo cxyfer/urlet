@@ -454,7 +454,7 @@
   "admin.settings.landing_clock.server": "服务器时区（TZ）",
   "admin.settings.landing_clock.utc": "仅显示 UTC",
   "admin.settings.landing_clock.off": "不显示",
-  "admin.settings.landing_clock_hint": "公开首页底部的信息条会显示服务器时钟，而时区名等于透露主机大概所在的地区。选择 UTC 可避免透露，选择不显示则移除时钟、保留版本与运行时间。访客配额的周期一律跟随 TZ，不受此设置影响。",
+  "admin.settings.landing_clock_hint": "控制首页底部显示服务器信息的设计（默认 Verdant 与以其为基础的上传主题）中的时钟。服务器时间会显示设置的时区；UTC 让首页不显示服务器时区；不显示则移除时钟、保留版本与运行时间。访客配额的周期一律跟随 TZ。",
   "admin.settings.slug_length": "生成的短链接长度",
   "admin.settings.slug_length_hint": "介于 4 到 16 个字符。",
   "admin.settings.links_per_user": "每位用户默认链接数",

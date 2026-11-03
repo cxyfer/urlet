@@ -727,11 +727,13 @@ pages, so the database file does not automatically shrink.
   (`source=system`, always active). It is made the default only when no default exists, so an
   administrator can choose another default. `URLET_DOMAINS` inserts missing domains as
   `active`/`env`; it never changes an existing row.
-- `settings` (landing clock): `landing_clock=server` (`server`, `utc` or `off`). It decides what the
-  strip at the end of the public landing page reveals — the clock in the process zone (`TZ`), the
-  same clock pinned to UTC, or no clock — because a zone name is a coarse location hint. The version
-  and the uptime stay visible either way, and guest quota periods always follow `TZ`, so the setting
-  never changes the instance's notion of local time.
+- `settings` (landing clock): `landing_clock=server` (`server`, `utc` or `off`). It controls the clock
+  in landing designs with a server information strip at the bottom: the default Verdant design and
+  uploaded themes based on it. `server` shows the clock in the process zone (`TZ`); `utc` shows the
+  same clock in UTC without displaying the server time zone; `off` hides the clock. The version and
+  uptime remain visible in that strip. Year labels use the server zone in `server` mode and UTC in
+  `utc`/`off` modes, so they do not reveal its New Year boundary when the zone is hidden. Guest quota
+  periods always follow `TZ`; this setting never changes the instance's notion of local time.
 
 ---
 

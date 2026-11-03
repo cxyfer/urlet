@@ -218,7 +218,7 @@ markup or scripts.
    attributes of `templates/base.html` onto `<html>`, so a forced palette is marked on the
    document as well as in the catalogue. The landing page may draw instrument chrome, but
    anything that reads as a measurement must come from the page data (`clock`, `version`,
-   `feature_count`) or sit inside a panel labelled with `landing.decorative.note`; never print
+   `feature_count`, `uptime`, `year`) or sit inside a panel labelled with `landing.decorative.note`; never print
    a plausible constant such as `99.9` or `86.4%`.
 5. Add `templates/themes/<key>/...` paths to every `themed_page!` call. Keep the
    `Verdant` entry in each invocation: it is also the fallback used when a page

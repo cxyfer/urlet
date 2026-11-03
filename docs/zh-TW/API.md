@@ -600,6 +600,7 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 `month`）、
 `default_redirect_type`（301/302/307/308）、`analytics_enabled`、
 `theme_switching`（`all`/`admin`，預設 `all`）、
+`landing_clock`（`server`/`utc`/`off`，預設 `server`）、
 `preview_image_policy`（`none`/`url`/`upload`/`both`，預設 `both`）、
 `click_retention_days`（0 = 永久保留），以及防機器人驗證的
 `captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、
