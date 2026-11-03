@@ -112,7 +112,7 @@
 
     <section class="mt-2" aria-labelledby="landing-highlights">
         <header class="section-head">
-            <p class="kicker kicker--center" aria-hidden="true">F · {{ feature_count }}</p>
+            <p class="kicker kicker--center" aria-hidden="true">F · {{ "{:02}"|format(feature_count) }}</p>
             <h2 id="landing-highlights">{{ lang.t("landing.features.heading") }}</h2>
             <p class="muted">{{ lang.t("landing.features.subtitle") }}</p>
         </header>

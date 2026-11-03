@@ -16,7 +16,7 @@
         <span class="telemetry-site"><span class="dot" aria-hidden="true"></span>{{ site_name }}</span>
         <span class="telemetry-marks" aria-hidden="true">/////</span>
         <span class="telemetry-tail">
-            <span class="index" aria-hidden="true">01 / {{ feature_count }}</span>
+            <span class="index" aria-hidden="true">01 / {{ "{:02}"|format(feature_count) }}</span>
         </span>
     </div>
 </div>
@@ -125,7 +125,7 @@
         <span class="sig">■</span>
         <span class="glyphs">→ × + · / // ·  + × → /// · → × + · / ·  × → + /// ·  + → × · / ·</span>
         <span class="sig">■</span>
-        <span class="num">01 — {{ feature_count }}</span>
+        <span class="num">01 — {{ "{:02}"|format(feature_count) }}</span>
     </div>
 
     <section class="features" aria-labelledby="landing-highlights">

@@ -122,9 +122,8 @@
             </svg>
             <div class="specimen-float">
                 <span class="status-dot"></span>
-                <span>{{ lang.t("landing.decorative.badge") }}</span>
+                <span>{{ lang.t("landing.decorative.note") }}</span>
             </div>
-            <p class="decorative-note">{{ lang.t("landing.decorative.note") }}</p>
         </div>
     </section>
 
@@ -133,7 +132,7 @@
 
     <section class="features" aria-labelledby="landing-highlights">
         <div class="section-head">
-            <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ feature_count }}</span>
+            <span class="kicker"><span class="kicker-dot" aria-hidden="true"></span>{{ "{:02}"|format(feature_count) }}</span>
             <h2 id="landing-highlights">{{ lang.t("landing.features.heading") }}</h2>
             <p class="muted">{{ lang.t("landing.features.subtitle") }}</p>
         </div>
@@ -248,7 +247,7 @@
         <div class="pulse-track" aria-hidden="true">
             <span>{{ year }}</span>
             <span class="pulse-line"></span>
-            <span>v{{ version }}</span>
+            <span>{{ site_name }}</span>
         </div>
     </section>
 </main>
