@@ -809,6 +809,8 @@ pub struct SettingsValues {
     pub invite_period: String,
     pub default_redirect_type: i64,
     pub analytics_enabled: bool,
+    /// How the landing page publishes the server clock.
+    pub landing_clock: String,
     pub preview_image_policy: String,
     pub url_cleaning_enabled: bool,
     pub url_cleaning_rules: String,
@@ -1239,6 +1241,8 @@ pub struct SettingsForm {
     pub default_redirect_type: String,
     #[serde(default)]
     pub analytics_enabled: Option<String>,
+    #[serde(default)]
+    pub landing_clock: Option<String>,
     #[serde(default)]
     pub preview_image_policy: Option<String>,
     #[serde(default)]
@@ -2545,6 +2549,9 @@ pub async fn update_settings(
     if let Some(value) = payload.max_api_tokens_per_user {
         values.push(("max_api_tokens_per_user".to_string(), value));
     }
+    if let Some(value) = payload.landing_clock {
+        values.push(("landing_clock".to_string(), value));
+    }
     if let Some(value) = payload.preview_image_policy {
         values.push(("preview_image_policy".to_string(), value));
     }
@@ -3403,6 +3410,7 @@ pub fn settings_values(state: &AppState) -> SettingsValues {
         invite_period: settings.invite_period().as_str().to_string(),
         default_redirect_type: settings.default_redirect_type(),
         analytics_enabled: settings.analytics_enabled(),
+        landing_clock: settings.landing_clock().as_str().to_string(),
         preview_image_policy: settings.preview_image_policy().as_str().to_string(),
         url_cleaning_enabled: settings.url_cleaning_enabled(),
         url_cleaning_rules: settings.url_cleaning_rules(),

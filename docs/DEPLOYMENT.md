@@ -120,7 +120,7 @@ URLET_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-Forw
 | `URLET_LOG` | `info` | tracing filter, for example `urlet=debug,tower=warn`. `RUST_LOG`, when set, takes precedence (the binary tries `EnvFilter::try_from_default_env` first) |
 | `URLET_LOG_FORMAT` | `compact` | `compact` or `json` |
 | `URLET_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | Target of `urlet healthcheck` |
-| `TZ` | OS timezone (`UTC` in the image) | Server process timezone for guest calendar quotas, for example `Asia/Taipei`; read at startup. Docker Compose forwards it (`TZ: ${TZ:-UTC}`) |
+| `TZ` | OS timezone (`UTC` in the image) | Server process timezone for guest calendar quotas and the landing-page clock, for example `Asia/Taipei`; read at startup. The clock is shown in designs with a server information strip (default Verdant and uploaded themes based on it). `landing_clock=utc` keeps the landing page from displaying the server time zone; `off` hides the clock. Docker Compose forwards it (`TZ: ${TZ:-UTC}`). Guest quotas always follow `TZ` |
 
 Three further variables are read by the compose files, not by the urlet binary:
 

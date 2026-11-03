@@ -73,6 +73,25 @@ async fn landing_page_serves_signed_in_visitors() {
 }
 
 #[tokio::test]
+async fn landing_page_is_no_store_for_anonymous_and_signed_in_visitors() {
+    let app = TestApp::spawn().await;
+    let anonymous = app.get("/").await;
+    assert_eq!(anonymous.status, StatusCode::OK);
+    assert_eq!(
+        anonymous.header("cache-control").as_deref(),
+        Some("no-store")
+    );
+
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let signed_in = app.get_as("/", &cookie).await;
+    assert_eq!(signed_in.status, StatusCode::OK);
+    assert_eq!(
+        signed_in.header("cache-control").as_deref(),
+        Some("no-store")
+    );
+}
+
+#[tokio::test]
 async fn landing_page_treats_a_stale_session_as_anonymous() {
     let app = TestApp::spawn().await;
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
@@ -660,4 +679,46 @@ async fn json_api_still_works_alongside_the_pages() {
     let tokens = app.get_as("/api/v1/tokens", &cookie).await;
     assert_eq!(tokens.status, StatusCode::OK);
     assert_eq!(tokens.json()["items"].as_array().expect("items").len(), 0);
+}
+
+#[tokio::test]
+async fn landing_page_reports_the_servers_own_readouts() {
+    let app = TestApp::spawn().await;
+    let response = app.get("/").await;
+    assert_eq!(response.status, StatusCode::OK);
+
+    // The strip at the end of the page is the only place that reports the
+    // instance, and it only reports what this request could read: the clock,
+    // the zone it was read in, the build and the process uptime.
+    assert!(response.body.contains("data-server-clock"));
+    assert!(response.body.contains("data-epoch-ms=\""));
+    // The test configuration pins the server zone to UTC.
+    assert!(response.body.contains("data-zone=\"UTC\""));
+    assert!(response.body.contains(">+00:00<"));
+    assert!(response
+        .body
+        .contains(&format!(">v{}<", env!("CARGO_PKG_VERSION"))));
+    assert!(response.body.contains("This server"));
+
+    // The decorative specimen panel says so instead of pretending to measure.
+    assert!(response.body.contains("Illustrative only"));
+
+    // Values the process cannot produce must not come back: they were the
+    // reason a visitor could not tell the drawing from the telemetry.
+    for invented in [
+        "0.982",
+        "0.942",
+        "99.9",
+        ">SIG<",
+        ">AMB<",
+        ">SLO<",
+        "01:06",
+        "SYS · 01 / 06",
+        "0.94 · 06",
+    ] {
+        assert!(
+            !response.body.contains(invented),
+            "landing page still prints {invented}"
+        );
+    }
 }

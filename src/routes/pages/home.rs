@@ -9,7 +9,7 @@
 
 use askama::Template;
 use axum::extract::{Extension, Query, State};
-use axum::http::{header, HeaderValue, StatusCode};
+use axum::http::{HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use serde::Deserialize;
 
@@ -19,6 +19,7 @@ use crate::error::AppError;
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::MaybeUser;
 use crate::middleware::domain::HostContext;
+use crate::routes::no_store;
 use crate::routes::pages::link_form::LinkForm;
 use crate::routes::pages::{captcha_widget, flash_from_query, Flash};
 use crate::services::captcha::CaptchaWidget;
@@ -43,6 +44,13 @@ pub struct HomeQuery {
     #[serde(default)]
     pub err: Option<String>,
 }
+
+/// Number of feature cards every landing template renders.
+///
+/// The templates print this instead of a literal, and the catalogue test in
+/// `tests/i18n.rs` keeps it in step with `landing.feature.*`, so the index a
+/// visitor reads cannot drift away from the copy it indexes.
+pub const LANDING_FEATURES: usize = 6;
 
 /// The public shortener as the landing page renders it.
 #[derive(Debug)]
@@ -74,6 +82,18 @@ pub struct LandingPage {
     pub shorten: ShortenView,
     /// The public form, with the optional inputs the administrator enabled.
     pub link_form: LinkForm,
+    /// Build version from `Cargo.toml`; the readouts print it, nothing else.
+    pub version: &'static str,
+    /// Feature cards on this page (see [`LANDING_FEATURES`]).
+    pub feature_count: usize,
+    /// Server clock, refreshed on every request; `None` when the administrator
+    /// set `landing_clock=off`.
+    pub clock: Option<crate::services::clock::Reading>,
+    /// Calendar year in the public zone, for the labels that print one.
+    pub year: String,
+    /// Compact process uptime. It says nothing about where the host is, so it
+    /// stays visible whichever clock policy is in force.
+    pub uptime: String,
 }
 
 themed_page!(landing_templates, LandingView, LandingPage,
@@ -124,10 +144,7 @@ pub async fn home(
             theme: crate::services::theme::current(),
         }
         .themed();
-        let mut response = render(page)?;
-        response
-            .headers_mut()
-            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        let mut response = no_store(render(page)?);
         response
             .headers_mut()
             .insert("x-robots-tag", HeaderValue::from_static("noindex"));
@@ -190,6 +207,8 @@ pub async fn home(
         None
     };
 
+    let clock_mode = state.settings.landing_clock();
+    let public_zone = crate::services::clock::landing_zone(clock_mode, &state.config.timezone);
     let page = LandingPage {
         site_name: state.settings.site_name(),
         lang: i18n::current(),
@@ -199,6 +218,14 @@ pub async fn home(
         flash: flash_from_query(query.ok.as_deref(), query.err.as_deref()),
         captcha,
         link_form: LinkForm::public(&fields, domains),
+        // Real readouts only: the build version, the number of feature cards
+        // this page actually renders, and the server clock. Everything else
+        // that looks like an instrument is marked as illustrative.
+        version: crate::VERSION,
+        feature_count: LANDING_FEATURES,
+        clock: crate::services::clock::for_landing(clock_mode, &state.config.timezone),
+        year: crate::services::clock::year(&public_zone),
+        uptime: crate::services::clock::format_uptime(state.uptime_seconds()),
         shorten: ShortenView {
             show: allowed,
             result,
@@ -213,7 +240,7 @@ pub async fn home(
         },
     }
     .themed();
-    render(page)
+    Ok(no_store(render(page)?))
 }
 
 /// The short URL of the link the public form just created.

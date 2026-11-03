@@ -580,6 +580,142 @@ async fn settings_can_be_read_and_updated() {
 }
 
 #[tokio::test]
+async fn the_landing_clock_setting_controls_what_the_public_page_reveals() {
+    let app = TestApp::spawn_with(|config| {
+        config.timezone = jiff::tz::TimeZone::get("Asia/Taipei").expect("zone");
+    })
+    .await;
+    let (cookie, _) = admin(&app).await;
+
+    // Server mode publishes a non-UTC zone and its offset.
+    let landing = app.get("/").await;
+    assert!(landing.body.contains("data-server-clock"));
+    assert!(landing.body.contains("data-zone=\"Asia/Taipei\""));
+    assert!(landing.body.contains(">+08:00<"));
+
+    // UTC keeps a clock but drops the location hint.
+    let updated = app
+        .send(put_json_as(
+            "/api/v1/admin/settings",
+            json!({ "landing_clock": "utc" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(updated.status, StatusCode::OK, "{}", updated.body);
+    assert_eq!(updated.json()["landing_clock"], "utc");
+    let landing = app.get("/").await;
+    assert!(landing.body.contains("data-server-clock"));
+    assert!(landing.body.contains("data-zone=\"UTC\""));
+    assert!(!landing.body.contains("Asia/Taipei"));
+    assert!(!landing.body.contains("+08:00"));
+
+    // Off removes the clock and the offset, and keeps the rest of the strip:
+    // the version and the uptime say nothing about where the host is.
+    let updated = app
+        .send(put_json_as(
+            "/api/v1/admin/settings",
+            json!({ "landing_clock": "off" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(updated.status, StatusCode::OK, "{}", updated.body);
+    let landing = app.get("/").await;
+    assert!(!landing.body.contains("data-server-clock"));
+    assert!(!landing.body.contains("UTC offset"));
+    assert!(!landing.body.contains("Asia/Taipei"));
+    assert!(!landing.body.contains("+08:00"));
+    assert!(landing.body.contains("This server"));
+    assert!(landing.body.contains("Uptime"));
+
+    // An unknown value is refused, and the stored policy stays where it was.
+    let invalid = app
+        .send(put_json_as(
+            "/api/v1/admin/settings",
+            json!({ "landing_clock": "local" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(invalid.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        app.state.settings.landing_clock(),
+        urlet::services::settings::LandingClock::Off
+    );
+}
+
+#[tokio::test]
+async fn landing_clock_form_preserves_validates_and_marks_the_current_policy() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = admin(&app).await;
+    let base_form = "site_name=urlet&registration_mode=open&default_slug_length=6\
+                     &max_urls_per_user=0&default_redirect_type=302&click_retention_days=30";
+
+    for policy in ["server", "utc", "off"] {
+        let saved = app
+            .send(post_form_as(
+                "/app/admin/settings",
+                &format!("{base_form}&landing_clock={policy}"),
+                &cookie,
+            ))
+            .await;
+        assert_eq!(saved.status, StatusCode::SEE_OTHER);
+        assert_eq!(
+            saved.header("location").as_deref(),
+            Some("/app/admin/settings?ok=saved")
+        );
+        assert_eq!(app.state.settings.landing_clock().as_str(), policy);
+        let stored: String =
+            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'landing_clock'")
+                .fetch_one(&app.state.db)
+                .await
+                .expect("persisted clock policy");
+        assert_eq!(stored, policy);
+
+        let page = app.get_as("/app/admin/settings", &cookie).await;
+        assert_eq!(page.status, StatusCode::OK);
+        let select = page
+            .body
+            .split("name=\"landing_clock\"")
+            .nth(1)
+            .expect("clock select")
+            .split("</select>")
+            .next()
+            .expect("select body");
+        assert!(select.contains(&format!("<option value=\"{policy}\" selected>")));
+        assert_eq!(select.matches("selected").count(), 1);
+    }
+
+    // An old form omitting the new field keeps the saved policy.
+    let old_form = app
+        .send(post_form_as("/app/admin/settings", base_form, &cookie))
+        .await;
+    assert_eq!(
+        old_form.header("location").as_deref(),
+        Some("/app/admin/settings?ok=saved")
+    );
+    assert_eq!(app.state.settings.landing_clock().as_str(), "off");
+
+    let invalid = app
+        .send(post_form_as(
+            "/app/admin/settings",
+            &format!("{base_form}&landing_clock=local"),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(invalid.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        invalid.header("location").as_deref(),
+        Some("/app/admin/settings?err=invalid")
+    );
+    assert_eq!(app.state.settings.landing_clock().as_str(), "off");
+    let stored: String =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'landing_clock'")
+            .fetch_one(&app.state.db)
+            .await
+            .expect("unchanged clock policy");
+    assert_eq!(stored, "off");
+}
+
+#[tokio::test]
 async fn settings_form_persists_values() {
     let app = TestApp::spawn().await;
     let (cookie, _) = admin(&app).await;

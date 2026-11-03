@@ -1236,21 +1236,15 @@ svg.chart rect:hover { opacity: 1; }
     color: #c7d2fe;
 }
 
-.mock-live {
+.mock-tag {
     display: inline-flex;
     align-items: center;
-    gap: .3rem;
     font-family: var(--mono);
     font-size: .66rem;
-    color: #6ee7b7;
-}
-
-.mock-live i {
-    width: .34rem;
-    height: .34rem;
-    border-radius: 50%;
-    background: #34d399;
-    box-shadow: 0 0 0 3px rgba(52, 211, 153, .16);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #c7d2fe;
+    opacity: .8;
 }
 
 .mock-spark { margin: .9rem 0 .2rem; height: 6rem; }

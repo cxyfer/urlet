@@ -2199,3 +2199,57 @@ async fn every_theme_renders_the_splash_page() {
         );
     }
 }
+
+#[tokio::test]
+async fn no_landing_prints_a_metric_the_server_cannot_produce() {
+    let app = TestApp::spawn().await;
+
+    // Every design draws its own instrument chrome, and four of them draw it
+    // close enough to the real readouts to be mistaken for telemetry. The
+    // label is what keeps the drawing honest, so a new design cannot ship
+    // without one, and no design may print a number nobody can verify.
+    let with_panel = ["verdant", "aurora", "signal", "swiss"];
+    for key in ["verdant", "aurora", "paper", "signal", "gilded", "swiss"] {
+        let landing = app.get_as("/", &format!("urlet_theme={key}")).await;
+        assert_eq!(landing.status, StatusCode::OK, "{key} landing");
+        assert!(
+            landing.body.contains(&format!("data-theme-key=\"{key}\"")),
+            "{key} did not render its own shell"
+        );
+        let feature_cards = landing
+            .body
+            .split("class=\"")
+            .skip(1)
+            .filter(|classes| {
+                classes
+                    .split('"')
+                    .next()
+                    .expect("class attribute")
+                    .split_whitespace()
+                    .any(|class| class == "landing-feature")
+            })
+            .count();
+        assert_eq!(
+            feature_cards,
+            urlet::routes::pages::home::LANDING_FEATURES,
+            "{key} feature cards"
+        );
+
+        if with_panel.contains(&key) {
+            assert!(
+                landing.body.contains("Illustrative only"),
+                "{key} draws a panel without the illustrative label"
+            );
+        }
+
+        for invented in [
+            ">86.4<", ">86.4%<", ">12.4k<", ">3.2<", ">042<", ">+128<", "+ 0.842", "+ 0.664",
+            "MMXXVI", "a7f3k", ">SLO<", ">AMB<", ">24<", "6.1k", "2.8k", "— 1280",
+        ] {
+            assert!(
+                !landing.body.contains(invented),
+                "{key} still prints {invented}"
+            );
+        }
+    }
+}

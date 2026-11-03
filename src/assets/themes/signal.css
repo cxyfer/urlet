@@ -1926,6 +1926,11 @@ table.table .mono {
     box-shadow: var(--shadow-lg);
 }
 
+.hero-deck .decorative-note {
+    margin: 0;
+    padding: 0 .8rem .7rem;
+}
+
 .deck-bar {
     display: flex;
     align-items: center;
@@ -2066,12 +2071,6 @@ table.table .mono {
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     letter-spacing: -.02em;
-}
-
-.deck-unit {
-    font-size: 9px;
-    font-weight: 700;
-    opacity: .65;
 }
 
 .deck-controls {

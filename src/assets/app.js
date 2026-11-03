@@ -647,6 +647,54 @@
         enhance: initLinkForms
     });
 
+    /* Server clock: the landing page renders the server's time once, with the
+       epoch it was read at and the zone it was read in. Ticking locally from
+       that anchor keeps the display honest — no polling, and the browser's own
+       time zone is never substituted for the server's. Without JavaScript the
+       rendered time stays as it was captured, which is still true. */
+    function initServerClock() {
+        var anchors = document.querySelectorAll("[data-server-clock][data-epoch-ms]");
+        if (!anchors.length) { return; }
+        var anchor = anchors[0];
+        var epoch = Number(anchor.getAttribute("data-epoch-ms"));
+        var zone = anchor.getAttribute("data-zone") || "";
+        var offsetAttr = anchor.getAttribute("data-offset-seconds");
+        var offsetMs = 0;
+        if (!isFinite(epoch)) { return; }
+        if (zone.charAt(0) === "+" || zone.charAt(0) === "-") {
+            /* No IANA zone name (POSIX TZ rule or unnamed TZif): only a fixed
+               offset from the server can be honoured, formatted as UTC. */
+            var seconds = offsetAttr === null || offsetAttr === "" ? NaN : Number(offsetAttr);
+            if (!isFinite(seconds)) { return; }
+            offsetMs = seconds * 1000;
+            zone = "UTC";
+        }
+        var format;
+        try {
+            format = new Intl.DateTimeFormat("en-GB", {
+                timeZone: zone,
+                hourCycle: "h23",
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit"
+            });
+        } catch (err) {
+            return;
+        }
+        var rendered = Date.now();
+        function tick() {
+            var at = epoch + (Date.now() - rendered);
+            var text = format.format(new Date(at + offsetMs));
+            anchors.forEach(function (node) { node.textContent = text; });
+            /* Align the next tick to a whole second of the server time shown,
+               not of the browser's own clock. */
+            window.setTimeout(tick, 1000 - (at % 1000));
+        }
+        tick();
+    }
+
+    initServerClock();
+
     /* Dismiss alerts after a while so success banners do not pile up. */
     window.setTimeout(function () {
         document.querySelectorAll(".alert-ok[data-auto-dismiss]").forEach(function (node) {

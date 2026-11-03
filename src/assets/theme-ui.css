@@ -16,6 +16,22 @@
     overflow-wrap: anywhere;
 }
 
+/* Marks decorative panels on the landing pages.
+ *
+ * Every design draws its own instrument chrome, and some of it sits next to the
+ * real server readouts. This label is the one piece of that chrome shared by
+ * all designs: it says the panel is a drawing, so a visitor does not read the
+ * bars and contour lines as measurements. Inherits the surrounding colour and
+ * only drops its opacity, because the designs disagree on palette names. */
+.decorative-note {
+    margin: .6rem 0 0;
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: .62rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    opacity: .55;
+}
+
 .theme-switcher {
     position: relative;
     display: inline-flex;

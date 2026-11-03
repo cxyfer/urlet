@@ -36,6 +36,15 @@
                     </select>
                 </div>
                 <div class="field">
+                    <label class="label" for="landing_clock">{{ lang.t("admin.settings.landing_clock") }}</label>
+                    <select class="select" id="landing_clock" name="landing_clock" aria-describedby="landing-clock-hint">
+                        <option value="server" {% if values.landing_clock == "server" %}selected{% endif %}>{{ lang.t("admin.settings.landing_clock.server") }}</option>
+                        <option value="utc" {% if values.landing_clock == "utc" %}selected{% endif %}>{{ lang.t("admin.settings.landing_clock.utc") }}</option>
+                        <option value="off" {% if values.landing_clock == "off" %}selected{% endif %}>{{ lang.t("admin.settings.landing_clock.off") }}</option>
+                    </select>
+                    <span class="hint" id="landing-clock-hint">{{ lang.t("admin.settings.landing_clock_hint") }}</span>
+                </div>
+                <div class="field">
                     <label class="label" for="default_slug_length">{{ lang.t("admin.settings.slug_length") }}</label>
                     <input class="input" type="number" id="default_slug_length" name="default_slug_length"
                            min="4" max="16" value="{{ values.default_slug_length }}" required>

@@ -35,6 +35,10 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     // without a session, or administrators only ("admin"). Administrators can
     // always preview any enabled theme.
     ("theme_switching", "all"),
+    // What the landing page reveals about the server clock: the configured zone
+    // ("server", the default), UTC ("utc") or nothing ("off"). Display only —
+    // the zone used for guest quota periods stays the process `TZ`.
+    ("landing_clock", "server"),
     // Public shortener. `user` keeps the historical behaviour (only signed-in
     // accounts create links); `guest` also serves the form on the landing page
     // and `admin` restricts creation to administrators. The rate limits count

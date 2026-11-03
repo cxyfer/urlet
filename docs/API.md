@@ -655,6 +655,7 @@ Editable setting keys: `site_name`, `registration_mode` (`open`/`invite`/`closed
 `max_invites_per_period` (0 = unlimited, default 0), `invite_period` (`day`/`week`/`month`,
 default `month`), `default_redirect_type` (301/302/307/308), `analytics_enabled`,
 `theme_switching` (`all`/`admin`, default `all`),
+`landing_clock` (`server`/`utc`/`off`, default `server`),
 `preview_image_policy` (`none`/`url`/`upload`/`both`, default `both`),
 `click_retention_days` (0 = keep forever), plus the bot verification keys
 `captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`,
