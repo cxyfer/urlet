@@ -1700,6 +1700,7 @@ dl.meta dt:last-of-type, dl.meta dd:last-of-type { border-bottom: 0; }
     color: var(--ink-soft);
     max-width: 82%;
     line-height: 1.35;
+    text-wrap: balance;
 }
 .specimen-float .status-dot { background: var(--sap); flex: none; }
 
