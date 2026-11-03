@@ -1689,7 +1689,7 @@ dl.meta dt:last-of-type, dl.meta dd:last-of-type { border-bottom: 0; }
     align-items: center;
     gap: .55rem;
     padding: .5rem .8rem;
-    border-radius: var(--pill);
+    border-radius: var(--r-md);
     border: 1px solid var(--hairline);
     background: var(--surface-translucent);
     backdrop-filter: blur(10px);
@@ -1698,19 +1698,10 @@ dl.meta dt:last-of-type, dl.meta dd:last-of-type { border-bottom: 0; }
     font-size: .68rem;
     letter-spacing: .06em;
     color: var(--ink-soft);
-    white-space: nowrap;
+    max-width: 82%;
+    line-height: 1.35;
 }
-.specimen-float .status-dot { background: var(--sap); }
-/* Out of the grid flow: a second grid row would shrink the disc and push the
-   badge off its corner. */
-.specimen .decorative-note {
-    position: absolute;
-    z-index: 2;
-    left: 0;
-    bottom: 6%;
-    max-width: 56%;
-    margin: 0;
-}
+.specimen-float .status-dot { background: var(--sap); flex: none; }
 
 /* features bento */
 .features { padding-top: .5rem; }
