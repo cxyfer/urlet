@@ -658,9 +658,16 @@
         var anchor = anchors[0];
         var epoch = Number(anchor.getAttribute("data-epoch-ms"));
         var zone = anchor.getAttribute("data-zone") || "";
-        if (!isFinite(epoch) || zone.charAt(0) === "+" || zone.charAt(0) === "-") {
-            /* No IANA zone name to format in: leave the server's text alone. */
-            return;
+        var offsetAttr = anchor.getAttribute("data-offset-seconds");
+        var offsetMs = 0;
+        if (!isFinite(epoch)) { return; }
+        if (zone.charAt(0) === "+" || zone.charAt(0) === "-") {
+            /* No IANA zone name (POSIX TZ rule or unnamed TZif): only a fixed
+               offset from the server can be honoured, formatted as UTC. */
+            var seconds = offsetAttr === null || offsetAttr === "" ? NaN : Number(offsetAttr);
+            if (!isFinite(seconds)) { return; }
+            offsetMs = seconds * 1000;
+            zone = "UTC";
         }
         var format;
         try {
@@ -677,10 +684,11 @@
         var rendered = Date.now();
         function tick() {
             var at = epoch + (Date.now() - rendered);
-            var text = format.format(new Date(at));
+            var text = format.format(new Date(at + offsetMs));
             anchors.forEach(function (node) { node.textContent = text; });
-            /* Re-align to the next whole second so the readout does not drift. */
-            window.setTimeout(tick, 1000 - (Date.now() % 1000));
+            /* Align the next tick to a whole second of the server time shown,
+               not of the browser's own clock. */
+            window.setTimeout(tick, 1000 - (at % 1000));
         }
         tick();
     }

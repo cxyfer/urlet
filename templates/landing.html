@@ -225,18 +225,18 @@
     {# Server strip: the only place on this page that reports the instance
        itself. Every value is read on this request — the response is `no-store`
        — so the clock is the server's clock, not a picture of one. #}
-    <section class="pulse" aria-label="{{ lang.t("landing.pulse.label") }}">
+    <section class="pulse" aria-labelledby="landing-pulse-label">
         <svg class="pulse-contour" aria-hidden="true" viewBox="0 0 1200 240" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path class="contour-a" d="M-40 210C140 210 200 140 340 140s200 54 340 54 200-78 340-78 180 26 240 34"></path>
             <path class="contour-b" d="M-40 228C150 228 214 166 352 166s208 44 344 44 198-64 336-64 176 20 232 28"></path>
             <path class="contour-c" d="M-40 190C132 190 196 116 344 116s196 66 336 66 196-92 340-92 170 32 232 42"></path>
         </svg>
         <div class="pulse-content">
-            <span class="pulse-label"><span class="status-dot" aria-hidden="true"></span>{{ lang.t("landing.pulse.label") }}</span>
+            <span class="pulse-label" id="landing-pulse-label"><span class="status-dot" aria-hidden="true"></span>{{ lang.t("landing.pulse.label") }}</span>
             <div class="pulse-cells">
                 {% if let Some(clock) = clock %}
                 <div class="pulse-cell">
-                    <b data-server-clock data-epoch-ms="{{ clock.epoch_ms }}" data-zone="{{ clock.zone }}">{{ clock.time }}</b>
+                    <b data-server-clock data-epoch-ms="{{ clock.epoch_ms }}" data-zone="{{ clock.zone }}" data-offset-seconds="{{ clock.offset_seconds }}">{{ clock.time }}</b>
                     <span>{{ clock.zone }}</span>
                 </div>
                 <div class="pulse-cell"><b>{{ clock.offset }}</b><span>{{ lang.t("landing.pulse.offset") }}</span></div>
