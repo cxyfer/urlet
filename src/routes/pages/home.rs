@@ -89,7 +89,7 @@ pub struct LandingPage {
     /// Server clock, refreshed on every request; `None` when the administrator
     /// set `landing_clock=off`.
     pub clock: Option<crate::services::clock::Reading>,
-    /// Calendar year in the server zone, for the labels that print one.
+    /// Calendar year in the public zone, for the labels that print one.
     pub year: String,
     /// Compact process uptime. It says nothing about where the host is, so it
     /// stays visible whichever clock policy is in force.
@@ -207,6 +207,8 @@ pub async fn home(
         None
     };
 
+    let clock_mode = state.settings.landing_clock();
+    let public_zone = crate::services::clock::landing_zone(clock_mode, &state.config.timezone);
     let page = LandingPage {
         site_name: state.settings.site_name(),
         lang: i18n::current(),
@@ -221,11 +223,8 @@ pub async fn home(
         // that looks like an instrument is marked as illustrative.
         version: crate::VERSION,
         feature_count: LANDING_FEATURES,
-        clock: crate::services::clock::for_landing(
-            state.settings.landing_clock(),
-            &state.config.timezone,
-        ),
-        year: crate::services::clock::year(&state.config.timezone),
+        clock: crate::services::clock::for_landing(clock_mode, &state.config.timezone),
+        year: crate::services::clock::year(&public_zone),
         uptime: crate::services::clock::format_uptime(state.uptime_seconds()),
         shorten: ShortenView {
             show: allowed,

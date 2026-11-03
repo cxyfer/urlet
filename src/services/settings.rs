@@ -174,14 +174,13 @@ impl PublicCreateAccess {
 ///
 /// The strip reports the server's own clock; which zone it prints is a
 /// disclosure decision, because a zone name is a coarse location hint. This
-/// setting only changes what the public page reveals — the instance's notion of
-/// local time (guest quota periods, the admin page) keeps following `TZ`, so
-/// the two never disagree about what "today" means.
+/// setting changes the public clock and year labels — the instance's notion
+/// of local time (guest quota periods, the admin page) keeps following `TZ`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LandingClock {
     /// The configured server zone; the default, and the most verifiable.
     Server,
-    /// UTC, which reveals nothing about where the host is.
+    /// UTC, without displaying the configured server zone.
     Utc,
     /// No clock on the landing page at all.
     Off,

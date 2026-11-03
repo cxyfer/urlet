@@ -38,12 +38,11 @@ pub struct Reading {
 /// The reading the landing page should print, or `None` when the administrator
 /// chose not to publish a clock.
 ///
-/// `Server` follows the configured zone, `Utc` pins the zone so the page says
-/// nothing about where the host is, and `Off` drops the clock entirely.
+/// `Server` follows the configured zone, `Utc` keeps the configured zone off
+/// the page, and `Off` drops the clock entirely.
 pub fn for_landing(mode: LandingClock, zone: &TimeZone) -> Option<Reading> {
     match mode {
-        LandingClock::Server => Some(reading(zone)),
-        LandingClock::Utc => Some(reading(&TimeZone::UTC)),
+        LandingClock::Server | LandingClock::Utc => Some(reading(&landing_zone(mode, zone))),
         LandingClock::Off => None,
     }
 }
@@ -75,10 +74,22 @@ pub fn reading_at(zone: &TimeZone, instant: Timestamp) -> Reading {
 /// Kept separate from [`Reading`] because the year is not a clock: the landing
 /// pages print it even when the clock is hidden.
 pub fn year(zone: &TimeZone) -> String {
-    jiff::Timestamp::now()
-        .to_zoned(zone.clone())
-        .year()
-        .to_string()
+    year_at(zone, Timestamp::now())
+}
+
+/// Calendar year in `zone` at a known instant.
+pub fn year_at(zone: &TimeZone, instant: Timestamp) -> String {
+    instant.to_zoned(zone.clone()).year().to_string()
+}
+
+/// Zone the public year may reveal under the landing clock policy.
+///
+/// Hiding the clock must also hide the configured zone at New Year.
+pub fn landing_zone(mode: LandingClock, zone: &TimeZone) -> TimeZone {
+    match mode {
+        LandingClock::Server => zone.clone(),
+        LandingClock::Utc | LandingClock::Off => TimeZone::UTC,
+    }
 }
 
 /// `+08:00`, `-03:30`, `+00:00`.
@@ -165,6 +176,26 @@ mod tests {
             assert_eq!(reading.offset_seconds, seconds);
             assert_eq!(reading.time, time);
             assert_eq!(reading.epoch_ms, instant.as_millisecond());
+        }
+    }
+
+    #[test]
+    fn year_and_clock_use_the_zone_at_the_same_new_year_instant() {
+        let instant: Timestamp = "2026-12-31T20:00:00Z".parse().expect("timestamp");
+        let taipei = TimeZone::get("Asia/Taipei").expect("zone");
+        assert_eq!(year_at(&taipei, instant), "2027");
+        assert_eq!(reading_at(&taipei, instant).time, "04:00:00");
+        assert_eq!(year_at(&TimeZone::UTC, instant), "2026");
+        assert_eq!(reading_at(&TimeZone::UTC, instant).time, "20:00:00");
+        for (mode, expected_year) in [
+            (LandingClock::Server, "2027"),
+            (LandingClock::Utc, "2026"),
+            (LandingClock::Off, "2026"),
+        ] {
+            assert_eq!(
+                year_at(&landing_zone(mode, &taipei), instant),
+                expected_year
+            );
         }
     }
 
