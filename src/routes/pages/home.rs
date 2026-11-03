@@ -9,7 +9,7 @@
 
 use askama::Template;
 use axum::extract::{Extension, Query, State};
-use axum::http::{header, HeaderValue, StatusCode};
+use axum::http::{HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use serde::Deserialize;
 
@@ -19,6 +19,7 @@ use crate::error::AppError;
 use crate::i18n::{self, Lang};
 use crate::middleware::auth::MaybeUser;
 use crate::middleware::domain::HostContext;
+use crate::routes::no_store;
 use crate::routes::pages::link_form::LinkForm;
 use crate::routes::pages::{captcha_widget, flash_from_query, Flash};
 use crate::services::captcha::CaptchaWidget;
@@ -143,10 +144,7 @@ pub async fn home(
             theme: crate::services::theme::current(),
         }
         .themed();
-        let mut response = render(page)?;
-        response
-            .headers_mut()
-            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        let mut response = no_store(render(page)?);
         response
             .headers_mut()
             .insert("x-robots-tag", HeaderValue::from_static("noindex"));
@@ -243,7 +241,7 @@ pub async fn home(
         },
     }
     .themed();
-    render(page)
+    Ok(no_store(render(page)?))
 }
 
 /// The short URL of the link the public form just created.

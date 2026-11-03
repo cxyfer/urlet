@@ -73,6 +73,25 @@ async fn landing_page_serves_signed_in_visitors() {
 }
 
 #[tokio::test]
+async fn landing_page_is_no_store_for_anonymous_and_signed_in_visitors() {
+    let app = TestApp::spawn().await;
+    let anonymous = app.get("/").await;
+    assert_eq!(anonymous.status, StatusCode::OK);
+    assert_eq!(
+        anonymous.header("cache-control").as_deref(),
+        Some("no-store")
+    );
+
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let signed_in = app.get_as("/", &cookie).await;
+    assert_eq!(signed_in.status, StatusCode::OK);
+    assert_eq!(
+        signed_in.header("cache-control").as_deref(),
+        Some("no-store")
+    );
+}
+
+#[tokio::test]
 async fn landing_page_treats_a_stale_session_as_anonymous() {
     let app = TestApp::spawn().await;
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
