@@ -232,6 +232,7 @@ bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
   參考頁，合約本身位於 `/docs/openapi.json` 與 `/docs/openapi.zh-TW.json`；兩者都內嵌於
   執行檔，不需要對外網路
 - [`RELEASING.md`](RELEASING.md) — 發布規則：版本、標籤與映像規則、檢查清單、回滾（[中文版](docs/zh-TW/RELEASING.md)）
+- [`SECURITY.md`](SECURITY.md) — 支援的版本與私密回報漏洞的方式（[中文版](docs/zh-TW/SECURITY.md)）
 
 這些文件的中文版放在 `docs/zh-TW/`。
 
