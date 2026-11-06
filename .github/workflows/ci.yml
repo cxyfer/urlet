@@ -91,6 +91,9 @@ jobs:
           components: rustfmt
       - name: cargo fmt --check
         run: cargo fmt --check
+      # Markdown prose stays one line per paragraph; see scripts/prose-lint.sh.
+      - name: bash scripts/prose-lint.sh
+        run: git ls-files -z '*.md' | xargs -0 bash scripts/prose-lint.sh
 
   # ------------------------------------------------------------------- lints
   # Clippy and the tests share one job on purpose: `cargo test` reuses most of

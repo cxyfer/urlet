@@ -2,9 +2,7 @@
 
 # urlet
 
-**A lightweight, self-hosted, multi-user URL shortener.** One Rust binary and one SQLite
-file: a single `docker compose up -d` and you are live. No external database, no cache
-service, no frontend build step.
+**A lightweight, self-hosted, multi-user URL shortener.** One Rust binary and one SQLite file: a single `docker compose up -d` and you are live. No external database, no cache service, no frontend build step.
 
 ![Landing page](docs/screenshots/landing.png)
 
@@ -32,23 +30,11 @@ service, no frontend build step.
 | 🐳 Deployment | Single container plus named volumes; published multi-arch images on GHCR; optional Caddy overlay for automatic HTTPS |
 | 🪶 Lightweight | 15.7 MB (musl) binary, 37.2 MB container image, 8.7 MB RSS under load (v1.1), and sub-millisecond redirect latency at P95 (see the note below) |
 
-> The binary and image figures are the v1.6 measurement; idle RSS was last measured in v1.1. Most
-> of the growth since v1.1 is the vendored Scalar bundle (4.9 MB) and the two embedded OpenAPI
-> contracts, alongside the locale catalogs and the TLS stack used by the optional bot protection.
-> The redirect latency was measured on v1.0 and is expected to be unchanged, since captcha
-> verification only runs on the registration, sign-in and link-creation forms — never on the
-> redirect path. All measurements are in `docs/SPEC.md` §3.3.
+> The binary and image figures are the v1.6 measurement; idle RSS was last measured in v1.1. Most of the growth since v1.1 is the vendored Scalar bundle (4.9 MB) and the two embedded OpenAPI contracts, alongside the locale catalogs and the TLS stack used by the optional bot protection. The redirect latency was measured on v1.0 and is expected to be unchanged, since captcha verification only runs on the registration, sign-in and link-creation forms — never on the redirect path. All measurements are in `docs/SPEC.md` §3.3.
 
 ## SNS preview cards
 
-Open a link in the dashboard and use **SNS preview** to set its public card title, description and
-either an HTTPS image URL or a PNG/JPEG/GIF/WebP upload (up to 2 MiB, 4096 × 4096 pixels). Clear all
-three to restore existing link behavior. Administrators choose no images, HTTPS URLs only, uploads
-only or both at **Admin → Settings → SNS preview images** (default: both). Disallowed existing
-images are hidden and retained for later re-enabling. Uploaded images stay in SQLite. Preview
-content is public even on password links; normal browser redirects are unchanged. See [the API
-reference](docs/API.md#sns-preview-cards) for automation. Social platforms control their own card
-layout and cache refresh.
+Open a link in the dashboard and use **SNS preview** to set its public card title, description and either an HTTPS image URL or a PNG/JPEG/GIF/WebP upload (up to 2 MiB, 4096 × 4096 pixels). Clear all three to restore existing link behavior. Administrators choose no images, HTTPS URLs only, uploads only or both at **Admin → Settings → SNS preview images** (default: both). Disallowed existing images are hidden and retained for later re-enabling. Uploaded images stay in SQLite. Preview content is public even on password links; normal browser redirects are unchanged. See [the API reference](docs/API.md#sns-preview-cards) for automation. Social platforms control their own card layout and cache refresh.
 
 ## Quick start
 
@@ -60,9 +46,7 @@ cp .env.example .env      # set at least URLET_BASE_URL and the admin credential
 docker compose up -d --build
 ```
 
-Open `http://localhost:8080`. The landing page links to sign-in and sign-up; sign in with
-the `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` from `.env` (the server creates that
-administrator on startup).
+Open `http://localhost:8080`. The landing page links to sign-in and sign-up; sign in with the `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` from `.env` (the server creates that administrator on startup).
 
 To let Caddy obtain HTTPS certificates automatically:
 
@@ -75,18 +59,14 @@ docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
 
 ### Prebuilt image
 
-Every `v*` tag publishes a multi-arch image (`linux/amd64` and `linux/arm64`) to the GitHub
-Container Registry, so you can run a release without compiling Rust yourself:
+Every `v*` tag publishes a multi-arch image (`linux/amd64` and `linux/arm64`) to the GitHub Container Registry, so you can run a release without compiling Rust yourself:
 
 ```bash
 export URLET_IMAGE=ghcr.io/cxyfer/urlet:latest   # pin a release tag in production
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 
-The overlay removes the local `build` section, so compose pulls the image instead of rebuilding.
-The package may be private; run `docker login ghcr.io` first (a token with `read:packages`), or
-make the package public under *Package settings → Change visibility*. See
-[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md#21-prebuilt-image) for pinning and upgrades.
+The overlay removes the local `build` section, so compose pulls the image instead of rebuilding. The package may be private; run `docker login ghcr.io` first (a token with `read:packages`), or make the package public under *Package settings → Change visibility*. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md#21-prebuilt-image) for pinning and upgrades.
 
 ### Running the binary directly
 
@@ -111,14 +91,9 @@ urlet version | help
 
 ## First run
 
-1. If `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` are set, the administrator is created
-   at startup.
-2. If the database holds **no accounts at all**, the first user to register becomes an
-   administrator automatically.
-3. After that, generate invite codes under **Admin → Invites** and switch the registration
-   mode to `invite` (invite code only) or `closed` (registration disabled) under
-   **Admin → Settings**. Each code comes with a registration link you can send instead of the
-   code; the link opens the form with the code already filled in.
+1. If `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` are set, the administrator is created at startup.
+2. If the database holds **no accounts at all**, the first user to register becomes an administrator automatically.
+3. After that, generate invite codes under **Admin → Invites** and switch the registration mode to `invite` (invite code only) or `closed` (registration disabled) under **Admin → Settings**. Each code comes with a registration link you can send instead of the code; the link opens the form with the code already filled in.
 
 ## Screenshots
 
@@ -144,8 +119,7 @@ Signed in:
 
 Dark mode: ![Dark mode](docs/screenshots/dark.png)
 
-Regenerate them with `SHOTS=docs/screenshots ./scripts/demo.sh` (needs Playwright and
-Chromium).
+Regenerate them with `SHOTS=docs/screenshots ./scripts/demo.sh` (needs Playwright and Chromium).
 
 ## Technical choices
 
@@ -158,9 +132,7 @@ Chromium).
 | Authentication | Server-side sessions + API tokens | Revocable immediately, without adding a JWT dependency |
 | Passwords | Argon2id (19 MiB, t=2, p=1) | OWASP-recommended parameters |
 
-**Deliberately out of scope**: OAuth, fine-grained permission matrices, GeoIP, keyword
-blocklists, webhooks, email delivery. The tables and architecture leave room for them
-(see `docs/SPEC.md` §12).
+**Deliberately out of scope**: OAuth, fine-grained permission matrices, GeoIP, keyword blocklists, webhooks, email delivery. The tables and architecture leave room for them (see `docs/SPEC.md` §12).
 
 ## Project layout
 
@@ -210,28 +182,20 @@ urlet/
 cargo test                 # unit + integration tests (the full suite)
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
+bash scripts/prose-lint.sh $(git ls-files '*.md')  # no hard-wrapped Markdown prose
 bash scripts/smoke.sh      # end-to-end acceptance run against the real binary
 bash scripts/demo.sh       # build a demo site and write screenshots to .tmp/demo/shots
 ```
 
-Rust 1.80.1 or newer is required. Integration tests use their own temporary SQLite database
-and never touch your development data.
+Rust 1.80.1 or newer is required. Integration tests use their own temporary SQLite database and never touch your development data.
 
-The first four commands also run in CI on every pull request — see
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml). `demo.sh` stays local because it needs
-Playwright and Chromium.
+The first five commands also run in CI on every pull request — see [`.github/workflows/ci.yml`](.github/workflows/ci.yml). `demo.sh` stays local because it needs Playwright and Chromium.
 
 ## Releasing
 
-Releases are tag-driven and governed by [`RELEASING.md`](RELEASING.md) — read it before tagging.
-In short: bump `version` in [`Cargo.toml`](Cargo.toml), refresh `Cargo.lock`, commit, then push
-an annotated `vX.Y.Z` tag. The workflow validates the tag, builds `linux/amd64` and
-`linux/arm64`, and publishes `ghcr.io/cxyfer/urlet` with semver tags. Only the newest stable
-release moves `X`, `X.Y` and `latest`; pre-releases never do. The GitHub Release is written by
-hand afterwards.
+Releases are tag-driven and governed by [`RELEASING.md`](RELEASING.md) — read it before tagging. In short: bump `version` in [`Cargo.toml`](Cargo.toml), refresh `Cargo.lock`, commit, then push an annotated `vX.Y.Z` tag. The workflow validates the tag, builds `linux/amd64` and `linux/arm64`, and publishes `ghcr.io/cxyfer/urlet` with semver tags. Only the newest stable release moves `X`, `X.Y` and `latest`; pre-releases never do. The GitHub Release is written by hand afterwards.
 
-To rebuild an existing tag, run *Actions → Release container image → Run workflow* (moving tags
-off unless it is the newest stable release).
+To rebuild an existing tag, run *Actions → Release container image → Run workflow* (moving tags off unless it is the newest stable release).
 
 ## Documentation
 
@@ -241,9 +205,7 @@ off unless it is the newest stable release).
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — deployment, configuration, backup, upgrades, troubleshooting
 - [`docs/THEMES.md`](docs/THEMES.md) — theme catalogue, administrator workflow and how to add a theme
 - [`docs/MULTI_DOMAIN.md`](docs/MULTI_DOMAIN.md) — multi-domain design: routing, host resolution and operations
-- [`openapi/`](openapi) — the OpenAPI 3.1 contract. Every instance serves a browsable reference
-  built from it at `/docs`, with the contracts at `/docs/openapi.json` and
-  `/docs/openapi.zh-TW.json`; both are embedded in the binary and need no outbound network
+- [`openapi/`](openapi) — the OpenAPI 3.1 contract. Every instance serves a browsable reference built from it at `/docs`, with the contracts at `/docs/openapi.json` and `/docs/openapi.zh-TW.json`; both are embedded in the binary and need no outbound network
 - [`RELEASING.md`](RELEASING.md) — release rules: versioning, tag/image rules, checklist, rollback
 - [`SECURITY.md`](SECURITY.md) — supported versions and how to report a vulnerability privately
 
@@ -251,39 +213,21 @@ Chinese translations of these documents live under `docs/zh-TW/`.
 
 The API, deployment, theme and multi-domain guides are also published as a searchable site at
 <https://cxyfer.github.io/urlet/>. It is built from this repository's `docs/`
-tree by [`docs-site/`](docs-site) and deployed to the `gh-pages` branch; the
-content is copied in at build time, so the Markdown files here stay the only
-source. The specification, the plan and the release contract stay internal to the repository. The
-site is a separate artifact and has no effect on the binary.
+tree by [`docs-site/`](docs-site) and deployed to the `gh-pages` branch; the content is copied in at build time, so the Markdown files here stay the only source. The specification, the plan and the release contract stay internal to the repository. The site is a separate artifact and has no effect on the binary.
 
 ## Security
 
-- Argon2id password hashing; sessions and API tokens are stored as hashes only. Invite codes keep
-  a SHA-256 hash for lookup plus a ChaCha20-Poly1305 copy sealed with a key derived from
-  `URLET_SECRET`. This keeps plaintext out of the database, but the hash and four-character prefix
-  still permit offline guessing of a ten-character code, and the auto-generated `secret.key` sits
-  beside the database; treat database and data-directory backups as sensitive. Changing the secret
-  hides the sealed copies (the codes still redeem if someone knows them)
+- Argon2id password hashing; sessions and API tokens are stored as hashes only. Invite codes keep a SHA-256 hash for lookup plus a ChaCha20-Poly1305 copy sealed with a key derived from `URLET_SECRET`. This keeps plaintext out of the database, but the hash and four-character prefix still permit offline guessing of a ten-character code, and the auto-generated `secret.key` sits beside the database; treat database and data-directory backups as sensitive. Changing the secret hides the sealed copies (the codes still redeem if someone knows them)
 - Cookies: `HttpOnly`, `SameSite=Lax`, `Secure` when enforced
-- CSRF: state-changing requests authenticated by cookie are checked for same origin; form
-  submissions are always checked
-- Security headers: CSP (`default-src 'self'`), `X-Content-Type-Options`,
-  `X-Frame-Options`, `Referrer-Policy`, plus HSTS over HTTPS
-- Open redirect protection: targets must be `http` or `https`; `javascript:`, `data:`, and
-  `file:` are always rejected
-- Privacy: raw IP addresses are never stored, only an HMAC'd `ip_hash` and a daily-rotating
-  `visitor_hash`
-- Rate limiting: sign-in (per IP and per account), registration, unlock, link creation,
-  password change
-- Bot verification: optional Turnstile or reCAPTCHA v2 on registration, sign-in and link
-  creation, toggled per form with `URLET_CAPTCHA_ON_REGISTER`, `URLET_CAPTCHA_ON_LOGIN` and
-  `URLET_CAPTCHA_ON_CREATE`
-- Account lockout: 30 failed sign-ins for the same account within 15 minutes temporarily
-  blocks it (persisted, so a restart does not reset the counter)
-- Reverse proxy: the proxy's `X-Real-IP` is trusted first, otherwise the rightmost
-  `X-Forwarded-For` entry is used
-- Password hashing runs on a blocking thread pool with at most 4 concurrent Argon2
-  computations
+- CSRF: state-changing requests authenticated by cookie are checked for same origin; form submissions are always checked
+- Security headers: CSP (`default-src 'self'`), `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, plus HSTS over HTTPS
+- Open redirect protection: targets must be `http` or `https`; `javascript:`, `data:`, and `file:` are always rejected
+- Privacy: raw IP addresses are never stored, only an HMAC'd `ip_hash` and a daily-rotating `visitor_hash`
+- Rate limiting: sign-in (per IP and per account), registration, unlock, link creation, password change
+- Bot verification: optional Turnstile or reCAPTCHA v2 on registration, sign-in and link creation, toggled per form with `URLET_CAPTCHA_ON_REGISTER`, `URLET_CAPTCHA_ON_LOGIN` and `URLET_CAPTCHA_ON_CREATE`
+- Account lockout: 30 failed sign-ins for the same account within 15 minutes temporarily blocks it (persisted, so a restart does not reset the counter)
+- Reverse proxy: the proxy's `X-Real-IP` is trusted first, otherwise the rightmost `X-Forwarded-For` entry is used
+- Password hashing runs on a blocking thread pool with at most 4 concurrent Argon2 computations
 - Audit log: sign-in, registration, link changes, tokens, admin actions, settings changes
 
 ## License

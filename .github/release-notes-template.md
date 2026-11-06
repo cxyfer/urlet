@@ -8,12 +8,9 @@ $EDITOR .tmp/release-notes-vX.Y.Z.md       # fill in the TODO markers
 ./scripts/release-notes-lint.sh .tmp/release-notes-vX.Y.Z.md
 ```
 
-The script fills in `What's Changed`, `New Contributors` and `Full Changelog` from the commits
-and pull requests since the previous tag, and leaves the summary and the highlights for you.
+The script fills in `What's Changed`, `New Contributors` and `Full Changelog` from the commits and pull requests since the previous tag, and leaves the summary and the highlights for you.
 
-GitHub renders a newline inside a release body as a hard line break. Every paragraph and every
-bullet below is therefore a single source line: write the whole paragraph on one line and let the
-editor soft-wrap it. The lint script rejects a draft that still has wrapped prose.
+GitHub renders a newline inside a release body as a hard line break. Every paragraph and every bullet below is therefore a single source line: write the whole paragraph on one line and let the editor soft-wrap it. The lint script rejects a draft that still has wrapped prose.
 
 ## The shape
 
@@ -41,22 +38,10 @@ editor soft-wrap it. The lint script rejects a draft that still has wrapped pros
 
 ## Rules
 
-1. **Lead with the callout.** Most readers never scroll past it. Say what the release is, then
-   say what breaks or changes for an existing install. Pre-releases say so and name the exact tag
-   to pull.
-2. **Write the highlights for users, not for the git history.** One bullet per area, a bold area
-   name, then prose: what a person can now do, or must now do differently. Group related commits
-   into one bullet. Never paste commit subjects here.
-3. **Explain defaults that changed, with the fix.** "API tokens per account is now 20; set it to
-   `0` in Admin → Settings for unlimited" beats "token quota added".
-4. **`What's Changed` is generated.** Only edit it to fix a title that reads badly. It is built
-   from the `(#N)` suffix in commit subjects, because this repository rebases before merging and
-   GitHub's own generator drops those PRs when the merge commit is rewritten.
+1. **Lead with the callout.** Most readers never scroll past it. Say what the release is, then say what breaks or changes for an existing install. Pre-releases say so and name the exact tag to pull.
+2. **Write the highlights for users, not for the git history.** One bullet per area, a bold area name, then prose: what a person can now do, or must now do differently. Group related commits into one bullet. Never paste commit subjects here.
+3. **Explain defaults that changed, with the fix.** "API tokens per account is now 20; set it to `0` in Admin → Settings for unlimited" beats "token quota added".
+4. **`What's Changed` is generated.** Only edit it to fix a title that reads badly. It is built from the `(#N)` suffix in commit subjects, because this repository rebases before merging and GitHub's own generator drops those PRs when the merge commit is rewritten.
 5. **English only.** The docs are bilingual; the release notes are not.
-6. **Pre-releases stay pre-releases.** A `-rc.N` tag is published with `--prerelease` and never
-   takes `latest`. See [RELEASING.md](../RELEASING.md).
-7. **Never hard-wrap prose in the release body.** GitHub turns a newline inside a release body
-   into a hard line break, so a paragraph wrapped at 80 columns reaches the reader broken
-   mid-sentence. Keep each callout paragraph and each highlight bullet on one source line;
-   [`scripts/release-notes-lint.sh`](../scripts/release-notes-lint.sh) fails a draft that is
-   still wrapped.
+6. **Pre-releases stay pre-releases.** A `-rc.N` tag is published with `--prerelease` and never takes `latest`. See [RELEASING.md](../RELEASING.md).
+7. **Never hard-wrap prose in the release body.** GitHub turns a newline inside a release body into a hard line break, so a paragraph wrapped at 80 columns reaches the reader broken mid-sentence. Keep each callout paragraph and each highlight bullet on one source line; [`scripts/release-notes-lint.sh`](../scripts/release-notes-lint.sh) fails a draft that is still wrapped.

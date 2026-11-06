@@ -2,8 +2,7 @@
 
 # urlet
 
-**輕量化、自託管的多用戶短網址系統。** 單一 Rust 二進位檔 + 單一 SQLite 檔案，
-一個 `docker compose up -d` 就能上線，不需要外部資料庫、快取服務或前端建置流程。
+**輕量化、自託管的多用戶短網址系統。** 單一 Rust 二進位檔 + 單一 SQLite 檔案，一個 `docker compose up -d` 就能上線，不需要外部資料庫、快取服務或前端建置流程。
 
 ![Landing page](docs/screenshots/landing.png)
 
@@ -31,19 +30,11 @@
 | 🐳 部署 | 單一容器 + named volumes；GHCR 提供多架構映像；附 Caddy 自動 HTTPS overlay |
 | 🪶 輕量 | 二進位檔 15.7 MB（musl）、容器映像 37.2 MB、負載下 RSS 8.7 MB（v1.1）、轉址 P95 低於 1 毫秒（說明見下） |
 
-> 二進位檔與映像為 v1.6 的量測值；閒置 RSS 上次量測為 v1.1。自 v1.1 以來的主要成長來自內嵌的
-> Scalar bundle（4.9 MB）與兩份 OpenAPI 合約，另有內嵌語言目錄與選用防機器人驗證所需的 TLS
-> 相依。轉址延遲為 v1.0 的量測值，預期不變 —— 驗證只在註冊、登入與建立短網址表單執行，轉址
-> 路徑完全不受影響。完整量測見 `docs/SPEC.md` §3.3。
+> 二進位檔與映像為 v1.6 的量測值；閒置 RSS 上次量測為 v1.1。自 v1.1 以來的主要成長來自內嵌的 Scalar bundle（4.9 MB）與兩份 OpenAPI 合約，另有內嵌語言目錄與選用防機器人驗證所需的 TLS 相依。轉址延遲為 v1.0 的量測值，預期不變 —— 驗證只在註冊、登入與建立短網址表單執行，轉址路徑完全不受影響。完整量測見 `docs/SPEC.md` §3.3。
 
 ## SNS 預覽卡片
 
-在儀表板開啟短網址，使用 **SNS 預覽** 設定公開卡片的標題、說明，以及 HTTPS 圖片網址或
-PNG/JPEG/GIF/WebP 上傳（上限 2 MiB、4096 × 4096 像素）。三者皆清除即恢復既有連結行為。
-管理員可在 **Admin → Settings → SNS preview images** 選擇不允許圖片、僅 HTTPS 網址、僅上傳或
-兩者皆可（預設兩者）。既有但不被允許的圖片會被隱藏並保留，之後可重新開放。上傳圖片儲存在
-SQLite。預覽內容在密碼保護連結上仍是公開的；一般瀏覽器轉址行為不變。自動化請見
-[API 參考](docs/zh-TW/API.md#sns-預覽卡片)。社群平台自行決定卡片版型與快取更新。
+在儀表板開啟短網址，使用 **SNS 預覽** 設定公開卡片的標題、說明，以及 HTTPS 圖片網址或 PNG/JPEG/GIF/WebP 上傳（上限 2 MiB、4096 × 4096 像素）。三者皆清除即恢復既有連結行為。管理員可在 **Admin → Settings → SNS preview images** 選擇不允許圖片、僅 HTTPS 網址、僅上傳或兩者皆可（預設兩者）。既有但不被允許的圖片會被隱藏並保留，之後可重新開放。上傳圖片儲存在 SQLite。預覽內容在密碼保護連結上仍是公開的；一般瀏覽器轉址行為不變。自動化請見 [API 參考](docs/zh-TW/API.md#sns-預覽卡片)。社群平台自行決定卡片版型與快取更新。
 
 ## 快速開始
 
@@ -55,8 +46,7 @@ cp .env.example .env      # 至少設定 URLET_BASE_URL 與管理員帳密
 docker compose up -d --build
 ```
 
-打開 `http://localhost:8080`。導覽首頁提供登入與註冊入口，請用 `.env` 裡的
-`URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` 登入（伺服器啟動時會自動建立該管理員）。
+打開 `http://localhost:8080`。導覽首頁提供登入與註冊入口，請用 `.env` 裡的 `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` 登入（伺服器啟動時會自動建立該管理員）。
 
 想讓 Caddy 自動申請 HTTPS 憑證：
 
@@ -69,18 +59,14 @@ docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
 
 ### 使用預先建置的映像
 
-每次推送 `v*` 標籤都會發布多架構映像（`linux/amd64` 與 `linux/arm64`）到 GitHub Container
-Registry，因此不必自己編譯 Rust：
+每次推送 `v*` 標籤都會發布多架構映像（`linux/amd64` 與 `linux/arm64`）到 GitHub Container Registry，因此不必自己編譯 Rust：
 
 ```bash
 export URLET_IMAGE=ghcr.io/cxyfer/urlet:latest   # 正式環境請固定版本標籤
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 
-此 overlay 會移除本機 `build` 設定，改為直接拉取映像。套件可能是私有的，請先執行
-`docker login ghcr.io`（需要具備 `read:packages` 的權杖），或在
-*Package settings → Change visibility* 將套件設為公開。固定版本與升級方式見
-[`docs/zh-TW/DEPLOYMENT.md`](docs/zh-TW/DEPLOYMENT.md#21-使用預先建置的映像)。
+此 overlay 會移除本機 `build` 設定，改為直接拉取映像。套件可能是私有的，請先執行 `docker login ghcr.io`（需要具備 `read:packages` 的權杖），或在 *Package settings → Change visibility* 將套件設為公開。固定版本與升級方式見 [`docs/zh-TW/DEPLOYMENT.md`](docs/zh-TW/DEPLOYMENT.md#21-使用預先建置的映像)。
 
 ### 直接執行二進位檔
 
@@ -107,9 +93,7 @@ urlet version | help
 
 1. 若設定了 `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD`，啟動時會建立管理員。
 2. 若資料庫中**沒有任何帳號**，第一位註冊的使用者會自動成為管理員。
-3. 之後可在 **Admin → Invites** 產生邀請碼，並在 **Admin → Settings** 把註冊模式改為
-   `invite`（僅邀請碼）或 `closed`（關閉註冊）。每組邀請碼都會附一組註冊連結，可直接
-   傳送連結，開啟後會自動預填邀請碼。
+3. 之後可在 **Admin → Invites** 產生邀請碼，並在 **Admin → Settings** 把註冊模式改為 `invite`（僅邀請碼）或 `closed`（關閉註冊）。每組邀請碼都會附一組註冊連結，可直接傳送連結，開啟後會自動預填邀請碼。
 
 ## 畫面
 
@@ -148,8 +132,7 @@ urlet version | help
 | 認證 | 伺服器端 Session + API Token | 可即時撤銷，不必引入 JWT 相依 |
 | 密碼 | Argon2id（19 MiB, t=2, p=1） | OWASP 建議參數 |
 
-**刻意不做**：OAuth、細緻權限矩陣、GeoIP、關鍵字黑名單、Webhook、郵件寄送。
-資料表與架構已為這些功能預留空間（見 `docs/SPEC.md` §12）。
+**刻意不做**：OAuth、細緻權限矩陣、GeoIP、關鍵字黑名單、Webhook、郵件寄送。資料表與架構已為這些功能預留空間（見 `docs/SPEC.md` §12）。
 
 ## 專案結構
 
@@ -199,26 +182,20 @@ urlet/
 cargo test                 # 單元 + 整合測試（完整測試套件）
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
+bash scripts/prose-lint.sh $(git ls-files '*.md')  # Markdown 段落一行寫完，不硬換行
 bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收
 bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 ```
 
 需要 Rust 1.80 以上。整合測試使用獨立的臨時 SQLite，不會碰到你的開發資料。
 
-前四個指令也會在每個 pull request 的 CI 中執行，見
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml)。`demo.sh` 需要 Playwright 與 Chromium，
-只在本機使用。
+前五個指令也會在每個 pull request 的 CI 中執行，見 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。`demo.sh` 需要 Playwright 與 Chromium，只在本機使用。
 
 ## 發布新版本
 
-發布採標籤驅動，完整規則見 [`RELEASING.md`](RELEASING.md)（[中文版](docs/zh-TW/RELEASING.md)），
-建立標籤前請先閱讀。簡要流程：更新 [`Cargo.toml`](Cargo.toml) 的 `version`、同步
-`Cargo.lock`、提交，然後推送 annotated 的 `vX.Y.Z` 標籤。workflow 會驗證標籤、建置
-`linux/amd64` 與 `linux/arm64`，並以 semver 標籤發布 `ghcr.io/cxyfer/urlet`。只有最新正式版會
-移動 `X`、`X.Y` 與 `latest`；預發布版不會。GitHub Release 之後由人工撰寫。
+發布採標籤驅動，完整規則見 [`RELEASING.md`](RELEASING.md)（[中文版](docs/zh-TW/RELEASING.md)），建立標籤前請先閱讀。簡要流程：更新 [`Cargo.toml`](Cargo.toml) 的 `version`、同步 `Cargo.lock`、提交，然後推送 annotated 的 `vX.Y.Z` 標籤。workflow 會驗證標籤、建置 `linux/amd64` 與 `linux/arm64`，並以 semver 標籤發布 `ghcr.io/cxyfer/urlet`。只有最新正式版會移動 `X`、`X.Y` 與 `latest`；預發布版不會。GitHub Release 之後由人工撰寫。
 
-若只想重建既有標籤，請從 *Actions → Release container image → Run workflow* 手動執行
-（除非是最新正式版本，否則不要開啟浮動標籤）。
+若只想重建既有標籤，請從 *Actions → Release container image → Run workflow* 手動執行（除非是最新正式版本，否則不要開啟浮動標籤）。
 
 ## 文件
 
@@ -228,35 +205,24 @@ bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 - [`docs/zh-TW/DEPLOYMENT.md`](docs/zh-TW/DEPLOYMENT.md) — 部署、設定、備份、升級、疑難排解
 - [`docs/zh-TW/THEMES.md`](docs/zh-TW/THEMES.md) — 主題目錄、管理操作與新增主題的方式
 - [`docs/zh-TW/MULTI_DOMAIN.md`](docs/zh-TW/MULTI_DOMAIN.md) — 多網域設計：路由、主機解析與維運
-- [`openapi/`](openapi) — OpenAPI 3.1 合約。每個執行個體都在 `/docs` 提供由它產生的可瀏覽
-  參考頁，合約本身位於 `/docs/openapi.json` 與 `/docs/openapi.zh-TW.json`；兩者都內嵌於
-  執行檔，不需要對外網路
+- [`openapi/`](openapi) — OpenAPI 3.1 合約。每個執行個體都在 `/docs` 提供由它產生的可瀏覽參考頁，合約本身位於 `/docs/openapi.json` 與 `/docs/openapi.zh-TW.json`；兩者都內嵌於執行檔，不需要對外網路
 - [`RELEASING.md`](RELEASING.md) — 發布規則：版本、標籤與映像規則、檢查清單、回滾（[中文版](docs/zh-TW/RELEASING.md)）
 - [`SECURITY.md`](SECURITY.md) — 支援的版本與私密回報漏洞的方式（[中文版](docs/zh-TW/SECURITY.md)）
 
 這些文件的中文版放在 `docs/zh-TW/`。
 
-API、部署、主題與多網域指南也以可搜尋的網站形式發布在 <https://cxyfer.github.io/urlet/>。它由
-[`docs-site/`](docs-site) 從本 repo 的 `docs/` 樹建置，並部署到 `gh-pages` 分支；內容在
-建置時複製進去，因此這裡的 Markdown 仍是唯一來源。規格書、實作計畫與發布規則只保留在
-repository 內。該網站是獨立產物，不影響執行檔。
+API、部署、主題與多網域指南也以可搜尋的網站形式發布在 <https://cxyfer.github.io/urlet/>。它由 [`docs-site/`](docs-site) 從本 repo 的 `docs/` 樹建置，並部署到 `gh-pages` 分支；內容在建置時複製進去，因此這裡的 Markdown 仍是唯一來源。規格書、實作計畫與發布規則只保留在 repository 內。該網站是獨立產物，不影響執行檔。
 
 ## 安全性
 
-- Argon2id 密碼雜湊；Session 與 API Token 只存雜湊值。邀請碼保留 SHA-256 雜湊供查詢，
-  另存以 `URLET_SECRET` 衍生金鑰進行 ChaCha20-Poly1305 加密封存的副本；這能避免資料庫直接
-  出現明文，但雜湊與四字元前綴仍可離線猜測，且自動產生的 `secret.key` 就在資料庫旁，
-  因此資料庫與資料目錄備份仍應視為敏感資料。更換密鑰會讓既有封存無法顯示（邀請碼本身仍可兌換）
+- Argon2id 密碼雜湊；Session 與 API Token 只存雜湊值。邀請碼保留 SHA-256 雜湊供查詢，另存以 `URLET_SECRET` 衍生金鑰進行 ChaCha20-Poly1305 加密封存的副本；這能避免資料庫直接出現明文，但雜湊與四字元前綴仍可離線猜測，且自動產生的 `secret.key` 就在資料庫旁，因此資料庫與資料目錄備份仍應視為敏感資料。更換密鑰會讓既有封存無法顯示（邀請碼本身仍可兌換）
 - Cookie：`HttpOnly`、`SameSite=Lax`、可強制 `Secure`
 - CSRF：Cookie 認證的狀態變更請求檢查同源；表單類請求一律檢查
-- 安全標頭：CSP（`default-src 'self'`）、`X-Content-Type-Options`、
-  `X-Frame-Options`、`Referrer-Policy`、HTTPS 時加 HSTS
+- 安全標頭：CSP（`default-src 'self'`）、`X-Content-Type-Options`、`X-Frame-Options`、`Referrer-Policy`、HTTPS 時加 HSTS
 - 開放轉址防護：目標僅允許 `http`/`https`，`javascript:`/`data:`/`file:` 一律拒絕
 - 隱私：不存原始 IP，只存 HMAC 後的 `ip_hash` 與每日輪替的 `visitor_hash`
 - 速率限制：登入（每 IP 與每帳號兩層）、註冊、解鎖、建立短網址、改密碼
-- 防機器人驗證：可選 Turnstile 或 reCAPTCHA v2，套用於註冊、登入與建立短網址，
-  並以 `URLET_CAPTCHA_ON_REGISTER`、`URLET_CAPTCHA_ON_LOGIN`、
-  `URLET_CAPTCHA_ON_CREATE` 逐表單開關
+- 防機器人驗證：可選 Turnstile 或 reCAPTCHA v2，套用於註冊、登入與建立短網址，並以 `URLET_CAPTCHA_ON_REGISTER`、`URLET_CAPTCHA_ON_LOGIN`、`URLET_CAPTCHA_ON_CREATE` 逐表單開關
 - 帳號鎖定：同一帳號 15 分鐘內 30 次失敗即暫時拒絕登入（持久化，重啟不重置）
 - 反向代理：優先信任代理設定的 `X-Real-IP`，其次取 `X-Forwarded-For` 最右側
 - 密碼雜湊在阻塞執行緒池中進行，並限制同時最多 4 個 Argon2 計算

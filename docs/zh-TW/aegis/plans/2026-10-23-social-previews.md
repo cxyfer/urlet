@@ -1,20 +1,10 @@
 # SNS 預覽實作計畫
 
-目標：登入使用者可替自己的每條短網址設定公開 SNS 卡片標題、內容與圖片，圖片支援 HTTPS 網址及 PNG／JPEG／GIF／WebP 上傳。
-架構：保留既有短網址生命週期與轉址 handler，每條連結至多新增一筆 url_previews。service 負責驗證，db 負責 SQL，routes 負責表單與 API。圖片資料存於 SQLite，替換時更換不透明網址 key。只有已知社群爬蟲取得 metadata HTML，一般瀏覽器沿用直接轉址、中繼頁及密碼頁。
-技術：Rust／Axum／SQLx／Askama、SQLite、既有 HTML 表單與三語目錄；image 0.25.6 精確鎖定版本，image-webp 將最低 Rust 版本提升至 1.80.1，使用受限解碼。
-基準與權威：2026-10-23 使用者要求、AGENTS.md、SPEC 的 FR-SPLASH 與 FR-PUB、PLAN、db/mod.rs、redirect.rs、ua.rs、security.rs 均已閱讀；沒有阻擋開發的未決需求。使用者明確授權計畫後直接開發，並要求獨立審核及 PR。
-相容邊界：不修改已發布 migration；預覽不公開管理用標題、備註或目標網址；未設定自訂預覽及真人瀏覽器行為維持原狀。生命週期先於預覽。自訂 metadata 與圖片明確公開，即使連結有密碼。不代抓外站、不提供訪客上傳，不發布版本、不部署、不合併。
-驗證：cargo fmt --check、cargo clippy --all-targets -- -D warnings、cargo test、bash scripts/smoke.sh、bash scripts/merge-check.sh、實際 HTTP multipart／metadata／圖片驗證與獨立 subagent 審核。
+目標：登入使用者可替自己的每條短網址設定公開 SNS 卡片標題、內容與圖片，圖片支援 HTTPS 網址及 PNG／JPEG／GIF／WebP 上傳。架構：保留既有短網址生命週期與轉址 handler，每條連結至多新增一筆 url_previews。service 負責驗證，db 負責 SQL，routes 負責表單與 API。圖片資料存於 SQLite，替換時更換不透明網址 key。只有已知社群爬蟲取得 metadata HTML，一般瀏覽器沿用直接轉址、中繼頁及密碼頁。技術：Rust／Axum／SQLx／Askama、SQLite、既有 HTML 表單與三語目錄；image 0.25.6 精確鎖定版本，image-webp 將最低 Rust 版本提升至 1.80.1，使用受限解碼。基準與權威：2026-10-23 使用者要求、AGENTS.md、SPEC 的 FR-SPLASH 與 FR-PUB、PLAN、db/mod.rs、redirect.rs、ua.rs、security.rs 均已閱讀；沒有阻擋開發的未決需求。使用者明確授權計畫後直接開發，並要求獨立審核及 PR。相容邊界：不修改已發布 migration；預覽不公開管理用標題、備註或目標網址；未設定自訂預覽及真人瀏覽器行為維持原狀。生命週期先於預覽。自訂 metadata 與圖片明確公開，即使連結有密碼。不代抓外站、不提供訪客上傳，不發布版本、不部署、不合併。驗證：cargo fmt --check、cargo clippy --all-targets -- -D warnings、cargo test、bash scripts/smoke.sh、bash scripts/merge-check.sh、實際 HTTP multipart／metadata／圖片驗證與獨立 subagent 審核。
 
 ## 實作前確認
 
-需求已可執行：標題、內容與兩種圖片來源已確認；預設標題只取站台名稱，不抓取目標頁面；清空預覽即停用。現有轉址沒有可設定的 metadata，僅改設定或文件無法滿足需求，故須修改持久化、驗證、HTTP 與詳情頁。
-沿用既有擁有者與生命週期、middleware、詳情頁與共用模板。獨立選填資料表避免一般短網址列表讀取圖片 BLOB；preview service 為單一政策來源，不新增平行儲存系統。
-統計用 is_bot 包含 curl、監控及搜尋引擎，不適合作預覽條件；在既有 UA 模組新增限定 SNS 的辨識。SQLite 仍是唯一新增持久化來源。
-方案比較：僅回傳 redirect 無法提供自訂 metadata；全部請求回傳 HTML 會改變真人轉址；僅向社群爬蟲回傳預覽可保留真人行為。只支援圖片網址不能滿足上傳需求；另存檔案會新增備份與磁碟掛載契約。
-複雜度：以獨立且有界的 db／service／route 模組及共用表單，避免持續擴大既有巨大 handler。既有轉址、中繼頁與密碼流程保留為各場景的權威。
-執行條件：以匯出的本地 origin/master 4798f46 為基準，直接在本回合開發；未要求嚴格 TDD，以有意義的 integration tests 與完整檢查驗證。初次 Git 管理資料寫入遭自動審核拒絕，故先於 /tmp/urlet-social-previews 實作與驗證。確認遠端身分、ADMIN 權限、乾淨主工作樹及排除路徑後，已獲准在 .worktrees/social-previews 建立 feat/social-previews，基準 cb21e88，使用獨立 target/ 驗證後整合。
+需求已可執行：標題、內容與兩種圖片來源已確認；預設標題只取站台名稱，不抓取目標頁面；清空預覽即停用。現有轉址沒有可設定的 metadata，僅改設定或文件無法滿足需求，故須修改持久化、驗證、HTTP 與詳情頁。沿用既有擁有者與生命週期、middleware、詳情頁與共用模板。獨立選填資料表避免一般短網址列表讀取圖片 BLOB；preview service 為單一政策來源，不新增平行儲存系統。統計用 is_bot 包含 curl、監控及搜尋引擎，不適合作預覽條件；在既有 UA 模組新增限定 SNS 的辨識。SQLite 仍是唯一新增持久化來源。方案比較：僅回傳 redirect 無法提供自訂 metadata；全部請求回傳 HTML 會改變真人轉址；僅向社群爬蟲回傳預覽可保留真人行為。只支援圖片網址不能滿足上傳需求；另存檔案會新增備份與磁碟掛載契約。複雜度：以獨立且有界的 db／service／route 模組及共用表單，避免持續擴大既有巨大 handler。既有轉址、中繼頁與密碼流程保留為各場景的權威。執行條件：以匯出的本地 origin/master 4798f46 為基準，直接在本回合開發；未要求嚴格 TDD，以有意義的 integration tests 與完整檢查驗證。初次 Git 管理資料寫入遭自動審核拒絕，故先於 /tmp/urlet-social-previews 實作與驗證。確認遠端身分、ADMIN 權限、乾淨主工作樹及排除路徑後，已獲准在 .worktrees/social-previews 建立 feat/social-previews，基準 cb21e88，使用獨立 target/ 驗證後整合。
 
 ## 工作項目
 

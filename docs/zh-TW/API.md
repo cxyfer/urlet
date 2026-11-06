@@ -7,19 +7,16 @@
   - **Session Cookie**：`POST /api/v1/auth/login` 取得的 `urlet_session`（瀏覽器表單流程同用）
   - **API Token**：`Authorization: Bearer ur_...`（在 `/app/account` 建立）
 - 請求／回應皆為 `application/json; charset=utf-8`
-- 時間一律為 ISO-8601 UTC（`2030-01-31T12:00:00.000Z`）；輸入接受
-  `2030-01-31T12:00:00Z`、`2030-01-31 12:00`、`2030-01-31` 等形式
+- 時間一律為 ISO-8601 UTC（`2030-01-31T12:00:00.000Z`）；輸入接受 `2030-01-31T12:00:00Z`、`2030-01-31 12:00`、`2030-01-31` 等形式
 - JSON 回應一律為英文，不受使用者選擇的介面語言影響（見[介面語言](#介面語言)）
 
-本文件是敘述性參考。每個執行個體也提供同一套 API 的可瀏覽版本，由
-[`openapi/`](../../openapi) 的 OpenAPI 合約產生：
+本文件是敘述性參考。每個執行個體也提供同一套 API 的可瀏覽版本，由 [`openapi/`](../../openapi) 的 OpenAPI 合約產生：
 
 - `GET /docs` — 互動式參考（Scalar），跟隨訪客的介面語言
 - `GET /docs/openapi.json` — 英文 OpenAPI 3.1 合約
 - `GET /docs/openapi.zh-TW.json` — 繁體中文合約
 
-參考頁面內嵌於執行檔中，因此在沒有對外網路的執行個體上也能運作。
-`/docs` 是保留路徑：短網址不得使用 `docs` 這個 slug。
+參考頁面內嵌於執行檔中，因此在沒有對外網路的執行個體上也能運作。`/docs` 是保留路徑：短網址不得使用 `docs` 這個 slug。
 
 ## 錯誤格式
 
@@ -66,20 +63,15 @@
 
 `201` → `{ "user": { ... } }`，並在回應中設定 Session Cookie（註冊即登入）。
 
-錯誤：`409` email 重複、`422` 驗證失敗、`403` 註冊關閉或邀請碼無效、
-`400` `captcha_failed`（已啟用防機器人驗證且驗證未通過時）。
+錯誤：`409` email 重複、`422` 驗證失敗、`403` 註冊關閉或邀請碼無效、`400` `captcha_failed`（已啟用防機器人驗證且驗證未通過時）。
 
-邀請碼可指定使用者群組。`invite` 模式下必須帶邀請碼；`open` 模式下為選填，但一旦提供就會驗證，
-且其群組優先於預設群組。回應的 `user` 物件包含 `group_id`。
+邀請碼可指定使用者群組。`invite` 模式下必須帶邀請碼；`open` 模式下為選填，但一旦提供就會驗證，且其群組優先於預設群組。回應的 `user` 物件包含 `group_id`。
 
 網頁表單也接受 `/app/register?invite=CODE` 的連結，會自動預填邀請碼；JSON 內容不變。
 
-`captcha_token` 是網頁註冊表單上驗證元件的 token，只在註冊流程啟用防機器人驗證時檢查，
-否則會忽略此欄位。詳見[防機器人驗證](#防機器人驗證)。
+`captcha_token` 是網頁註冊表單上驗證元件的 token，只在註冊流程啟用防機器人驗證時檢查，否則會忽略此欄位。詳見[防機器人驗證](#防機器人驗證)。
 
-> `POST /api/v1/urls` **只有在使用 API Token（`Authorization: Bearer ur_...`）認證時**才不套用
-> 防機器人驗證，因此自動化流程與 CI 不受影響。使用 **Session Cookie** 認證者屬於瀏覽器工作階段，
-> 會受「建立短網址」開關約束，需在 `captcha_token` 帶入 widget token。
+> `POST /api/v1/urls` **只有在使用 API Token（`Authorization: Bearer ur_...`）認證時**才不套用防機器人驗證，因此自動化流程與 CI 不受影響。使用 **Session Cookie** 認證者屬於瀏覽器工作階段，會受「建立短網址」開關約束，需在 `captcha_token` 帶入 widget token。
 
 ### `POST /api/v1/auth/login`
 
@@ -87,13 +79,9 @@
 { "email": "user@example.com", "password": "...", "captcha_token": "可選" }
 ```
 
-`200` → `{ "user": { ... } }` + `Set-Cookie`。
-錯誤：`401` 帳密錯誤（訊息固定，不洩漏帳號是否存在）、`403` 帳號停權、
-`400` `captcha_failed`（已為登入流程啟用防機器人驗證且驗證未通過時）、`429` 速率限制。
+`200` → `{ "user": { ... } }` + `Set-Cookie`。錯誤：`401` 帳密錯誤（訊息固定，不洩漏帳號是否存在）、`403` 帳號停權、`400` `captcha_failed`（已為登入流程啟用防機器人驗證且驗證未通過時）、`429` 速率限制。
 
-`captcha_token` 是網頁登入表單上驗證元件的 token，只在登入流程啟用防機器人驗證時檢查
-（`captcha_on_login` / `URLET_CAPTCHA_ON_LOGIN`），否則會忽略此欄位。
-詳見[防機器人驗證](#防機器人驗證)。
+`captcha_token` 是網頁登入表單上驗證元件的 token，只在登入流程啟用防機器人驗證時檢查（`captcha_on_login` / `URLET_CAPTCHA_ON_LOGIN`），否則會忽略此欄位。詳見[防機器人驗證](#防機器人驗證)。
 
 ### `POST /api/v1/auth/logout`
 
@@ -124,11 +112,7 @@
 }
 ```
 
-未分組帳號的 `group` 為 `null`，改為套用全站設定。`limits` 是解析後的值：群組配額非 `NULL` 時
-才覆蓋全站值，`0` 表示無上限。`default_domain` 是生效的群組預設網域（不存在或停用時回退全站
-預設）；`allowed_domains` 是生效的可選清單。`allow_domain_selection` 為 `false` 時，建立連結
-或移動連結只接受該預設網域。`redirect_mode_policy` 為 `direct`、`splash` 或 `choice`，
-只限制**新**連結的轉址方式，不會改寫既有連結；未分組帳號為 `choice`。
+未分組帳號的 `group` 為 `null`，改為套用全站設定。`limits` 是解析後的值：群組配額非 `NULL` 時才覆蓋全站值，`0` 表示無上限。`default_domain` 是生效的群組預設網域（不存在或停用時回退全站預設）；`allowed_domains` 是生效的可選清單。`allow_domain_selection` 為 `false` 時，建立連結或移動連結只接受該預設網域。`redirect_mode_policy` 為 `direct`、`splash` 或 `choice`，只限制**新**連結的轉址方式，不會改寫既有連結；未分組帳號為 `choice`。
 
 ### `PATCH /api/v1/auth/me`
 
@@ -144,15 +128,13 @@
 { "current_password": "...", "new_password": "..." }
 ```
 
-`204`。成功後會撤銷**其他**所有 Session（當前這個保留）**以及該帳號的所有 API Token**。
-錯誤：`401` 當前密碼錯誤、`422` 新密碼不符政策。
+`204`。成功後會撤銷**其他**所有 Session（當前這個保留）**以及該帳號的所有 API Token**。錯誤：`401` 當前密碼錯誤、`422` 新密碼不符政策。
 
 ### `GET /api/v1/auth/sessions`
 
 `200` → `{ "items": [ { "id", "user_agent", "created_at", "last_seen_at", "expires_at", "current", "revoked" } ] }`
 
-Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expires_at` 往後推，
-並重新簽發 Cookie，因此持續使用不會過期。
+Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expires_at` 往後推，並重新簽發 Cookie，因此持續使用不會過期。
 
 ### `DELETE /api/v1/auth/sessions/{id}`
 
@@ -173,8 +155,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 `DELETE` → `204`。
 
-群組關閉 API Token（`allow_api_tokens`）或生效的 `max_api_tokens` 用盡時，建立 Token 會回 `403`。
-配額只計算可用 Token（未撤銷、未過期），因此撤銷後會立即釋出名額。
+群組關閉 API Token（`allow_api_tokens`）或生效的 `max_api_tokens` 用盡時，建立 Token 會回 `403`。配額只計算可用 Token（未撤銷、未過期），因此撤銷後會立即釋出名額。
 
 ---
 
@@ -218,18 +199,14 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 `201` → `UrlDto`。規則：
 
-- `captcha_token` 只在「使用 **Session Cookie** 認證」且「建立短網址」的防機器人驗證已啟用時才會讀取；
-  以 `Bearer` Token 呼叫時會被忽略。驗證失敗回 `400` 且 `error.code = "captcha_failed"`
+- `captcha_token` 只在「使用 **Session Cookie** 認證」且「建立短網址」的防機器人驗證已啟用時才會讀取；以 `Bearer` Token 呼叫時會被忽略。驗證失敗回 `400` 且 `error.code = "captcha_failed"`
 - `target_url` 必填；只接受 `http`/`https`；未寫 scheme 的裸網域會自動補 `https://`
 - `domain` 可省略（使用生效的群組預設網域）；指定時必須是 active 網域，否則回 `422`；還必須符合群組策略（`allow_domain_selection`、`restrict_domains` / `domain_ids`），否則回 `403`；slug 命名空間以網域為單位，同一個 slug 可以存在於兩個網域
 - `slug` 可省略（依 `default_slug_length` 自動產生 base62，長度 4–16，預設 7）；僅允許 `[A-Za-z0-9_-]`，長度 1–64，且不得為保留字；若 slug **在選定網域上**已被使用，回 `409`
 - `expires_at` 必須是未來時間；`max_clicks` ≥ 1
 - `redirect_type` ∈ {301, 302, 307, 308}
-- `redirect_mode` 為 `direct`（預設）或 `splash`。省略時採用群組政策的預設值（僅中轉頁政策下為
-  `splash`，其餘為 `direct`）；群組封鎖的模式回 `403`
-- `splash_delay_seconds` 介於 1–60（預設 5）。`splash_title`（最多 120 字元）與
-  `splash_message`（最多 500 字元，可含換行）皆為選填；空白或省略時使用在地化的預設文案。
-  即使連結目前是直接跳轉也會保存這些文案，切換模式時可直接沿用
+- `redirect_mode` 為 `direct`（預設）或 `splash`。省略時採用群組政策的預設值（僅中轉頁政策下為 `splash`，其餘為 `direct`）；群組封鎖的模式回 `403`
+- `splash_delay_seconds` 介於 1–60（預設 5）。`splash_title`（最多 120 字元）與 `splash_message`（最多 500 字元，可含換行）皆為選填；空白或省略時使用在地化的預設文案。即使連結目前是直接跳轉也會保存這些文案，切換模式時可直接沿用
 - 超過 `max_urls_per_user` 配額 → `403`
 
 ### `GET /api/v1/urls/{id}`
@@ -238,10 +215,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 ### `PATCH /api/v1/urls/{id}`
 
-部分更新。**未出現**的欄位維持不變；明確傳 `null` 只會清除支援這個語意的可空欄位：
-`title`、`notes`、`password`、`expires_at`、`max_clicks`、`splash_title`、`splash_message`。
-`slug`、`domain`、`status`、`redirect_type`、`redirect_mode`、`splash_delay_seconds`、`tags`
-傳 `null` 時視同未提供，維持原值。
+部分更新。**未出現**的欄位維持不變；明確傳 `null` 只會清除支援這個語意的可空欄位：`title`、`notes`、`password`、`expires_at`、`max_clicks`、`splash_title`、`splash_message`。`slug`、`domain`、`status`、`redirect_type`、`redirect_mode`、`splash_delay_seconds`、`tags` 傳 `null` 時視同未提供，維持原值。
 
 ```json
 { "title": "新標題", "domain": "links.example.com", "password": null, "max_clicks": null, "tags": ["new"], "status": "disabled" }
@@ -269,8 +243,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 
 ### `GET /api/v1/urls/{id}/clicks?page=1`
 
-`200` → 點擊明細分頁（**不含** IP 或 visitor 雜湊）。接受 `page` 與 `per_page`；`per_page`
-預設 20、上限 100：
+`200` → 點擊明細分頁（**不含** IP 或 visitor 雜湊）。接受 `page` 與 `per_page`；`per_page` 預設 20、上限 100：
 
 ```json
 { "items": [ { "clicked_at": "...", "referrer_host": "news.example.com", "country_code": null, "device_type": "Desktop", "browser": "Chrome", "os": "Windows", "is_bot": false, "is_unique": true, "password_protected": false } ], "page": 1, "per_page": 20, "total": 42, "total_pages": 3 }
@@ -309,10 +282,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 }
 ```
 
-**群組限制。** 生效的 `max_urls` 用盡時，建立短網址會回 `403`。群組功能開關會擋下建立時對應欄位
-（`slug`、`password`、`expires_at`、`max_clicks`、`tags`）的提交，`PATCH` 時也不允許「新開啟」。
-省略欄位代表維持原值，清除被封鎖的欄位則可接受；非空的連結密碼一律視為新值，在密碼被封鎖時會被拒絕。轉址方式政策會擋下新的
-`redirect_mode`（或 `PATCH` 時切換到被封鎖的模式），但允許維持目前模式與清除中轉頁文案。
+**群組限制。** 生效的 `max_urls` 用盡時，建立短網址會回 `403`。群組功能開關會擋下建立時對應欄位（`slug`、`password`、`expires_at`、`max_clicks`、`tags`）的提交，`PATCH` 時也不允許「新開啟」。省略欄位代表維持原值，清除被封鎖的欄位則可接受；非空的連結密碼一律視為新值，在密碼被封鎖時會被拒絕。轉址方式政策會擋下新的 `redirect_mode`（或 `PATCH` 時切換到被封鎖的模式），但允許維持目前模式與清除中轉頁文案。
 
 ---
 
@@ -361,33 +331,21 @@ curl "$BASE/api/v1/urls/42/preview/image" \
 
 ### `GET /`
 
-導覽首頁：介紹服務並提供登入／註冊入口。首頁不再 302 轉到 `/app`；
-已登入的使用者會看到進入儀表板的按鈕。
+導覽首頁：介紹服務並提供登入／註冊入口。首頁不再 302 轉到 `/app`；已登入的使用者會看到進入儀表板的按鈕。
 
-當訪客被允許建立連結時（見下方的 `public_create_access` 設定），頁面也會帶上公開短網址工具。
-`?shortened=<slug>&domain=<hostname>` 會渲染剛建立連結的短網址；該值以資料庫解析，因此結果框
-永不逐字印出查詢字串的值，也永不揭露目的地。
+當訪客被允許建立連結時（見下方的 `public_create_access` 設定），頁面也會帶上公開短網址工具。`?shortened=<slug>&domain=<hostname>` 會渲染剛建立連結的短網址；該值以資料庫解析，因此結果框永不逐字印出查詢字串的值，也永不揭露目的地。
 
 ### `POST /`
 
-公開短網址工具表單（`application/x-www-form-urlencoded`），僅限 canonical 主機。它接受
-`target_url`（必填），以及管理員已啟用的選填欄位：`slug`、`title`、`tags`（逗號分隔）、
-`password`、`expires_at`、`max_clicks`、`redirect_mode`、`splash_delay_seconds`、
-`splash_title`、`splash_message`、`domain`，以及供應商的權杖欄位
-（`cf-turnstile-response` 或 `g-recaptcha-response`）。
+公開短網址工具表單（`application/x-www-form-urlencoded`），僅限 canonical 主機。它接受 `target_url`（必填），以及管理員已啟用的選填欄位：`slug`、`title`、`tags`（逗號分隔）、`password`、`expires_at`、`max_clicks`、`redirect_mode`、`splash_delay_seconds`、`splash_title`、`splash_message`、`domain`，以及供應商的權杖欄位（`cf-turnstile-response` 或 `g-recaptcha-response`）。
 
-送出成功為 `303` 轉往 `/?shortened=<slug>&domain=<hostname>`。失敗則為 `303` 轉往
-`/?err=<code>`，其中 `<code>` 為 `denied`（低於存取層級，或填了被停用的欄位）、
-`guest_allowlist`（匿名目標未命中白名單）、`rate_limited`、`captcha`、`quota`（訪客帳號的 `public_max_urls` 額度已滿）、
-`conflict`、`slug`、`target`、`expiry`、`tags`、`password_rules`、`domain`、`mode_denied` 或
-`invalid`。非數值的 `max_clicks` 或 `splash_delay_seconds` 會回報為 `invalid`，而不是默默丟棄。
+送出成功為 `303` 轉往 `/?shortened=<slug>&domain=<hostname>`。失敗則為 `303` 轉往 `/?err=<code>`，其中 `<code>` 為 `denied`（低於存取層級，或填了被停用的欄位）、`guest_allowlist`（匿名目標未命中白名單）、`rate_limited`、`captcha`、`quota`（訪客帳號的 `public_max_urls` 額度已滿）、`conflict`、`slug`、`target`、`expiry`、`tags`、`password_rules`、`domain`、`mode_denied` 或 `invalid`。非數值的 `max_clicks` 或 `splash_delay_seconds` 會回報為 `invalid`，而不是默默丟棄。
 
 表單套用 CSRF 同源規則，一般安全標頭維持不變。
 
 ### `POST /api/v1/public/urls`
 
-與表單相同的操作，以 JSON 提供給指令稿使用。當 `public_create_access` 為 `guest` 時不需要任何
-憑證；也可改帶 Session cookie 或 Bearer Token，此時連結由該帳號擁有。
+與表單相同的操作，以 JSON 提供給指令稿使用。當 `public_create_access` 為 `guest` 時不需要任何憑證；也可改帶 Session cookie 或 Bearer Token，此時連結由該帳號擁有。
 
 匿名請求還必須命中已啟用的訪客目標白名單，下方範例已包含在內建規則中。登入 Session 與 Bearer Token 維持原有帳號權限。
 
@@ -430,13 +388,9 @@ curl "$BASE/api/v1/urls/42/preview/image" \
 
 ### `GET /{slug}`
 
-- 有效、無密碼且 `redirect_mode = direct` → `30x` + `Location`（301/308 為
-  `private, max-age=300`，302/307 為 `private, no-store`）
-- 有效、無密碼且 `redirect_mode = splash` → `200` 中轉頁（`no-store`）。頁面顯示自訂
-  文案、目的地主機與倒數，並以 `<meta http-equiv="refresh">` 自動前往，同時提供「立即前往」
-  按鈕。點擊是在中轉頁送出時記錄，不是訪客離開時
-- 需要密碼 → `200` 密碼輸入頁（**不洩漏目標網址**）。解鎖成功後直接前往目的地：密碼頁是唯一
-  的中間頁，因此受密碼保護的連結不會再顯示中轉頁
+- 有效、無密碼且 `redirect_mode = direct` → `30x` + `Location`（301/308 為 `private, max-age=300`，302/307 為 `private, no-store`）
+- 有效、無密碼且 `redirect_mode = splash` → `200` 中轉頁（`no-store`）。頁面顯示自訂文案、目的地主機與倒數，並以 `<meta http-equiv="refresh">` 自動前往，同時提供「立即前往」按鈕。點擊是在中轉頁送出時記錄，不是訪客離開時
+- 需要密碼 → `200` 密碼輸入頁（**不洩漏目標網址**）。解鎖成功後直接前往目的地：密碼頁是唯一的中間頁，因此受密碼保護的連結不會再顯示中轉頁
 - 已過期或達點擊上限 → `410`
 - 不存在／已刪除／已停用 → `404`
 
@@ -463,8 +417,7 @@ curl "$BASE/api/v1/urls/42/preview/image" \
 
 ### `GET /api/v1/domains`
 
-已登入使用者可列出建立短網址時可選的 active 網域；清單已依其所屬群組策略過濾，
-`is_default` 標記生效的群組預設網域：
+已登入使用者可列出建立短網址時可選的 active 網域；清單已依其所屬群組策略過濾，`is_default` 標記生效的群組預設網域：
 
 ```json
 [ { "id": 1, "hostname": "s.example.com", "is_default": true }, { "id": 2, "hostname": "go.example.com", "is_default": false } ]
@@ -474,14 +427,11 @@ curl "$BASE/api/v1/urls/42/preview/image" \
 
 ## 邀請碼（成員）
 
-當群組開啟 `allow_invites` 時，成員可為**自己的群組**產生邀請碼。邀請碼會綁定該群組，
-兌換者加入同一個群組。群組的日曆配額（`max_invites` / `invite_period`）同樣適用，且與
-管理員發出的邀請碼共用。撤銷從未被兌換的邀請碼會退回額度；已被兌換的邀請碼則維持計入。
+當群組開啟 `allow_invites` 時，成員可為**自己的群組**產生邀請碼。邀請碼會綁定該群組，兌換者加入同一個群組。群組的日曆配額（`max_invites` / `invite_period`）同樣適用，且與管理員發出的邀請碼共用。撤銷從未被兌換的邀請碼會退回額度；已被兌換的邀請碼則維持計入。
 
 ### `GET /api/v1/invites`
 
-`GET /api/v1/invites?page=&per_page=` → `200`：自己產生的邀請碼（新到舊），
-包含可顯示的邀請碼與註冊連結，以及生效配額。
+`GET /api/v1/invites?page=&per_page=` → `200`：自己產生的邀請碼（新到舊），包含可顯示的邀請碼與註冊連結，以及生效配額。
 
 ```json
 {
@@ -498,14 +448,9 @@ curl "$BASE/api/v1/urls/42/preview/image" \
 }
 ```
 
-`code` 與 `link` 在密封儲存之前建立、或 `URLET_SECRET` 更換後會是 `null`；`prefix` 一律存在。
-已撤銷、次數用盡或到期的邀請碼只保留 `code` 供查閱，`link` 為 `null`。
-`per_page` 預設 20、上限 100。`quota.allowed` 為 `false` 表示群組未開放成員發碼：
-此時建立邀請碼會回 `403`，但關閉開關前已發出的邀請碼仍會列出並可撤銷。`limit` 為 `0`
-（無上限）時 `remaining` 為 `null`。若帳號的群組連結遺失，會回退到預設群組。
+`code` 與 `link` 在密封儲存之前建立、或 `URLET_SECRET` 更換後會是 `null`；`prefix` 一律存在。已撤銷、次數用盡或到期的邀請碼只保留 `code` 供查閱，`link` 為 `null`。`per_page` 預設 20、上限 100。`quota.allowed` 為 `false` 表示群組未開放成員發碼：此時建立邀請碼會回 `403`，但關閉開關前已發出的邀請碼仍會列出並可撤銷。`limit` 為 `0`（無上限）時 `remaining` 為 `null`。若帳號的群組連結遺失，會回退到預設群組。
 
-成員發碼另有節流：每個帳號每小時最多 20 個（超過回 `429`）；群組配額仍是主要限制。
-群組未設定有限配額時，除節流外即為無上限。
+成員發碼另有節流：每個帳號每小時最多 20 個（超過回 `429`）；群組配額仍是主要限制。群組未設定有限配額時，除節流外即為無上限。
 
 ### `POST /api/v1/invites`
 
@@ -516,16 +461,11 @@ curl "$BASE/api/v1/urls/42/preview/image" \
   "invite": { "...": "..." }, "quota": { "...": "..." } }
 ```
 
-邀請碼與連結也會由 `GET /api/v1/invites` 回傳，不會因關閉回應而遺失。頂層 `link` 與
-`invite.link` 一致；若建立後的邀請碼已不可用，兩者都會是 `null`。成員發碼的
-`max_uses` 必須介於 1–10。群組未開放或本週期配額用盡時回 `403`
-（`error.code = "forbidden"`）；每小時爆量上限用盡時回 `429`。
+邀請碼與連結也會由 `GET /api/v1/invites` 回傳，不會因關閉回應而遺失。頂層 `link` 與 `invite.link` 一致；若建立後的邀請碼已不可用，兩者都會是 `null`。成員發碼的 `max_uses` 必須介於 1–10。群組未開放或本週期配額用盡時回 `403`（`error.code = "forbidden"`）；每小時爆量上限用盡時回 `429`。
 
 ### `DELETE /api/v1/invites/{id}`
 
-`204`，撤銷自己的邀請碼。他人的邀請碼一律回 `404`；管理員可用
-`DELETE /api/v1/admin/invites/{id}` 撤銷任何邀請碼。撤銷從未被兌換的邀請碼會退回配額；
-已被兌換的邀請碼則維持計入。
+`204`，撤銷自己的邀請碼。他人的邀請碼一律回 `404`；管理員可用 `DELETE /api/v1/admin/invites/{id}` 撤銷任何邀請碼。撤銷從未被兌換的邀請碼會退回配額；已被兌換的邀請碼則維持計入。
 
 ---
 
@@ -560,61 +500,19 @@ curl "$BASE/api/v1/urls/42/preview/image" \
 | GET | `/admin/audit?action=&target_type=&actor=&page=` | 稽核日誌（`metadata` 已解析為 JSON） |
 | GET | `/admin/stats` | 使用者／短網址／點擊總量、資料庫大小、版本、運行時間 |
 
-主題上傳是僅限管理員的瀏覽器 multipart 表單：`/app/admin/themes/custom`（建立）、
-`/app/admin/themes/custom/{id}`（編輯／替換 CSS）與 `/app/admin/themes/custom/{id}/delete`。
-JSON API 刻意不提供檔案上傳端點。上傳僅限 CSS、最大 256 KiB、UTF-8；絕對外部參照與跨來源
-`url(...)` 會被拒絕，CSP 是第二道防線；詳見 [`THEMES.md`](THEMES.md)。
+主題上傳是僅限管理員的瀏覽器 multipart 表單：`/app/admin/themes/custom`（建立）、`/app/admin/themes/custom/{id}`（編輯／替換 CSS）與 `/app/admin/themes/custom/{id}/delete`。JSON API 刻意不提供檔案上傳端點。上傳僅限 CSS、最大 256 KiB、UTF-8；絕對外部參照與跨來源 `url(...)` 會被拒絕，CSP 是第二道防線；詳見 [`THEMES.md`](THEMES.md)。
 
-`GroupDto` 另回傳 `default_domain_id`、`default_domain`（儲存值，即使網域已停用）、
-`restrict_domains`、`allowed_domain_ids`、`allowed_domains`，以及邀請碼配額
-（`max_invites`、`invite_period`）與目前用量（`invites_used`、`invites_remaining`，
-無上限時為 `null`）。請求欄位是 `domain_ids`（`null` 或 `[]` 表示清空，省略則維持原值），回應使用
-`allowed_*`。`GET /api/v1/auth/me` 回傳的是*生效*的 fallback 預設，若儲存的群組預設已停用，
-可能與 `default_domain` 不同。
+`GroupDto` 另回傳 `default_domain_id`、`default_domain`（儲存值，即使網域已停用）、`restrict_domains`、`allowed_domain_ids`、`allowed_domains`，以及邀請碼配額（`max_invites`、`invite_period`）與目前用量（`invites_used`、`invites_remaining`，無上限時為 `null`）。請求欄位是 `domain_ids`（`null` 或 `[]` 表示清空，省略則維持原值），回應使用 `allowed_*`。`GET /api/v1/auth/me` 回傳的是*生效*的 fallback 預設，若儲存的群組預設已停用，可能與 `default_domain` 不同。
 
-**使用者群組。** 群組物件為
-`{ id, name, description, max_urls, max_api_tokens, max_invites, invite_period, allow_*,
-is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `direct`、`splash` 或
-`choice`（建立時預設 `choice`）。`allow_invites` 預設為 `false`（需明確開啟），
-開啟後成員可自行發碼，並與管理員發出的邀請碼共用同一份配額。
-配額可為 `null`（跟隨全站設定）或 `0`（無上限）。功能開關預設 `true`，只影響新的使用，
-不會修改既有連結或 Token。管理員與一般使用者適用同一套規則。`PUT` 接受部分群組表示：省略欄位
-即維持原值，配額設為 `null` 代表跟隨全站，`description: null` 會清除說明，`redirect_mode_policy` 為
-`direct`、`splash` 或 `choice`，省略即維持原值，`is_default: true`
-會轉移預設標記。`POST` 仍採建立預設值（省略開關視為允許、省略配額視為跟隨全站）。
+**使用者群組。** 群組物件為 `{ id, name, description, max_urls, max_api_tokens, max_invites, invite_period, allow_*, is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `direct`、`splash` 或 `choice`（建立時預設 `choice`）。`allow_invites` 預設為 `false`（需明確開啟），開啟後成員可自行發碼，並與管理員發出的邀請碼共用同一份配額。配額可為 `null`（跟隨全站設定）或 `0`（無上限）。功能開關預設 `true`，只影響新的使用，不會修改既有連結或 Token。管理員與一般使用者適用同一套規則。`PUT` 接受部分群組表示：省略欄位即維持原值，配額設為 `null` 代表跟隨全站，`description: null` 會清除說明，`redirect_mode_policy` 為 `direct`、`splash` 或 `choice`，省略即維持原值，`is_default: true` 會轉移預設標記。`POST` 仍採建立預設值（省略開關視為允許、省略配額視為跟隨全站）。
 
-**邀請碼配額。** 每個群組可限制每個日曆週期能「產生」的邀請碼數量。`max_invites` 可為
-`null`（跟隨全站 `max_invites_per_period`）或 `0`（無上限）；`invite_period` 為 `day`、
-`week`（週一起算）或 `month`，以 UTC 計算。超過上限會回 `403`，訊息會標明上限。計數保存在
-發放流水帳中：撤銷從未被兌換的邀請碼會退回額度，已被兌換的邀請碼則維持計入；額度會在
-週期交界自動重置。升級時也會釋放「已撤銷且從未兌換」的既有邀請碼，因此計數可能一次下降。
-未指定 `group_id` 的邀請碼改為消耗全站配額。
+**邀請碼配額。** 每個群組可限制每個日曆週期能「產生」的邀請碼數量。`max_invites` 可為 `null`（跟隨全站 `max_invites_per_period`）或 `0`（無上限）；`invite_period` 為 `day`、`week`（週一起算）或 `month`，以 UTC 計算。超過上限會回 `403`，訊息會標明上限。計數保存在發放流水帳中：撤銷從未被兌換的邀請碼會退回額度，已被兌換的邀請碼則維持計入；額度會在週期交界自動重置。升級時也會釋放「已撤銷且從未兌換」的既有邀請碼，因此計數可能一次下降。未指定 `group_id` 的邀請碼改為消耗全站配額。
 
-**保護機制**：管理員不能變更自己的角色或狀態、不能刪除自己，且系統永遠保留至少一位
-有效管理員（否則回 `409`）。預設群組不可刪除，請先以 `PUT` 轉移標記。
+**保護機制**：管理員不能變更自己的角色或狀態、不能刪除自己，且系統永遠保留至少一位有效管理員（否則回 `409`）。預設群組不可刪除，請先以 `PUT` 轉移標記。
 
-可編輯的設定鍵：`site_name`、`registration_mode`（`open`/`invite`/`closed`）、
-`default_slug_length`（4–16）、`max_urls_per_user`（0 = 無限）、
-`max_api_tokens_per_user`（0 = 無限，預設 20）、
-`max_invites_per_period`（0 = 無限，預設 0）、`invite_period`（`day`/`week`/`month`，預設
-`month`）、
-`default_redirect_type`（301/302/307/308）、`analytics_enabled`、
-`theme_switching`（`all`/`admin`，預設 `all`）、
-`landing_clock`（`server`/`utc`/`off`，預設 `server`）、
-`preview_image_policy`（`none`/`url`/`upload`/`both`，預設 `both`）、
-`click_retention_days`（0 = 永久保留），以及防機器人驗證的
-`captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、
-`captcha_on_login`、`captcha_on_create`、`captcha_allowed_hostnames`。secret key 為唯寫：
-永不回傳明文，留白送出表示維持已儲存的值。
+可編輯的設定鍵：`site_name`、`registration_mode`（`open`/`invite`/`closed`）、`default_slug_length`（4–16）、`max_urls_per_user`（0 = 無限）、`max_api_tokens_per_user`（0 = 無限，預設 20）、`max_invites_per_period`（0 = 無限，預設 0）、`invite_period`（`day`/`week`/`month`，預設 `month`）、`default_redirect_type`（301/302/307/308）、`analytics_enabled`、`theme_switching`（`all`/`admin`，預設 `all`）、`landing_clock`（`server`/`utc`/`off`，預設 `server`）、`preview_image_policy`（`none`/`url`/`upload`/`both`，預設 `both`）、`click_retention_days`（0 = 永久保留），以及防機器人驗證的 `captcha_provider`、`captcha_site_key`、`captcha_secret_key`、`captcha_on_register`、`captcha_on_login`、`captcha_on_create`、`captcha_allowed_hostnames`。secret key 為唯寫：永不回傳明文，留白送出表示維持已儲存的值。
 
-公開短網址工具另新增 `public_create_access`（`guest`/`user`/`admin`，預設 `user`）、
-`public_captcha`（預設 `true`）、`public_rate_limit_per_ip`（遊客每週期可建立數，預設 20，
-`0` = 不限）、`public_rate_limit_per_ip_period`（預設 `hour`）、`public_rate_limit_global`
-（全部遊客每週期合計可建立數，預設 500，`0` = 不限）、
-`public_rate_limit_global_period`（預設 `hour`）、`public_max_urls`（保留的訪客帳號可擁有的連結總數，預設 1000，`0` = 無限制；與
-`max_urls_per_user` 分開），以及欄位開關 `public_allow_slug`、`public_allow_title`（兩者預設 `true`），
-再加上 `public_allow_tags`、`public_allow_password`、`public_allow_expiry`、
-`public_allow_max_clicks`、`public_allow_redirect` 與 `public_allow_domain`（皆預設 `false`）。
+公開短網址工具另新增 `public_create_access`（`guest`/`user`/`admin`，預設 `user`）、`public_captcha`（預設 `true`）、`public_rate_limit_per_ip`（遊客每週期可建立數，預設 20，`0` = 不限）、`public_rate_limit_per_ip_period`（預設 `hour`）、`public_rate_limit_global`（全部遊客每週期合計可建立數，預設 500，`0` = 不限）、`public_rate_limit_global_period`（預設 `hour`）、`public_max_urls`（保留的訪客帳號可擁有的連結總數，預設 1000，`0` = 無限制；與 `max_urls_per_user` 分開），以及欄位開關 `public_allow_slug`、`public_allow_title`（兩者預設 `true`），再加上 `public_allow_tags`、`public_allow_password`、`public_allow_expiry`、`public_allow_max_clicks`、`public_allow_redirect` 與 `public_allow_domain`（皆預設 `false`）。
 
 遊客配額週期接受 `minute`、`hour`、`day`、`week`、`month`，使用服務進程的時區（`TZ`，未設定則採系統時區）。Docker Compose 預設 `TZ=UTC`，可例如設為 `TZ=Asia/Taipei`。後台顯示計數時區，且只有 `public_create_access=guest` 時才展開遊客速率、連結總額度、驗證與目標白名單設定。隱藏時保留原設定；無 JavaScript 時儲存存取層級後即可顯示欄位。首頁表單欄位開關因也套用於登入用戶而維持顯示。
 
@@ -694,28 +592,21 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 
 遊客持久化配額表中，所有來源、共用配額與週期合計最多 50,000 列。滿額時新列回 `429`，既有計數仍保留用量與限制。扣抵前會立即回收已到期週期，維護時也會清理；不會為了新來源淘汰未到期計數。
 
-超過限制回 `429` 並附 `Retry-After`（秒）。記憶體計數器重啟即重置，
-但**帳號鎖定**會持久化：同一個 email 於 15 分鐘內累積 30 次失敗後，
-即使密碼正確也會回 `429`（`Retry-After: 900`），直到視窗滑過為止。
+超過限制回 `429` 並附 `Retry-After`（秒）。記憶體計數器重啟即重置，但**帳號鎖定**會持久化：同一個 email 於 15 分鐘內累積 30 次失敗後，即使密碼正確也會回 `429`（`Retry-After: 900`），直到視窗滑過為止。
 
-登入的 IP 來源：`URLET_TRUST_PROXY=true` 時優先採用 `X-Real-IP`，
-其次取 `X-Forwarded-For` 最右側的位址。
+登入的 IP 來源：`URLET_TRUST_PROXY=true` 時優先採用 `X-Real-IP`，其次取 `X-Forwarded-For` 最右側的位址。
 
 ---
 
 ## 介面語言
 
-網頁介面提供三種語言：英文（`en`）、繁體中文（`zh-Hant`）與简体中文（`zh-Hans`）。
-初次訪問時依瀏覽器的 `Accept-Language` 標頭自動選擇，無法辨識時使用英文；
-選擇結果存在 cookie `urlet_lang`。
+網頁介面提供三種語言：英文（`en`）、繁體中文（`zh-Hant`）與简体中文（`zh-Hans`）。初次訪問時依瀏覽器的 `Accept-Language` 標頭自動選擇，無法辨識時使用英文；選擇結果存在 cookie `urlet_lang`。
 
 | 方法 | 路徑 | 說明 |
 |------|------|------|
 | GET | `/app/lang/{code}?next=<path>` | 切換介面語言、設定 `urlet_lang` cookie，接著回 `302` 轉往 `next`（未帶 `next` 或不是同站相對路徑時轉往 `/app`） |
 
-`code` 為 `en`、`zh-Hant`、`zh-Hans` 之一；`next` 必須是同站的相對路徑。
-無法辨識的 `code` 會退回英文（不會回錯誤）；未帶 cookie 的訪客則依 `Accept-Language`
-協商，只要帶了 cookie 一律以 cookie 為準。
+`code` 為 `en`、`zh-Hant`、`zh-Hans` 之一；`next` 必須是同站的相對路徑。無法辨識的 `code` 會退回英文（不會回錯誤）；未帶 cookie 的訪客則依 `Accept-Language` 協商，只要帶了 cookie 一律以 cookie 為準。
 
 語言設定只影響渲染出的 HTML。**API 的 JSON 回應一律英文**，不受語言設定影響。
 
@@ -723,11 +614,7 @@ is_default, members, created_at, updated_at }`。`redirect_mode_policy` 為 `dir
 
 ## 防機器人驗證
 
-urlet 可以要求三個會產生資料的公開表單通過防機器人驗證：網頁註冊表單、網頁登入表單與
-網頁建立短網址表單。JSON API 的 `POST /api/v1/auth/register` 與 `POST /api/v1/auth/login`
-則以選填欄位 `captcha_token` 接收驗證元件的權杖。預設關閉，可透過環境變數設定，
-也可在管理後台 **Admin → Settings** 設定；非空的環境變數會覆蓋後台設定。
-變數與金鑰申請方式請見部署指南。
+urlet 可以要求三個會產生資料的公開表單通過防機器人驗證：網頁註冊表單、網頁登入表單與網頁建立短網址表單。JSON API 的 `POST /api/v1/auth/register` 與 `POST /api/v1/auth/login` 則以選填欄位 `captcha_token` 接收驗證元件的權杖。預設關閉，可透過環境變數設定，也可在管理後台 **Admin → Settings** 設定；非空的環境變數會覆蓋後台設定。變數與金鑰申請方式請見部署指南。
 
 | 供應商 | `provider` 值 | 驗證元件 |
 |--------|---------------|----------|
@@ -735,16 +622,11 @@ urlet 可以要求三個會產生資料的公開表單通過防機器人驗證�
 | Cloudflare Turnstile | `turnstile` | Turnstile 元件（Managed 模式） |
 | Google reCAPTCHA v2 | `recaptcha` | 「我不是機器人」核取方塊 |
 
-四個條件都成立才會對某個表單啟用驗證：provider 不是 `none`、site key 非空、
-secret key 非空，以及該表單對應的開關（`captcha_on_register`、`captcha_on_login`
-或 `captcha_on_create`）為 `true`。
+四個條件都成立才會對某個表單啟用驗證：provider 不是 `none`、site key 非空、secret key 非空，以及該表單對應的開關（`captcha_on_register`、`captcha_on_login` 或 `captcha_on_create`）為 `true`。
 
-驗證失敗一律**拒絕**（fail closed）：token 缺少、格式錯誤、逾期或已使用過，
-以及逾時或供應商回應非 2xx，都會拒絕該次提交。
+驗證失敗一律**拒絕**（fail closed）：token 缺少、格式錯誤、逾期或已使用過，以及逾時或供應商回應非 2xx，都會拒絕該次提交。
 
-供應商回報的 `hostname` 也會一併檢查：必須等於實例 base URL 的主機名稱，或
-`captcha_allowed_hostnames` 中的其中一個（以逗號分隔，最多 10 項）。回應未帶 `hostname`
-或該欄位為空字串時予以接受；不符時拒絕並記一筆 `WARN`。
+供應商回報的 `hostname` 也會一併檢查：必須等於實例 base URL 的主機名稱，或 `captcha_allowed_hostnames` 中的其中一個（以逗號分隔，最多 10 項）。回應未帶 `hostname` 或該欄位為空字串時予以接受；不符時拒絕並記一筆 `WARN`。
 
 | 套用位置 | 是否驗證 |
 |----------|----------|

@@ -7,20 +7,16 @@
   - **Session cookie**: `urlet_session`, issued by `POST /api/v1/auth/login` (the browser form flow uses the same cookie)
   - **API token**: `Authorization: Bearer ur_...` (create one under `/app/account`)
 - Requests and responses are `application/json; charset=utf-8`
-- Timestamps are always ISO-8601 UTC (`2030-01-31T12:00:00.000Z`); input also accepts
-  `2030-01-31T12:00:00Z`, `2030-01-31 12:00`, `2030-01-31`, and similar forms
-- JSON responses are always English, whatever UI language the visitor selected
-  (see [UI language](#ui-language))
+- Timestamps are always ISO-8601 UTC (`2030-01-31T12:00:00.000Z`); input also accepts `2030-01-31T12:00:00Z`, `2030-01-31 12:00`, `2030-01-31`, and similar forms
+- JSON responses are always English, whatever UI language the visitor selected (see [UI language](#ui-language))
 
-This file is the narrative reference. Every instance also serves a browsable version of the same
-API, built from the OpenAPI contract in [`openapi/`](../openapi):
+This file is the narrative reference. Every instance also serves a browsable version of the same API, built from the OpenAPI contract in [`openapi/`](../openapi):
 
 - `GET /docs` — the interactive reference (Scalar), following the visitor's interface language
 - `GET /docs/openapi.json` — the English OpenAPI 3.1 contract
 - `GET /docs/openapi.zh-TW.json` — the Traditional Chinese contract
 
-The reference is embedded in the binary, so it works on an instance with no outbound network.
-`/docs` is a reserved path: no short link may use the slug `docs`.
+The reference is embedded in the binary, so it works on an instance with no outbound network. `/docs` is a reserved path: no short link may use the slug `docs`.
 
 ## Error format
 
@@ -67,24 +63,15 @@ Pagination envelope:
 
 `201` → `{ "user": { ... } }`, and the response sets a session cookie (registering signs you in).
 
-Errors: `409` duplicate email, `422` validation failure, `403` registration closed or invalid
-invite code, `400` `captcha_failed` when bot verification is enabled and rejects the request.
+Errors: `409` duplicate email, `422` validation failure, `403` registration closed or invalid invite code, `400` `captcha_failed` when bot verification is enabled and rejects the request.
 
-An invite code may carry a user group. In `invite` mode a code is mandatory; in `open` mode it is
-optional, but when one is supplied it is validated and its group wins over the default group. The
-returned `user` object includes `group_id`.
+An invite code may carry a user group. In `invite` mode a code is mandatory; in `open` mode it is optional, but when one is supplied it is validated and its group wins over the default group. The returned `user` object includes `group_id`.
 
-The web form accepts the same code as `/app/register?invite=CODE`; the link produced for an invite
-prefills the field. The JSON body is unchanged.
+The web form accepts the same code as `/app/register?invite=CODE`; the link produced for an invite prefills the field. The JSON body is unchanged.
 
-`captcha_token` carries the token produced by the CAPTCHA widget on the web registration form.
-It is only checked when bot verification is enabled for registration; otherwise the field is
-ignored. See [Bot verification](#bot-verification).
+`captcha_token` carries the token produced by the CAPTCHA widget on the web registration form. It is only checked when bot verification is enabled for registration; otherwise the field is ignored. See [Bot verification](#bot-verification).
 
-> `POST /api/v1/urls` is exempt from bot verification **only when it authenticates with an API
-> token** (`Authorization: Bearer ur_...`), so automation and CI pipelines are unaffected. A
-> request authenticated with a **session cookie** is a browser session and is subject to the
-> link-creation switch; send the widget token in `captcha_token`.
+> `POST /api/v1/urls` is exempt from bot verification **only when it authenticates with an API token** (`Authorization: Bearer ur_...`), so automation and CI pipelines are unaffected. A request authenticated with a **session cookie** is a browser session and is subject to the link-creation switch; send the widget token in `captcha_token`.
 
 ### `POST /api/v1/auth/login`
 
@@ -92,15 +79,9 @@ ignored. See [Bot verification](#bot-verification).
 { "email": "user@example.com", "password": "...", "captcha_token": "optional" }
 ```
 
-`200` → `{ "user": { ... } }` + `Set-Cookie`.
-Errors: `401` wrong credentials (the message is fixed and does not reveal whether the account
-exists), `403` account suspended, `400` `captcha_failed` when bot verification is enabled for
-sign-in and rejects the request, `429` rate limited.
+`200` → `{ "user": { ... } }` + `Set-Cookie`. Errors: `401` wrong credentials (the message is fixed and does not reveal whether the account exists), `403` account suspended, `400` `captcha_failed` when bot verification is enabled for sign-in and rejects the request, `429` rate limited.
 
-`captcha_token` carries the token produced by the CAPTCHA widget on the web sign-in form. It is
-only checked when bot verification is enabled for sign-in (`captcha_on_login` /
-`URLET_CAPTCHA_ON_LOGIN`); otherwise the field is ignored. See
-[Bot verification](#bot-verification).
+`captcha_token` carries the token produced by the CAPTCHA widget on the web sign-in form. It is only checked when bot verification is enabled for sign-in (`captcha_on_login` / `URLET_CAPTCHA_ON_LOGIN`); otherwise the field is ignored. See [Bot verification](#bot-verification).
 
 ### `POST /api/v1/auth/logout`
 
@@ -131,13 +112,7 @@ only checked when bot verification is enabled for sign-in (`captcha_on_login` /
 }
 ```
 
-`group` is `null` for an ungrouped account, which falls back to the site-wide settings. The
-`limits` object is the resolved value: a group overrides a quota only when it is not `NULL`, and
-`0` means unlimited. `default_domain` is the effective group default (falling back to the site
-default when it is missing or disabled); `allowed_domains` is the effective selection list. When
-`allow_domain_selection` is `false`, only that default is accepted for new links or moves.
-`redirect_mode_policy` is `direct`, `splash` or `choice`; it limits the redirect mode of **new**
-links and never rewrites existing ones. An ungrouped account gets `choice`.
+`group` is `null` for an ungrouped account, which falls back to the site-wide settings. The `limits` object is the resolved value: a group overrides a quota only when it is not `NULL`, and `0` means unlimited. `default_domain` is the effective group default (falling back to the site default when it is missing or disabled); `allowed_domains` is the effective selection list. When `allow_domain_selection` is `false`, only that default is accepted for new links or moves. `redirect_mode_policy` is `direct`, `splash` or `choice`; it limits the redirect mode of **new** links and never rewrites existing ones. An ungrouped account gets `choice`.
 
 ### `PATCH /api/v1/auth/me`
 
@@ -153,16 +128,13 @@ An empty string or `null` clears the display name. `200` → `{ "user": { ... } 
 { "current_password": "...", "new_password": "..." }
 ```
 
-`204`. On success every **other** session is revoked (the current one survives) **and all API
-tokens for the account are revoked**.
-Errors: `401` wrong current password, `422` new password does not meet the policy.
+`204`. On success every **other** session is revoked (the current one survives) **and all API tokens for the account are revoked**. Errors: `401` wrong current password, `422` new password does not meet the policy.
 
 ### `GET /api/v1/auth/sessions`
 
 `200` → `{ "items": [ { "id", "user_agent", "created_at", "last_seen_at", "expires_at", "current", "revoked" } ] }`
 
-Sessions slide: any activity (written at most once per minute) pushes `expires_at` forward and
-re-issues the cookie, so continuous use never expires.
+Sessions slide: any activity (written at most once per minute) pushes `expires_at` forward and re-issues the cookie, so continuous use never expires.
 
 ### `DELETE /api/v1/auth/sessions/{id}`
 
@@ -183,9 +155,7 @@ re-issues the cookie, so continuous use never expires.
 
 `DELETE` → `204`.
 
-Token creation is refused with `403` when the group disables API tokens (`allow_api_tokens`) or
-the effective `max_api_tokens` is exhausted. Only usable tokens count (not revoked, not expired),
-so revoking one frees a slot immediately.
+Token creation is refused with `403` when the group disables API tokens (`allow_api_tokens`) or the effective `max_api_tokens` is exhausted. Only usable tokens count (not revoked, not expired), so revoking one frees a slot immediately.
 
 ---
 
@@ -229,27 +199,14 @@ Query parameters:
 
 `201` → `UrlDto`. Rules:
 
-- `captcha_token` is only read when the request is authenticated with a **session cookie** and
-  bot verification is enabled for link creation; a `Bearer` token call ignores it. A failed
-  check returns `400` with `error.code = "captcha_failed"`
-- `target_url` is required; only `http`/`https` are accepted, and a bare domain without a scheme
-  is given a `https://` prefix
-- `domain` may be omitted (the effective group default is used). A supplied hostname must be an
-  active domain, otherwise the request fails with `422`; it must also satisfy the group policy
-  (`allow_domain_selection`, `restrict_domains` / `domain_ids`) or the request fails with `403`.
-  The slug namespace is per domain, so the same slug can exist on two domains
-- `slug` may be omitted (a base62 slug of the configured `default_slug_length` is generated,
-  4–16 characters, default 7); only `[A-Za-z0-9_-]` is
-  allowed, length 1–64, and reserved words are rejected. A slug already used **on the selected
-  domain** returns `409`
+- `captcha_token` is only read when the request is authenticated with a **session cookie** and bot verification is enabled for link creation; a `Bearer` token call ignores it. A failed check returns `400` with `error.code = "captcha_failed"`
+- `target_url` is required; only `http`/`https` are accepted, and a bare domain without a scheme is given a `https://` prefix
+- `domain` may be omitted (the effective group default is used). A supplied hostname must be an active domain, otherwise the request fails with `422`; it must also satisfy the group policy (`allow_domain_selection`, `restrict_domains` / `domain_ids`) or the request fails with `403`. The slug namespace is per domain, so the same slug can exist on two domains
+- `slug` may be omitted (a base62 slug of the configured `default_slug_length` is generated, 4–16 characters, default 7); only `[A-Za-z0-9_-]` is allowed, length 1–64, and reserved words are rejected. A slug already used **on the selected domain** returns `409`
 - `expires_at` must be in the future; `max_clicks` ≥ 1
 - `redirect_type` ∈ {301, 302, 307, 308}
-- `redirect_mode` is `direct` (default) or `splash`. Omitted, it takes the group policy's default
-  (splash under a splash-only policy, otherwise direct). A mode the group blocks returns `403`
-- `splash_delay_seconds` is 1–60 (default 5). `splash_title` (at most 120 characters) and
-  `splash_message` (at most 500 characters, newlines allowed) are optional; empty/omitted uses the
-  localised built-in copy. They are stored even while the link is direct, so switching modes keeps
-  the copy
+- `redirect_mode` is `direct` (default) or `splash`. Omitted, it takes the group policy's default (splash under a splash-only policy, otherwise direct). A mode the group blocks returns `403`
+- `splash_delay_seconds` is 1–60 (default 5). `splash_title` (at most 120 characters) and `splash_message` (at most 500 characters, newlines allowed) are optional; empty/omitted uses the localised built-in copy. They are stored even while the link is direct, so switching modes keeps the copy
 - Exceeding the `max_urls_per_user` quota → `403`
 
 ### `GET /api/v1/urls/{id}`
@@ -258,25 +215,17 @@ Query parameters:
 
 ### `PATCH /api/v1/urls/{id}`
 
-Partial update. A field that is **absent** stays unchanged. An explicit `null` clears only the
-nullable fields that opt into it — `title`, `notes`, `password`, `expires_at`, `max_clicks`,
-`splash_title` and `splash_message`. For `slug`, `domain`, `status`, `redirect_type`,
-`redirect_mode`, `splash_delay_seconds` and `tags`, `null` is treated like an absent field and
-keeps the current value.
+Partial update. A field that is **absent** stays unchanged. An explicit `null` clears only the nullable fields that opt into it — `title`, `notes`, `password`, `expires_at`, `max_clicks`, `splash_title` and `splash_message`. For `slug`, `domain`, `status`, `redirect_type`, `redirect_mode`, `splash_delay_seconds` and `tags`, `null` is treated like an absent field and keeps the current value.
 
 ```json
 { "title": "New title", "domain": "links.example.com", "password": null, "max_clicks": null, "tags": ["new"], "status": "disabled" }
 ```
 
-`200` → the updated `UrlDto`. An empty object → `400`. Moving a link to another active domain
-must satisfy the group policy and re-checks the slug there (`409` on a collision). Keeping a link
-on its current domain — even a disabled one — is always allowed, so existing links remain
-editable.
+`200` → the updated `UrlDto`. An empty object → `400`. Moving a link to another active domain must satisfy the group policy and re-checks the slug there (`409` on a collision). Keeping a link on its current domain — even a disabled one — is always allowed, so existing links remain editable.
 
 ### `DELETE /api/v1/urls/{id}`
 
-`204`, soft delete. The slug is retained and never released (so old links cannot be hijacked),
-and analytics data is kept.
+`204`, soft delete. The slug is retained and never released (so old links cannot be hijacked), and analytics data is kept.
 
 ### `GET /api/v1/urls/{id}/stats?days=30`
 
@@ -294,8 +243,7 @@ and analytics data is kept.
 
 ### `GET /api/v1/urls/{id}/clicks?page=1`
 
-`200` → a paginated click log (**no** IP addresses or visitor hashes). `page` and `per_page` are
-accepted; `per_page` defaults to 20 and is capped at 100:
+`200` → a paginated click log (**no** IP addresses or visitor hashes). `page` and `per_page` are accepted; `per_page` defaults to 20 and is capped at 100:
 
 ```json
 { "items": [ { "clicked_at": "...", "referrer_host": "news.example.com", "country_code": null, "device_type": "Desktop", "browser": "Chrome", "os": "Windows", "is_bot": false, "is_unique": true, "password_protected": false } ], "page": 1, "per_page": 20, "total": 42, "total_pages": 3 }
@@ -334,13 +282,7 @@ accepted; `per_page` defaults to 20 and is capped at 100:
 }
 ```
 
-**Group limits.** Link creation is refused with `403` when the effective `max_urls` is exhausted.
-A group feature toggle blocks submitting the matching field on create (`slug`, `password`,
-`expires_at`, `max_clicks`, `tags`) and refuses to newly enable it on `PATCH`. Omitting a field
-keeps its current value, and clearing a blocked field is accepted; a non-empty link password is
-always a new value and is refused while passwords are blocked. The redirect-mode policy blocks a
-new `redirect_mode` (or switching to it on `PATCH`) but accepts keeping the current mode and
-clearing splash copy.
+**Group limits.** Link creation is refused with `403` when the effective `max_urls` is exhausted. A group feature toggle blocks submitting the matching field on create (`slug`, `password`, `expires_at`, `max_clicks`, `tags`) and refuses to newly enable it on `PATCH`. Omitting a field keeps its current value, and clearing a blocked field is accepted; a non-empty link password is always a new value and is refused while passwords are blocked. The redirect-mode policy blocks a new `redirect_mode` (or switching to it on `PATCH`) but accepts keeping the current mode and clearing splash copy.
 
 ---
 
@@ -381,8 +323,7 @@ Configured text/images are public even on password-protected links. A blank prev
 
 ### `DELETE /api/v1/tags/{id}`
 
-`204`, deletes the tag (it only unlinks the tag from short links; the links themselves are
-untouched).
+`204`, deletes the tag (it only unlinks the tag from short links; the links themselves are untouched).
 
 ---
 
@@ -390,37 +331,21 @@ untouched).
 
 ### `GET /`
 
-The landing page: an introduction to the service with sign-in and sign-up entry points. It no
-longer redirects to `/app`; a visitor who is already signed in sees a button that opens the
-dashboard.
+The landing page: an introduction to the service with sign-in and sign-up entry points. It no longer redirects to `/app`; a visitor who is already signed in sees a button that opens the dashboard.
 
-When the visitor is allowed to create a link — see the `public_create_access` setting below — the
-page also carries the public shortener. `?shortened=<slug>&domain=<hostname>` renders the short URL
-of a link that was just created; the value is resolved against the database, so the result box never
-prints a query-string value verbatim and never discloses the destination.
+When the visitor is allowed to create a link — see the `public_create_access` setting below — the page also carries the public shortener. `?shortened=<slug>&domain=<hostname>` renders the short URL of a link that was just created; the value is resolved against the database, so the result box never prints a query-string value verbatim and never discloses the destination.
 
 ### `POST /`
 
-The public shortener form (`application/x-www-form-urlencoded`), available on the canonical host
-only. It accepts `target_url` (required) plus the optional inputs the administrator enabled:
-`slug`, `title`, `tags` (comma separated), `password`, `expires_at`, `max_clicks`, `redirect_mode`,
-`splash_delay_seconds`, `splash_title`, `splash_message`, `domain`, and the provider token field
-(`cf-turnstile-response` or `g-recaptcha-response`).
+The public shortener form (`application/x-www-form-urlencoded`), available on the canonical host only. It accepts `target_url` (required) plus the optional inputs the administrator enabled: `slug`, `title`, `tags` (comma separated), `password`, `expires_at`, `max_clicks`, `redirect_mode`, `splash_delay_seconds`, `splash_title`, `splash_message`, `domain`, and the provider token field (`cf-turnstile-response` or `g-recaptcha-response`).
 
-A successful submission is `303` to `/?shortened=<slug>&domain=<hostname>`. A failure is `303` to
-`/?err=<code>`, where `<code>` is one of `denied` (below the access level, or a disabled field),
-`guest_allowlist` (anonymous destination not allowed), `rate_limited`, `captcha`, `quota` (the `public_max_urls` budget of the Guest account is full),
-`conflict`, `slug`, `target`, `expiry`, `tags`, `password_rules`, `domain`, `mode_denied` or
-`invalid`. A non-numeric `max_clicks` or `splash_delay_seconds` is reported as `invalid` rather
-than silently dropped.
+A successful submission is `303` to `/?shortened=<slug>&domain=<hostname>`. A failure is `303` to `/?err=<code>`, where `<code>` is one of `denied` (below the access level, or a disabled field), `guest_allowlist` (anonymous destination not allowed), `rate_limited`, `captcha`, `quota` (the `public_max_urls` budget of the Guest account is full), `conflict`, `slug`, `target`, `expiry`, `tags`, `password_rules`, `domain`, `mode_denied` or `invalid`. A non-numeric `max_clicks` or `splash_delay_seconds` is reported as `invalid` rather than silently dropped.
 
 The CSRF same-origin rule applies to the form, and the ordinary security headers are unchanged.
 
 ### `POST /api/v1/public/urls`
 
-The same operation as JSON, for scripts. No credential is required when `public_create_access` is
-`guest`; a session cookie or a Bearer token may be supplied instead, and the link is then owned by
-that account.
+The same operation as JSON, for scripts. No credential is required when `public_create_access` is `guest`; a session cookie or a Bearer token may be supplied instead, and the link is then owned by that account.
 
 Anonymous requests must also match the enabled guest destination allowlist; the example below is included in the built-in rules. Signed-in sessions and Bearer tokens use their existing account permissions.
 
@@ -447,8 +372,7 @@ Anonymous requests must also match the enabled guest destination allowlist; the 
 
 The link id is deliberately not returned: the caller has no account to manage the link with.
 
-- `403` `forbidden` — the caller is below the access level, or submitted a field the administrator
-  disabled, or an anonymous destination is not on the enabled guest allowlist
+- `403` `forbidden` — the caller is below the access level, or submitted a field the administrator disabled, or an anonymous destination is not on the enabled guest allowlist
 - `400` `captcha_failed` — the bot protection check failed (fail closed)
 - `429` `rate_limited` — the per-address or the shared visitor budget is exhausted (`Retry-After`)
 - `409` `conflict` — the requested slug is already taken
@@ -460,20 +384,13 @@ The link id is deliberately not returned: the caller has no account to manage th
 { "status": "ok", "version": "1.4.0", "database": "ok", "uptime_seconds": 42 }
 ```
 
-When the database cannot be queried the response is `503` with `status` set to `degraded`.
-`/healthz` is an alias of the same endpoint.
+When the database cannot be queried the response is `503` with `status` set to `degraded`. `/healthz` is an alias of the same endpoint.
 
 ### `GET /{slug}`
 
-- Valid, unprotected and `redirect_mode = direct` → `30x` + `Location` (301/308 send
-  `private, max-age=300`; 302/307 send `private, no-store`)
-- Valid, unprotected and `redirect_mode = splash` → `200` splash page (`no-store`). It
-  shows the custom copy, the destination host and a countdown, sends the visitor on with a
-  `<meta http-equiv="refresh">` and also offers a "Continue now" link. The click is recorded when
-  the splash page is served, not when the visitor leaves
-- Password protected → `200` password prompt (**the target URL is never disclosed**). After a
-  successful unlock the destination is served directly: the password page is the only
-  interstitial, so a splash page is never shown for a protected link
+- Valid, unprotected and `redirect_mode = direct` → `30x` + `Location` (301/308 send `private, max-age=300`; 302/307 send `private, no-store`)
+- Valid, unprotected and `redirect_mode = splash` → `200` splash page (`no-store`). It shows the custom copy, the destination host and a countdown, sends the visitor on with a `<meta http-equiv="refresh">` and also offers a "Continue now" link. The click is recorded when the splash page is served, not when the visitor leaves
+- Password protected → `200` password prompt (**the target URL is never disclosed**). After a successful unlock the destination is served directly: the password page is the only interstitial, so a splash page is never shown for a protected link
 - Expired or click limit reached → `410`
 - Missing / deleted / disabled → `404`
 
@@ -492,8 +409,7 @@ Accepts `application/json` or `application/x-www-form-urlencoded`:
 
 ### `GET /api/v1/public/urls/{slug}?domain=<hostname>`
 
-Public metadata without the target URL. Without `domain` the default domain is used, which keeps
-callers that predate multi-domain working for links on the default domain.
+Public metadata without the target URL. Without `domain` the default domain is used, which keeps callers that predate multi-domain working for links on the default domain.
 
 ```json
 { "domain": "go.example.com", "slug": "promo", "title": "Launch", "has_password": true, "redirect_mode": "splash", "is_expired": false, "state": "active" }
@@ -501,8 +417,7 @@ callers that predate multi-domain working for links on the default domain.
 
 ### `GET /api/v1/domains`
 
-Authenticated users can list the active domains available for new links, already filtered by
-their group policy. `is_default` marks the effective group default:
+Authenticated users can list the active domains available for new links, already filtered by their group policy. `is_default` marks the effective group default:
 
 ```json
 [ { "id": 1, "hostname": "s.example.com", "is_default": true }, { "id": 2, "hostname": "go.example.com", "is_default": false } ]
@@ -512,17 +427,11 @@ their group policy. `is_default` marks the effective group default:
 
 ## Invite codes (member)
 
-Members can issue invite codes for their **own group** when that group has
-`allow_invites` enabled. Codes are pinned to the group, so anyone who redeems one
-joins it. The group's calendar quota (`max_invites` / `invite_period`) applies and
-is shared with administrator-issued codes. Revoking a code that nobody redeemed
-returns its slot; a redeemed code keeps it.
+Members can issue invite codes for their **own group** when that group has `allow_invites` enabled. Codes are pinned to the group, so anyone who redeems one joins it. The group's calendar quota (`max_invites` / `invite_period`) applies and is shared with administrator-issued codes. Revoking a code that nobody redeemed returns its slot; a redeemed code keeps it.
 
 ### `GET /api/v1/invites`
 
-`GET /api/v1/invites?page=&per_page=` → `200`: the caller's own codes (newest
-first), including the displayable code and its registration link, plus the
-effective quota.
+`GET /api/v1/invites?page=&per_page=` → `200`: the caller's own codes (newest first), including the displayable code and its registration link, plus the effective quota.
 
 ```json
 {
@@ -539,19 +448,9 @@ effective quota.
 }
 ```
 
-`code` and `link` are `null` for codes created before sealed storage or after
-`URLET_SECRET` changed; `prefix` is always present. `link` is also `null` when
-the code is revoked, exhausted or expired, while `code` stays visible for
-history. `per_page` defaults to 20 and
-is capped at 100. `quota.allowed` is `false` when the group does not enable
-member invites: creating a code then returns `403`, but codes issued before the
-toggle was turned off remain listed and revocable. `remaining` is `null` when
-`limit` is `0` (unlimited). Accounts whose group link is missing fall back to the
-default group.
+`code` and `link` are `null` for codes created before sealed storage or after `URLET_SECRET` changed; `prefix` is always present. `link` is also `null` when the code is revoked, exhausted or expired, while `code` stays visible for history. `per_page` defaults to 20 and is capped at 100. `quota.allowed` is `false` when the group does not enable member invites: creating a code then returns `403`, but codes issued before the toggle was turned off remain listed and revocable. `remaining` is `null` when `limit` is `0` (unlimited). Accounts whose group link is missing fall back to the default group.
 
-Member issuance is throttled to 20 codes per hour per account (`429` when the
-burst is exhausted); the group's invite quota remains the primary limit. A group
-with no finite quota is otherwise unlimited.
+Member issuance is throttled to 20 codes per hour per account (`429` when the burst is exhausted); the group's invite quota remains the primary limit. A group with no finite quota is otherwise unlimited.
 
 ### `POST /api/v1/invites`
 
@@ -562,20 +461,11 @@ with no finite quota is otherwise unlimited.
   "invite": { "...": "..." }, "quota": { "...": "..." } }
 ```
 
-The code and link are also returned by `GET /api/v1/invites`, so they are not
-lost when the response is dismissed. The top-level `link` mirrors `invite.link`;
-both are `null` if the created code is already unusable. `max_uses` must be
-between 1 and 10 for
-member codes. `403` when the group does not allow invites or the period quota is
-exhausted (`error.code = "forbidden"`), and `429` when the hourly burst limit is
-exhausted.
+The code and link are also returned by `GET /api/v1/invites`, so they are not lost when the response is dismissed. The top-level `link` mirrors `invite.link`; both are `null` if the created code is already unusable. `max_uses` must be between 1 and 10 for member codes. `403` when the group does not allow invites or the period quota is exhausted (`error.code = "forbidden"`), and `429` when the hourly burst limit is exhausted.
 
 ### `DELETE /api/v1/invites/{id}`
 
-`204`, revokes one of the caller's own codes. Another member's code is reported
-as `404`; administrators use `DELETE /api/v1/admin/invites/{id}` for any code.
-Revoking a code that nobody redeemed returns its quota slot; a code that was
-already redeemed keeps it.
+`204`, revokes one of the caller's own codes. Another member's code is reported as `404`; administrators use `DELETE /api/v1/admin/invites/{id}` for any code. Revoking a code that nobody redeemed returns its quota slot; a code that was already redeemed keeps it.
 
 ---
 
@@ -610,66 +500,19 @@ Every `/api/v1/admin/**` endpoint returns `403 forbidden` for non-administrators
 | GET | `/admin/audit?action=&target_type=&actor=&page=` | Audit log (`metadata` is parsed into JSON) |
 | GET | `/admin/stats` | User / short link / click totals, database size, version, uptime |
 
-Theme uploads are administrator-only browser multipart forms at `/app/admin/themes/custom` (create),
-`/app/admin/themes/custom/{id}` (edit/replace CSS) and `/app/admin/themes/custom/{id}/delete`. The
-JSON API deliberately has no file-upload endpoint. Uploads are CSS-only, at most 256 KiB, UTF-8;
-absolute external references and cross-origin `url(...)` are rejected, with the CSP as the second
-line of defence; see [`THEMES.md`](THEMES.md).
+Theme uploads are administrator-only browser multipart forms at `/app/admin/themes/custom` (create), `/app/admin/themes/custom/{id}` (edit/replace CSS) and `/app/admin/themes/custom/{id}/delete`. The JSON API deliberately has no file-upload endpoint. Uploads are CSS-only, at most 256 KiB, UTF-8; absolute external references and cross-origin `url(...)` are rejected, with the CSP as the second line of defence; see [`THEMES.md`](THEMES.md).
 
-`GroupDto` also returns `default_domain_id`, `default_domain` (the stored value, even if the domain
-is disabled), `restrict_domains`, `allowed_domain_ids` and `allowed_domains`, plus the invite
-quota (`max_invites`, `invite_period`) and its live counters (`invites_used`,
-`invites_remaining`; the latter is `null` when unlimited). The request field is
-`domain_ids` (`null` or `[]` clears it; omitting keeps it); the response uses `allowed_*`. `GET /api/v1/auth/me` returns the *effective* fallback
-default, which can differ from `default_domain` when the stored group default is disabled.
+`GroupDto` also returns `default_domain_id`, `default_domain` (the stored value, even if the domain is disabled), `restrict_domains`, `allowed_domain_ids` and `allowed_domains`, plus the invite quota (`max_invites`, `invite_period`) and its live counters (`invites_used`, `invites_remaining`; the latter is `null` when unlimited). The request field is `domain_ids` (`null` or `[]` clears it; omitting keeps it); the response uses `allowed_*`. `GET /api/v1/auth/me` returns the *effective* fallback default, which can differ from `default_domain` when the stored group default is disabled.
 
-**User groups.** A group object is
-`{ id, name, description, max_urls, max_api_tokens, max_invites, invite_period, allow_*,
-is_default, members, created_at, updated_at }`. `redirect_mode_policy` is `direct`, `splash` or
-`choice` (create default `choice`). `allow_invites` is opt-in (`false` on create) and
-lets the group's members issue their own codes, drawn from the same quota as administrator-issued
-codes.
-Quotas are nullable: `null` inherits the site-wide setting, `0` means unlimited. Feature toggles
-default to `true`; they gate new uses and never alter existing links or tokens. Administrators
-follow the same rules as other users. `PUT` accepts a partial group: omitted fields keep their
-current value, quotas set to `null` inherit the site quota, `description: null` clears it, and
-`is_default: true` moves the marker. `POST` keeps the create defaults (omitted toggles are allowed,
-omitted quotas inherit).
+**User groups.** A group object is `{ id, name, description, max_urls, max_api_tokens, max_invites, invite_period, allow_*, is_default, members, created_at, updated_at }`. `redirect_mode_policy` is `direct`, `splash` or `choice` (create default `choice`). `allow_invites` is opt-in (`false` on create) and lets the group's members issue their own codes, drawn from the same quota as administrator-issued codes. Quotas are nullable: `null` inherits the site-wide setting, `0` means unlimited. Feature toggles default to `true`; they gate new uses and never alter existing links or tokens. Administrators follow the same rules as other users. `PUT` accepts a partial group: omitted fields keep their current value, quotas set to `null` inherit the site quota, `description: null` clears it, and `is_default: true` moves the marker. `POST` keeps the create defaults (omitted toggles are allowed, omitted quotas inherit).
 
-**Invite quotas.** Each group may issue a limited number of invite codes per calendar period.
-`max_invites` is nullable (`null` inherits the site-wide `max_invites_per_period`, `0` is
-unlimited) and `invite_period` is `day`, `week` (Monday start) or `month`, evaluated in UTC.
-Issuing past the limit returns `403` with `error.code = "forbidden"` and a message naming the
-limit. The counter lives in an issuance ledger: revoking a code that nobody redeemed releases its
-slot, while a redeemed code keeps it. The quota resets by itself at the next period boundary.
-Upgrading releases codes that were already revoked and never redeemed, so the counter can drop once.
-Invites created without `group_id` consume the site-wide quota instead.
+**Invite quotas.** Each group may issue a limited number of invite codes per calendar period. `max_invites` is nullable (`null` inherits the site-wide `max_invites_per_period`, `0` is unlimited) and `invite_period` is `day`, `week` (Monday start) or `month`, evaluated in UTC. Issuing past the limit returns `403` with `error.code = "forbidden"` and a message naming the limit. The counter lives in an issuance ledger: revoking a code that nobody redeemed releases its slot, while a redeemed code keeps it. The quota resets by itself at the next period boundary. Upgrading releases codes that were already revoked and never redeemed, so the counter can drop once. Invites created without `group_id` consume the site-wide quota instead.
 
-**Guard rails**: an administrator cannot change their own role or status, cannot delete
-themselves, and the instance always keeps at least one active administrator (otherwise the
-request fails with `409`). The default group cannot be deleted; move the marker with `PUT` first.
+**Guard rails**: an administrator cannot change their own role or status, cannot delete themselves, and the instance always keeps at least one active administrator (otherwise the request fails with `409`). The default group cannot be deleted; move the marker with `PUT` first.
 
-Editable setting keys: `site_name`, `registration_mode` (`open`/`invite`/`closed`),
-`default_slug_length` (4–16), `max_urls_per_user` (0 = unlimited),
-`max_api_tokens_per_user` (0 = unlimited, default 20),
-`max_invites_per_period` (0 = unlimited, default 0), `invite_period` (`day`/`week`/`month`,
-default `month`), `default_redirect_type` (301/302/307/308), `analytics_enabled`,
-`theme_switching` (`all`/`admin`, default `all`),
-`landing_clock` (`server`/`utc`/`off`, default `server`),
-`preview_image_policy` (`none`/`url`/`upload`/`both`, default `both`),
-`click_retention_days` (0 = keep forever), plus the bot verification keys
-`captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`,
-`captcha_on_login`, `captcha_on_create` and `captcha_allowed_hostnames`. The secret key is
-write-only: it is never returned in plaintext, and submitting it empty keeps the stored value.
+Editable setting keys: `site_name`, `registration_mode` (`open`/`invite`/`closed`), `default_slug_length` (4–16), `max_urls_per_user` (0 = unlimited), `max_api_tokens_per_user` (0 = unlimited, default 20), `max_invites_per_period` (0 = unlimited, default 0), `invite_period` (`day`/`week`/`month`, default `month`), `default_redirect_type` (301/302/307/308), `analytics_enabled`, `theme_switching` (`all`/`admin`, default `all`), `landing_clock` (`server`/`utc`/`off`, default `server`), `preview_image_policy` (`none`/`url`/`upload`/`both`, default `both`), `click_retention_days` (0 = keep forever), plus the bot verification keys `captcha_provider`, `captcha_site_key`, `captcha_secret_key`, `captcha_on_register`, `captcha_on_login`, `captcha_on_create` and `captcha_allowed_hostnames`. The secret key is write-only: it is never returned in plaintext, and submitting it empty keeps the stored value.
 
-The public shortener adds `public_create_access` (`guest`/`user`/`admin`, default `user`),
-`public_captcha` (default `true`), `public_rate_limit_per_ip` (guest creations per period, default 20,
-`0` = unlimited), `public_rate_limit_per_ip_period` (default `hour`), `public_rate_limit_global`
-(shared guest creations per period, default 500, `0` = unlimited),
-`public_rate_limit_global_period` (default `hour`), `public_max_urls` (total links the reserved Guest account may own, default 1000, `0` =
-unlimited; separate from `max_urls_per_user`) and the field switches `public_allow_slug`, `public_allow_title` (both default `true`)
-plus `public_allow_tags`, `public_allow_password`, `public_allow_expiry`, `public_allow_max_clicks`,
-`public_allow_redirect` and `public_allow_domain` (all default `false`).
+The public shortener adds `public_create_access` (`guest`/`user`/`admin`, default `user`), `public_captcha` (default `true`), `public_rate_limit_per_ip` (guest creations per period, default 20, `0` = unlimited), `public_rate_limit_per_ip_period` (default `hour`), `public_rate_limit_global` (shared guest creations per period, default 500, `0` = unlimited), `public_rate_limit_global_period` (default `hour`), `public_max_urls` (total links the reserved Guest account may own, default 1000, `0` = unlimited; separate from `max_urls_per_user`) and the field switches `public_allow_slug`, `public_allow_title` (both default `true`) plus `public_allow_tags`, `public_allow_password`, `public_allow_expiry`, `public_allow_max_clicks`, `public_allow_redirect` and `public_allow_domain` (all default `false`).
 
 Guest quota periods accept `minute`, `hour`, `day`, `week` or `month`. They use the server process timezone (`TZ`, otherwise the OS timezone); Docker Compose defaults `TZ` to `UTC`, and operators can set `TZ=Asia/Taipei`, for example. The admin page shows the timezone and reveals guest rate, total-link, captcha and destination allowlist settings only when `public_create_access=guest`. Hidden settings are preserved; without JavaScript, save the access level to reveal the fields. Public-form field switches remain visible because they also apply to signed-in callers.
 
@@ -749,44 +592,29 @@ Cleanup applies **only when creating links**, through `POST /api/v1/urls`, `POST
 
 The persistent guest-quota table holds at most 50,000 rows across sources, shared budgets and periods. At capacity, new rows return `429`; existing counters keep their usage and limits. Reservations reclaim expired windows immediately, and maintenance also cleans them. Active counters are never evicted to make room for new addresses.
 
-Exceeding a limit returns `429` with `Retry-After` (seconds). The in-memory counters reset on
-restart, but **account lockout** is persistent: once one email accumulates 30 failures within
-15 minutes, even the correct password returns `429` (`Retry-After: 900`) until the window slides
-past.
+Exceeding a limit returns `429` with `Retry-After` (seconds). The in-memory counters reset on restart, but **account lockout** is persistent: once one email accumulates 30 failures within 15 minutes, even the correct password returns `429` (`Retry-After: 900`) until the window slides past.
 
-The IP used for login comes from `X-Real-IP` when `URLET_TRUST_PROXY=true`, falling back to the
-rightmost address in `X-Forwarded-For`.
+The IP used for login comes from `X-Real-IP` when `URLET_TRUST_PROXY=true`, falling back to the rightmost address in `X-Forwarded-For`.
 
 ---
 
 ## UI language
 
-The web UI ships in English (`en`), Traditional Chinese (`zh-Hant`) and Simplified Chinese
-(`zh-Hans`). On a first visit the language is chosen from the browser's `Accept-Language`
-header; when nothing matches, English is used. The selection is stored in the `urlet_lang`
-cookie.
+The web UI ships in English (`en`), Traditional Chinese (`zh-Hant`) and Simplified Chinese (`zh-Hans`). On a first visit the language is chosen from the browser's `Accept-Language` header; when nothing matches, English is used. The selection is stored in the `urlet_lang` cookie.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/app/lang/{code}?next=<path>` | Switch the UI language, set the `urlet_lang` cookie, then return `302` to `next` (or to `/app` when `next` is missing or not a same-site relative path) |
 
-`code` is one of `en`, `zh-Hant`, `zh-Hans`; `next` must be a same-site relative path.
-An unrecognized `code` falls back to English (it is never an error), and a visitor without a
-cookie is negotiated from `Accept-Language` instead — a present cookie always wins.
+`code` is one of `en`, `zh-Hant`, `zh-Hans`; `next` must be a same-site relative path. An unrecognized `code` falls back to English (it is never an error), and a visitor without a cookie is negotiated from `Accept-Language` instead — a present cookie always wins.
 
-The language setting only affects rendered HTML. **JSON responses are always English** and
-never change with the selected language.
+The language setting only affects rendered HTML. **JSON responses are always English** and never change with the selected language.
 
 ---
 
 ## Bot verification
 
-urlet can require a CAPTCHA on the three public forms that create state: the web registration
-form, the web sign-in form, and the web create-short-link form. The JSON API endpoints
-`POST /api/v1/auth/register` and `POST /api/v1/auth/login` accept the widget token in the optional
-`captcha_token` field. It is off by default and configured either through environment variables or
-in the admin UI under **Admin → Settings**; a non-empty environment variable overrides the admin
-setting. See the deployment guide for the variables and for how to obtain provider keys.
+urlet can require a CAPTCHA on the three public forms that create state: the web registration form, the web sign-in form, and the web create-short-link form. The JSON API endpoints `POST /api/v1/auth/register` and `POST /api/v1/auth/login` accept the widget token in the optional `captcha_token` field. It is off by default and configured either through environment variables or in the admin UI under **Admin → Settings**; a non-empty environment variable overrides the admin setting. See the deployment guide for the variables and for how to obtain provider keys.
 
 | Provider | `provider` value | Widget |
 |----------|------------------|--------|
@@ -794,17 +622,11 @@ setting. See the deployment guide for the variables and for how to obtain provid
 | Cloudflare Turnstile | `turnstile` | Managed Turnstile widget |
 | Google reCAPTCHA v2 | `recaptcha` | "I'm not a robot" checkbox |
 
-Verification applies to a form only when all four conditions hold: the provider is not `none`,
-the site key is non-empty, the secret key is non-empty, and the matching per-form switch
-(`captcha_on_register`, `captcha_on_login` or `captcha_on_create`) is `true`.
+Verification applies to a form only when all four conditions hold: the provider is not `none`, the site key is non-empty, the secret key is non-empty, and the matching per-form switch (`captcha_on_register`, `captcha_on_login` or `captcha_on_create`) is `true`.
 
-Failure is **closed**: a missing, malformed, expired or already-used token — including a timeout
-or any non-2xx response from the provider — rejects the submission.
+Failure is **closed**: a missing, malformed, expired or already-used token — including a timeout or any non-2xx response from the provider — rejects the submission.
 
-The `hostname` reported by the provider is also checked: it must equal the host of the instance's
-base URL or one of the extra hostnames in `captcha_allowed_hostnames` (comma-separated, up to 10).
-A response whose `hostname` is missing or empty is accepted, and a mismatch is rejected and logged
-at `WARN`.
+The `hostname` reported by the provider is also checked: it must equal the host of the instance's base URL or one of the extra hostnames in `captcha_allowed_hostnames` (comma-separated, up to 10). A response whose `hostname` is missing or empty is accepted, and a mismatch is rejected and logged at `WARN`.
 
 | Surface | Verification |
 |---------|--------------|
