@@ -1437,3 +1437,40 @@ async fn the_content_security_policy_allows_the_provider_widget() {
     assert!(page.body.contains("cf-turnstile"));
     drop(mock);
 }
+
+#[tokio::test]
+async fn rejected_captchas_do_not_count_towards_the_account_lockout() {
+    let mock = MockSiteverify::start(Reply::Success).await;
+    let app = spawn_app("turnstile", Some(mock.url.clone()), Flows::LOGIN_ONLY, true).await;
+    let registered = api_register(&app, "lockout@example.com", None).await;
+    assert_eq!(
+        registered.status,
+        AxumStatus::CREATED,
+        "{}",
+        registered.body
+    );
+
+    // 超過鎖定門檻次數的 CAPTCHA 失敗（各自不同 IP），都在驗證密碼前被擋下。
+    for index in 0..40 {
+        let mut request = post_json(
+            "/api/v1/auth/login",
+            json!({ "email": "lockout@example.com", "password": "wrong-password" }),
+        );
+        request.headers_mut().insert(
+            "x-real-ip",
+            format!("10.9.0.{}", index + 1).parse().expect("header"),
+        );
+        assert_captcha_error(&app.send(request).await);
+    }
+
+    // 通過 CAPTCHA 的正確密碼仍可登入。
+    let mut request = post_json(
+        "/api/v1/auth/login",
+        api_login_body("lockout@example.com", Some("token-ok")),
+    );
+    request
+        .headers_mut()
+        .insert("x-real-ip", "10.9.1.1".parse().expect("header"));
+    let response = app.send(request).await;
+    assert_eq!(response.status, AxumStatus::OK, "{}", response.body);
+}
