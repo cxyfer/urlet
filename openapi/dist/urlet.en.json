@@ -557,7 +557,7 @@
           "Short links"
         ],
         "summary": "Update a short link",
-        "description": "Partial update: a field that is absent stays unchanged, while an explicit `null` clears it. An empty object returns `400`. Moving a link to another active domain must satisfy the group policy and re-checks the slug there; keeping a link on its current domain is always allowed.",
+        "description": "Partial update: a field that is absent stays unchanged, while an explicit `null` clears it. An empty object returns `400`. Moving a link to another active domain must satisfy the group policy and re-checks the slug there; keeping a link on its current domain is always allowed. While an administrator holds the link disabled (`admin_locked`), a request that sets `status` to `active` is rejected as a whole with `403`; requests that omit it can still change the other fields.",
         "operationId": "updateUrl",
         "parameters": [
           {
@@ -2007,7 +2007,7 @@
           "Administration"
         ],
         "summary": "Update a short link",
-        "description": "Changes the stored status or the redirect status code of any short link.",
+        "description": "Changes the stored status or the redirect status code of any short link. Disabling a link locks it, so its owner cannot enable it again; enabling it releases the lock.",
         "operationId": "updateAdminUrl",
         "parameters": [
           {
@@ -3455,6 +3455,11 @@
             "description": "Stored link status. `disabled` stops redirects without deleting the link.",
             "example": "active"
           },
+          "admin_locked": {
+            "type": "boolean",
+            "description": "`true` while an administrator holds the link disabled. Its owner cannot set `status` to `active` until an administrator enables the link again.\n",
+            "example": false
+          },
           "is_expired": {
             "type": "boolean",
             "description": "`true` when the link no longer redirects because it expired or reached its click limit.\n",
@@ -3520,6 +3525,7 @@
           "splash_title",
           "splash_message",
           "status",
+          "admin_locked",
           "is_expired",
           "state",
           "is_custom_slug",
@@ -4242,7 +4248,7 @@
               "disabled",
               null
             ],
-            "description": "Stored link status; absent or `null` keeps the current one. `disabled` stops redirects without deleting the link.\n",
+            "description": "Stored link status; absent or `null` keeps the current one. `disabled` stops redirects without deleting the link. While an administrator holds the link disabled (`admin_locked`), a request that sets `active` is rejected as a whole with `403`.\n",
             "example": "disabled"
           }
         }
@@ -5659,7 +5665,7 @@
               "disabled",
               null
             ],
-            "description": "New stored link status; absent or `null` keeps the current one.",
+            "description": "New stored link status; absent or `null` keeps the current one. `disabled` also locks the link, so its owner cannot enable it again; `active` releases the lock.\n",
             "example": "disabled"
           },
           "redirect_type": {

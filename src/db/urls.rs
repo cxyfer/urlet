@@ -28,6 +28,9 @@ pub struct Url {
     /// Optional custom splash message; `NULL` uses the localised default.
     pub splash_message: Option<String>,
     pub status: String,
+    /// Set while an administrator holds the link disabled; the owner cannot
+    /// re-enable it until an administrator enables it again.
+    pub admin_disabled_at: Option<String>,
     pub is_custom_slug: i64,
     pub last_clicked_at: Option<String>,
     pub created_at: String,
@@ -68,6 +71,11 @@ impl Url {
             .as_deref()
             .map(|hash| !hash.is_empty())
             .unwrap_or(false)
+    }
+
+    /// An administrator disabled the link and the owner may not lift it.
+    pub fn is_admin_locked(&self) -> bool {
+        self.admin_disabled_at.is_some()
     }
 
     pub fn is_custom(&self) -> bool {
@@ -128,7 +136,8 @@ const SELECT: &str =
     "SELECT id, user_id, domain_id, slug, target_url, title, notes, password_hash, \
                       expires_at, max_clicks, click_count, unique_click_count, redirect_type, \
                       redirect_mode, splash_delay_seconds, splash_title, splash_message, \
-                      status, is_custom_slug, last_clicked_at, created_at, updated_at, deleted_at \
+                      status, admin_disabled_at, is_custom_slug, last_clicked_at, created_at, \
+                      updated_at, deleted_at \
                       FROM urls";
 
 /// Insert a short link.
@@ -302,6 +311,8 @@ pub struct UrlUpdate {
     pub splash_title: Option<Option<String>>,
     pub splash_message: Option<Option<String>>,
     pub status: Option<String>,
+    /// Administrator lock: `Some(Some(at))` sets it, `Some(None)` clears it.
+    pub admin_disabled_at: Option<Option<String>>,
     pub is_custom_slug: Option<bool>,
 }
 
@@ -321,11 +332,15 @@ impl UrlUpdate {
             && self.splash_title.is_none()
             && self.splash_message.is_none()
             && self.status.is_none()
+            && self.admin_disabled_at.is_none()
             && self.is_custom_slug.is_none()
     }
 }
 
 /// Apply a partial update. Returns the number of rows changed.
+///
+/// With `user_id` (the owner's path), setting `status = 'active'` only matches
+/// links no administrator holds disabled.
 pub async fn update(
     pool: &SqlitePool,
     id: i64,
@@ -391,6 +406,10 @@ pub async fn update(
         sql.push_str(", status = ?");
         binds.push(Bind::Text(value.clone()));
     }
+    if let Some(value) = &changes.admin_disabled_at {
+        sql.push_str(", admin_disabled_at = ?");
+        binds.push(Bind::OptText(value.clone()));
+    }
     if let Some(value) = changes.is_custom_slug {
         sql.push_str(", is_custom_slug = ?");
         binds.push(Bind::Int(i64::from(value)));
@@ -403,6 +422,11 @@ pub async fn update(
         binds.push(Bind::Int(user_id));
     }
     sql.push_str(" AND deleted_at IS NULL");
+    // 擁有者路徑（有 user_id）不得讓被管理員鎖定的連結恢復啟用；
+    // 條件寫在 UPDATE 內，才不會與管理員的停用操作競爭。
+    if user_id.is_some() && changes.status.as_deref() == Some("active") {
+        sql.push_str(" AND admin_disabled_at IS NULL");
+    }
 
     // Build the query with the final SQL text, then bind in placeholder order.
     let mut query = sqlx::query(&sql);

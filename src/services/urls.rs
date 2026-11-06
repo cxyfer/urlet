@@ -24,6 +24,9 @@ pub const MAX_TAG_LEN: usize = 32;
 pub const MAX_TITLE_LEN: usize = 200;
 /// Maximum notes length.
 pub const MAX_NOTES_LEN: usize = 1000;
+/// Reported when an owner tries to re-enable a link an administrator disabled.
+/// The web forms map this exact text to a localised message.
+pub const ADMIN_LOCKED: &str = "this link was disabled by an administrator and cannot be enabled";
 /// How often slug allocation retries on a collision (spec FR-URL-2).
 const SLUG_RETRIES: usize = 5;
 
@@ -623,6 +626,11 @@ impl UrlContext<'_> {
                     "status must be 'active' or 'disabled'",
                 ));
             }
+            // 管理員停用的連結只有管理員能解除；其餘欄位照常可改，
+            // 但連結在解鎖前不會恢復轉址。
+            if status == "active" && url.is_admin_locked() {
+                return Err(AppError::forbidden(ADMIN_LOCKED));
+            }
             changes.status = Some(status);
         }
 
@@ -657,6 +665,18 @@ impl UrlContext<'_> {
                     }
                 })?;
             if affected == 0 {
+                // 與管理員的停用競爭時，條件式 UPDATE 會落空，要回報鎖定而非查無此連結。
+                // 重查之前管理員恰好又解鎖的話，這裡會回 404；那是極窄的競態，
+                // 連結當下確實已不處於鎖定，擁有者重送即可。
+                if changes.status.as_deref() == Some("active") {
+                    let locked = urls::find_owned(self.pool, url.id, self.actor.id)
+                        .await
+                        .map_err(AppError::from)?
+                        .is_some_and(|current| current.is_admin_locked());
+                    if locked {
+                        return Err(AppError::forbidden(ADMIN_LOCKED));
+                    }
+                }
                 return Err(AppError::not_found());
             }
         }

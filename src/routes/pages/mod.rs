@@ -127,6 +127,7 @@ pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
             "rate_limited" => "flash.err.rate_limited",
             "denied" => "flash.err.denied",
             "mode_denied" => "flash.err.mode_denied",
+            "admin_locked" => "flash.err.admin_locked",
             "quota" => "flash.err.quota",
             "invite_quota" => "flash.err.invite_quota",
             "invites_disabled" => "flash.err.invites_disabled",
@@ -380,6 +381,8 @@ pub struct UrlRow {
     pub splash_title: String,
     pub splash_message: String,
     pub state: String,
+    /// An administrator holds the link disabled; the owner cannot enable it.
+    pub admin_locked: bool,
     pub state_class: &'static str,
     pub state_label: &'static str,
 }
@@ -391,6 +394,7 @@ impl UrlRow {
             "active" => ("badge-ok", "state.active"),
             "expired" => ("badge-warn", "state.expired"),
             "limit_reached" => ("badge-warn", "state.limit_reached"),
+            "disabled" if dto.admin_locked => ("badge-danger", "state.admin_disabled"),
             "disabled" => ("badge-muted", "state.disabled"),
             _ => ("badge-muted", "state.deleted"),
         };
@@ -421,6 +425,7 @@ impl UrlRow {
             splash_title: dto.splash_title.clone().unwrap_or_default(),
             splash_message: dto.splash_message.clone().unwrap_or_default(),
             state: dto.state.clone(),
+            admin_locked: dto.admin_locked,
             state_class,
             state_label: lang.t(state_key),
         }

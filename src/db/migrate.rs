@@ -123,6 +123,11 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("../../migrations/0017_public_creation_quota.sql"),
         kind: MigrationKind::Transactional,
     },
+    Migration {
+        version: "0018_admin_url_lock",
+        sql: include_str!("../../migrations/0018_admin_url_lock.sql"),
+        kind: MigrationKind::Transactional,
+    },
 ];
 
 /// Apply all pending migrations.
@@ -1616,6 +1621,267 @@ mod tests {
             .await
             .expect("quota table");
         assert_eq!(rows, 0);
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn admin_lock_upgrade_backfills_links_an_administrator_disabled() {
+        let dir =
+            std::env::temp_dir().join(format!("urlet-migrate-admin-lock-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = format!("{}/upgrade.db", dir.display());
+        let options = test_options(&path);
+        let pool = test_pool(&options).await;
+        run_until(&pool, &options, "0017_public_creation_quota")
+            .await
+            .expect("schema before the admin lock");
+        let owner: i64 = sqlx::query_scalar("SELECT id FROM users WHERE is_system = 1")
+            .fetch_one(&pool)
+            .await
+            .expect("guest");
+        let now = now_iso();
+        sqlx::query(
+            "INSERT INTO domains (hostname, is_default, is_verified, status, source, created_at)
+             VALUES ('lock.example.com', 1, 1, 'active', 'ui', ?)",
+        )
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .expect("domain");
+
+        async fn link(pool: &SqlitePool, owner: i64, slug: &str, status: &str) -> i64 {
+            let now = now_iso();
+            sqlx::query(
+                "INSERT INTO urls (user_id, domain_id, slug, target_url, status, created_at, updated_at)
+                 VALUES (?, (SELECT id FROM domains WHERE hostname = 'lock.example.com'),
+                         ?, 'https://example.com', ?, ?, ?)",
+            )
+            .bind(owner)
+            .bind(slug)
+            .bind(status)
+            .bind(&now)
+            .bind(&now)
+            .execute(pool)
+            .await
+            .expect("link")
+            .last_insert_rowid()
+        }
+        // 與舊版相同的紀錄形狀：target_id 是文字，管理員事件帶 status，擁有者事件只記欄位名。
+        async fn audit(pool: &SqlitePool, action: &str, url_id: i64, metadata: &str, at: &str) {
+            sqlx::query(
+                "INSERT INTO audit_logs (action, target_type, target_id, metadata, created_at)
+                 VALUES (?, 'url', ?, ?, ?)",
+            )
+            .bind(action)
+            .bind(url_id.to_string())
+            .bind(metadata)
+            .bind(at)
+            .execute(pool)
+            .await
+            .expect("audit");
+        }
+        const ADMIN: &str = "admin.url_updated";
+        const OWNER: &str = "url.updated";
+        let disabled = r#"{"slug":"x","user_id":1,"status":"disabled"}"#;
+        let enabled = r#"{"slug":"x","user_id":1,"status":"active"}"#;
+        let redirect_only = r#"{"slug":"x","user_id":1,"status":null}"#;
+        let owner_status = r#"{"slug":"x","domain":"lock.example.com","fields":["status"]}"#;
+
+        // 管理員停用，沒有其他事件：上鎖，時間取自該事件。
+        let by_admin = link(&pool, owner, "by-admin", "disabled").await;
+        audit(&pool, ADMIN, by_admin, disabled, "2026-01-01T00:00:00.000Z").await;
+        // 管理員停用之後，擁有者又送出過 status（舊版表單每次都會送）：維持上鎖。
+        let owner_after = link(&pool, owner, "owner-after", "disabled").await;
+        audit(
+            &pool,
+            ADMIN,
+            owner_after,
+            disabled,
+            "2026-01-02T00:00:00.000Z",
+        )
+        .await;
+        audit(
+            &pool,
+            OWNER,
+            owner_after,
+            owner_status,
+            "2026-01-03T00:00:00.000Z",
+        )
+        .await;
+        // 管理員停用後只改轉址狀態碼：仍以停用事件的時間上鎖。
+        let redirect_after = link(&pool, owner, "redirect-after", "disabled").await;
+        audit(
+            &pool,
+            ADMIN,
+            redirect_after,
+            disabled,
+            "2026-01-04T00:00:00.000Z",
+        )
+        .await;
+        audit(
+            &pool,
+            ADMIN,
+            redirect_after,
+            redirect_only,
+            "2026-01-05T00:00:00.000Z",
+        )
+        .await;
+        // 停用、啟用、再停用：以最後一次停用的時間上鎖。
+        let redisabled = link(&pool, owner, "redisabled", "disabled").await;
+        audit(
+            &pool,
+            ADMIN,
+            redisabled,
+            disabled,
+            "2026-01-06T00:00:00.000Z",
+        )
+        .await;
+        audit(
+            &pool,
+            ADMIN,
+            redisabled,
+            enabled,
+            "2026-01-07T00:00:00.000Z",
+        )
+        .await;
+        audit(
+            &pool,
+            ADMIN,
+            redisabled,
+            disabled,
+            "2026-01-08T00:00:00.000Z",
+        )
+        .await;
+        // 沒有任何管理員事件（擁有者自己停用）：不上鎖。
+        let by_owner = link(&pool, owner, "by-owner", "disabled").await;
+        audit(
+            &pool,
+            OWNER,
+            by_owner,
+            owner_status,
+            "2026-01-09T00:00:00.000Z",
+        )
+        .await;
+        // 管理員停用後又啟用，擁有者之後自己停用：不上鎖。
+        let released = link(&pool, owner, "released", "disabled").await;
+        audit(&pool, ADMIN, released, disabled, "2026-01-10T00:00:00.000Z").await;
+        audit(&pool, ADMIN, released, enabled, "2026-01-11T00:00:00.000Z").await;
+        audit(
+            &pool,
+            OWNER,
+            released,
+            owner_status,
+            "2026-01-12T00:00:00.000Z",
+        )
+        .await;
+        // 目前是啟用的連結即使有舊的停用事件也不碰。
+        let active = link(&pool, owner, "active-now", "active").await;
+        audit(&pool, ADMIN, active, disabled, "2026-01-13T00:00:00.000Z").await;
+        // 只有轉址狀態碼的管理員事件（沒有 status）：不上鎖。
+        let redirect_only_link = link(&pool, owner, "redirect-only", "disabled").await;
+        audit(
+            &pool,
+            ADMIN,
+            redirect_only_link,
+            redirect_only,
+            "2026-01-14T00:00:00.000Z",
+        )
+        .await;
+        // 同一個數字開頭的另一個 id 不會被誤配對（id 1 與 10 之類）。
+        let neighbour = link(&pool, owner, "neighbour", "disabled").await;
+        audit(
+            &pool,
+            ADMIN,
+            neighbour * 10,
+            disabled,
+            "2026-01-15T00:00:00.000Z",
+        )
+        .await;
+
+        // 無法解析的 metadata 與無關的事件：排在合法停用事件之後的壞 JSON 要被略過，
+        // 該連結仍以合法事件上鎖；NULL metadata 直接忽略；target_type 不是 url 的事件不算。
+        let bad_json = link(&pool, owner, "bad-json", "disabled").await;
+        audit(&pool, ADMIN, bad_json, disabled, "2026-01-16T00:00:00.000Z").await;
+        audit(
+            &pool,
+            ADMIN,
+            bad_json,
+            "{not json",
+            "2026-01-17T00:00:00.000Z",
+        )
+        .await;
+        let null_metadata = link(&pool, owner, "null-metadata", "disabled").await;
+        sqlx::query(
+            "INSERT INTO audit_logs (action, target_type, target_id, metadata, created_at)
+             VALUES ('admin.url_updated', 'url', ?, NULL, '2026-01-18T00:00:00.000Z')",
+        )
+        .bind(null_metadata.to_string())
+        .execute(&pool)
+        .await
+        .expect("audit without metadata");
+        let user_target = link(&pool, owner, "user-target", "disabled").await;
+        sqlx::query(
+            "INSERT INTO audit_logs (action, target_type, target_id, metadata, created_at)
+             VALUES ('admin.url_updated', 'user', ?, ?, '2026-01-19T00:00:00.000Z')",
+        )
+        .bind(user_target.to_string())
+        .bind(disabled)
+        .execute(&pool)
+        .await
+        .expect("audit of another target type");
+
+        run(&pool, &options).await.expect("upgrade");
+        // 第二次只證明已登錄的 migration 不會重複套用，不代表這段 SQL 本身可重跑。
+        run(&pool, &options)
+            .await
+            .expect("an applied migration is not applied again");
+
+        async fn locked(pool: &SqlitePool, id: i64) -> Option<String> {
+            sqlx::query_scalar("SELECT admin_disabled_at FROM urls WHERE id = ?")
+                .bind(id)
+                .fetch_one(pool)
+                .await
+                .expect("link survives")
+        }
+        assert_eq!(
+            locked(&pool, by_admin).await.as_deref(),
+            Some("2026-01-01T00:00:00.000Z")
+        );
+        assert_eq!(
+            locked(&pool, owner_after).await.as_deref(),
+            Some("2026-01-02T00:00:00.000Z")
+        );
+        assert_eq!(
+            locked(&pool, redirect_after).await.as_deref(),
+            Some("2026-01-04T00:00:00.000Z")
+        );
+        assert_eq!(
+            locked(&pool, redisabled).await.as_deref(),
+            Some("2026-01-08T00:00:00.000Z")
+        );
+        assert_eq!(
+            locked(&pool, bad_json).await.as_deref(),
+            Some("2026-01-16T00:00:00.000Z")
+        );
+        for (name, id) in [
+            ("null-metadata", null_metadata),
+            ("user-target", user_target),
+            ("by-owner", by_owner),
+            ("released", released),
+            ("active", active),
+            ("redirect-only", redirect_only_link),
+            ("neighbour", neighbour),
+        ] {
+            assert_eq!(locked(&pool, id).await, None, "{name} must stay unlocked");
+        }
+        // 回填不改動 status。
+        let status: String = sqlx::query_scalar("SELECT status FROM urls WHERE id = ?")
+            .bind(by_admin)
+            .fetch_one(&pool)
+            .await
+            .expect("status");
+        assert_eq!(status, "disabled");
         pool.close().await;
         let _ = std::fs::remove_dir_all(&dir);
     }

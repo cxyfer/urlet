@@ -71,6 +71,8 @@ pub struct LinkForm {
     pub splash_message: String,
     /// `active` or `disabled` (edit only).
     pub status: String,
+    /// An administrator holds the link disabled, so the status cannot change.
+    pub admin_locked: bool,
     pub clear_password: bool,
     pub clear_expiry: bool,
     pub clear_max_clicks: bool,
@@ -297,6 +299,7 @@ impl LinkForm {
             } else {
                 "active".into()
             },
+            admin_locked: url.admin_locked,
             preview: Some(FormView::new(url.id, preview, state)),
             advanced_badges,
             preview_badges,

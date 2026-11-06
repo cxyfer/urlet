@@ -221,7 +221,7 @@ Partial update. A field that is **absent** stays unchanged. An explicit `null` c
 { "title": "New title", "domain": "links.example.com", "password": null, "max_clicks": null, "tags": ["new"], "status": "disabled" }
 ```
 
-`200` → the updated `UrlDto`. An empty object → `400`. Moving a link to another active domain must satisfy the group policy and re-checks the slug there (`409` on a collision). Keeping a link on its current domain — even a disabled one — is always allowed, so existing links remain editable.
+`200` → the updated `UrlDto`. An empty object → `400`. Moving a link to another active domain must satisfy the group policy and re-checks the slug there (`409` on a collision). Keeping a link on its current domain — even a disabled one — is always allowed, so existing links remain editable. While an administrator holds the link disabled (`admin_locked: true`), a request that sets `status` to `active` is rejected as a whole with `403`; requests that omit it can still change the other fields.
 
 ### `DELETE /api/v1/urls/{id}`
 
@@ -273,6 +273,7 @@ Partial update. A field that is **absent** stays unchanged. An explicit `null` c
   "splash_title": "Launch day",
   "splash_message": "Welcome aboard",
   "status": "active",
+  "admin_locked": false,
   "is_expired": false,
   "state": "active",
   "is_custom_slug": true,
@@ -490,7 +491,7 @@ Every `/api/v1/admin/**` endpoint returns `403 forbidden` for non-administrators
 | GET | `/admin/themes` | Theme catalogue (key, name, description, `enabled`, `default`, `appearance`, `dark_only`, `light_only`, `css_url`, `custom`) plus `switching` (`all` or `admin`); includes administrator uploads |
 | PUT | `/admin/themes` | `{ "enabled"?: ["verdant", ...], "default"?: "verdant", "switching"?: "all"\|"admin" }`; omitted fields keep their value; at least one enabled theme and an enabled default are required (`422` otherwise). `enabled` and `default` may name `custom-…` uploads |
 | GET | `/admin/urls?q=&status=&user_id=&page=&sort=&per_page=` | Every short link on the instance; `sort` accepts the same values as `GET /api/v1/urls` |
-| PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
+| PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }`; `disabled` also locks the link against its owner, `active` releases the lock |
 | DELETE | `/admin/urls/{id}` | `204` |
 | GET | `/admin/invites` | The 200 newest invite codes with `code`, `link`, `prefix`, `group_id` / `group_name`; there is no pagination. `code` and `link` are `null` for legacy or secret-rotated rows, and `link` is also `null` for revoked, exhausted or expired codes |
 | POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`; `link` mirrors `invite.link` and is `null` if the code is already unusable; the code stays available from `GET` and the link is returned while usable; `403` when the group's per-period invite quota is exhausted |
