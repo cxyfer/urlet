@@ -1063,6 +1063,9 @@ pub fn error_code(err: &AppError) -> &'static str {
         AppError::Forbidden(message) if message.starts_with("you have reached your limit of ") => {
             "quota"
         }
+        AppError::Forbidden(message) if message == crate::services::urls::ADMIN_LOCKED => {
+            "admin_locked"
+        }
         AppError::Forbidden(message) if message == crate::services::guest_allowlist::BLOCKED => {
             "guest_allowlist"
         }

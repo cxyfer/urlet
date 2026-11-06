@@ -190,7 +190,7 @@ v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大
 | FR-URL-4 | 編輯 | 可改 target、標題、備註、標籤、密碼（設定/清除）、過期、點擊上限、轉址類型、轉址方式、中轉頁文案與狀態 |
 | FR-URL-5 | 刪除 | 軟刪除（`deleted_at`），Slug 保留不釋出（避免連結被劫持），點擊紀錄保留 |
 | FR-URL-6 | 列表 | 分頁、關鍵字搜尋（slug/target/標題）、標籤篩選、狀態篩選、排序（建立時間/點擊數） |
-| FR-URL-7 | 狀態切換 | `active` / `disabled`；`disabled` 不轉址（回 404 頁面） |
+| FR-URL-7 | 狀態切換 | `active` / `disabled`；`disabled` 不轉址（回 404 頁面）。管理員停用的連結（FR-ADMIN-2）會被鎖定：擁有者不能改回 `active`（`403`），但仍可修改其他欄位或刪除 |
 | FR-URL-8 | 標籤 | 使用者層級標籤，名稱唯一（同使用者內），建立網址時自動建立缺少的標籤 |
 | FR-URL-9 | 配額 | 每位使用者網址數量上限為 `max_urls_per_user` 的生效值：使用者所屬群組的 `user_groups.max_urls` 有設定時優先採用，否則使用全站設定（0 = 無限制；FR-GROUP-2） |
 | FR-URL-10 | 所有權隔離 | 所有 `/api/v1/urls*` 查詢強制 `user_id = current_user`；他人資源一律 404 |
@@ -257,7 +257,7 @@ v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大
 | ID | 需求 | 說明 |
 |----|------|------|
 | FR-ADMIN-1 | 使用者管理 | 列表、搜尋（含依群組）、改角色、指派群組、停權/復權、重設密碼、軟刪除 |
-| FR-ADMIN-2 | 全站網址 | 列表、搜尋、強制停用/刪除 |
+| FR-ADMIN-2 | 全站網址 | 列表、搜尋、強制停用/刪除。停用連結會同時鎖定（`admin_locked`），擁有者無法自行重新啟用；只有管理員啟用才會解除鎖定 |
 | FR-ADMIN-3 | 邀請碼 | 建立（次數/到期/備註/可選目標群組）、列表、撤銷；`invite` 模式下註冊需邀請碼。指定群組的邀請碼會在兌換時將使用者加入該群組（FR-GROUP-4）。邀請碼與註冊連結（`/app/register?invite=CODE`）在建立後仍可查看；v1.3 之前建立或密鑰更換後的加密封存會回退為前綴。撤銷從未被兌換的邀請碼會退回配額，已被兌換的邀請碼則維持計入 |
 | FR-ADMIN-4 | 全站設定 | 編輯全站設定。可編輯鍵的權威清單位於 [`docs/API.md`](API.md) |
 | FR-ADMIN-5 | 稽核日誌 | 記錄登入、註冊、網址異動、群組異動、管理操作、設定變更；可依動作/對象篩選 |
@@ -542,7 +542,7 @@ login_attempts（稽核用）
 
 ### 6.3 DDL（migration 摘要）
 
-> 完整真實來源為 `migrations/` 目錄（`0001_init.sql` 至 `0017_public_creation_quota.sql`）：`0003_multi_domain.sql` 重建網域 schema，`0004_user_groups.sql`–`0007_member_invites.sql` 新增群組與邀請碼配額，`0010`／`0012`／`0013` 新增主題，`0011_splash_pages.sql` 新增轉址中繼頁，`0014_invite_issuance_released.sql` 新增邀請碼退還欄位，`0015_public_shorten.sql` 新增 `users.is_system`、保留的訪客帳號與公開短網址工具設定；`0016_url_previews.sql` 新增 SNS 預覽資料與圖片（每條連結至多一筆）；`0017_public_creation_quota.sql` 新增遊客自然週期計數與週期設定；以下為結構摘要。
+> 完整真實來源為 `migrations/` 目錄（`0001_init.sql` 至 `0018_admin_url_lock.sql`）：`0003_multi_domain.sql` 重建網域 schema，`0004_user_groups.sql`–`0007_member_invites.sql` 新增群組與邀請碼配額，`0010`／`0012`／`0013` 新增主題，`0011_splash_pages.sql` 新增轉址中繼頁，`0014_invite_issuance_released.sql` 新增邀請碼退還欄位，`0015_public_shorten.sql` 新增 `users.is_system`、保留的訪客帳號與公開短網址工具設定；`0016_url_previews.sql` 新增 SNS 預覽資料與圖片（每條連結至多一筆）；`0017_public_creation_quota.sql` 新增遊客自然週期計數與週期設定；`0018_admin_url_lock.sql` 新增可空的 `urls.admin_disabled_at` 欄位，並依稽核紀錄中「最後一次管理員狀態變更為停用」的連結回填；以下為結構摘要。
 
 | 表 | 主要欄位 | 用途 |
 |----|----------|------|
@@ -552,7 +552,7 @@ login_attempts（稽核用）
 | `sessions` | id, user_id, token_hash(UNIQUE), user_agent, ip_hash, created_at, last_seen_at, expires_at, revoked_at | 登入狀態 |
 | `api_tokens` | id, user_id, name, token_prefix, token_hash(UNIQUE), scopes, last_used_at, expires_at, created_at, revoked_at | API 憑證 |
 | `domains` | id, hostname(UNIQUE, NOCASE), is_default, is_verified, status, source, created_by, created_at, updated_at | Canonical/system、`URLET_DOMAINS`/env 與管理員/UI 網域；`pending`/`active`/`disabled` |
-| `urls` | id, user_id, domain_id(NOT NULL), slug, target_url, title, notes, password_hash, expires_at, max_clicks, click_count, unique_click_count, redirect_type, redirect_mode, splash_delay_seconds, splash_title, splash_message, status, is_custom_slug, last_clicked_at, created_at, updated_at, deleted_at, UNIQUE(domain_id,slug) | 短網址；slug 命名空間以網域為單位 |
+| `urls` | id, user_id, domain_id(NOT NULL), slug, target_url, title, notes, password_hash, expires_at, max_clicks, click_count, unique_click_count, redirect_type, redirect_mode, splash_delay_seconds, splash_title, splash_message, status, admin_disabled_at, is_custom_slug, last_clicked_at, created_at, updated_at, deleted_at, UNIQUE(domain_id,slug) | 短網址；slug 命名空間以網域為單位；`admin_disabled_at` 在管理員停用該連結期間有值（FR-ADMIN-2） |
 | `tags` | id, user_id, name, color, created_at, UNIQUE(user_id,name) | 標籤 |
 | `url_tags` | url_id, tag_id (PK) | 標籤關聯 |
 | `clicks` | id, url_id, clicked_at, ip_hash, visitor_hash, user_agent, referrer, referrer_host, country_code, device_type, browser, os, is_bot, is_unique, password_protected | 點擊明細 |
@@ -590,7 +590,7 @@ login_attempts（稽核用）
 | `custom_themes(created_by)` | 上傳歸屬與清理 |
 | `users(is_system) WHERE is_system = 1` UNIQUE | 最多一個保留的系統帳號 |
 
-v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表，v1.1 維持 **14 張表、27 個索引**。v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` / `invite_codes.group_id` 欄位、`user_groups.default_domain_id` / `restrict_domains` 欄位及四個索引，共 **16 張表、31 個索引**（§6.1、§6.3、§6.4）。邀請碼配額工作新增 `invite_issuance` 表與索引，使 schema 成為 **17 張表、33 個索引**；v1.3 僅新增可空的 `invite_codes.code_sealed` 欄位，表與索引數量不變；v1.4 新增 `themes` 表及其唯一預設索引。v1.5 新增 `urls` 的中轉頁欄位與 `user_groups.redirect_mode_policy`（表／索引數量不變），可上傳主題再新增 `custom_themes` 與其建立者索引，共 **19 張表、35 個索引**。邀請碼退還額度工作新增可空的 `invite_issuance.released_at` 欄位，表／索引數量維持 19/35。升級後首次啟動時，也會釋放「已撤銷且從未兌換」的既有邀請碼，因此 `invites_used` 可能一次下降。v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表、36 個索引**；SNS 預覽新增 `url_previews` 且不增加明確定義的索引；自然週期配額再新增 `public_creation_quota` 與到期索引，目前為 **21 張表、37 個索引**。
+v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表，v1.1 維持 **14 張表、27 個索引**。v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` / `invite_codes.group_id` 欄位、`user_groups.default_domain_id` / `restrict_domains` 欄位及四個索引，共 **16 張表、31 個索引**（§6.1、§6.3、§6.4）。邀請碼配額工作新增 `invite_issuance` 表與索引，使 schema 成為 **17 張表、33 個索引**；v1.3 僅新增可空的 `invite_codes.code_sealed` 欄位，表與索引數量不變；v1.4 新增 `themes` 表及其唯一預設索引。v1.5 新增 `urls` 的中轉頁欄位與 `user_groups.redirect_mode_policy`（表／索引數量不變），可上傳主題再新增 `custom_themes` 與其建立者索引，共 **19 張表、35 個索引**。邀請碼退還額度工作新增可空的 `invite_issuance.released_at` 欄位，表／索引數量維持 19/35。升級後首次啟動時，也會釋放「已撤銷且從未兌換」的既有邀請碼，因此 `invites_used` 可能一次下降。v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表、36 個索引**；SNS 預覽新增 `url_previews` 且不增加明確定義的索引；自然週期配額再新增 `public_creation_quota` 與到期索引，目前為 **21 張表、37 個索引**。管理員鎖定只新增可空的 `urls.admin_disabled_at` 欄位，表／索引數量維持 21/37；升級後首次啟動時，稽核紀錄中「最後一次管理員狀態變更為停用」的連結會標記為管理員停用，稽核紀錄只保留 180 天，更早之前的管理員停用無法回填；對這類連結再停用一次即可補上鎖。
 
 `url_previews` 的 metadata 查詢不載入圖片 BLOB，備份仍以資料庫為單位。Trigger 會在所屬連結被軟刪除時移除預覽資料與圖片（包含帳號刪除）；停用或過期則保留預覽。SQLite 可重用釋放的頁面，資料庫檔案不會自動縮小。
 
@@ -690,7 +690,7 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 | GET | `/api/v1/admin/themes` | 主題目錄：key、名稱、說明、`enabled`、`default`、`appearance`、`dark_only`、`light_only`、`css_url`、`custom`，以及目前的 `switching` 政策 |
 | PUT | `/api/v1/admin/themes` | `{enabled?: [keys], default?: key, switching?: "all"\|"admin"}`；省略的欄位維持原值；至少一個啟用主題且預設必須啟用。`keys` 可包含 `custom-…` 上傳主題 |
 | GET | `/api/v1/admin/urls` | 全站網址列表 |
-| PATCH | `/api/v1/admin/urls/{id}` | 強制停用/啟用/刪除 |
+| PATCH | `/api/v1/admin/urls/{id}` | 強制停用（鎖定連結）或啟用（解除鎖定） |
 | GET | `/api/v1/admin/invites` | 邀請碼列表（新的在前），含 `code`、`link`、`prefix`、`group_id` / `group_name`；最多回傳最新的 200 筆邀請碼，且沒有分頁。舊版或密鑰更換後的列為 `null`；已撤銷、次數用盡或到期的邀請碼 `link` 也為 `null` |
 | POST | `/api/v1/admin/invites` | `{max_uses?, expires_at?, note?, group_id?}` → 201 `{code: "K7M2QPX4RT", link: "https://host/app/register?invite=K7M2QPX4RT", invite}`；`link` 與 `invite.link` 一致，若建立後已不可用則為 `null`；`GET` 一律保留 `code`，`link` 只在可用時回傳 |
 | DELETE | `/api/v1/admin/invites/{id}` | 撤銷 → 204 |

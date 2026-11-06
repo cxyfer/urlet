@@ -400,6 +400,7 @@ paths:
       description: >-
         部分更新：未出現的欄位維持不變，明確傳 `null` 表示清除。空物件回 `400`。把連結搬到
         另一個 active 網域時必須符合群組策略，並重新檢查該網域的 slug；維持目前網域一律允許。
+        管理員停用連結期間（`admin_locked`），設定 `status` 為 `active` 的請求會整筆以 `403` 拒絕；未包含該欄位的請求仍可修改其他欄位。
       operationId: updateUrl
       parameters:
         - name: id
@@ -1402,7 +1403,9 @@ paths:
     patch:
       tags: [管理]
       summary: 更新短網址
-      description: 變更任一短網址的儲存狀態或轉址狀態碼。
+      description: >-
+        變更任一短網址的儲存狀態或轉址狀態碼。停用連結會同時將其鎖定，擁有者無法自行重新啟用；
+        管理員啟用後即解除鎖定。
       operationId: updateAdminUrl
       parameters:
         - name: id

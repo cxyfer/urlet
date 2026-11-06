@@ -75,10 +75,12 @@
         {% if link_form.show_status %}
         <div class="field">
             <label class="label" for="{{ p }}status">{{ lang.t("common.status") }}</label>
-            <select class="select" id="{{ p }}status" name="status">
+            {# 管理員停用的連結：選單鎖住且不送出，擁有者只能看到原因。 #}
+            <select class="select" id="{{ p }}status" name="status" {% if link_form.admin_locked %}disabled aria-describedby="{{ p }}status-locked"{% endif %}>
                 <option value="active" {% if link_form.status != "disabled" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
                 <option value="disabled" {% if link_form.status == "disabled" %}selected{% endif %}>{{ lang.t("common.disabled") }}</option>
             </select>
+            {% if link_form.admin_locked %}<span class="hint" id="{{ p }}status-locked">{{ lang.t("url_detail.settings.admin_locked") }}</span>{% endif %}
         </div>
         {% endif %}
     </div>

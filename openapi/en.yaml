@@ -415,7 +415,9 @@ paths:
         Partial update: a field that is absent stays unchanged, while an explicit `null` clears
         it. An empty object returns `400`. Moving a link to another active domain must satisfy
         the group policy and re-checks the slug there; keeping a link on its current domain is
-        always allowed.
+        always allowed. While an administrator holds the link disabled (`admin_locked`), a request that
+        sets `status` to `active` is rejected as a whole with `403`; requests that omit it can still
+        change the other fields.
       operationId: updateUrl
       parameters:
         - name: id
@@ -1438,7 +1440,9 @@ paths:
     patch:
       tags: [Administration]
       summary: Update a short link
-      description: Changes the stored status or the redirect status code of any short link.
+      description: >-
+        Changes the stored status or the redirect status code of any short link. Disabling a link
+        locks it, so its owner cannot enable it again; enabling it releases the lock.
       operationId: updateAdminUrl
       parameters:
         - name: id

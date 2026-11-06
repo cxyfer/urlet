@@ -300,6 +300,9 @@ impl AdminContext<'_> {
     }
 
     /// Force a status change on someone else's link.
+    ///
+    /// Disabling also locks the link, so its owner cannot enable it again;
+    /// enabling it releases the lock.
     pub async fn update_url(
         &self,
         url_id: i64,
@@ -320,6 +323,11 @@ impl AdminContext<'_> {
                     "status must be 'active' or 'disabled'",
                 ));
             }
+            // 管理員停用即上鎖，擁有者不能自行恢復；管理員啟用則解鎖。
+            changes.admin_disabled_at = Some(
+                (status == "disabled")
+                    .then(|| url.admin_disabled_at.clone().unwrap_or_else(time::now_iso)),
+            );
             changes.status = Some(status);
         }
         if let Some(code) = redirect_type {
@@ -341,6 +349,7 @@ impl AdminContext<'_> {
                 "slug": url.slug,
                 "user_id": url.user_id,
                 "status": changes.status,
+                "admin_locked": changes.admin_disabled_at.as_ref().map(Option::is_some),
             }))
             .record(self.pool)
             .await;

@@ -368,6 +368,12 @@ schemas:
         enum: [active, disabled]
         description: Stored link status. `disabled` stops redirects without deleting the link.
         example: active
+      admin_locked:
+        type: boolean
+        description: >
+          `true` while an administrator holds the link disabled. Its owner cannot set `status`
+          to `active` until an administrator enables the link again.
+        example: false
       is_expired:
         type: boolean
         description: >
@@ -419,6 +425,7 @@ schemas:
       - splash_title
       - splash_message
       - status
+      - admin_locked
       - is_expired
       - state
       - is_custom_slug
@@ -897,7 +904,8 @@ schemas:
         enum: [active, disabled, null]
         description: >
           Stored link status; absent or `null` keeps the current one. `disabled` stops
-          redirects without deleting the link.
+          redirects without deleting the link. While an administrator holds the link disabled
+          (`admin_locked`), a request that sets `active` is rejected as a whole with `403`.
         example: disabled
 
   # --- src/routes/api_tokens.rs ------------------------------------------------------
@@ -1893,7 +1901,9 @@ schemas:
       status:
         type: [string, 'null']
         enum: [active, disabled, null]
-        description: New stored link status; absent or `null` keeps the current one.
+        description: >
+          New stored link status; absent or `null` keeps the current one. `disabled` also
+          locks the link, so its owner cannot enable it again; `active` releases the lock.
         example: disabled
       redirect_type:
         type: [integer, 'null']

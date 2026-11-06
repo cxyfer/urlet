@@ -244,6 +244,9 @@ pub struct UrlDto {
     pub splash_title: Option<String>,
     pub splash_message: Option<String>,
     pub status: String,
+    /// `true` while an administrator holds the link disabled: its owner
+    /// cannot enable it again.
+    pub admin_locked: bool,
     /// `true` when the link no longer redirects because it expired or reached
     /// its click limit.
     pub is_expired: bool,
@@ -279,6 +282,7 @@ impl UrlDto {
             splash_title: url.splash_title.clone(),
             splash_message: url.splash_message.clone(),
             status: url.status.clone(),
+            admin_locked: url.is_admin_locked(),
             is_expired: matches!(state, UrlState::Expired | UrlState::LimitReached),
             state: state.as_str().to_string(),
             is_custom_slug: url.is_custom(),

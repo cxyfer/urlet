@@ -221,7 +221,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
 { "title": "新標題", "domain": "links.example.com", "password": null, "max_clicks": null, "tags": ["new"], "status": "disabled" }
 ```
 
-`200` → 更新後的 `UrlDto`。空物件 → `400`。把連結搬到另一個 active 網域時必須符合群組策略，並重新檢查該網域的 slug，衝突回 `409`。維持目前網域（即使是已停用網域）一律允許，既有連結仍可編輯。
+`200` → 更新後的 `UrlDto`。空物件 → `400`。把連結搬到另一個 active 網域時必須符合群組策略，並重新檢查該網域的 slug，衝突回 `409`。維持目前網域（即使是已停用網域）一律允許，既有連結仍可編輯。管理員停用連結期間（`admin_locked: true`），設定 `status` 為 `active` 的請求會整筆以 `403` 拒絕；未包含該欄位的請求仍可修改其他欄位。
 
 ### `DELETE /api/v1/urls/{id}`
 
@@ -273,6 +273,7 @@ Session 會滑動：每次活動（最多每分鐘寫入一次）都會把 `expi
   "splash_title": "Launch day",
   "splash_message": "Welcome aboard",
   "status": "active",
+  "admin_locked": false,
   "is_expired": false,
   "state": "active",
   "is_custom_slug": true,
@@ -490,7 +491,7 @@ curl "$BASE/api/v1/urls/42/preview/image" \
 | GET | `/admin/themes` | 主題目錄（key、名稱、說明、`enabled`、`default`、`appearance`、`dark_only`、`light_only`、`css_url`、`custom`）與 `switching`（`all` 或 `admin`）；包含管理員上傳主題 |
 | PUT | `/admin/themes` | `{ "enabled"?: ["verdant", ...], "default"?: "verdant", "switching"?: "all"\|"admin" }`；省略欄位維持原值；至少一個啟用主題且預設必須啟用（否則 `422`）。`enabled` 與 `default` 可指定 `custom-…` 上傳主題 |
 | GET | `/admin/urls?q=&status=&user_id=&page=&sort=&per_page=` | 全站短網址；`sort` 接受與 `GET /api/v1/urls` 相同的值 |
-| PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }` |
+| PATCH | `/admin/urls/{id}` | `{ "status"?, "redirect_type"? }`；`disabled` 同時鎖定連結使擁有者無法啟用，`active` 解除鎖定 |
 | DELETE | `/admin/urls/{id}` | `204` |
 | GET | `/admin/invites` | 最新 200 筆邀請碼，含 `code`、`link`、`prefix`、`group_id` / `group_name`；沒有分頁。舊版或密鑰更換後的列為 `null`；已撤銷、次數用盡或到期的邀請碼 `link` 也為 `null` |
 | POST | `/admin/invites` | `{ "note"?, "max_uses"?, "expires_at"?, "group_id"? }` → `201` `{ "code", "link", "invite" }`；`link` 與 `invite.link` 一致，若建立後已不可用則為 `null`；`GET` 一律保留 `code`，`link` 只在可用時回傳；群組的週期配額用盡時回 `403` |
