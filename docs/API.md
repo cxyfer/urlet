@@ -592,7 +592,7 @@ Cleanup applies **only when creating links**, through `POST /api/v1/urls`, `POST
 
 The persistent guest-quota table holds at most 50,000 rows across sources, shared budgets and periods. At capacity, new rows return `429`; existing counters keep their usage and limits. Reservations reclaim expired windows immediately, and maintenance also cleans them. Active counters are never evicted to make room for new addresses.
 
-Exceeding a limit returns `429` with `Retry-After` (seconds). The in-memory counters reset on restart, but **account lockout** is persistent: once one email accumulates 30 failures within 15 minutes, even the correct password returns `429` (`Retry-After: 900`) until the window slides past.
+Exceeding a limit returns `429` with `Retry-After` (seconds). The in-memory counters reset on restart, but **account lockout** is persistent: once one email accumulates 30 failures within 15 minutes, even the correct password returns `429` (`Retry-After: 900`) until the window slides past. Each sign-in attempt is counted as a failure before the password is checked and is cleared once the sign-in succeeds, so attempts still being checked count towards the limit.
 
 The IP used for login comes from `X-Real-IP` when `URLET_TRUST_PROXY=true`, falling back to the rightmost address in `X-Forwarded-For`.
 

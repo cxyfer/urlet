@@ -272,36 +272,39 @@ impl AuthContext<'_> {
         let email_normalized = normalize_email(email);
         let identifier_hash = self.identifier_hash(&email_normalized);
 
+        // A distributed guessing attempt would otherwise walk through the whole
+        // account space: per-IP limits do not help against a botnet, so the
+        // attempts for one identifier are also counted in the database. Each
+        // attempt is reserved as a failure before any password work, in one
+        // conditional insert, so concurrent attempts cannot all see a count
+        // below the threshold. A reservation that cannot be written must not
+        // let the attempt through, so the error is returned.
+        let Some(attempt_id) = login_attempts::reserve_failure(
+            self.pool,
+            &identifier_hash,
+            self.ip_hash,
+            &time::now_iso(),
+            &time::iso_minutes_ago(LOCKOUT_WINDOW_MINUTES),
+            LOCKOUT_THRESHOLD,
+        )
+        .await
+        .map_err(AppError::from)?
+        else {
+            tracing::warn!("account temporarily locked after repeated failures");
+            return Err(AppError::rate_limited((LOCKOUT_WINDOW_MINUTES * 60) as u64));
+        };
+
         let user = users::find_by_email(self.pool, &email_normalized)
             .await
             .map_err(AppError::from)?;
 
-        // A distributed guessing attempt would otherwise walk through the whole
-        // account space: per-IP limits do not help against a botnet, so failed
-        // attempts for one identifier are also counted in the database.
-        let failures = login_attempts::count_failures_since(
-            self.pool,
-            &identifier_hash,
-            &time::iso_minutes_ago(LOCKOUT_WINDOW_MINUTES),
-        )
-        .await
-        .unwrap_or(0);
-        if failures >= LOCKOUT_THRESHOLD {
-            tracing::warn!(
-                failures,
-                "account temporarily locked after repeated failures"
-            );
-            return Err(AppError::rate_limited((LOCKOUT_WINDOW_MINUTES * 60) as u64));
-        }
-
+        // Every early return below leaves the reservation as a failed attempt.
         let Some(user) = user else {
             password::dummy_verify_async(password.to_string()).await;
-            self.record_attempt(&identifier_hash, false).await;
             return Err(AppError::unauthorized("invalid email or password"));
         };
 
         if !password::verify_async(password.to_string(), user.password_hash.clone()).await {
-            self.record_attempt(&identifier_hash, false).await;
             Audit::new(action::AUTH_LOGIN_FAILED)
                 .actor(user.id, &user.role)
                 .target(target::USER, user.id)
@@ -312,15 +315,15 @@ impl AuthContext<'_> {
         }
 
         if user.deleted_at.is_some() {
-            self.record_attempt(&identifier_hash, false).await;
             return Err(AppError::unauthorized("invalid email or password"));
         }
         if user.status != "active" {
-            self.record_attempt(&identifier_hash, false).await;
             return Err(AppError::forbidden("this account is suspended"));
         }
 
-        self.record_attempt(&identifier_hash, true).await;
+        login_attempts::mark_success(self.pool, attempt_id)
+            .await
+            .map_err(AppError::from)?;
         users::set_last_login(self.pool, user.id)
             .await
             .map_err(AppError::from)?;
@@ -434,20 +437,6 @@ impl AuthContext<'_> {
             .record(self.pool)
             .await;
         Ok(())
-    }
-
-    async fn record_attempt(&self, identifier_hash: &str, success: bool) {
-        if let Err(err) = login_attempts::record(
-            self.pool,
-            identifier_hash,
-            self.ip_hash,
-            success,
-            &time::now_iso(),
-        )
-        .await
-        {
-            tracing::warn!(error = %err, "cannot record login attempt");
-        }
     }
 }
 

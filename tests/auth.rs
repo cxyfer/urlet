@@ -551,6 +551,307 @@ async fn repeated_failures_lock_the_account_even_across_ips() {
     assert_eq!(other.status, StatusCode::OK);
 }
 
+/// 以不同 `X-Real-IP`（`10.{net}.x.y`）同時送出 `attempts` 個錯誤密碼的登入請求，
+/// email 依序輪替 `emails`；回傳 (401 數, 429 數)。
+async fn concurrent_wrong_logins(
+    app: &TestApp,
+    emails: &[&str],
+    attempts: usize,
+    net: u8,
+) -> (usize, usize) {
+    let mut set = tokio::task::JoinSet::new();
+    for index in 0..attempts {
+        let router = app.router.clone();
+        let mut request = post_json(
+            "/api/v1/auth/login",
+            json!({ "email": emails[index % emails.len()], "password": "wrong-password" }),
+        );
+        request
+            .headers_mut()
+            .insert("x-real-ip", test_ip(net, index).parse().expect("header"));
+        // 每個請求各自一個 task，在多執行緒 runtime 上真正並行。
+        set.spawn(async move { common::send_router(router, request).await.status });
+    }
+    let (mut unauthorized, mut limited) = (0, 0);
+    while let Some(status) = set.join_next().await {
+        match status.expect("login task") {
+            StatusCode::UNAUTHORIZED => unauthorized += 1,
+            StatusCode::TOO_MANY_REQUESTS => limited += 1,
+            other => panic!("unexpected status {other}"),
+        }
+    }
+    (unauthorized, limited)
+}
+
+fn test_ip(net: u8, index: usize) -> String {
+    format!("10.{net}.{}.{}", index / 250, index % 250 + 1)
+}
+
+/// 從指定 IP 以 JSON API 登入。
+async fn login_from(app: &TestApp, email: &str, password: &str, ip: &str) -> common::TestResponse {
+    let mut request = post_json(
+        "/api/v1/auth/login",
+        json!({ "email": email, "password": password }),
+    );
+    request
+        .headers_mut()
+        .insert("x-real-ip", ip.parse().expect("header"));
+    app.send(request).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn concurrent_failures_from_many_ips_still_lock_the_account() {
+    let app = TestApp::spawn_with(|config| config.trust_proxy = true).await;
+    app.register("user@example.com", "supersecret").await;
+
+    let attempts = 100;
+    let (unauthorized, limited) =
+        concurrent_wrong_logins(&app, &["user@example.com"], attempts, 1).await;
+    eprintln!("concurrent wrong logins: {unauthorized} x 401, {limited} x 429");
+    // 恰好 30 次被驗證：多一次是越過門檻，少一次是過早鎖定。
+    assert_eq!((unauthorized, limited), (30, 70));
+
+    // 鎖定後即使密碼正確也被拒絕。
+    let correct = login_from(&app, "user@example.com", "supersecret", "192.0.2.10").await;
+    assert_eq!(correct.status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(correct.header("retry-after").is_some());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn spelling_variants_of_one_email_share_the_lockout() {
+    let app = TestApp::spawn_with(|config| config.trust_proxy = true).await;
+    app.register("user@example.com", "supersecret").await;
+
+    let variants = [
+        "user@example.com",
+        " USER@Example.COM ",
+        "User@Example.Com",
+        "\tuser@EXAMPLE.com\n",
+    ];
+    let (unauthorized, limited) = concurrent_wrong_logins(&app, &variants, 100, 1).await;
+    assert_eq!(
+        (unauthorized, limited),
+        (30, 70),
+        "spelling variants must share one budget"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn the_lockout_does_not_depend_on_the_in_memory_limiter() {
+    let app = TestApp::spawn_with(|config| config.trust_proxy = true).await;
+    app.register("user@example.com", "supersecret").await;
+
+    for index in 0..29 {
+        let response = login_from(
+            &app,
+            "user@example.com",
+            "wrong-password",
+            &test_ip(1, index),
+        )
+        .await;
+        assert_eq!(response.status, StatusCode::UNAUTHORIZED);
+    }
+
+    // 清空記憶體限流器，等同所有 bucket 被逐出或服務重啟；額度仍由資料庫判定。
+    app.state.limiter.reset();
+    let (unauthorized, limited) =
+        concurrent_wrong_logins(&app, &["user@example.com"], 100, 2).await;
+    assert_eq!(unauthorized + limited, 100);
+    assert_eq!(unauthorized, 1, "the window allows 30 guesses in total");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn concurrent_form_failures_from_many_ips_still_lock_the_account() {
+    let app = TestApp::spawn_with(|config| config.trust_proxy = true).await;
+    app.register("user@example.com", "supersecret").await;
+
+    let attempts = 100;
+    let mut set = tokio::task::JoinSet::new();
+    for index in 0..attempts {
+        let router = app.router.clone();
+        let mut request = post_form(
+            "/app/login",
+            "email=user%40example.com&password=wrong-password",
+            None,
+            Some("http://localhost:8080"),
+        );
+        request
+            .headers_mut()
+            .insert("x-real-ip", test_ip(3, index).parse().expect("header"));
+        set.spawn(async move { common::send_router(router, request).await });
+    }
+    // 表單登入失敗會重新渲染頁面；被限流則轉址到 `?err=rate_limited`。
+    let (mut evaluated, mut limited) = (0, 0);
+    while let Some(response) = set.join_next().await {
+        let response = response.expect("login task");
+        match response.header("location").as_deref() {
+            Some("/app/login?err=rate_limited") => limited += 1,
+            None if response.status == StatusCode::OK => evaluated += 1,
+            other => panic!("unexpected response {} {other:?}", response.status),
+        }
+    }
+    assert_eq!(evaluated + limited, attempts);
+    assert!(
+        evaluated <= 30,
+        "at most 30 guesses per account may be evaluated, got {evaluated}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn failures_below_the_lockout_leave_the_correct_password_working() {
+    let app = TestApp::spawn_with(|config| config.trust_proxy = true).await;
+    app.register("user@example.com", "supersecret").await;
+
+    let (unauthorized, limited) = concurrent_wrong_logins(&app, &["user@example.com"], 29, 1).await;
+    assert_eq!((unauthorized, limited), (29, 0));
+
+    // 第 30 次嘗試仍在額度內，正確密碼可以登入。
+    let response = login_from(&app, "user@example.com", "supersecret", "192.0.2.200").await;
+    assert_eq!(response.status, StatusCode::OK, "{}", response.body);
+
+    // 成功的登入不計入失敗：還剩一次猜測，之後才鎖定。
+    let response = login_from(&app, "user@example.com", "wrong-password", "192.0.2.201").await;
+    assert_eq!(response.status, StatusCode::UNAUTHORIZED);
+    let response = login_from(&app, "user@example.com", "supersecret", "192.0.2.202").await;
+    assert_eq!(response.status, StatusCode::TOO_MANY_REQUESTS);
+
+    // 其他帳號不受影響。
+    app.register("other@example.com", "supersecret").await;
+    app.login("other@example.com", "supersecret").await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn a_correct_password_among_concurrent_failures_still_signs_in() {
+    // 多輪重複，讓排程順序每輪不同。
+    for round in 0..5u8 {
+        let app = TestApp::spawn_with(|config| config.trust_proxy = true).await;
+        app.register("user@example.com", "supersecret").await;
+
+        let mut set = tokio::task::JoinSet::new();
+        for index in 0..30 {
+            let router = app.router.clone();
+            // 第 15 個請求帶正確密碼，其餘 29 個錯誤。
+            let correct = index == 15;
+            let password = if correct {
+                "supersecret"
+            } else {
+                "wrong-password"
+            };
+            let mut request = post_json(
+                "/api/v1/auth/login",
+                json!({ "email": "user@example.com", "password": password }),
+            );
+            request.headers_mut().insert(
+                "x-real-ip",
+                test_ip(10 + round, index).parse().expect("header"),
+            );
+            set.spawn(async move { (correct, common::send_router(router, request).await) });
+        }
+
+        let mut unauthorized = 0;
+        while let Some(result) = set.join_next().await {
+            let (correct, response) = result.expect("login task");
+            if correct {
+                assert_eq!(
+                    response.status,
+                    StatusCode::OK,
+                    "round {round}: {}",
+                    response.body
+                );
+                assert!(response.session_cookie().is_some(), "round {round}");
+            } else {
+                assert_eq!(response.status, StatusCode::UNAUTHORIZED, "round {round}");
+                unauthorized += 1;
+            }
+        }
+        assert_eq!(unauthorized, 29, "round {round}");
+    }
+}
+
+/// 移除 `login_attempts`，讓預留寫入必定失敗。
+async fn break_login_attempts(app: &TestApp) {
+    sqlx::query("DROP TABLE login_attempts")
+        .execute(&app.state.db)
+        .await
+        .expect("drop table");
+}
+
+#[tokio::test]
+async fn the_lockout_fails_closed_when_attempts_cannot_be_recorded() {
+    let app = TestApp::spawn().await;
+    app.register("user@example.com", "supersecret").await;
+    break_login_attempts(&app).await;
+
+    // 無法預留嘗試時不可放行，即使密碼正確。
+    let response = app
+        .post_json(
+            "/api/v1/auth/login",
+            json!({ "email": "user@example.com", "password": "supersecret" }),
+        )
+        .await;
+    assert_eq!(
+        response.status,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "{}",
+        response.body
+    );
+    assert!(response.session_cookie().is_none());
+}
+
+#[tokio::test]
+async fn a_success_that_cannot_be_recorded_opens_no_session() {
+    let app = TestApp::spawn().await;
+    app.register("user@example.com", "supersecret").await;
+
+    // 預留的 INSERT 可以成功，但標記成功的 UPDATE 一律失敗。
+    sqlx::query(
+        "CREATE TRIGGER reject_login_attempt_update BEFORE UPDATE ON login_attempts
+         BEGIN SELECT RAISE(ABORT, 'login_attempts is read-only'); END",
+    )
+    .execute(&app.state.db)
+    .await
+    .expect("create trigger");
+
+    let response = app
+        .post_json(
+            "/api/v1/auth/login",
+            json!({ "email": "user@example.com", "password": "supersecret" }),
+        )
+        .await;
+    assert_eq!(
+        response.status,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "{}",
+        response.body
+    );
+    assert!(response.cookie_named("urlet_session").is_none());
+
+    // 該次嘗試仍計為失敗。
+    let failures: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM login_attempts WHERE success = 0")
+        .fetch_one(&app.state.db)
+        .await
+        .expect("count failures");
+    assert_eq!(failures, 1);
+}
+
+#[tokio::test]
+async fn the_form_lockout_fails_closed_when_attempts_cannot_be_recorded() {
+    let app = TestApp::spawn().await;
+    app.register("user@example.com", "supersecret").await;
+    break_login_attempts(&app).await;
+
+    let response = app
+        .send(post_form(
+            "/app/login",
+            "email=user%40example.com&password=supersecret",
+            None,
+            Some("http://localhost:8080"),
+        ))
+        .await;
+    assert_ne!(response.header("location").as_deref(), Some("/app"));
+    assert!(response.session_cookie().is_none(), "{}", response.status);
+}
+
 #[tokio::test]
 async fn changing_the_password_also_revokes_api_tokens() {
     let app = TestApp::spawn().await;

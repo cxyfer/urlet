@@ -2,41 +2,44 @@
 
 use sqlx::SqlitePool;
 
-/// Record one attempt (successful or not).
-pub async fn record(
+/// Reserve one attempt for an identifier, recorded as a failure.
+///
+/// The row is inserted only while fewer than `threshold` failures exist since
+/// `since`; the count and the insert are one statement, so SQLite evaluates
+/// them under the write lock and concurrent reservations cannot overshoot.
+/// Returns the new row id, or `None` when the identifier is locked.
+pub async fn reserve_failure(
     pool: &SqlitePool,
     identifier_hash: &str,
     ip_hash: Option<&str>,
-    success: bool,
     created_at: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
+    since: &str,
+    threshold: i64,
+) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar(
         "INSERT INTO login_attempts (identifier_hash, ip_hash, success, created_at)
-         VALUES (?, ?, ?, ?)",
+         SELECT ?, ?, 0, ?
+          WHERE (SELECT COUNT(*) FROM login_attempts
+                  WHERE identifier_hash = ? AND success = 0 AND created_at >= ?) < ?
+         RETURNING id",
     )
     .bind(identifier_hash)
     .bind(ip_hash)
-    .bind(i64::from(success))
     .bind(created_at)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-/// Number of failed attempts for an identifier since `since`.
-pub async fn count_failures_since(
-    pool: &SqlitePool,
-    identifier_hash: &str,
-    since: &str,
-) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar(
-        "SELECT COUNT(*) FROM login_attempts
-         WHERE identifier_hash = ? AND success = 0 AND created_at >= ?",
-    )
     .bind(identifier_hash)
     .bind(since)
-    .fetch_one(pool)
+    .bind(threshold)
+    .fetch_optional(pool)
     .await
+}
+
+/// Mark a reserved attempt as successful, so it no longer counts as a failure.
+pub async fn mark_success(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE login_attempts SET success = 1 WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 /// Delete attempts older than `before` (retention).
