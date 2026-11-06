@@ -245,6 +245,7 @@ off unless it is the newest stable release).
   built from it at `/docs`, with the contracts at `/docs/openapi.json` and
   `/docs/openapi.zh-TW.json`; both are embedded in the binary and need no outbound network
 - [`RELEASING.md`](RELEASING.md) — release rules: versioning, tag/image rules, checklist, rollback
+- [`SECURITY.md`](SECURITY.md) — supported versions and how to report a vulnerability privately
 
 Chinese translations of these documents live under `docs/zh-TW/`.
 

@@ -47,9 +47,7 @@ Gitmoji subject, imperative, scoped — `✨ feat(groups): ...`, `🐛 fix(domai
 
 ## Documentation
 
-Prose docs are bilingual: every file under `docs/` has a Traditional Chinese mirror under
-`docs/zh-TW/`, and `RELEASING.md` mirrors to `docs/zh-TW/RELEASING.md`. Update both sides. UI
-strings live in `src/i18n/{en,zh-Hant,zh-Hans}.json`.
+Prose docs are bilingual: every file under `docs/` has a Traditional Chinese mirror under `docs/zh-TW/`, and `RELEASING.md` and `SECURITY.md` mirror to `docs/zh-TW/RELEASING.md` and `docs/zh-TW/SECURITY.md`. Update both sides. UI strings live in `src/i18n/{en,zh-Hant,zh-Hans}.json`.
 
 ## Releases — the notes format is mandatory
 
