@@ -3,15 +3,30 @@
 **English** | [繁體中文](docs/zh-TW/SECURITY.md)
 
 urlet is a self-hosted service: every instance is run by its own operator, so a vulnerability
-stays exploitable until operators upgrade. Please report security issues privately, give us time
-to ship a fixed release, and only then disclose the details.
+stays exploitable until operators upgrade. Please report security issues privately, allow time
+for a fixed release to ship, and only then disclose the details.
 
 ## Contents
 
+- [Disclaimer](#disclaimer)
 - [Supported versions](#supported-versions)
 - [Reporting a vulnerability](#reporting-a-vulnerability)
 - [What happens next](#what-happens-next)
 - [Scope](#scope)
+
+## Disclaimer
+
+urlet is a personal project, developed and maintained by one person in their spare time. It is
+not a commercial product, and there is no support contract or service-level agreement.
+
+- The software is provided "as is", without warranty of any kind, as stated in the MIT
+  [`LICENSE`](LICENSE). The author is not liable for any damage, data loss or security incident
+  arising from its use.
+- Everything in this policy is best effort. A report may take longer than the goals below, and
+  some issues may be fixed late, partially or not at all.
+- Operators are responsible for their own instances: upgrading, securing the host and reverse
+  proxy, backing up data, and deciding whether urlet fits their needs. Review it yourself before
+  relying on it for high-risk or compliance-sensitive workloads.
 
 ## Supported versions
 
@@ -47,14 +62,14 @@ not access or modify other people's data.
 
 ## What happens next
 
-urlet is maintained by volunteers, so these are goals rather than guarantees:
+These are goals rather than guarantees (see the [disclaimer](#disclaimer)):
 
-1. We acknowledge the report within 7 days.
-2. We confirm or rule out the issue and agree on a severity with you, keeping you updated in the
-   advisory thread.
-3. We develop the fix in a private fork of the advisory, then publish a patch release.
-4. We publish the GitHub Security Advisory with upgrade instructions once the release is
-   available, and credit you unless you prefer to stay anonymous.
+1. The report is acknowledged within 7 days.
+2. The issue is confirmed or ruled out, and a severity is agreed with you; updates are posted in
+   the advisory thread.
+3. The fix is developed in a private fork of the advisory, then shipped in a patch release.
+4. The GitHub Security Advisory is published with upgrade instructions once the release is
+   available, crediting you unless you prefer to stay anonymous.
 
 Please keep the details private until the advisory is published.
 
