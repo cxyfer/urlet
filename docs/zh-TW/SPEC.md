@@ -2,9 +2,7 @@
 
 # urlet — 輕量化多用戶短網址系統規格書 (Spec)
 
-> 版本：1.8
-> 狀態：Approved for implementation
-> 最後更新：2026-10-28
+> 版本：1.8 狀態：Approved for implementation 最後更新：2026-10-28
 
 **目錄**
 
@@ -25,18 +23,9 @@
 
 ## 1. 概述 (Overview)
 
-`urlet` 是一套**自託管、多用戶**的短網址服務。每位使用者擁有自己獨立的短網址空間，
-可建立短網址、設定**密碼保護**與**過期機制**、檢視點擊統計，並透過個人 API Token 以程式方式操作。
+`urlet` 是一套**自託管、多用戶**的短網址服務。每位使用者擁有自己獨立的短網址空間，可建立短網址、設定**密碼保護**與**過期機制**、檢視點擊統計，並透過個人 API Token 以程式方式操作。
 
-系統以「**盡可能輕量**」為最高設計原則：單一 Rust 二進位檔 + 單一 SQLite 檔案，
-一個 `docker compose up -d` 即可完成部署，不需要外部資料庫、快取或前端建置流程。
-v1.1 起介面提供三種語言（英文／繁體中文／簡體中文）、可選的防機器人驗證，並新增公開導覽首頁。
-v1.2 起新增**使用者群組**：可為不同群組設定各自的連結與 API Token 配額及功能開關，
-讓同一套單一二進位部署能支援分級方案（例如免費組與付費組）。
-v1.4 起新增**可切換主題**：視覺識別可由編譯進 binary 的模板集與樣式表組成，管理員也可上傳純 CSS 的自訂主題；管理員決定提供哪些設計與誰能切換，使用者則以 cookie 記住選擇。
-v1.5 起新增**中轉頁 (Splash Page)**：連結可先顯示帶倒數的宣傳頁，再由分組政策決定成員只能用直接跳轉、只能中轉頁，或可自行選擇。
-v1.6 起新增**公開短網址工具**：導覽首頁可提供免帳號訪客使用的縮網址表單，並由管理員控制存取層級、
-逐欄位開關、防機器人驗證，以及每來源位址與全體訪客共用的速率限制。
+系統以「**盡可能輕量**」為最高設計原則：單一 Rust 二進位檔 + 單一 SQLite 檔案，一個 `docker compose up -d` 即可完成部署，不需要外部資料庫、快取或前端建置流程。v1.1 起介面提供三種語言（英文／繁體中文／簡體中文）、可選的防機器人驗證，並新增公開導覽首頁。v1.2 起新增**使用者群組**：可為不同群組設定各自的連結與 API Token 配額及功能開關，讓同一套單一二進位部署能支援分級方案（例如免費組與付費組）。v1.4 起新增**可切換主題**：視覺識別可由編譯進 binary 的模板集與樣式表組成，管理員也可上傳純 CSS 的自訂主題；管理員決定提供哪些設計與誰能切換，使用者則以 cookie 記住選擇。v1.5 起新增**中轉頁 (Splash Page)**：連結可先顯示帶倒數的宣傳頁，再由分組政策決定成員只能用直接跳轉、只能中轉頁，或可自行選擇。v1.6 起新增**公開短網址工具**：導覽首頁可提供免帳號訪客使用的縮網址表單，並由管理員控制存取層級、逐欄位開關、防機器人驗證，以及每來源位址與全體訪客共用的速率限制。
 
 ### 1.1 核心設計原則 (來自需求方)
 
@@ -65,11 +54,9 @@ v1.6 起新增**公開短網址工具**：導覽首頁可提供免帳號訪客�
 | 統計 | 完整（GeoIP、MaxMind） | 完整 | **精簡（UA 解析、每日彙總、無 GeoIP）** |
 | 繼承 | 密碼保護、過期、點擊上限、標籤、API Token、邀請碼、稽核日誌 | 同上 + 公開預覽 API | 上述全部，去蕪存菁 |
 
-**刻意不做（Non-Goals）**：OAuth 第三方登入、細緻權限矩陣、GeoIP/MMDB、
-關鍵字黑名單、A/B 測試、Webhook、QR Code、Link-in-bio、郵件寄送。
+**刻意不做（Non-Goals）**：OAuth 第三方登入、細緻權限矩陣、GeoIP/MMDB、關鍵字黑名單、A/B 測試、Webhook、QR Code、Link-in-bio、郵件寄送。
 
-多語系在 v1.0 原列為 Non-Goal，自 v1.1 起納入範圍（見 §4.11）。使用者群組在 v1.0 原列為
-Non-Goal，v1.2 起納入配額與功能開關（見 §4.13），但仍不做逐動作的權限矩陣。
+多語系在 v1.0 原列為 Non-Goal，自 v1.1 起納入範圍（見 §4.11）。使用者群組在 v1.0 原列為 Non-Goal，v1.2 起納入配額與功能開關（見 §4.13），但仍不做逐動作的權限矩陣。
 
 ---
 
@@ -158,11 +145,7 @@ Browser / curl          │                                                  │
 | 日誌 | `tracing` + `tracing-subscriber` | 結構化日誌、`RUST_LOG` 控制 |
 | 時間 | `time` 0.3 + `jiff` 0.2 | UTC 儲存與格式化，加上支援日光節約時間的伺服器自然週期配額 |
 
-**刻意避免的相依**：Redis、MySQL client、jsonwebtoken、MaxMind/GeoIP、React/Node 工具鏈。
-系統不會對外抓取目標網址（同時消除 SSRF 風險）；唯一的對外 HTTP 呼叫是可選的驗證碼
-siteverify 請求（`src/services/captcha.rs`）：使用 `ureq` 2 搭配 rustls + webpki-roots
-（純 Rust，因此 `rust:1-alpine` musl 建置不需要 OpenSSL），除非管理者設定供應商否則預設關閉，
-**逾時 5 秒**，且任何失敗都一律拒絕（fail closed）。
+**刻意避免的相依**：Redis、MySQL client、jsonwebtoken、MaxMind/GeoIP、React/Node 工具鏈。系統不會對外抓取目標網址（同時消除 SSRF 風險）；唯一的對外 HTTP 呼叫是可選的驗證碼 siteverify 請求（`src/services/captcha.rs`）：使用 `ureq` 2 搭配 rustls + webpki-roots（純 Rust，因此 `rust:1-alpine` musl 建置不需要 OpenSSL），除非管理者設定供應商否則預設關閉，**逾時 5 秒**，且任何失敗都一律拒絕（fail closed）。
 
 ### 3.3 二進位檔與映像檔尺寸目標
 
@@ -175,12 +158,7 @@ siteverify 請求（`src/services/captcha.rs`）：使用 `ureq` 2 搭配 rustls
 
 v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，v1.1 各項目標仍然達成。
 
-v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大部分成長來自其間新增的功能
-——SNS 預覽圖片、公開短網址工具與主題系統——而非參考頁本身：同一棵樹移除參考頁後為
-30.4 MB。參考頁增加 6.5 MiB，其中內嵌的 Scalar 前端佔 4.9 MB、兩份 OpenAPI 合約佔 0.4 MB。
-二進位檔已超出 15 MB 目標 0.7 MB，而 37.2 MB 的映像仍在 40 MB 目標之內；若需要縮減映像，
-槓桿在內嵌前端——壓縮後約 1.3 MB，改用 RapiDoc 之類較小的渲染器則為 0.5 MB，代價是失去
-在地化的介面文字。
+v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大部分成長來自其間新增的功能 ——SNS 預覽圖片、公開短網址工具與主題系統——而非參考頁本身：同一棵樹移除參考頁後為 30.4 MB。參考頁增加 6.5 MiB，其中內嵌的 Scalar 前端佔 4.9 MB、兩份 OpenAPI 合約佔 0.4 MB。二進位檔已超出 15 MB 目標 0.7 MB，而 37.2 MB 的映像仍在 40 MB 目標之內；若需要縮減映像，槓桿在內嵌前端——壓縮後約 1.3 MB，改用 RapiDoc 之類較小的渲染器則為 0.5 MB，代價是失去在地化的介面文字。
 
 ---
 
@@ -301,36 +279,14 @@ v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大
 - **JSON API 回應一律為英文**，不受請求語言或 `urlet_lang` cookie 影響。
 - 執行個體自己提供可瀏覽的參考頁，內嵌於執行檔中，因此沒有對外網路的執行個體也能使用：
   - `GET /docs` 以訪客的介面語言呈現參考頁。
-  - `GET /docs/openapi.json` 與 `GET /docs/openapi.zh-TW.json` 提供 OpenAPI 3.1 合約。
-    兩者都由 `scripts/build-openapi.py` 從 `openapi/` 產生後提交，因為執行檔以
-    `include_str!` 內嵌它們；CI 會重新產生並在有任何差異時失敗。
-  - 兩份合約必須描述同一組操作，且每個操作都必須參照文件宣告的分組。分組名稱與其餘敘述
-    一併翻譯，因此參考頁的側邊欄會以訪客的語言呈現。簡體中文訪客取得英文合約，因為
-    敘述性文件只有雙語。
-  - Scalar 內嵌於 `src/assets/scalar.js`，由 `scripts/update-scalar.sh` 釘住版本與雜湊。
-    該頁面不會發出任何第三方請求，也不需要 CSP 例外：掛載元素避開了 Scalar 會自動偵測的
-    id，因此傳給它的選項得以生效。
-  - 合約以設定的 base URL 作為 server，參考頁也只存在於該主機。頁尾會在每個設計（含額外
-    網域的簡短首頁）連結它，但在額外網域上 `/docs` 與 `/docs/*` 會回 `308` 轉往 canonical
-    主機，而不是提供該頁面：參考頁的 Test Request 會呼叫 canonical base URL，而 CSP 只允許
-    `connect-src 'self'` 且沒有 CORS 層，因此在額外網域提供的互動式參考頁，每個請求都會被
-    瀏覽器擋下。base URL 屬於部署設定，因此產生器在提交的合約中留下佔位符，由回應在提供時
-    替換；該值不隨請求變動，因此每個主機取到的快取內容相同。
-  - `POST /{slug}/unlock` 是例外：每個已啟用的網域都提供它，且 slug 是在請求抵達的網域上
-    解析，因此這個操作以連結自己的來源作為 server 變數，而非繼承 canonical API server。
-  - `/docs` 是保留 slug：短網址不得佔用。已存在且持有該 slug 的連結會在啟動時回報，
-    並保留給擁有者自行重新命名。
-- 合約與 router 由測試綁在一起，因為型別系統沒有任何東西連接它們。axum 不提供讀回已建
-  router 的方式，因此 `tests/contract.rs` 直接從 router 的原始碼讀取表面——`.route(...)`
-  呼叫就是註冊本身——並與兩份合約的 paths 與 methods 做集合相等比對。新增 handler 卻忘了
-  加合約條目會失敗，合約條目對應的 handler 消失也會失敗。解析器遇到不理解的形狀會直接
-  失敗，並有大小守門，讓「什麼都沒匹配到」的解析器失敗而不是僥倖通過。CI 另外會 lint
-  兩份產生的文件——這正是抓出四個「描述的是儀表板 payload 而非 API 回應」的元件的原因。
-- 同一批文件也以靜態、可搜尋的網站形式發布：原始碼位於 `docs-site/`，由一個以路徑過濾的
-  workflow 部署到 `gh-pages` 分支。repo 的 `docs/` 樹仍是唯一來源：prebuild 步驟將它複製
-  進網站的內容樹、從每個檔案自己的第一個標題推導頁面標題，並改寫文件之間的連結。產生的
-  副本已被 gitignore，因此 repo 不會帶著第二份可能漂移的副本。網站是獨立產物，不會進入
-  Docker context 或執行檔。
+  - `GET /docs/openapi.json` 與 `GET /docs/openapi.zh-TW.json` 提供 OpenAPI 3.1 合約。兩者都由 `scripts/build-openapi.py` 從 `openapi/` 產生後提交，因為執行檔以 `include_str!` 內嵌它們；CI 會重新產生並在有任何差異時失敗。
+  - 兩份合約必須描述同一組操作，且每個操作都必須參照文件宣告的分組。分組名稱與其餘敘述一併翻譯，因此參考頁的側邊欄會以訪客的語言呈現。簡體中文訪客取得英文合約，因為敘述性文件只有雙語。
+  - Scalar 內嵌於 `src/assets/scalar.js`，由 `scripts/update-scalar.sh` 釘住版本與雜湊。該頁面不會發出任何第三方請求，也不需要 CSP 例外：掛載元素避開了 Scalar 會自動偵測的 id，因此傳給它的選項得以生效。
+  - 合約以設定的 base URL 作為 server，參考頁也只存在於該主機。頁尾會在每個設計（含額外網域的簡短首頁）連結它，但在額外網域上 `/docs` 與 `/docs/*` 會回 `308` 轉往 canonical 主機，而不是提供該頁面：參考頁的 Test Request 會呼叫 canonical base URL，而 CSP 只允許 `connect-src 'self'` 且沒有 CORS 層，因此在額外網域提供的互動式參考頁，每個請求都會被瀏覽器擋下。base URL 屬於部署設定，因此產生器在提交的合約中留下佔位符，由回應在提供時替換；該值不隨請求變動，因此每個主機取到的快取內容相同。
+  - `POST /{slug}/unlock` 是例外：每個已啟用的網域都提供它，且 slug 是在請求抵達的網域上解析，因此這個操作以連結自己的來源作為 server 變數，而非繼承 canonical API server。
+  - `/docs` 是保留 slug：短網址不得佔用。已存在且持有該 slug 的連結會在啟動時回報，並保留給擁有者自行重新命名。
+- 合約與 router 由測試綁在一起，因為型別系統沒有任何東西連接它們。axum 不提供讀回已建 router 的方式，因此 `tests/contract.rs` 直接從 router 的原始碼讀取表面——`.route(...)` 呼叫就是註冊本身——並與兩份合約的 paths 與 methods 做集合相等比對。新增 handler 卻忘了加合約條目會失敗，合約條目對應的 handler 消失也會失敗。解析器遇到不理解的形狀會直接失敗，並有大小守門，讓「什麼都沒匹配到」的解析器失敗而不是僥倖通過。CI 另外會 lint 兩份產生的文件——這正是抓出四個「描述的是儀表板 payload 而非 API 回應」的元件的原因。
+- 同一批文件也以靜態、可搜尋的網站形式發布：原始碼位於 `docs-site/`，由一個以路徑過濾的 workflow 部署到 `gh-pages` 分支。repo 的 `docs/` 樹仍是唯一來源：prebuild 步驟將它複製進網站的內容樹、從每個檔案自己的第一個標題推導頁面標題，並改寫文件之間的連結。產生的副本已被 gitignore，因此 repo 不會帶著第二份可能漂移的副本。網站是獨立產物，不會進入 Docker context 或執行檔。
 - 端點清單見 §7。
 
 ### 4.10 網頁介面 (FR-UI)
@@ -361,9 +317,7 @@ v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大
 | `/{slug}` | 轉址 / 密碼頁 / 中轉頁 / 410 / 404 | 公開 |
 | 額外網域 | 僅轉址 | `/` 顯示簡單首頁、`/{slug}` 轉址、`/app` 308 回 canonical、`/api` 回 404 |
 
-**UI 技術**：Askama 模板 + 手寫 CSS（含 `prefers-color-scheme` 深色模式）+ 約 500 行原生 JS
-（複製到剪貼簿、確認對話框、表單增強、群組與主題表單共用的新增/編輯懸浮框）。
-**不使用**任何前端框架或 CDN 資源（CSP 可嚴格限制為 `'self'`）。
+**UI 技術**：Askama 模板 + 手寫 CSS（含 `prefers-color-scheme` 深色模式）+ 約 500 行原生 JS（複製到剪貼簿、確認對話框、表單增強、群組與主題表單共用的新增/編輯懸浮框）。**不使用**任何前端框架或 CDN 資源（CSP 可嚴格限制為 `'self'`）。
 
 ### 4.11 多語系介面 (FR-I18N)
 
@@ -636,16 +590,7 @@ login_attempts（稽核用）
 | `custom_themes(created_by)` | 上傳歸屬與清理 |
 | `users(is_system) WHERE is_system = 1` UNIQUE | 最多一個保留的系統帳號 |
 
-v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表，v1.1 維持 **14 張表、27 個索引**。
-v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` / `invite_codes.group_id` 欄位、
-`user_groups.default_domain_id` / `restrict_domains` 欄位及四個索引，共 **16 張表、31 個索引**（§6.1、§6.3、§6.4）。
-邀請碼配額工作新增 `invite_issuance` 表與索引，使 schema 成為 **17 張表、33 個索引**；v1.3 僅新增可空的
-`invite_codes.code_sealed` 欄位，表與索引數量不變；v1.4 新增 `themes` 表及其唯一預設索引。
-v1.5 新增 `urls` 的中轉頁欄位與 `user_groups.redirect_mode_policy`（表／索引數量不變），
-可上傳主題再新增 `custom_themes` 與其建立者索引，共 **19 張表、35 個索引**。
-邀請碼退還額度工作新增可空的 `invite_issuance.released_at` 欄位，表／索引數量維持 19/35。
-升級後首次啟動時，也會釋放「已撤銷且從未兌換」的既有邀請碼，因此 `invites_used` 可能一次下降。
-v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表、36 個索引**；SNS 預覽新增 `url_previews` 且不增加明確定義的索引；自然週期配額再新增 `public_creation_quota` 與到期索引，目前為 **21 張表、37 個索引**。
+v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表，v1.1 維持 **14 張表、27 個索引**。v1.2 新增 `user_groups` 與 `group_domains` 表、可空的 `users.group_id` / `invite_codes.group_id` 欄位、`user_groups.default_domain_id` / `restrict_domains` 欄位及四個索引，共 **16 張表、31 個索引**（§6.1、§6.3、§6.4）。邀請碼配額工作新增 `invite_issuance` 表與索引，使 schema 成為 **17 張表、33 個索引**；v1.3 僅新增可空的 `invite_codes.code_sealed` 欄位，表與索引數量不變；v1.4 新增 `themes` 表及其唯一預設索引。v1.5 新增 `urls` 的中轉頁欄位與 `user_groups.redirect_mode_policy`（表／索引數量不變），可上傳主題再新增 `custom_themes` 與其建立者索引，共 **19 張表、35 個索引**。邀請碼退還額度工作新增可空的 `invite_issuance.released_at` 欄位，表／索引數量維持 19/35。升級後首次啟動時，也會釋放「已撤銷且從未兌換」的既有邀請碼，因此 `invites_used` 可能一次下降。v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表、36 個索引**；SNS 預覽新增 `url_previews` 且不增加明確定義的索引；自然週期配額再新增 `public_creation_quota` 與到期索引，目前為 **21 張表、37 個索引**。
 
 `url_previews` 的 metadata 查詢不載入圖片 BLOB，備份仍以資料庫為單位。Trigger 會在所屬連結被軟刪除時移除預覽資料與圖片（包含帳號刪除）；停用或過期則保留預覽。SQLite 可重用釋放的頁面，資料庫檔案不會自動縮小。
 
@@ -654,44 +599,17 @@ v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表�
 - SNS 圖片：`preview_image_policy=both`；允許值為 `none`、`url`、`upload`、`both`。
 - 網址清理：`url_cleaning_enabled=false`、`url_cleaning_rules=`（空白）；啟動時只補入缺少的鍵並保留現值。
 
-- `settings`：`site_name=urlet`、`registration_mode=open`、`default_slug_length=7`、
-  `max_urls_per_user=1000`、`default_redirect_type=302`、`analytics_enabled=true`、`click_retention_days=0`。
-- `settings`（v1.1 驗證碼 key）：`captcha_provider=none`、`captcha_site_key=`（空）、
-  `captcha_secret_key=`（空）、`captcha_on_register=false`、`captcha_on_login=false`、
-  `captcha_on_create=false`、`captcha_allowed_hostnames=`（空）。非空的環境變數會覆蓋表中值（FR-BOT-2）。
-- `settings`（v1.2 新 key）：`max_api_tokens_per_user=20`（全站 Token 配額；`0` = 無上限）。
-  由於預設為 20 而非 0，升級後若帳號已持有超過 20 個可用 Token，必須先撤銷部分 Token 才能再新增；
-  升級不會主動撤銷任何既有 Token。
-- `settings`（v1.2 邀請碼配額，`0006_group_invite_quotas.sql`）：`max_invites_per_period=0`
-  （`0` = 無上限）、`invite_period=month`（`day`、`week` 或 `month`；未綁定群組的邀請碼所使用的
-  自然週期）。
+- `settings`：`site_name=urlet`、`registration_mode=open`、`default_slug_length=7`、`max_urls_per_user=1000`、`default_redirect_type=302`、`analytics_enabled=true`、`click_retention_days=0`。
+- `settings`（v1.1 驗證碼 key）：`captcha_provider=none`、`captcha_site_key=`（空）、`captcha_secret_key=`（空）、`captcha_on_register=false`、`captcha_on_login=false`、`captcha_on_create=false`、`captcha_allowed_hostnames=`（空）。非空的環境變數會覆蓋表中值（FR-BOT-2）。
+- `settings`（v1.2 新 key）：`max_api_tokens_per_user=20`（全站 Token 配額；`0` = 無上限）。由於預設為 20 而非 0，升級後若帳號已持有超過 20 個可用 Token，必須先撤銷部分 Token 才能再新增；升級不會主動撤銷任何既有 Token。
+- `settings`（v1.2 邀請碼配額，`0006_group_invite_quotas.sql`）：`max_invites_per_period=0`（`0` = 無上限）、`invite_period=month`（`day`、`week` 或 `month`；未綁定群組的邀請碼所使用的自然週期）。
 - `settings`（v1.4 新 key）：`theme_switching=all`（誰能切換主題；`admin` 僅限管理員）。
-- `user_groups`（v1.2）：建立一筆名為 `Standard`、`max_urls = NULL`、`max_api_tokens = NULL`、
-  七個開關皆為 `1`（含 `allow_domain_selection`）、`default_domain_id = NULL`、
-  `restrict_domains = 0`、`is_default = 1` 的群組；遷移會把所有既有使用者指派進去。
-- 中轉頁預設值（v1.5）：欄位預設值讓既有連結成為 `redirect_mode = direct`、`splash_delay_seconds = 5`
-  且沒有自訂文案，既有群組則為 `redirect_mode_policy = choice`，因此升級後行為不變。
+- `user_groups`（v1.2）：建立一筆名為 `Standard`、`max_urls = NULL`、`max_api_tokens = NULL`、七個開關皆為 `1`（含 `allow_domain_selection`）、`default_domain_id = NULL`、`restrict_domains = 0`、`is_default = 1` 的群組；遷移會把所有既有使用者指派進去。
+- 中轉頁預設值（v1.5）：欄位預設值讓既有連結成為 `redirect_mode = direct`、`splash_delay_seconds = 5` 且沒有自訂文案，既有群組則為 `redirect_mode_policy = choice`，因此升級後行為不變。
 - `group_domains`：不種任何資料；沒有資料列的既有或新群組可使用所有 active 網域。
-- 公開短網址工具（v1.6）：`public_create_access=user`（升級後維持原有行為）、
-  `public_captcha=true`、`public_rate_limit_per_ip=20`、`public_rate_limit_per_ip_period=hour`、
-  `public_rate_limit_global=500`、`public_rate_limit_global_period=hour`、
-  `public_max_urls=1000`、
-  `public_allow_slug=true`、`public_allow_title=true`，而 `public_allow_tags`、
-  `public_allow_password`、`public_allow_expiry`、`public_allow_max_clicks`、
-  `public_allow_redirect`、`public_allow_domain` 皆為 `false`；`guest_allowlist_enabled=true`，
-  `guest_allowlist` 以內建的 43 條主機規則清單（`src/services/guest_allowlist.txt`，由
-  `src/db/settings.rs` 寫入）作為預設，僅在缺少時插入，因此已編輯或刻意清空的清單不會被覆寫。
-  migration 也會插入保留的
-  訪客帳號（`guest@urlet.invalid`、`is_system = 1`、`status = suspended`、無群組）；
-  只有在該位址已屬於其他人的極端情況下才會略過，並於啟動時回報。
-- `domains`：啟動時依 `URLET_BASE_URL` 的 host 插入/更新 canonical 網域（`source=system`，永遠 active）。
-  只有在沒有任何預設網域時才會設為預設，讓管理員可以改選其他預設。`URLET_DOMAINS` 只插入缺少的
-  網域（`active`/`env`），不改既有資料。
-- `settings`（首頁時鐘）：`landing_clock=server`（`server`、`utc` 或 `off`）。它控制首頁底部顯示
-  伺服器資訊的設計（預設 Verdant 與以其為基礎的上傳主題）中的時鐘。`server` 顯示行程時區（`TZ`）
-  的時鐘；`utc` 顯示同一時鐘的 UTC 時間，讓首頁不顯示伺服器時區；`off` 隱藏時鐘。資訊條中的版本與
-  運行時間會保留。年份標籤在 `server` 模式使用伺服器時區，在 `utc`／`off` 模式使用 UTC，避免隱藏時區
-  後仍透過跨年邊界透露資訊。訪客配額的週期一律跟隨 `TZ`，此設定不會改變實例對「本地時間」的定義。
+- 公開短網址工具（v1.6）：`public_create_access=user`（升級後維持原有行為）、`public_captcha=true`、`public_rate_limit_per_ip=20`、`public_rate_limit_per_ip_period=hour`、`public_rate_limit_global=500`、`public_rate_limit_global_period=hour`、`public_max_urls=1000`、`public_allow_slug=true`、`public_allow_title=true`，而 `public_allow_tags`、`public_allow_password`、`public_allow_expiry`、`public_allow_max_clicks`、`public_allow_redirect`、`public_allow_domain` 皆為 `false`；`guest_allowlist_enabled=true`，`guest_allowlist` 以內建的 43 條主機規則清單（`src/services/guest_allowlist.txt`，由 `src/db/settings.rs` 寫入）作為預設，僅在缺少時插入，因此已編輯或刻意清空的清單不會被覆寫。migration 也會插入保留的訪客帳號（`guest@urlet.invalid`、`is_system = 1`、`status = suspended`、無群組）；只有在該位址已屬於其他人的極端情況下才會略過，並於啟動時回報。
+- `domains`：啟動時依 `URLET_BASE_URL` 的 host 插入/更新 canonical 網域（`source=system`，永遠 active）。只有在沒有任何預設網域時才會設為預設，讓管理員可以改選其他預設。`URLET_DOMAINS` 只插入缺少的網域（`active`/`env`），不改既有資料。
+- `settings`（首頁時鐘）：`landing_clock=server`（`server`、`utc` 或 `off`）。它控制首頁底部顯示伺服器資訊的設計（預設 Verdant 與以其為基礎的上傳主題）中的時鐘。`server` 顯示行程時區（`TZ`）的時鐘；`utc` 顯示同一時鐘的 UTC 時間，讓首頁不顯示伺服器時區；`off` 隱藏時鐘。資訊條中的版本與運行時間會保留。年份標籤在 `server` 模式使用伺服器時區，在 `utc`／`off` 模式使用 UTC，避免隱藏時區後仍透過跨年邊界透露資訊。訪客配額的週期一律跟隨 `TZ`，此設定不會改變實例對「本地時間」的定義。
 
 ---
 
@@ -710,9 +628,7 @@ v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表�
 | GET | `/api/v1/auth/sessions` | 我的 Session 清單 |
 | DELETE | `/api/v1/auth/sessions/{id}` | 撤銷指定 Session → 204 |
 
-註冊時指派預設群組；即使在 `open` 模式，提供的邀請碼也會驗證，且其群組優先於預設群組
-（FR-GROUP-4）。網頁表單可用 `GET /app/register?invite=CODE` 預填邀請碼；JSON 內容不變。
-`user` 物件包含 `group_id`；群組名稱與生效額度透過 `GET /api/v1/auth/me` 取得。
+註冊時指派預設群組；即使在 `open` 模式，提供的邀請碼也會驗證，且其群組優先於預設群組（FR-GROUP-4）。網頁表單可用 `GET /app/register?invite=CODE` 預填邀請碼；JSON 內容不變。`user` 物件包含 `group_id`；群組名稱與生效額度透過 `GET /api/v1/auth/me` 取得。
 
 ### 7.2 短網址
 
@@ -731,10 +647,7 @@ v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表�
 | GET | `/api/v1/urls/{id}/stats?days=30` | 每日趨勢 + 維度分佈 + 摘要 |
 | GET | `/api/v1/urls/{id}/clicks?page=1` | 點擊明細（分頁） |
 
-連結配額用盡、群組開關封鎖了送入的欄位，或轉址方式不符合群組政策時，回 403 `forbidden` 並附說明訊息。
-`PATCH` 時省略欄位代表維持原值，清除被封鎖的欄位則可接受；新開啟被封鎖的功能會被拒絕。
-非空的連結密碼一律視為新值，因此在密碼被封鎖時會被拒絕（FR-GROUP-3）。
-轉址方式政策會拒絕新的 `redirect_mode`（或 `PATCH` 時切換到被封鎖的模式），但允許維持目前模式與清除中轉頁文案。
+連結配額用盡、群組開關封鎖了送入的欄位，或轉址方式不符合群組政策時，回 403 `forbidden` 並附說明訊息。`PATCH` 時省略欄位代表維持原值，清除被封鎖的欄位則可接受；新開啟被封鎖的功能會被拒絕。非空的連結密碼一律視為新值，因此在密碼被封鎖時會被拒絕（FR-GROUP-3）。轉址方式政策會拒絕新的 `redirect_mode`（或 `PATCH` 時切換到被封鎖的模式），但允許維持目前模式與清除中轉頁文案。
 
 ### 7.3 標籤 / Token
 
@@ -756,9 +669,7 @@ v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表�
 | POST | `/api/v1/invites` | `{note?, max_uses?}` → 201 `{code, link, invite, quota}`；邀請碼固定綁定呼叫者的群組；群組停用邀請或週期配額用盡回 `403`，每小時突發限制用盡回 `429` |
 | DELETE | `/api/v1/invites/{id}` | 撤銷呼叫者自己的邀請碼 → 204；他人的邀請碼回 404 |
 
-成員邀請碼需要 `user_groups.allow_invites = 1`；邀請碼一律綁定呼叫者的群組，因此兌換者會加入該
-群組，管理員與成員發行的邀請碼共用同一份各群組帳本（`max_invites` / `invite_period`，migrations
-`0006`/`0007`）。成員邀請碼的 `max_uses` 為 1–10。
+成員邀請碼需要 `user_groups.allow_invites = 1`；邀請碼一律綁定呼叫者的群組，因此兌換者會加入該群組，管理員與成員發行的邀請碼共用同一份各群組帳本（`max_invites` / `invite_period`，migrations `0006`/`0007`）。成員邀請碼的 `max_uses` 為 1–10。
 
 ### 7.5 管理（需 admin）
 
@@ -788,11 +699,7 @@ v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表�
 | GET | `/api/v1/admin/audit` | 稽核日誌（`action, target_type, actor, page`） |
 | GET | `/api/v1/admin/stats` | 系統資訊與總量 |
 
-群組更新接受部分表示：省略欄位即維持原值，`max_urls` / `max_api_tokens` 設為 `null` 代表
-跟隨全站配額，`description: null` 則清除說明。`POST` 仍採建立預設值（省略開關視為允許、
-省略配額視為跟隨全站）。所有群組異動都會寫入稽核（`admin.group_created`、
-`admin.group_updated`、`admin.group_deleted`），使用者的群組改派則記錄在既有的
-`admin.user_updated` metadata 中。
+群組更新接受部分表示：省略欄位即維持原值，`max_urls` / `max_api_tokens` 設為 `null` 代表跟隨全站配額，`description: null` 則清除說明。`POST` 仍採建立預設值（省略開關視為允許、省略配額視為跟隨全站）。所有群組異動都會寫入稽核（`admin.group_created`、`admin.group_updated`、`admin.group_deleted`），使用者的群組改派則記錄在既有的 `admin.user_updated` metadata 中。
 
 ### 7.6 公開
 
@@ -840,8 +747,7 @@ v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表�
 | `URLET_CAPTCHA_ON_CREATE` | `false` | 網頁建立短網址表單是否要求驗證碼；非空時覆蓋 `captcha_on_create` |
 | `URLET_CAPTCHA_ALLOWED_HOSTNAMES` | — | 供應商 `hostname` 回應中額外接受的主機名稱，以逗號分隔（最多 10 項）；非空時覆蓋 `captcha_allowed_hostnames`。`URLET_BASE_URL` 的主機名稱一律接受 |
 
-驗證碼相關變數的覆蓋規則與 `URLET_REGISTRATION`、`URLET_DEFAULT_SLUG_LENGTH` 相同：
-非空的環境變數優先於 `settings` 表中的值（FR-BOT-2）。
+驗證碼相關變數的覆蓋規則與 `URLET_REGISTRATION`、`URLET_DEFAULT_SLUG_LENGTH` 相同：非空的環境變數優先於 `settings` 表中的值（FR-BOT-2）。
 
 ---
 
@@ -849,10 +755,7 @@ v1.6 新增 `users.is_system` 欄位與其部分唯一索引，共 **19 張表�
 
 ### 9.1 目錄結構
 
-原始碼樹：見 [`README.zh-TW.md`](../../README.zh-TW.md) 的「專案結構」一節，列出 `src/`（模組、
-middleware 與 routes）、`templates/`、`migrations/`、`scripts/` 與測試樹。執行期 `/data` 配置
-——`urlet.db` 及其 WAL/SHM 檔、自動產生的 `secret.key`，以及 `themes/` 下的上傳主題樣式表
-——見 [`DEPLOYMENT.md`](DEPLOYMENT.md) 的「資料與備份」一節。Migration 檔名列於 §6.3。
+原始碼樹：見 [`README.zh-TW.md`](../../README.zh-TW.md) 的「專案結構」一節，列出 `src/`（模組、middleware 與 routes）、`templates/`、`migrations/`、`scripts/` 與測試樹。執行期 `/data` 配置 ——`urlet.db` 及其 WAL/SHM 檔、自動產生的 `secret.key`，以及 `themes/` 下的上傳主題樣式表 ——見 [`DEPLOYMENT.md`](DEPLOYMENT.md) 的「資料與備份」一節。Migration 檔名列於 §6.3。
 
 ### 9.2 Dockerfile 策略
 
@@ -862,14 +765,9 @@ middleware 與 routes）、`templates/`、`migrations/`、`scripts/` 與測試�
 
 ### 9.3 Compose 服務
 
-`docker-compose.yml` 執行單一 `urlet` 容器，預設從本機 `Dockerfile` 建置（也可透過
-`docker-compose.image.yml` 使用已發布的映像），並使用 `urlet-data` 與 `urlet-themes` 兩個
-volume。設定以容器環境變數傳入，支援 `${VAR:-default}` 替換；主機連接埠預設為 `8080`；容器
-健康檢查呼叫 `urlet healthcheck`。實際映像標籤、volume 掛載與重啟政策以
-[`docker-compose.yml`](../../docker-compose.yml) 為準。
+`docker-compose.yml` 執行單一 `urlet` 容器，預設從本機 `Dockerfile` 建置（也可透過 `docker-compose.image.yml` 使用已發布的映像），並使用 `urlet-data` 與 `urlet-themes` 兩個 volume。設定以容器環境變數傳入，支援 `${VAR:-default}` 替換；主機連接埠預設為 `8080`；容器健康檢查呼叫 `urlet healthcheck`。實際映像標籤、volume 掛載與重啟政策以 [`docker-compose.yml`](../../docker-compose.yml) 為準。
 
-`docker-compose.tls.yml`：額外加入 Caddy（80/443、自動 Let's Encrypt），
-urlet 不對外暴露連接埠，由 Caddy 反向代理。
+`docker-compose.tls.yml`：額外加入 Caddy（80/443、自動 Let's Encrypt），urlet 不對外暴露連接埠，由 Caddy 反向代理。
 
 ---
 

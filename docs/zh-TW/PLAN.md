@@ -2,8 +2,7 @@
 
 # urlet — 分階段實作計畫 (Implementation Plan)
 
-> 對應規格：`docs/SPEC.md` v1.8
-> 原則：每個階段結束時程式碼必須**可編譯、可測試、可提交**；每個階段一個（或數個）本地 commit。
+> 對應規格：`docs/SPEC.md` v1.8 原則：每個階段結束時程式碼必須**可編譯、可測試、可提交**；每個階段一個（或數個）本地 commit。
 
 ## 目錄
 
@@ -39,8 +38,7 @@
 | P20 可編輯的訪客目標網址白名單 | ✅ 完成 | `b36a1e3 ✨ feat(public): add an editable guest destination allowlist` |
 | P21 SNS 分享預覽 | ✅ 完成 | `b92a2b8 ✨ feat(previews): customise social sharing cards` |
 
-驗收數據（v1.0）：`cargo test` 187 個測試全綠、`cargo clippy --all-targets -- -D warnings` 與
-`cargo fmt --check` 無警告、`scripts/smoke.sh` 81 項端對端檢查全數通過。
+驗收數據（v1.0）：`cargo test` 187 個測試全綠、`cargo clippy --all-targets -- -D warnings` 與 `cargo fmt --check` 無警告、`scripts/smoke.sh` 81 項端對端檢查全數通過。
 
 ---
 
@@ -215,8 +213,7 @@
 | 測試 | 全綠 | `cargo test` 187 項、`scripts/smoke.sh` 81 項 |
 | 靜態檢查 | 無警告 | `cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 通過 |
 
-上表為 v1.0 的歷史紀錄。目前量測值——v1.6 的二進位 15.7 MB musl 與映像 37.2 MB、v1.1 的冷啟動
-約 0.1 秒——請見 `docs/SPEC.md` §3.3，不要直接引用上表。
+上表為 v1.0 的歷史紀錄。目前量測值——v1.6 的二進位 15.7 MB musl 與映像 37.2 MB、v1.1 的冷啟動約 0.1 秒——請見 `docs/SPEC.md` §3.3，不要直接引用上表。
 
 ---
 
@@ -301,28 +298,16 @@
 
 上傳在不改變編譯期模板模型的前提下擴充主題目錄。
 
-1. `migrations/0012_custom_themes.sql` + `0013_custom_theme_appearance.sql`：上傳樣式表的中介
-   資料表，以產生的 `custom-…` key 識別；對應的 `themes` 資料列負責啟用、預設與排序，外觀
-   migration 會轉換舊的僅深色旗標。
+1. `migrations/0012_custom_themes.sql` + `0013_custom_theme_appearance.sql`：上傳樣式表的中介資料表，以產生的 `custom-…` key 識別；對應的 `themes` 資料列負責啟用、預設與排序，外觀 migration 會轉換舊的僅深色旗標。
 2. `src/db/custom_themes.rs`：以單一交易建立/更新/刪除中介資料與目錄資料列。
-3. `src/services/custom_theme.rs`：CSS 驗證（UTF-8、大小、禁止外部資源）、`auto`／`light`／
-   `dark` 外觀、原子寫檔、內容雜湊，以及與 `update_selection` 共用的 settings 鎖序列化。
-4. `src/services/theme.rs`：以統一的動態 `ThemeDef` 表示內建與上傳主題；切換器、預設解析、
-   預覽與管理清單不再假設封閉的 `ThemeKey` 集合。
-5. 路由與模板：`/app/admin/themes` 的 multipart 上傳、編輯頁、刪除、稽核 action，以及目錄 API
-   的 `custom` 旗標。
-6. 資產：`/assets/custom-themes/{key}` 依資料庫目前資料列提供
-   `URLET_THEMES_DIR/<key>-<hash>.css`，快取一小時；替換 CSS 會改變 URL。
-7. 持久化：`URLET_THEMES_DIR` 預設為 `<data dir>/themes`，Docker 建立 `/data/themes`，compose
-   掛載獨立的 `urlet-themes` volume。
-8. 測試與文件：上傳/管理/刪除、驗證、授權、重載後仍在、稽核紀錄、雙語鏡像與
-   Docker/compose/備份說明。
+3. `src/services/custom_theme.rs`：CSS 驗證（UTF-8、大小、禁止外部資源）、`auto`／`light`／`dark` 外觀、原子寫檔、內容雜湊，以及與 `update_selection` 共用的 settings 鎖序列化。
+4. `src/services/theme.rs`：以統一的動態 `ThemeDef` 表示內建與上傳主題；切換器、預設解析、預覽與管理清單不再假設封閉的 `ThemeKey` 集合。
+5. 路由與模板：`/app/admin/themes` 的 multipart 上傳、編輯頁、刪除、稽核 action，以及目錄 API 的 `custom` 旗標。
+6. 資產：`/assets/custom-themes/{key}` 依資料庫目前資料列提供 `URLET_THEMES_DIR/<key>-<hash>.css`，快取一小時；替換 CSS 會改變 URL。
+7. 持久化：`URLET_THEMES_DIR` 預設為 `<data dir>/themes`，Docker 建立 `/data/themes`，compose 掛載獨立的 `urlet-themes` volume。
+8. 測試與文件：上傳/管理/刪除、驗證、授權、重載後仍在、稽核紀錄、雙語鏡像與 Docker/compose/備份說明。
 
-**驗收**：管理員可上傳 CSS 主題、選擇 `auto`／`light`／`dark` 外觀、設為預設、替換樣式表，
-並在移轉預設後刪除；成員對所有上傳路由皆回 403；重載後 registry 能從 SQLite 重建目錄；強制
-明暗模式可覆寫瀏覽器儲存的偏好；CSS 檔存在於 `URLET_THEMES_DIR`；且
-`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test` 與
-`scripts/smoke.sh` 全綠。
+**驗收**：管理員可上傳 CSS 主題、選擇 `auto`／`light`／`dark` 外觀、設為預設、替換樣式表，並在移轉預設後刪除；成員對所有上傳路由皆回 403；重載後 registry 能從 SQLite 重建目錄；強制明暗模式可覆寫瀏覽器儲存的偏好；CSS 檔存在於 `URLET_THEMES_DIR`；且 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test` 與 `scripts/smoke.sh` 全綠。
 
 ---
 
@@ -330,24 +315,17 @@
 
 **任務**
 
-1. `migrations/0015_public_shorten.sql`：`users.is_system` 與其部分唯一索引、保留的訪客帳號
-   （`guest@urlet.invalid`、已停用、無法解析的雜湊、無群組）以及十二個公開短網址工具設定
-2. `src/db/users.rs`：`is_system` 欄位、`find_system`，並在每個列表、計數與管理寫入加上
-   `is_system = 0`
-3. `src/services/settings.rs`：`PublicCreateAccess`（`guest`/`user`/`admin`）、`PublicFields`、
-   `public_*` 存取子與驗證
-4. `src/services/public_urls.rs`：存取檢查、伺服器端欄位強制、每來源位址與共用額度，以及解析
-   訪客 actor 的建立流程
+1. `migrations/0015_public_shorten.sql`：`users.is_system` 與其部分唯一索引、保留的訪客帳號（`guest@urlet.invalid`、已停用、無法解析的雜湊、無群組）以及十二個公開短網址工具設定
+2. `src/db/users.rs`：`is_system` 欄位、`find_system`，並在每個列表、計數與管理寫入加上 `is_system = 0`
+3. `src/services/settings.rs`：`PublicCreateAccess`（`guest`/`user`/`admin`）、`PublicFields`、`public_*` 存取子與驗證
+4. `src/services/public_urls.rs`：存取檢查、伺服器端欄位強制、每來源位址與共用額度，以及解析訪客 actor 的建立流程
 5. `src/services/urls.rs`：存取層級同時把關儀表板與已認證 API
-6. `src/routes/public_urls.rs` + `src/routes/pages/home.rs`：`POST /`、`POST /api/v1/public/urls`、
-   表單／結果檢視，以及永不信任查詢字串的 `?shortened=` 查詢
-7. `templates/partials/shorten.html` 與六個導覽首頁模板的 include；當建立權保留給管理員時，
-   儀表板顯示提示
+6. `src/routes/public_urls.rs` + `src/routes/pages/home.rs`：`POST /`、`POST /api/v1/public/urls`、表單／結果檢視，以及永不信任查詢字串的 `?shortened=` 查詢
+7. `templates/partials/shorten.html` 與六個導覽首頁模板的 include；當建立權保留給管理員時，儀表板顯示提示
 8. 管理設定區塊、三份語言目錄、`tests/public_urls.rs`、`scripts/smoke.sh` 與雙語文件
 9. 遊客配額後續：migration `0017_public_creation_quota.sql` 持久化原子自然週期計數；兩組額度各自選擇分鐘／時／日／週／月，依伺服器時區計算並跨重啟保留。登入用戶維持分組額度與既有帳號防濫用機制；只有開放遊客才展開相關設定，隱藏時保留值，並驗證時區、日光節約時間與自然邊界。
 
-**驗收**：`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`、
-`scripts/smoke.sh` 與 `scripts/merge-check.sh` 全綠；升級後公開表單維持關閉，直到管理員開啟。
+**驗收**：`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`、`scripts/smoke.sh` 與 `scripts/merge-check.sh` 全綠；升級後公開表單維持關閉，直到管理員開啟。
 
 ---
 

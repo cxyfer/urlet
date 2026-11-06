@@ -2,8 +2,7 @@
 
 **English** | [繁體中文](docs/zh-TW/RELEASING.md)
 
-This file is the release contract for the repository. Read it before creating a version tag.
-The automation lives in [`.github/workflows/release-image.yml`](.github/workflows/release-image.yml).
+This file is the release contract for the repository. Read it before creating a version tag. The automation lives in [`.github/workflows/release-image.yml`](.github/workflows/release-image.yml).
 
 ## Contents
 
@@ -18,15 +17,13 @@ The automation lives in [`.github/workflows/release-image.yml`](.github/workflow
 
 ## What a release does
 
-A release is a git tag matching `vMAJOR.MINOR.PATCH` (optionally with a `-PRERELEASE` suffix).
-Pushing it runs one GitHub Actions workflow that:
+A release is a git tag matching `vMAJOR.MINOR.PATCH` (optionally with a `-PRERELEASE` suffix). Pushing it runs one GitHub Actions workflow that:
 
 1. validates the tag against `Cargo.toml`,
 2. builds `linux/amd64` and `linux/arm64`, and
 3. pushes the image to the GitHub Container Registry.
 
-It does **not** bump the version, run the tests, or create the GitHub Release. Those steps stay
-manual on purpose (see [Rules](#rules)).
+It does **not** bump the version, run the tests, or create the GitHub Release. Those steps stay manual on purpose (see [Rules](#rules)).
 
 ## Image tags
 
@@ -38,60 +35,31 @@ manual on purpose (see [Rules](#rules)).
 | Manual rebuild, defaults | `v1.2.3` | Exact version only |
 | Manual rebuild + “update moving tags” | `v1.2.3`, `v1.2`, `v1`, `latest` | Only when `v1.2.3` is the newest stable tag |
 
-The image tag mirrors the git tag, including the `v` prefix; `latest` is the only tag without it.
-Tags published before 1.3.0 used bare versions (`1.2.0`, `1.2`, `1`) and no longer move — pin
-`vX.Y.Z` or `latest` from 1.3.0 onwards.
+The image tag mirrors the git tag, including the `v` prefix; `latest` is the only tag without it. Tags published before 1.3.0 used bare versions (`1.2.0`, `1.2`, `1`) and no longer move — pin `vX.Y.Z` or `latest` from 1.3.0 onwards.
 
-The full image name is `ghcr.io/cxyfer/urlet`. It is derived from `github.repository`, so a fork
-publishes to its own namespace.
+The full image name is `ghcr.io/cxyfer/urlet`. It is derived from `github.repository`, so a fork publishes to its own namespace.
 
 ## Rules
 
-1. **The tag must equal the `Cargo.toml` version.** `v1.2.3` requires `version = "1.2.3"`; the
-   workflow fails before building otherwise.
-2. **Bump three files together.** The version lives in `Cargo.toml`, `Cargo.lock` and the
-   `image:` tag in [docker-compose.yml](docker-compose.yml); all three must end up on the release
-   version. Refresh the lockfile after editing `Cargo.toml` — the [Dockerfile](Dockerfile) runs
-   `cargo build --locked`, so a stale root-package version breaks the image build:
+1. **The tag must equal the `Cargo.toml` version.** `v1.2.3` requires `version = "1.2.3"`; the workflow fails before building otherwise.
+2. **Bump three files together.** The version lives in `Cargo.toml`, `Cargo.lock` and the `image:` tag in [docker-compose.yml](docker-compose.yml); all three must end up on the release version. Refresh the lockfile after editing `Cargo.toml` — the [Dockerfile](Dockerfile) runs `cargo build --locked`, so a stale root-package version breaks the image build:
    ```bash
    cargo update -p urlet
    cargo metadata --locked --format-version 1 >/dev/null
    ```
-   The embedded API reference carries the same version, in `info.version` and in the health
-   example, so regenerate the contracts in the same commit. The CI `contracts` job fails when
-   they are stale:
+   The embedded API reference carries the same version, in `info.version` and in the health example, so regenerate the contracts in the same commit. The CI `contracts` job fails when they are stale:
    ```bash
    python3 scripts/build-openapi.py
    ```
-3. **Tag only merged commits.** The workflow file must exist on the tagged commit, so push
-   `master` before the tag.
-4. **Never move or reuse a published tag.** The tag is the immutable identity of an image.
-   Publish a new patch version instead.
-5. **Only the newest stable tag moves `vX`, `vX.Y` and `latest`.** A maintenance or backport release
-   older than the newest stable version publishes only its exact tag. The workflow compares
-   against all fetched tags before building.
-6. **Release runs are serialized and queued.** A single `release-image` concurrency group with
-   `queue: max` keeps up to 100 pending releases, so a burst of tags still publishes every exact
-   version and a slow older build cannot finish after a newer one and move the moving tags
-   backwards.
-7. **Do not rebuild an old tag with moving tags enabled.** That would point `latest` (and `X`,
-   `X.Y`) back at the old version. Use the default (exact version only) for old tags; the
-   newest-stable guard also blocks it, but the default makes the intent explicit.
+3. **Tag only merged commits.** The workflow file must exist on the tagged commit, so push `master` before the tag.
+4. **Never move or reuse a published tag.** The tag is the immutable identity of an image. Publish a new patch version instead.
+5. **Only the newest stable tag moves `vX`, `vX.Y` and `latest`.** A maintenance or backport release older than the newest stable version publishes only its exact tag. The workflow compares against all fetched tags before building.
+6. **Release runs are serialized and queued.** A single `release-image` concurrency group with `queue: max` keeps up to 100 pending releases, so a burst of tags still publishes every exact version and a slow older build cannot finish after a newer one and move the moving tags backwards.
+7. **Do not rebuild an old tag with moving tags enabled.** That would point `latest` (and `X`, `X.Y`) back at the old version. Use the default (exact version only) for old tags; the newest-stable guard also blocks it, but the default makes the intent explicit.
 8. **Pre-releases never get `latest`.** Use suffixes such as `-rc.1`, `-beta.1`, `-alpha.1`.
-9. **The GitHub Release is manual, in the standard format.** Publish it after the image exists,
-   with notes scaffolded by [`scripts/release-notes.sh`](scripts/release-notes.sh) and shaped by
-   [`.github/release-notes-template.md`](.github/release-notes-template.md). Keep every prose
-   paragraph and highlight bullet on one source line — GitHub turns a newline inside a release
-   body into a hard break — and run
-   [`scripts/release-notes-lint.sh`](scripts/release-notes-lint.sh) on the draft.
-10. **GHCR visibility is a repository setting.** A private repository produces a private package.
-    Authenticate with `docker login ghcr.io` (token scope `read:packages`) or make the package
-    public.
-11. **The `image:` value in [docker-compose.yml](docker-compose.yml) is a local build tag, but it
-    must still carry the release version.** It publishes nothing — every released image comes from
-    the workflow — yet leaving it behind makes `docker compose up --build` label a local build with
-    an older version, which is how `v1.3.0-rc.6` shipped a Compose file still naming
-    `v1.3.0-rc.5`. Keep it in step with `Cargo.toml` and `Cargo.lock`.
+9. **The GitHub Release is manual, in the standard format.** Publish it after the image exists, with notes scaffolded by [`scripts/release-notes.sh`](scripts/release-notes.sh) and shaped by [`.github/release-notes-template.md`](.github/release-notes-template.md). Keep every prose paragraph and highlight bullet on one source line — GitHub turns a newline inside a release body into a hard break — and run [`scripts/release-notes-lint.sh`](scripts/release-notes-lint.sh) on the draft.
+10. **GHCR visibility is a repository setting.** A private repository produces a private package. Authenticate with `docker login ghcr.io` (token scope `read:packages`) or make the package public.
+11. **The `image:` value in [docker-compose.yml](docker-compose.yml) is a local build tag, but it must still carry the release version.** It publishes nothing — every released image comes from the workflow — yet leaving it behind makes `docker compose up --build` label a local build with an older version, which is how `v1.3.0-rc.6` shipped a Compose file still naming `v1.3.0-rc.5`. Keep it in step with `Cargo.toml` and `Cargo.lock`.
 
 ## Release checklist
 
@@ -108,10 +76,7 @@ cargo test
 bash scripts/smoke.sh       # recommended: builds and exercises the real binary
 ```
 
-These checks also run in CI: `.github/workflows/ci.yml` runs formatting, lints and tests, the smoke
-run and the OpenAPI contract job on every pull request and on every push to `master` that a green
-pull request did not already cover. The local run above is still the quality gate before a tag,
-because a release tag cannot be reused if it turns out broken.
+These checks also run in CI: `.github/workflows/ci.yml` runs formatting, lints and tests, the smoke run and the OpenAPI contract job on every pull request and on every push to `master` that a green pull request did not already cover. The local run above is still the quality gate before a tag, because a release tag cannot be reused if it turns out broken.
 
 ### 2. Bump the version
 
@@ -140,8 +105,7 @@ cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
 ```
 
-The embedded API reference carries the same version in `info.version`, so regenerate the contracts
-and commit them too; the CI `contracts` job fails when the committed documents are stale:
+The embedded API reference carries the same version in `info.version`, so regenerate the contracts and commit them too; the CI `contracts` job fails when the committed documents are stale:
 
 ```bash
 python3 scripts/build-openapi.py     # needs PyYAML
@@ -200,40 +164,26 @@ gh release create v1.2.3 --title "urlet 1.2.3" \
   --notes-file .tmp/release-notes-v1.2.3.md --verify-tag
 ```
 
-Write each callout paragraph and each highlight bullet on one line; the lint command fails the
-draft if the prose is still wrapped. GitHub turns a newline inside a release body into a hard
-line break, so wrapped source reaches the release page broken mid-sentence.
+Write each callout paragraph and each highlight bullet on one line; the lint command fails the draft if the prose is still wrapped. GitHub turns a newline inside a release body into a hard line break, so wrapped source reaches the release page broken mid-sentence.
 
-Add `--prerelease` for a `-rc.N` tag. The shape is fixed by
-[`.github/release-notes-template.md`](.github/release-notes-template.md): a short
-`> [!IMPORTANT]` summary with the upgrade notes, a `## Highlights` list grouped by area, then
-`## What's Changed`, `## New Contributors` when it applies, and `**Full Changelog**`.
-The image is already available at this point.
+Add `--prerelease` for a `-rc.N` tag. The shape is fixed by [`.github/release-notes-template.md`](.github/release-notes-template.md): a short `> [!IMPORTANT]` summary with the upgrade notes, a `## Highlights` list grouped by area, then `## What's Changed`, `## New Contributors` when it applies, and `**Full Changelog**`. The image is already available at this point.
 
 ### 6. Optional: allow anonymous pulls
 
-If anonymous `docker compose pull` should work, open the package page and set
-*Package settings → Danger zone → Change visibility → Public*.
+If anonymous `docker compose pull` should work, open the package page and set *Package settings → Danger zone → Change visibility → Public*.
 
 ## Manual rebuilds
 
 *Actions → Release container image → Run workflow*:
 
 - `tag`: the existing tag to rebuild (for example `v1.2.3`).
-- `update_moving_tags`: leave **off** unless you are rebuilding the **newest stable** release and
-  want `vX`, `vX.Y` and `latest` to follow the new digest. The newest-stable guard rejects moving
-  tags for older releases.
+- `update_moving_tags`: leave **off** unless you are rebuilding the **newest stable** release and want `vX`, `vX.Y` and `latest` to follow the new digest. The newest-stable guard rejects moving tags for older releases.
 
 Typical uses: a base-image CVE fix or a runner/toolchain change without a new application version.
 
 ## Cleaning up a rebuilt version
 
-A rebuild produces a new digest under the same tag and leaves the old package version behind.
-GHCR deletes versions, not tags, so removing the old one removes every tag on it. Check that the
-`v`-prefixed tags and `latest` already point at the new digest, then run *Actions → Delete a
-container image version* with the now-unused bare tag (for example `1.3.0-rc.1`). The workflow
-refuses to delete a v-prefixed tag, or a version that still carries one or `latest`; the old
-version's bare tags disappear with it.
+A rebuild produces a new digest under the same tag and leaves the old package version behind. GHCR deletes versions, not tags, so removing the old one removes every tag on it. Check that the `v`-prefixed tags and `latest` already point at the new digest, then run *Actions → Delete a container image version* with the now-unused bare tag (for example `1.3.0-rc.1`). The workflow refuses to delete a v-prefixed tag, or a version that still carries one or `latest`; the old version's bare tags disappear with it.
 
 ## Failure handling
 

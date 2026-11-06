@@ -2,8 +2,7 @@
 
 # urlet — Phased Implementation Plan
 
-> Spec: `docs/SPEC.md` v1.8
-> Principle: at the end of every phase the code must **compile, test, and commit**; each phase gets one (or a few) local commits.
+> Spec: `docs/SPEC.md` v1.8 Principle: at the end of every phase the code must **compile, test, and commit**; each phase gets one (or a few) local commits.
 
 ## Contents
 
@@ -39,8 +38,7 @@
 | P20 Editable guest destination allowlist | ✅ Done | `b36a1e3 ✨ feat(public): add an editable guest destination allowlist` |
 | P21 SNS preview cards | ✅ Done | `b92a2b8 ✨ feat(previews): customise social sharing cards` |
 
-Acceptance data (v1.0): `cargo test` is all green with 187 tests, `cargo clippy --all-targets -- -D warnings`
-and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scripts/smoke.sh` pass.
+Acceptance data (v1.0): `cargo test` is all green with 187 tests, `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scripts/smoke.sh` pass.
 
 ---
 
@@ -215,9 +213,7 @@ and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scr
 | Tests | All green | `cargo test` 187 items, `scripts/smoke.sh` 81 items |
 | Static checks | No warnings | `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` pass |
 
-The table above is the v1.0 record. The current measurements — 15.7 MB musl binary and 37.2 MB
-image in v1.6, ~0.1 s cold start in v1.1 — are tracked in `docs/SPEC.md` §3.3; read them there
-rather than quoting this table.
+The table above is the v1.0 record. The current measurements — 15.7 MB musl binary and 37.2 MB image in v1.6, ~0.1 s cold start in v1.1 — are tracked in `docs/SPEC.md` §3.3; read them there rather than quoting this table.
 
 ---
 
@@ -302,30 +298,16 @@ rather than quoting this table.
 
 Uploads extend the theme catalogue without changing the compile-time template model.
 
-1. `migrations/0012_custom_themes.sql` + `0013_custom_theme_appearance.sql`: metadata table for
-   uploaded stylesheets, keyed by a generated `custom-…` key; a matching `themes` row carries
-   enabled/default/order, and the appearance migration converts the old dark-only flag.
+1. `migrations/0012_custom_themes.sql` + `0013_custom_theme_appearance.sql`: metadata table for uploaded stylesheets, keyed by a generated `custom-…` key; a matching `themes` row carries enabled/default/order, and the appearance migration converts the old dark-only flag.
 2. `src/db/custom_themes.rs`: create/update/delete metadata and the catalogue row in one transaction.
-3. `src/services/custom_theme.rs`: CSS validation (UTF-8, size, no external resources), the
-   `auto`/`light`/`dark` appearance, atomic file writes, content hashes and the settings-lock
-   serialization shared with `update_selection`.
-4. `src/services/theme.rs`: one dynamic `ThemeDef` for compiled-in and uploaded themes; the picker,
-   default resolution, preview and admin rows no longer assume a closed `ThemeKey` set.
-5. Routes and templates: multipart upload from `/app/admin/themes`, an edit page, delete, audit
-   actions and the `custom` flag in the catalogue API.
-6. Assets: `/assets/custom-themes/{key}` reads the current database row and serves
-   `URLET_THEMES_DIR/<key>-<hash>.css` with a one-hour cache; replacing the CSS changes the URL.
-7. Persistence: `URLET_THEMES_DIR` defaults to `<data dir>/themes`, Docker creates `/data/themes` and
-   compose mounts the dedicated `urlet-themes` volume.
-8. Tests and docs: upload/manage/delete, validation, authorization, persisted reload, audit entries,
-   both language mirrors and the Docker/compose/backup notes.
+3. `src/services/custom_theme.rs`: CSS validation (UTF-8, size, no external resources), the `auto`/`light`/`dark` appearance, atomic file writes, content hashes and the settings-lock serialization shared with `update_selection`.
+4. `src/services/theme.rs`: one dynamic `ThemeDef` for compiled-in and uploaded themes; the picker, default resolution, preview and admin rows no longer assume a closed `ThemeKey` set.
+5. Routes and templates: multipart upload from `/app/admin/themes`, an edit page, delete, audit actions and the `custom` flag in the catalogue API.
+6. Assets: `/assets/custom-themes/{key}` reads the current database row and serves `URLET_THEMES_DIR/<key>-<hash>.css` with a one-hour cache; replacing the CSS changes the URL.
+7. Persistence: `URLET_THEMES_DIR` defaults to `<data dir>/themes`, Docker creates `/data/themes` and compose mounts the dedicated `urlet-themes` volume.
+8. Tests and docs: upload/manage/delete, validation, authorization, persisted reload, audit entries, both language mirrors and the Docker/compose/backup notes.
 
-**Acceptance**: an administrator can upload a CSS theme, select its `auto`/`light`/`dark` appearance,
-make it the default, replace its stylesheet, and delete it after moving the default; members receive
-403 for every upload route; a reload rebuilds the catalogue from SQLite; forced light/dark modes
-override a saved browser preference; the CSS file exists in `URLET_THEMES_DIR`; and
-`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and
-`scripts/smoke.sh` are clean.
+**Acceptance**: an administrator can upload a CSS theme, select its `auto`/`light`/`dark` appearance, make it the default, replace its stylesheet, and delete it after moving the default; members receive 403 for every upload route; a reload rebuilds the catalogue from SQLite; forced light/dark modes override a saved browser preference; the CSS file exists in `URLET_THEMES_DIR`; and `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and `scripts/smoke.sh` are clean.
 
 ---
 
@@ -343,9 +325,7 @@ override a saved browser preference; the CSS file exists in `URLET_THEMES_DIR`; 
 8. Admin settings section, three locale catalogues, `tests/public_urls.rs`, `scripts/smoke.sh` and both doc languages
 9. Guest quota follow-up: migration `0017_public_creation_quota.sql` persists atomic natural-period counters; independent minute/hour/day/week/month settings follow the server timezone, survive restart and keep authenticated callers on group quotas and their existing account throttle. Reveal guest settings only for guest access, preserve hidden values, and test timezone/DST/calendar boundaries.
 
-**Acceptance**: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`,
-`scripts/smoke.sh` and `scripts/merge-check.sh` are green; an upgrade leaves the public form closed
-until an administrator opens it.
+**Acceptance**: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `scripts/smoke.sh` and `scripts/merge-check.sh` are green; an upgrade leaves the public form closed until an administrator opens it.
 
 ---
 

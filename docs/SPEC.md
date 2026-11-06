@@ -2,9 +2,7 @@
 
 # urlet — Lightweight Multi-User URL Shortener Specification
 
-> Version: 1.8
-> Status: Approved for implementation
-> Last updated: 2026-10-28
+> Version: 1.8 Status: Approved for implementation Last updated: 2026-10-28
 
 **Contents**
 
@@ -25,24 +23,9 @@
 
 ## 1. Overview
 
-`urlet` is a **self-hosted, multi-user** URL shortener. Every user gets an isolated space
-for their own short links, can attach **password protection** and **expiry rules**, review click
-analytics, and drive the service programmatically with a personal API token.
+`urlet` is a **self-hosted, multi-user** URL shortener. Every user gets an isolated space for their own short links, can attach **password protection** and **expiry rules**, review click analytics, and drive the service programmatically with a personal API token.
 
-The top design principle is **as lightweight as possible**: a single Rust binary plus a single
-SQLite file, deployed with one `docker compose up -d`, with no external database, cache, or
-frontend build step. The v1.1 line adds a trilingual interface (English / Traditional Chinese /
-Simplified Chinese), optional bot protection, and a public landing page. The v1.2 line adds
-**user groups**: per-group link and API-token quotas plus feature toggles, so an instance can be
-operated with tiers (for example a free and a paid group) without changing the single-binary
-deployment model. The v1.4 line adds **switchable themes**: the visual identity is a compiled-in
-template set plus stylesheet, administrators may also upload additional CSS-only themes, choose
-which designs are offered and who may switch, and users keep their choice in a cookie. The v1.5
-line adds **splash pages**: a link can show a promotional interstitial with a countdown before the
-destination, and a per-group policy decides whether members may use direct redirects, splash pages,
-or either. The v1.6 line adds the **public shortener**: the landing page can carry a shortening
-form for visitors without an account, with an administrator-controlled access level, a per-field
-switch set, bot protection and both a per-address and a shared visitor rate limit.
+The top design principle is **as lightweight as possible**: a single Rust binary plus a single SQLite file, deployed with one `docker compose up -d`, with no external database, cache, or frontend build step. The v1.1 line adds a trilingual interface (English / Traditional Chinese / Simplified Chinese), optional bot protection, and a public landing page. The v1.2 line adds **user groups**: per-group link and API-token quotas plus feature toggles, so an instance can be operated with tiers (for example a free and a paid group) without changing the single-binary deployment model. The v1.4 line adds **switchable themes**: the visual identity is a compiled-in template set plus stylesheet, administrators may also upload additional CSS-only themes, choose which designs are offered and who may switch, and users keep their choice in a cookie. The v1.5 line adds **splash pages**: a link can show a promotional interstitial with a countdown before the destination, and a per-group policy decides whether members may use direct redirects, splash pages, or either. The v1.6 line adds the **public shortener**: the landing page can carry a shortening form for visitors without an account, with an administrator-controlled access level, a per-field switch set, bot protection and both a per-address and a shared visitor rate limit.
 
 ### 1.1 Core Design Principles (from the requester)
 
@@ -59,8 +42,7 @@ switch set, bot protection and both a per-address and a shared visitor rate limi
 
 ### 1.2 Relationship to the Earlier Prototypes (OURLS / OURLS2)
 
-Two directions were explored in earlier projects. This project **inherits their data model and
-feature ideas** but re-selects the stack to satisfy P5:
+Two directions were explored in earlier projects. This project **inherits their data model and feature ideas** but re-selects the stack to satisfy P5:
 
 | Aspect | OURLS (prototype) | OURLS2 (prototype) | **urlet (this project)** |
 |--------|-------------------|--------------------|---------------------------|
@@ -72,11 +54,7 @@ feature ideas** but re-selects the stack to satisfy P5:
 | Analytics | Full (GeoIP, MaxMind) | Full | **Lean (UA parsing, daily rollups, no GeoIP)** |
 | Inherited | Password protection, expiry, click cap, tags, API tokens, invite codes, audit log | Same + public preview API | All of the above, trimmed to essentials |
 
-**Deliberate non-goals**: OAuth third-party login, fine-grained permission matrices, GeoIP/MMDB,
-keyword blocklists, A/B testing, webhooks, QR codes, link-in-bio pages, and email delivery.
-Multilingual support was a non-goal in v1.0 and is now in scope as of v1.1 (§4.11). User groups
-were a non-goal in v1.0; v1.2 adds quota and feature-toggle groups (§4.13) but still no
-per-action permission matrix.
+**Deliberate non-goals**: OAuth third-party login, fine-grained permission matrices, GeoIP/MMDB, keyword blocklists, A/B testing, webhooks, QR codes, link-in-bio pages, and email delivery. Multilingual support was a non-goal in v1.0 and is now in scope as of v1.1 (§4.11). User groups were a non-goal in v1.0; v1.2 adds quota and feature-toggle groups (§4.13) but still no per-action permission matrix.
 
 ---
 
@@ -165,13 +143,7 @@ Browser / curl          │                                                  │
 | Logging | `tracing` + `tracing-subscriber` | Structured logs controlled by `RUST_LOG` |
 | Time | `time` 0.3 + `jiff` 0.2 | UTC storage/formatting plus server-timezone calendar quotas with DST handling |
 
-**Dependencies deliberately avoided**: Redis, a MySQL client, jsonwebtoken, MaxMind/GeoIP, and the
-React/Node toolchain. No outbound request ever fetches the target URL, which also removes the SSRF
-risk. The only outbound HTTP call in the system is the optional captcha siteverify request
-(`src/services/captcha.rs`): it goes through `ureq` 2 with the rustls + webpki-roots stack (pure
-Rust, so the `rust:1-alpine` musl image needs no OpenSSL), it is disabled unless an administrator
-configures a provider, it times out after **5 seconds**, and any failure rejects the request
-(fail closed).
+**Dependencies deliberately avoided**: Redis, a MySQL client, jsonwebtoken, MaxMind/GeoIP, and the React/Node toolchain. No outbound request ever fetches the target URL, which also removes the SSRF risk. The only outbound HTTP call in the system is the optional captcha siteverify request (`src/services/captcha.rs`): it goes through `ureq` 2 with the rustls + webpki-roots stack (pure Rust, so the `rust:1-alpine` musl image needs no OpenSSL), it is disabled unless an administrator configures a provider, it times out after **5 seconds**, and any failure rejects the request (fail closed).
 
 ### 3.3 Binary and Image Size Targets
 
@@ -182,17 +154,9 @@ configures a provider, it times out after **5 seconds**, and any failure rejects
 | Idle / under-load memory | ≤ 30 MB RSS | 6.8 MB (after 500 requests) | **8.7 MB** (after 500 requests) | not re-measured |
 | Cold start to serving | ≤ 1 second | ~0.2 s (including migrations) | **~0.1 s** (fresh database, including migrations) | not re-measured |
 
-The v1.1 column includes the embedded locale catalogs and the rustls-based captcha client. Every
-v1.1 target is still met.
+The v1.1 column includes the embedded locale catalogs and the rustls-based captcha client. Every v1.1 target is still met.
 
-The v1.6 column is measured on `master` plus the embedded API reference. Most of the growth since
-v1.1 is the features added in between — SNS preview images, the public shortener and the theme
-system — not the reference itself: the same tree without it measures 30.4 MB. The reference adds
-6.5 MiB, of which the vendored Scalar bundle is 4.9 MB and the two OpenAPI contracts are 0.4 MB.
-The binary now exceeds its 15 MB target by 0.7 MB (15.7 MB), while the 37.2 MB image is
-still under its 40 MB target. If the image needs to come down, the vendored bundle is the
-lever — it compresses to about 1.3 MB and a smaller renderer such as RapiDoc is 0.5 MB, at
-the cost of the localised interface chrome.
+The v1.6 column is measured on `master` plus the embedded API reference. Most of the growth since v1.1 is the features added in between — SNS preview images, the public shortener and the theme system — not the reference itself: the same tree without it measures 30.4 MB. The reference adds 6.5 MiB, of which the vendored Scalar bundle is 4.9 MB and the two OpenAPI contracts are 0.4 MB. The binary now exceeds its 15 MB target by 0.7 MB (15.7 MB), while the 37.2 MB image is still under its 40 MB target. If the image needs to come down, the vendored bundle is the lever — it compresses to about 1.3 MB and a smaller renderer such as RapiDoc is 0.5 MB, at the cost of the localised interface chrome.
 
 ---
 
@@ -311,47 +275,16 @@ the cost of the localised interface chrome.
 - Pagination format: `{ "items": [...], "page": 1, "per_page": 20, "total": 42, "total_pages": 3 }`
 - Authentication: session cookie **or** `Authorization: Bearer <api_token>`.
 - **All JSON API responses are English** and are not affected by the request language or the `urlet_lang` cookie.
-- The instance serves its own browsable reference, embedded in the binary so an instance with no
-  outbound network still has one:
+- The instance serves its own browsable reference, embedded in the binary so an instance with no outbound network still has one:
   - `GET /docs` renders the reference in the visitor's interface language.
-  - `GET /docs/openapi.json` and `GET /docs/openapi.zh-TW.json` serve the OpenAPI 3.1 contract.
-    Both are generated from `openapi/` by `scripts/build-openapi.py` and committed, because the
-    binary embeds them with `include_str!`; a CI job regenerates them and fails on any diff.
-  - The two contracts must document the same operations, and every operation must reference a
-    group the document declares. Group names are translated with the rest of the prose, so the
-    reference sidebar reads in the visitor's language. Simplified Chinese visitors get the
-    English contract, because the prose documentation is bilingual.
-  - Scalar is vendored in `src/assets/scalar.js`, pinned by version and digest by
-    `scripts/update-scalar.sh`. The page makes no third-party request and needs no CSP exception:
-    the mount element avoids the ids Scalar auto-detects, so the options passed to it apply.
-  - The contract names the configured base URL as its server, and the reference lives on that
-    host. The footer links it from every design, including the extra-domain short landing, but on
-    an extra domain `/docs` and `/docs/*` answer `308` to the canonical host rather than serving
-    the page: the reference's Test Request calls the canonical base URL, the CSP allows
-    `connect-src 'self'` only, and there is no CORS layer, so an interactive reference served from
-    an extra domain would have every request blocked by the browser. The base URL is deployment
-    configuration, so the generator leaves a placeholder in the committed contract and the
-    response substitutes it; the value does not depend on the request, so the cached body is the
-    same for every host.
-  - `POST /{slug}/unlock` is the exception: every active domain serves it and the slug resolves on
-    the domain the request arrived on, so the operation names the link's own origin as a server
-    variable rather than inheriting the canonical API server.
-  - `/docs` is a reserved slug: no short link may claim it. A live link that already holds it is
-    reported at startup and left untouched for its owner to rename.
-- The contract and the router are held together by tests, because nothing in the type system
-  connects them. axum exposes no way to read a built router back, so `tests/contract.rs` reads the
-  surface from the router's own source — the `.route(...)` calls are the registration — and asserts
-  set equality with each contract's paths and methods. A handler added without a contract entry
-  fails, and so does a contract entry whose handler is gone. The parse fails on a shape it does not
-  understand, and a size guard makes a parser that silently matched nothing fail rather than pass.
-  A CI job additionally lints both generated documents, which is what caught four components that
-  described dashboard payloads rather than API responses.
-- The same documents are published as a static, searchable site from `docs-site/`, deployed to the
-  `gh-pages` branch by a path-filtered workflow. The repository's `docs/` tree stays the single
-  source: a prebuild step copies it into the site's content tree, derives each page title from its
-  own first heading, and rewrites the links between documents. The generated copy is gitignored,
-  so the repository never carries a second copy that could drift. The site is a separate artifact
-  and does not enter the Docker context or the binary.
+  - `GET /docs/openapi.json` and `GET /docs/openapi.zh-TW.json` serve the OpenAPI 3.1 contract. Both are generated from `openapi/` by `scripts/build-openapi.py` and committed, because the binary embeds them with `include_str!`; a CI job regenerates them and fails on any diff.
+  - The two contracts must document the same operations, and every operation must reference a group the document declares. Group names are translated with the rest of the prose, so the reference sidebar reads in the visitor's language. Simplified Chinese visitors get the English contract, because the prose documentation is bilingual.
+  - Scalar is vendored in `src/assets/scalar.js`, pinned by version and digest by `scripts/update-scalar.sh`. The page makes no third-party request and needs no CSP exception: the mount element avoids the ids Scalar auto-detects, so the options passed to it apply.
+  - The contract names the configured base URL as its server, and the reference lives on that host. The footer links it from every design, including the extra-domain short landing, but on an extra domain `/docs` and `/docs/*` answer `308` to the canonical host rather than serving the page: the reference's Test Request calls the canonical base URL, the CSP allows `connect-src 'self'` only, and there is no CORS layer, so an interactive reference served from an extra domain would have every request blocked by the browser. The base URL is deployment configuration, so the generator leaves a placeholder in the committed contract and the response substitutes it; the value does not depend on the request, so the cached body is the same for every host.
+  - `POST /{slug}/unlock` is the exception: every active domain serves it and the slug resolves on the domain the request arrived on, so the operation names the link's own origin as a server variable rather than inheriting the canonical API server.
+  - `/docs` is a reserved slug: no short link may claim it. A live link that already holds it is reported at startup and left untouched for its owner to rename.
+- The contract and the router are held together by tests, because nothing in the type system connects them. axum exposes no way to read a built router back, so `tests/contract.rs` reads the surface from the router's own source — the `.route(...)` calls are the registration — and asserts set equality with each contract's paths and methods. A handler added without a contract entry fails, and so does a contract entry whose handler is gone. The parse fails on a shape it does not understand, and a size guard makes a parser that silently matched nothing fail rather than pass. A CI job additionally lints both generated documents, which is what caught four components that described dashboard payloads rather than API responses.
+- The same documents are published as a static, searchable site from `docs-site/`, deployed to the `gh-pages` branch by a path-filtered workflow. The repository's `docs/` tree stays the single source: a prebuild step copies it into the site's content tree, derives each page title from its own first heading, and rewrites the links between documents. The generated copy is gitignored, so the repository never carries a second copy that could drift. The site is a separate artifact and does not enter the Docker context or the binary.
 - See §7 for the endpoint list.
 
 ### 4.10 Web Interface (FR-UI)
@@ -382,10 +315,7 @@ the cost of the localised interface chrome.
 | `/{slug}` | Redirect / password page / splash page / 410 / 404 | Public |
 | Extra domain | Redirect-only | `/` shows a small landing page, `/{slug}` redirects, `/app` 308s to canonical, `/api` is 404 |
 
-**UI technology**: Askama templates + hand-written CSS (including `prefers-color-scheme` dark mode) +
-roughly 500 lines of vanilla JS (copy to clipboard, confirmation dialogs, form enhancements,
-the create/edit dialogs shared by the group and theme forms).
-**No** frontend framework or CDN resource is used (so the CSP can be restricted to `'self'`).
+**UI technology**: Askama templates + hand-written CSS (including `prefers-color-scheme` dark mode) + roughly 500 lines of vanilla JS (copy to clipboard, confirmation dialogs, form enhancements, the create/edit dialogs shared by the group and theme forms). **No** frontend framework or CDN resource is used (so the CSP can be restricted to `'self'`).
 
 ### 4.11 Multilingual UI (FR-I18N)
 
@@ -659,81 +589,27 @@ login_attempts (auditing)
 | `custom_themes(created_by)` | Upload attribution and cleanup |
 | `users(is_system) WHERE is_system = 1` UNIQUE | At most one reserved system account |
 
-The v1.1 changes add settings **keys** only; because `settings` is a key-value table, v1.1 kept
-the schema at 14 tables and 27 indexes. v1.2 adds the `user_groups` and `group_domains`
-tables, the nullable `users.group_id` / `invite_codes.group_id` columns, the
-`user_groups.default_domain_id` / `restrict_domains` columns and four indexes, for **16 tables and
-31 indexes** (§6.1, §6.3, §6.4). The invite-ledger work then added `invite_issuance` and its index,
-taking the schema to **17 tables and 33 indexes**. v1.3 adds only the nullable
-`invite_codes.code_sealed` column, so the table and index counts stay at 17/33. v1.4 adds the
-`themes` table and its single-default index. v1.5 adds the `urls` splash columns and
-`user_groups.redirect_mode_policy` without changing the table count, plus uploadable themes'
-`custom_themes` and its creator index, for **19 tables and 35 indexes**. The invite-refund work adds
-the nullable `invite_issuance.released_at` column; the table and index counts stay at 19/35. On the
-first start after upgrading, codes that were already revoked and never redeemed are released too,
-so `invites_used` can drop once. v1.6 adds only the `users.is_system` column and its partial unique
-index (no new table), for **19 tables and 36 indexes**. SNS previews add `url_previews` without an explicit index. Calendar quotas add
-`public_creation_quota` and its expiry index, bringing the current total to **21 tables and 37 indexes**.
+The v1.1 changes add settings **keys** only; because `settings` is a key-value table, v1.1 kept the schema at 14 tables and 27 indexes. v1.2 adds the `user_groups` and `group_domains` tables, the nullable `users.group_id` / `invite_codes.group_id` columns, the `user_groups.default_domain_id` / `restrict_domains` columns and four indexes, for **16 tables and 31 indexes** (§6.1, §6.3, §6.4). The invite-ledger work then added `invite_issuance` and its index, taking the schema to **17 tables and 33 indexes**. v1.3 adds only the nullable `invite_codes.code_sealed` column, so the table and index counts stay at 17/33. v1.4 adds the `themes` table and its single-default index. v1.5 adds the `urls` splash columns and `user_groups.redirect_mode_policy` without changing the table count, plus uploadable themes' `custom_themes` and its creator index, for **19 tables and 35 indexes**. The invite-refund work adds the nullable `invite_issuance.released_at` column; the table and index counts stay at 19/35. On the first start after upgrading, codes that were already revoked and never redeemed are released too, so `invites_used` can drop once. v1.6 adds only the `users.is_system` column and its partial unique index (no new table), for **19 tables and 36 indexes**. SNS previews add `url_previews` without an explicit index. Calendar quotas add `public_creation_quota` and its expiry index, bringing the current total to **21 tables and 37 indexes**.
 
-`url_previews` metadata reads omit the image BLOB, so the database remains the backup boundary.
-A trigger removes the preview row and its image when the owning link is soft-deleted, including
-account deletion; disabling or expiring a link preserves its preview. SQLite can reuse the freed
-pages, so the database file does not automatically shrink.
+`url_previews` metadata reads omit the image BLOB, so the database remains the backup boundary. A trigger removes the preview row and its image when the owning link is soft-deleted, including account deletion; disabling or expiring a link preserves its preview. SQLite can reuse the freed pages, so the database file does not automatically shrink.
 
 ### 6.5 Seed Data
 
 - SNS images: `preview_image_policy=both`; accepted values are `none`, `url`, `upload`, `both`.
 - URL cleanup: `url_cleaning_enabled=false`, `url_cleaning_rules=` (empty); startup seeds absent keys and preserves existing values.
 
-- `settings`: `site_name=urlet`, `registration_mode=open`, `default_slug_length=7`,
-  `max_urls_per_user=1000`, `default_redirect_type=302`, `analytics_enabled=true`, `click_retention_days=0`.
-- `settings` (v1.1 captcha keys): `captcha_provider=none`, `captcha_site_key=` (empty),
-  `captcha_secret_key=` (empty), `captcha_on_register=false`, `captcha_on_login=false`,
-  `captcha_on_create=false`, `captcha_allowed_hostnames=` (empty). A non-empty environment variable
-  overrides the stored value (FR-BOT-2).
-- `settings` (v1.2 key): `max_api_tokens_per_user=20` (the site-wide token quota; `0` = unlimited).
-  Because it defaults to 20 rather than 0, an account that already holds more than 20 usable tokens
-  cannot create another one until it revokes some; existing tokens are never revoked by the upgrade.
-- `settings` (v1.2 invite quota, `0006_group_invite_quotas.sql`): `max_invites_per_period=0`
-  (`0` = unlimited) and `invite_period=month` (`day`, `week` or `month`; the calendar period for
-  invite codes that are not pinned to a group).
-- `user_groups` (v1.2): one row named `Standard` with `max_urls = NULL`, `max_api_tokens = NULL`,
-  all seven toggles `1` (including `allow_domain_selection`), `default_domain_id = NULL`,
-  `restrict_domains = 0` and `is_default = 1`; the migration assigns every existing user to it.
-- Splash defaults (v1.5): the column defaults give every existing link `redirect_mode = direct` and
-  `splash_delay_seconds = 5` with no custom copy, and every existing group `redirect_mode_policy =
-  choice`, so the upgrade changes no behaviour.
-- `themes` (v1.4): `verdant` is enabled and default; `aurora`, `paper`, `signal`, `gilded` and
-  `swiss` are enabled and not default, with sort orders 10–50. The migration is additive, so an
-  upgrade keeps the current look until an administrator changes the default.
-- `settings` (v1.4 key): `theme_switching=all` (who may switch themes; `admin` restricts it to
-  administrators).
-- `group_domains`: no rows are seeded; an existing or new group without restriction rows may use
-  every active domain.
-- Public shortener (v1.6): `public_create_access=user` (an upgrade keeps the previous behaviour),
-  `public_captcha=true`, `public_rate_limit_per_ip=20`, `public_rate_limit_per_ip_period=hour`,
-  `public_rate_limit_global=500`, `public_rate_limit_global_period=hour`,
-  `public_max_urls=1000`,
-  `public_allow_slug=true`, `public_allow_title=true`, and `public_allow_tags`,
-  `public_allow_password`, `public_allow_expiry`, `public_allow_max_clicks`,
-  `public_allow_redirect`, `public_allow_domain` all `false`; `guest_allowlist_enabled=true` and
-  `guest_allowlist` is seeded with the built-in 43-host-rule list (`src/services/guest_allowlist.txt`,
-  wired in `src/db/settings.rs`), inserted only when missing so an edited or deliberately empty list
-  is preserved. The migration also inserts the
-  reserved Guest account (`guest@urlet.invalid`, `is_system = 1`, `status = suspended`, no group);
-  it is skipped only in the pathological case where that address already belongs to somebody, which
-  is reported at startup.
-- `domains`: at startup the canonical domain is inserted/updated from the host of `URLET_BASE_URL`
-  (`source=system`, always active). It is made the default only when no default exists, so an
-  administrator can choose another default. `URLET_DOMAINS` inserts missing domains as
-  `active`/`env`; it never changes an existing row.
-- `settings` (landing clock): `landing_clock=server` (`server`, `utc` or `off`). It controls the clock
-  in landing designs with a server information strip at the bottom: the default Verdant design and
-  uploaded themes based on it. `server` shows the clock in the process zone (`TZ`); `utc` shows the
-  same clock in UTC without displaying the server time zone; `off` hides the clock. The version and
-  uptime remain visible in that strip. Year labels use the server zone in `server` mode and UTC in
-  `utc`/`off` modes, so they do not reveal its New Year boundary when the zone is hidden. Guest quota
-  periods always follow `TZ`; this setting never changes the instance's notion of local time.
+- `settings`: `site_name=urlet`, `registration_mode=open`, `default_slug_length=7`, `max_urls_per_user=1000`, `default_redirect_type=302`, `analytics_enabled=true`, `click_retention_days=0`.
+- `settings` (v1.1 captcha keys): `captcha_provider=none`, `captcha_site_key=` (empty), `captcha_secret_key=` (empty), `captcha_on_register=false`, `captcha_on_login=false`, `captcha_on_create=false`, `captcha_allowed_hostnames=` (empty). A non-empty environment variable overrides the stored value (FR-BOT-2).
+- `settings` (v1.2 key): `max_api_tokens_per_user=20` (the site-wide token quota; `0` = unlimited). Because it defaults to 20 rather than 0, an account that already holds more than 20 usable tokens cannot create another one until it revokes some; existing tokens are never revoked by the upgrade.
+- `settings` (v1.2 invite quota, `0006_group_invite_quotas.sql`): `max_invites_per_period=0` (`0` = unlimited) and `invite_period=month` (`day`, `week` or `month`; the calendar period for invite codes that are not pinned to a group).
+- `user_groups` (v1.2): one row named `Standard` with `max_urls = NULL`, `max_api_tokens = NULL`, all seven toggles `1` (including `allow_domain_selection`), `default_domain_id = NULL`, `restrict_domains = 0` and `is_default = 1`; the migration assigns every existing user to it.
+- Splash defaults (v1.5): the column defaults give every existing link `redirect_mode = direct` and `splash_delay_seconds = 5` with no custom copy, and every existing group `redirect_mode_policy = choice`, so the upgrade changes no behaviour.
+- `themes` (v1.4): `verdant` is enabled and default; `aurora`, `paper`, `signal`, `gilded` and `swiss` are enabled and not default, with sort orders 10–50. The migration is additive, so an upgrade keeps the current look until an administrator changes the default.
+- `settings` (v1.4 key): `theme_switching=all` (who may switch themes; `admin` restricts it to administrators).
+- `group_domains`: no rows are seeded; an existing or new group without restriction rows may use every active domain.
+- Public shortener (v1.6): `public_create_access=user` (an upgrade keeps the previous behaviour), `public_captcha=true`, `public_rate_limit_per_ip=20`, `public_rate_limit_per_ip_period=hour`, `public_rate_limit_global=500`, `public_rate_limit_global_period=hour`, `public_max_urls=1000`, `public_allow_slug=true`, `public_allow_title=true`, and `public_allow_tags`, `public_allow_password`, `public_allow_expiry`, `public_allow_max_clicks`, `public_allow_redirect`, `public_allow_domain` all `false`; `guest_allowlist_enabled=true` and `guest_allowlist` is seeded with the built-in 43-host-rule list (`src/services/guest_allowlist.txt`, wired in `src/db/settings.rs`), inserted only when missing so an edited or deliberately empty list is preserved. The migration also inserts the reserved Guest account (`guest@urlet.invalid`, `is_system = 1`, `status = suspended`, no group); it is skipped only in the pathological case where that address already belongs to somebody, which is reported at startup.
+- `domains`: at startup the canonical domain is inserted/updated from the host of `URLET_BASE_URL` (`source=system`, always active). It is made the default only when no default exists, so an administrator can choose another default. `URLET_DOMAINS` inserts missing domains as `active`/`env`; it never changes an existing row.
+- `settings` (landing clock): `landing_clock=server` (`server`, `utc` or `off`). It controls the clock in landing designs with a server information strip at the bottom: the default Verdant design and uploaded themes based on it. `server` shows the clock in the process zone (`TZ`); `utc` shows the same clock in UTC without displaying the server time zone; `off` hides the clock. The version and uptime remain visible in that strip. Year labels use the server zone in `server` mode and UTC in `utc`/`off` modes, so they do not reveal its New Year boundary when the zone is hidden. Guest quota periods always follow `TZ`; this setting never changes the instance's notion of local time.
 
 ---
 
@@ -752,10 +628,7 @@ pages, so the database file does not automatically shrink.
 | GET | `/api/v1/auth/sessions` | List my sessions |
 | DELETE | `/api/v1/auth/sessions/{id}` | Revoke the given session → 204 |
 
-Registration assigns the default group; a supplied invite code is validated even in `open` mode,
-and its group wins over the default (FR-GROUP-4). `GET /app/register?invite=CODE` prefills the
-web form; the JSON payload is unchanged. The `user` object includes `group_id`; the group
-name and effective limits are exposed through `GET /api/v1/auth/me`.
+Registration assigns the default group; a supplied invite code is validated even in `open` mode, and its group wins over the default (FR-GROUP-4). `GET /app/register?invite=CODE` prefills the web form; the JSON payload is unchanged. The `user` object includes `group_id`; the group name and effective limits are exposed through `GET /api/v1/auth/me`.
 
 ### 7.2 Short Links
 
@@ -774,10 +647,7 @@ name and effective limits are exposed through `GET /api/v1/auth/me`.
 | GET | `/api/v1/urls/{id}/stats?days=30` | Daily trend + dimension breakdown + summary |
 | GET | `/api/v1/urls/{id}/clicks?page=1` | Click details (paginated) |
 
-A link quota exhaustion, a group toggle that blocks a submitted field, or a redirect mode outside
-the group policy returns 403 `forbidden` with a descriptive message. On `PATCH`, omitting a field keeps its current value and clearing a
-blocked field is accepted; switching a blocked feature on is refused. A non-empty link password is
-always a new value, so it is refused while passwords are blocked (FR-GROUP-3).
+A link quota exhaustion, a group toggle that blocks a submitted field, or a redirect mode outside the group policy returns 403 `forbidden` with a descriptive message. On `PATCH`, omitting a field keeps its current value and clearing a blocked field is accepted; switching a blocked feature on is refused. A non-empty link password is always a new value, so it is refused while passwords are blocked (FR-GROUP-3).
 
 ### 7.3 Tags / Tokens
 
@@ -789,8 +659,7 @@ always a new value, so it is refused while passwords are blocked (FR-GROUP-3).
 | POST | `/api/v1/tokens` | `{name, expires_at?}` → 201 `{token: "ur_...", api_token}` **shown only once**; 403 when the group disables token creation or the token quota is exhausted |
 | DELETE | `/api/v1/tokens/{id}` | Revoke → 204 |
 
-The effective token quota counts usable tokens only (not revoked and not expired), so revoking an
-old token frees a slot immediately (FR-TOK-6).
+The effective token quota counts usable tokens only (not revoked and not expired), so revoking an old token frees a slot immediately (FR-TOK-6).
 
 ### 7.4 Member Invites
 
@@ -800,10 +669,7 @@ old token frees a slot immediately (FR-TOK-6).
 | POST | `/api/v1/invites` | `{note?, max_uses?}` → 201 `{code, link, invite, quota}`; the code is pinned to the caller's group; `403` when the group disables invites or the period quota is exhausted, `429` when the hourly burst limit is hit |
 | DELETE | `/api/v1/invites/{id}` | Revoke one of the caller's own codes → 204; another member's code is 404 |
 
-Member invites require `user_groups.allow_invites = 1`; codes are always pinned to the caller's
-group so the redeemer joins it, and administrator-issued and member-issued codes share one
-per-group ledger (`max_invites` / `invite_period`, migrations `0006`/`0007`). `max_uses` for
-member codes is 1–10.
+Member invites require `user_groups.allow_invites = 1`; codes are always pinned to the caller's group so the redeemer joins it, and administrator-issued and member-issued codes share one per-group ledger (`max_invites` / `invite_period`, migrations `0006`/`0007`). `max_uses` for member codes is 1–10.
 
 ### 7.5 Admin (requires admin)
 
@@ -833,12 +699,7 @@ member codes is 1–10.
 | GET | `/api/v1/admin/audit` | Audit log (`action, target_type, actor, page`) |
 | GET | `/api/v1/admin/stats` | System info and totals |
 
-Group updates accept a partial representation: omitting a field keeps its current value,
-`max_urls` / `max_api_tokens` set to `null` inherit the site-wide quota, and `description: null`
-clears it. `POST` keeps the create defaults (omitted toggles are allowed, omitted quotas inherit).
-Every group mutation is audited (`admin.group_created`, `admin.group_updated`,
-`admin.group_deleted`), and a user's group change is recorded in the existing
-`admin.user_updated` metadata.
+Group updates accept a partial representation: omitting a field keeps its current value, `max_urls` / `max_api_tokens` set to `null` inherit the site-wide quota, and `description: null` clears it. `POST` keeps the create defaults (omitted toggles are allowed, omitted quotas inherit). Every group mutation is audited (`admin.group_created`, `admin.group_updated`, `admin.group_deleted`), and a user's group change is recorded in the existing `admin.user_updated` metadata.
 
 ### 7.6 Public
 
@@ -886,9 +747,7 @@ Every group mutation is audited (`admin.group_created`, `admin.group_updated`,
 | `URLET_CAPTCHA_ON_CREATE` | `false` | Require captcha on the web create-short-link form; overrides `captcha_on_create` when non-empty |
 | `URLET_CAPTCHA_ALLOWED_HOSTNAMES` | — | Extra hostnames accepted in the provider's `hostname` response, comma-separated (up to 10); overrides `captcha_allowed_hostnames` when non-empty. The host of `URLET_BASE_URL` is always accepted |
 
-The captcha variables follow the same override rule as `URLET_REGISTRATION` and
-`URLET_DEFAULT_SLUG_LENGTH`: a non-empty environment variable wins over the value stored in the
-`settings` table (FR-BOT-2).
+The captcha variables follow the same override rule as `URLET_REGISTRATION` and `URLET_DEFAULT_SLUG_LENGTH`: a non-empty environment variable wins over the value stored in the `settings` table (FR-BOT-2).
 
 ---
 
@@ -896,11 +755,7 @@ The captcha variables follow the same override rule as `URLET_REGISTRATION` and
 
 ### 9.1 Directory Structure
 
-Source tree: the **Project layout** section of [`README.md`](../README.md) lists `src/` (modules,
-middleware and routes), `templates/`, `migrations/`, `scripts/` and the test tree. The runtime
-`/data` layout — `urlet.db` and its WAL/SHM files, the auto-generated `secret.key`, and uploaded
-theme stylesheets under `themes/` — is documented in **Data and backups** in
-[`DEPLOYMENT.md`](DEPLOYMENT.md). Migration filenames are listed in §6.3.
+Source tree: the **Project layout** section of [`README.md`](../README.md) lists `src/` (modules, middleware and routes), `templates/`, `migrations/`, `scripts/` and the test tree. The runtime `/data` layout — `urlet.db` and its WAL/SHM files, the auto-generated `secret.key`, and uploaded theme stylesheets under `themes/` — is documented in **Data and backups** in [`DEPLOYMENT.md`](DEPLOYMENT.md). Migration filenames are listed in §6.3.
 
 ### 9.2 Dockerfile Strategy
 
@@ -910,15 +765,9 @@ Multi-stage build:
 
 ### 9.3 Compose Services
 
-`docker-compose.yml` runs a single `urlet` container built from the local `Dockerfile` (or a
-published image through `docker-compose.image.yml`) with the `urlet-data` and `urlet-themes`
-volumes. Configuration is passed as container environment variables with `${VAR:-default}`
-substitutions, the host port defaults to `8080`, and the container healthcheck calls
-`urlet healthcheck`. The file is the source of truth for the exact image tag, volume mounts and
-restart policy: [`docker-compose.yml`](../docker-compose.yml).
+`docker-compose.yml` runs a single `urlet` container built from the local `Dockerfile` (or a published image through `docker-compose.image.yml`) with the `urlet-data` and `urlet-themes` volumes. Configuration is passed as container environment variables with `${VAR:-default}` substitutions, the host port defaults to `8080`, and the container healthcheck calls `urlet healthcheck`. The file is the source of truth for the exact image tag, volume mounts and restart policy: [`docker-compose.yml`](../docker-compose.yml).
 
-`docker-compose.tls.yml`: adds Caddy (80/443, automatic Let's Encrypt) and stops exposing the
-urlet port, so Caddy reverse-proxies it.
+`docker-compose.tls.yml`: adds Caddy (80/443, automatic Let's Encrypt) and stops exposing the urlet port, so Caddy reverse-proxies it.
 
 ---
 
@@ -966,8 +815,7 @@ v1.1 additions:
 - [x] `GET /` returns 200 as a landing/navigation page for anonymous and signed-in visitors, and no longer redirects to `/app`
 - [ ] `cargo test` (the full suite), `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` are clean, `scripts/smoke.sh` passes all end-to-end checks, and the container image builds and runs under musl (§3.3)
 
-The final item stays unchecked: the features above were confirmed in the source, but the suites and the
-image build were not run while updating this document.
+The final item stays unchecked: the features above were confirmed in the source, but the suites and the image build were not run while updating this document.
 
 v1.2 additions:
 
