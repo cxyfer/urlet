@@ -722,3 +722,29 @@ async fn reserved_paths_still_work_next_to_the_slug_route() {
     assert_eq!(app.get("/assets/app.js").await.status, StatusCode::OK);
     assert_eq!(app.get("/favicon.ico").await.status, StatusCode::OK);
 }
+
+#[tokio::test]
+async fn favicon_svg_is_served_at_the_root_like_favicon_ico() {
+    let app = TestApp::spawn().await;
+    let canonical = app.get("/assets/favicon.svg").await;
+    assert_eq!(canonical.status, StatusCode::OK);
+
+    // `/favicon.svg` is reserved from slugs and exempt from the host gate, so it
+    // must be a real asset rather than falling through to the slug handler.
+    for path in ["/favicon.svg", "/favicon.ico"] {
+        let response = app.get(path).await;
+        assert_eq!(response.status, StatusCode::OK, "{path}: {}", response.body);
+        assert_eq!(
+            response.header("content-type").as_deref(),
+            Some("image/svg+xml"),
+            "{path}"
+        );
+        assert_eq!(response.body, canonical.body, "{path}");
+    }
+
+    // The path is independent of the host, even one the instance does not serve.
+    let foreign = app
+        .send(common::get_with_host("/favicon.svg", "unknown.example.com"))
+        .await;
+    assert_eq!(foreign.status, StatusCode::OK, "{}", foreign.body);
+}

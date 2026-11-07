@@ -9,6 +9,7 @@ use common::{
     TestApp,
 };
 use serde_json::{json, Value};
+use urlet::middleware::domain::{HOST_AGNOSTIC_PATHS, HOST_AGNOSTIC_PREFIX};
 
 const ADMIN_PASSWORD: &str = "supersecret";
 
@@ -150,6 +151,67 @@ async fn extra_domains_are_redirect_only() {
         Some("nosniff")
     );
     assert!(unknown.header("x-request-id").is_some());
+}
+
+/// Every path the host gate waves through must be served by a route of its own.
+///
+/// The gate attaches no `HostContext` to these requests, so one that falls through
+/// to the `/{slug}` handler cannot extract it and answers 500. The list comes from
+/// the gate's own constants, so a path added there is covered automatically.
+#[tokio::test]
+async fn every_host_agnostic_path_is_served_without_a_server_error() {
+    let app = TestApp::spawn().await;
+    app.add_domain("go.example.com", "active").await;
+    let hosts = ["localhost:8080", "go.example.com", "unknown.example.com"];
+
+    for path in HOST_AGNOSTIC_PATHS {
+        for host in hosts {
+            let response = app.get_with_host(path, host).await;
+            assert_eq!(
+                response.status,
+                StatusCode::OK,
+                "{path} on {host}: {}",
+                response.body
+            );
+        }
+    }
+
+    // The prefix covers many paths; its bare form and a missing asset may be
+    // 404s, but never a server error.
+    let under_the_prefix = [
+        HOST_AGNOSTIC_PREFIX.to_string(),
+        format!("{HOST_AGNOSTIC_PREFIX}missing.css"),
+    ];
+    for path in &under_the_prefix {
+        for host in hosts {
+            let response = app.get_with_host(path, host).await;
+            assert!(
+                !response.status.is_server_error(),
+                "{path} on {host}: {} {}",
+                response.status,
+                response.body
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn the_bare_assets_path_is_an_ordinary_missing_page() {
+    let app = TestApp::spawn().await;
+    app.add_domain("go.example.com", "active").await;
+
+    // Only `/assets/...` is host-agnostic. The bare directory name has no asset
+    // behind it, so it goes through the host gate like any other single segment
+    // and is a plain 404 on a canonical, an extra and an unknown host alike.
+    for host in ["localhost:8080", "go.example.com", "unknown.example.com"] {
+        let response = app.get_with_host("/assets", host).await;
+        assert_eq!(
+            response.status,
+            StatusCode::NOT_FOUND,
+            "{host}: {}",
+            response.body
+        );
+    }
 }
 
 #[tokio::test]
