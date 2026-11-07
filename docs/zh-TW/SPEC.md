@@ -733,7 +733,7 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 | `URLET_ADMIN_PASSWORD` | — | 上述管理員密碼（僅在帳號不存在時使用） |
 | `URLET_REGISTRATION` | 讀取設定表 | 覆寫註冊模式 `open\|invite\|closed` |
 | `URLET_SECURE_COOKIES` | 依 `BASE_URL` 判斷 | 強制 Cookie `Secure` |
-| `URLET_TRUST_PROXY` | `false` | 信任 `X-Forwarded-For` / `X-Forwarded-Proto` |
+| `URLET_TRUST_PROXY` | `false` | 信任代理送來的 `X-Real-IP`、`X-Forwarded-For` 與 `X-Forwarded-Proto`，代理必須覆寫這些標頭（見 `docs/zh-TW/DEPLOYMENT.md` §10） |
 | `URLET_SESSION_TTL_HOURS` | `168` | Session 有效期（小時） |
 | `URLET_UNLOCK_TTL_MINUTES` | `30` | 短網址解鎖 Cookie 有效期（分鐘） |
 | `URLET_LOG` | `info` | `tracing` 過濾器 |

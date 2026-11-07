@@ -733,7 +733,7 @@ Group updates accept a partial representation: omitting a field keeps its curren
 | `URLET_ADMIN_PASSWORD` | — | Password for that admin (only used when the account does not exist yet) |
 | `URLET_REGISTRATION` | Read from the settings table | Override the registration mode `open\|invite\|closed` |
 | `URLET_SECURE_COOKIES` | Derived from `BASE_URL` | Force the cookie `Secure` flag |
-| `URLET_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` / `X-Forwarded-Proto` |
+| `URLET_TRUST_PROXY` | `false` | Trust `X-Real-IP`, `X-Forwarded-For` and `X-Forwarded-Proto` sent by the proxy, which must overwrite them (see `docs/DEPLOYMENT.md` §10) |
 | `URLET_SESSION_TTL_HOURS` | `168` | Session lifetime (hours) |
 | `URLET_UNLOCK_TTL_MINUTES` | `30` | Short-link unlock cookie lifetime (minutes) |
 | `URLET_LOG` | `info` | `tracing` filter |
