@@ -6,6 +6,7 @@
 use axum::extract::FromRequestParts;
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
+use axum::http::HeaderMap;
 
 use crate::db::users::User;
 use crate::error::{ApiError, AppError};
@@ -127,7 +128,18 @@ pub async fn authenticate(parts: &Parts, state: &AppState) -> Option<CurrentUser
 }
 
 fn bearer_token(parts: &Parts) -> Option<String> {
-    let value = parts.headers.get(AUTHORIZATION)?.to_str().ok()?;
+    bearer_token_from_headers(&parts.headers)
+}
+
+/// The API token carried by `Authorization: Bearer <token>`, if any.
+///
+/// This is the single definition of "the request authenticates with a token":
+/// [`authenticate`] uses it to choose between a token and the session cookie,
+/// and the CSRF middleware uses it to decide whether a request is exempt. Any
+/// other scheme (`Basic` from a reverse proxy, say) or an empty token yields
+/// `None`, so the request is treated as cookie driven in both places.
+pub fn bearer_token_from_headers(headers: &HeaderMap) -> Option<String> {
+    let value = headers.get(AUTHORIZATION)?.to_str().ok()?;
     let (scheme, token) = value.split_once(' ')?;
     if !scheme.eq_ignore_ascii_case("bearer") {
         return None;
@@ -225,5 +237,33 @@ impl FromRequestParts<AppState> for ClientInfo {
                 .map(|value| value.contains("application/json"))
                 .unwrap_or(false),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    fn token_of(value: &str) -> Option<String> {
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_str(value).expect("value"));
+        bearer_token_from_headers(&headers)
+    }
+
+    #[test]
+    fn bearer_scheme_is_case_insensitive() {
+        assert_eq!(token_of("Bearer ur_abc").as_deref(), Some("ur_abc"));
+        assert_eq!(token_of("bearer ur_abc").as_deref(), Some("ur_abc"));
+        assert_eq!(token_of("BEARER ur_abc").as_deref(), Some("ur_abc"));
+    }
+
+    #[test]
+    fn other_schemes_and_empty_tokens_are_not_api_tokens() {
+        assert_eq!(token_of("Basic dXNlcjpwYXNz"), None);
+        assert_eq!(token_of("Digest username=\"user\""), None);
+        assert_eq!(token_of("Bearer"), None);
+        assert_eq!(token_of("Bearer   "), None);
+        assert_eq!(bearer_token_from_headers(&HeaderMap::new()), None);
     }
 }

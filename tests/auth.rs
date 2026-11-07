@@ -344,6 +344,144 @@ async fn csrf_lets_bearer_and_plain_json_through() {
     assert_eq!(response.status, StatusCode::UNAUTHORIZED);
 }
 
+/// Add a raw `Authorization` header to a request.
+fn with_authorization(
+    mut request: axum::http::Request<axum::body::Body>,
+    value: &str,
+) -> axum::http::Request<axum::body::Body> {
+    request.headers_mut().insert(
+        axum::http::header::AUTHORIZATION,
+        value.parse().expect("header value"),
+    );
+    request
+}
+
+fn create_link_request(
+    cookie: &str,
+    origin: Option<&str>,
+) -> axum::http::Request<axum::body::Body> {
+    post_json_origin(
+        "/api/v1/urls",
+        json!({ "target_url": "https://example.com/landing" }),
+        Some(cookie),
+        origin,
+    )
+}
+
+#[tokio::test]
+async fn csrf_exempts_requests_authenticated_by_a_bearer_token() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let created = app
+        .send(post_json_as(
+            "/api/v1/tokens",
+            json!({ "name": "ci" }),
+            &cookie,
+        ))
+        .await
+        .json();
+    let token = created["token"].as_str().expect("token").to_string();
+
+    // The cookie rides along and there is no Origin: the token wins, so the
+    // request is not cookie driven and needs no same-origin proof. The scheme
+    // name is case insensitive, as in the authentication layer.
+    for scheme in ["Bearer", "bearer", "BEARER"] {
+        let request = with_authorization(
+            create_link_request(&cookie, None),
+            &format!("{scheme} {token}"),
+        );
+        let response = app.send(request).await;
+        assert_eq!(
+            response.status,
+            StatusCode::CREATED,
+            "{scheme}: {}",
+            response.body
+        );
+    }
+
+    // Even a cross-site Origin does not matter for a token request.
+    let request = with_bearer(
+        create_link_request(&cookie, Some("https://evil.example")),
+        &token,
+    );
+    let response = app.send(request).await;
+    assert_eq!(response.status, StatusCode::CREATED, "{}", response.body);
+}
+
+#[tokio::test]
+async fn csrf_checks_requests_whose_authorization_is_not_a_bearer_token() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+
+    // A reverse proxy in front of urlet may add HTTP Basic authentication. The
+    // browser then sends `Authorization: Basic` and the session cookie, and the
+    // authentication layer uses the cookie, so the CSRF check must still run.
+    // The same goes for every other value the token path does not accept.
+    let not_tokens = [
+        "Basic dXNlcjpwYXNz",
+        "basic dXNlcjpwYXNz",
+        "Digest username=\"user\"",
+        "Token ur_abc",
+        "Bearer ",
+        "Bearer",
+    ];
+    for value in not_tokens {
+        let missing = app
+            .send(with_authorization(
+                create_link_request(&cookie, None),
+                value,
+            ))
+            .await;
+        assert_eq!(
+            missing.status,
+            StatusCode::FORBIDDEN,
+            "{value}: {}",
+            missing.body
+        );
+
+        let foreign = app
+            .send(with_authorization(
+                create_link_request(&cookie, Some("https://evil.example")),
+                value,
+            ))
+            .await;
+        assert_eq!(
+            foreign.status,
+            StatusCode::FORBIDDEN,
+            "{value}: {}",
+            foreign.body
+        );
+    }
+
+    // The same request from our own origin is still served from the cookie.
+    let same_origin = app
+        .send(with_authorization(
+            create_link_request(&cookie, Some("http://localhost:8080")),
+            "Basic dXNlcjpwYXNz",
+        ))
+        .await;
+    assert_eq!(
+        same_origin.status,
+        StatusCode::CREATED,
+        "{}",
+        same_origin.body
+    );
+
+    // A cross-site form post without a session is checked too.
+    let form = app
+        .send(with_authorization(
+            post_form(
+                "/api/v1/auth/login",
+                "email=user@example.com&password=supersecret",
+                None,
+                Some("https://evil.example"),
+            ),
+            "Basic dXNlcjpwYXNz",
+        ))
+        .await;
+    assert_eq!(form.status, StatusCode::FORBIDDEN, "{}", form.body);
+}
+
 #[tokio::test]
 async fn login_is_rate_limited() {
     let app = TestApp::spawn().await;
