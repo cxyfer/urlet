@@ -302,7 +302,7 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ## 11. 監控
 
 - 健康檢查：`GET /health`（200 = 正常，503 = 資料庫異常）
-- 容器 `HEALTHCHECK` 已內建，使用 `urlet healthcheck`（映像檔不需要 curl）
+- 容器 `HEALTHCHECK` 已內建，使用 `urlet healthcheck`（映像檔不需要 curl）。start period 為 150 秒，足以讓第二個程序等完遷移鎖（第 8 節），這段期間容器會顯示 `starting` 而不是 `unhealthy`。若自行覆寫健康檢查，start period 請不要低於這個值
 - 日誌輸出到 stdout；`URLET_LOG_FORMAT=json` 可搭配 Loki/CloudWatch 之類的收集器
 - 每個請求都有 `x-request-id` 回應標頭，並以相同 id 寫入日誌
 - 管理後台 **Admin → Overview** 可看使用者數、短網址數、點擊總量、資料庫大小

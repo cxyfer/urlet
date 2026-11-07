@@ -302,7 +302,7 @@ Migrations are forward-only additive files (`migrations/`), and applied files ar
 ## 11. Monitoring
 
 - Health check: `GET /health` (200 = healthy, 503 = database problem)
-- The container ships a `HEALTHCHECK` that runs `urlet healthcheck` (the image needs no curl)
+- The container ships a `HEALTHCHECK` that runs `urlet healthcheck` (the image needs no curl). Its start period is 150 seconds, long enough for a second process to wait out a migration lock (section 8), so a container that is waiting reports `starting` instead of `unhealthy`. If you override the health check, keep the start period at least that long
 - Logs go to stdout; `URLET_LOG_FORMAT=json` pairs well with a collector such as Loki or CloudWatch
 - Every request carries an `x-request-id` response header, and the same id is written to the log
 - **Admin → Overview** in the admin UI shows the user count, short link count, total clicks and database size

@@ -142,7 +142,10 @@ pub const MIGRATIONS: &[Migration] = &[
 /// 100 ms and almost never lands in that gap. Its wait is therefore the
 /// leader's whole run, not one transaction, and on a slow disk that easily
 /// passes 5 s.
-const LOCK_WAIT: Duration = Duration::from_secs(120);
+///
+/// Public so `tests/healthcheck.rs` can hold the container's health check
+/// start period above it: the server does not listen while a migrator waits.
+pub const LOCK_WAIT: Duration = Duration::from_secs(120);
 
 /// Pause between attempts, so a zero `busy_timeout` cannot turn the retry
 /// into a busy loop.
