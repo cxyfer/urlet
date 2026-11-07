@@ -31,6 +31,14 @@ Schema changes go in `migrations/` and run at startup. Migrations are additive a
 
 Gitmoji subject, imperative, scoped — `✨ feat(groups): ...`, `🐛 fix(domains): ...`, `📝 docs: ...`, `👷 ci: ...`. Merged pull requests keep their `(#N)` suffix in the subject; [`scripts/release-notes.sh`](scripts/release-notes.sh) relies on it to find the pull request.
 
+## Pull request reviews
+
+A pull request counts as reviewed when an independent reviewer has signed it off, or when `chatgpt-codex-connector[bot]` has reacted 👍 to the pull request itself: that reaction is the Codex review finding nothing to flag. Check it with `gh api 'repos/{owner}/{repo}/issues/<N>/reactions' --jq '.[] | select(.user.login == "chatgpt-codex-connector[bot]") | "\(.content) \(.created_at)"'`.
+
+The reaction covers only the commits Codex saw, so it must be newer than the last push to the branch; after a later push, wait for a fresh one. Review comments from the bot mean it did find something: resolve them before treating the pull request as reviewed.
+
+Reviewed is not the same as cleared to merge. Merging still needs the maintainer's go-ahead.
+
 ## Documentation
 
 Prose docs are bilingual: every file under `docs/` has a Traditional Chinese mirror under `docs/zh-TW/`, and `RELEASING.md` and `SECURITY.md` mirror to `docs/zh-TW/RELEASING.md` and `docs/zh-TW/SECURITY.md`. Update both sides. UI strings live in `src/i18n/{en,zh-Hant,zh-Hans}.json`.
