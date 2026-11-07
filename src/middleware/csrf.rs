@@ -2,7 +2,11 @@
 //!
 //! Rule set (see `docs/SPEC.md` §5.1 NFR-SEC-3):
 //!   1. safe methods pass;
-//!   2. `Authorization: Bearer` requests pass — they are not cookie driven;
+//!   2. requests that authenticate with an `Authorization: Bearer <token>` API
+//!      token pass — they are not cookie driven. Any other `Authorization`
+//!      scheme (`Basic` added by a reverse proxy, for instance) does not: the
+//!      authentication layer ignores it and falls back to the session cookie,
+//!      so the request is checked like any cookie request;
 //!   3. requests carrying a session cookie must prove same origin;
 //!   4. requests with a browser form content type must prove same origin
 //!      (JSON bodies cannot be sent cross-site without a CORS preflight);
@@ -15,6 +19,7 @@ use axum::response::Response;
 
 use crate::config::Config;
 use crate::error::AppError;
+use crate::middleware::auth::bearer_token_from_headers;
 use crate::services::cookies;
 use crate::services::domains::{normalize_host, raw_host_key};
 use crate::state::AppState;
@@ -28,7 +33,9 @@ pub async fn csrf_protect(
     if is_safe_method(request.method()) {
         return Ok(next.run(request).await);
     }
-    if request.headers().contains_key(header::AUTHORIZATION) {
+    // Must agree with `middleware::auth::authenticate`: a request is exempt only
+    // when that layer would authenticate it with a token rather than a cookie.
+    if bearer_token_from_headers(request.headers()).is_some() {
         return Ok(next.run(request).await);
     }
 
