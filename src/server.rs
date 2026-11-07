@@ -35,6 +35,10 @@ pub fn build_router(state: AppState) -> Router {
             get(routes::previews::public_image),
         )
         .route("/assets/favicon.svg", get(routes::assets::favicon))
+        // The host gate lets both root favicon paths through and `RESERVED` keeps
+        // them out of the slug space, so each needs a real route: a path that
+        // falls through to `/{slug}` has no `HostContext` and answers 500.
+        .route("/favicon.svg", get(routes::assets::favicon))
         .route("/favicon.ico", get(routes::assets::favicon_ico))
         // The API reference the instance serves about itself. `/docs` is a
         // static segment, so axum matches it before the `/{slug}` catch-all;

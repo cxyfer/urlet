@@ -143,14 +143,23 @@ pub async fn domain_gate(
     AppError::NotFound.into_response()
 }
 
+/// Exact paths that are independent of the domain.
+///
+/// These skip the gate, so no [`HostContext`] is attached to the request. Each
+/// one therefore needs its own route in `server::build_router`: a path that
+/// falls through to the `/{slug}` handler would fail to extract `HostContext`
+/// and answer 500. `tests/multi_domain.rs` requests every entry to enforce it.
+pub const HOST_AGNOSTIC_PATHS: &[&str] = &["/health", "/healthz", "/favicon.ico", "/favicon.svg"];
+
+/// Prefix of the embedded static assets, which are independent of the domain.
+///
+/// The bare directory name `/assets` is not covered: it has no asset behind it
+/// and is a single segment that must go through the gate like any other.
+pub const HOST_AGNOSTIC_PREFIX: &str = "/assets/";
+
 /// Paths that are independent of the domain.
 fn is_host_agnostic(path: &str) -> bool {
-    path == "/health"
-        || path == "/healthz"
-        || path == "/favicon.ico"
-        || path == "/favicon.svg"
-        || path == "/assets"
-        || path.starts_with("/assets/")
+    HOST_AGNOSTIC_PATHS.contains(&path) || path.starts_with(HOST_AGNOSTIC_PREFIX)
 }
 
 /// `/{slug}` or `/{slug}/unlock`.
@@ -214,10 +223,18 @@ mod tests {
 
     #[test]
     fn host_agnostic_paths_bypass_the_gate() {
-        for path in ["/health", "/healthz", "/assets/app.css", "/favicon.ico"] {
+        for path in [
+            "/health",
+            "/healthz",
+            "/assets/app.css",
+            "/favicon.ico",
+            "/favicon.svg",
+        ] {
             assert!(is_host_agnostic(path), "{path}");
         }
         assert!(!is_host_agnostic("/promo"));
+        // The bare directory name is an ordinary single segment.
+        assert!(!is_host_agnostic("/assets"));
         assert!(!is_host_agnostic("/app"));
     }
 }
