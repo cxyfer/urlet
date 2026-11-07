@@ -179,7 +179,7 @@ impl LockWait {
         if !is_busy(err) || Instant::now() >= self.deadline {
             return false;
         }
-        tracing::info!("database is locked by another migrator; waiting");
+        tracing::info!("database is locked by another connection; waiting");
         tokio::time::sleep(LOCK_RETRY_PAUSE).await;
         true
     }
@@ -480,7 +480,7 @@ fn checksum(sql: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::sqlite::SqliteConnectOptions;
+    use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode};
     use sqlx::Row;
     use std::str::FromStr;
 
@@ -1551,8 +1551,6 @@ mod tests {
     /// migration, so its wait is the leader's whole run. `applied_before`
     /// picks the statement that meets the held lock first.
     async fn outwaits_a_held_lock(case: &str, applied_before: Option<&str>) {
-        use std::time::Duration;
-
         let dir = std::env::temp_dir().join(format!(
             "urlet-migrate-outwait-{case}-{}",
             std::process::id()
@@ -1578,6 +1576,7 @@ mod tests {
             .execute(&mut holder)
             .await
             .expect("take the write lock");
+        let started = Instant::now();
         let release = tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(500)).await;
             sqlx::query("COMMIT")
@@ -1590,6 +1589,10 @@ mod tests {
         run(&pool, &options)
             .await
             .unwrap_or_else(|err| panic!("{case}: waits for the lock: {err:?}"));
+        assert!(
+            started.elapsed() >= Duration::from_millis(400),
+            "{case}: finished before the lock was released"
+        );
         release.await.expect("holder task");
         assert_eq!(
             applied_count(&pool).await.expect("count"),
@@ -1624,24 +1627,29 @@ mod tests {
     }
 
     /// The `is_applied` read between migrations meets a lock held longer than
-    /// `busy_timeout`. `BEGIN EXCLUSIVE` refuses readers in a rollback-journal
-    /// database, as another migrator's commit does on a slow disk.
+    /// `busy_timeout`. `BEGIN EXCLUSIVE` refuses readers only in a
+    /// rollback-journal database, as another migrator's commit does on a slow
+    /// disk, so the journal mode is pinned and a second reader proves that
+    /// the lock really refuses reads before the one under test waits it out.
     #[tokio::test]
     async fn is_applied_outwaits_a_lock_held_longer_than_busy_timeout() {
-        use std::time::Duration;
-
         let dir =
             std::env::temp_dir().join(format!("urlet-migrate-outwait-read-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("temp dir");
         let path = format!("{}/outwait.db", dir.display());
-        let holder_options = test_options(&path);
+        let holder_options = test_options(&path).journal_mode(SqliteJournalMode::Delete);
         let options = holder_options
             .clone()
             .busy_timeout(Duration::from_millis(50));
         let pool = test_pool(&options).await;
         run(&pool, &options).await.expect("schema");
 
+        // Connect before the lock is taken: opening a connection reads the
+        // database header, which the exclusive lock would refuse.
+        let mut probe = SqliteConnection::connect_with(&options)
+            .await
+            .expect("probe");
         let mut holder = SqliteConnection::connect_with(&holder_options)
             .await
             .expect("holder");
@@ -1649,6 +1657,15 @@ mod tests {
             .execute(&mut holder)
             .await
             .expect("take the exclusive lock");
+
+        let refused = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM schema_migrations")
+            .fetch_one(&mut probe)
+            .await
+            .expect_err("a reader is refused while the exclusive lock is held");
+        assert!(is_busy(&refused), "{refused:?}");
+        probe.close().await.expect("close probe");
+
+        let started = Instant::now();
         let release = tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(500)).await;
             sqlx::query("COMMIT")
@@ -1662,6 +1679,10 @@ mod tests {
         let applied = is_applied(&pool, first.version, &checksum(first.sql))
             .await
             .unwrap_or_else(|err| panic!("waits for the lock: {err:?}"));
+        assert!(
+            started.elapsed() >= Duration::from_millis(400),
+            "finished before the lock was released"
+        );
         release.await.expect("holder task");
         assert!(applied);
 

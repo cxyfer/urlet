@@ -277,7 +277,7 @@ export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.3.0
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 
-遷移是向前相容的累加檔案（`migrations/`），已套用的檔案有 checksum 保護，被修改時啟動會直接失敗而不是默默分歧。升級前建議先備份。若第二個 urlet 程序在第一個仍在遷移時對同一個資料庫啟動，它會等第一個完成（最多 120 秒，逾時則啟動失敗），在那之前不會開始監聽。
+遷移是向前相容的累加檔案（`migrations/`），已套用的檔案有 checksum 保護，被修改時啟動會直接失敗而不是默默分歧。升級前建議先備份。若第二個 urlet 程序在第一個仍在遷移時對同一個資料庫啟動，它會等待鎖而不是直接失敗；單一步驟等滿 120 秒仍拿不到鎖則啟動失敗，在遷移完成前不會開始監聽。
 
 ## 9. 資源與硬碟用量
 
