@@ -73,12 +73,16 @@ services:
     cap_drop:
       - ALL
 
+    # Same values as the Dockerfile HEALTHCHECK. The start period must outlast
+    # the 120 s a second process waits for a migration lock, because the server
+    # does not listen until migrations are done; see the Dockerfile for the
+    # arithmetic and for why `start_interval` is not set.
     healthcheck:
       test: ["CMD", "/usr/local/bin/urlet", "healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 5s
+      start_period: 150s
 
     logging:
       driver: json-file

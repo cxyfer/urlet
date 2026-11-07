@@ -76,7 +76,15 @@ ENV TZ=UTC \
 VOLUME ["/data"]
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+# The server does not listen until migrations are done, and a second process
+# waits up to 120 s (`db::migrate::LOCK_WAIT`) for the first one's migration
+# lock. 150 s = 120 s + 5 s (the last attempt may run on to `busy_timeout`)
+# + 25 s for the rest of startup. Probe failures inside the start period are
+# not counted, so such a container reports "starting", not "unhealthy".
+# `--start-interval` is left out on purpose: it needs Docker Engine 25.0, and
+# older builders reject the unknown flag. `docker-compose.yml` repeats these
+# values and `tests/healthcheck.rs` keeps both above the wait.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=150s --retries=3 \
     CMD ["/usr/local/bin/urlet", "healthcheck"]
 
 ENTRYPOINT ["/usr/local/bin/urlet"]
