@@ -92,8 +92,7 @@ pub async fn for_urls(
     if url_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let placeholders = std::iter::repeat("?")
-        .take(url_ids.len())
+    let placeholders = std::iter::repeat_n("?", url_ids.len())
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
