@@ -277,7 +277,7 @@ export URLET_IMAGE=ghcr.io/cxyfer/urlet:v1.3.0
 docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ```
 
-Migrations are forward-only additive files (`migrations/`), and applied files are checksum protected: editing one makes startup fail instead of silently diverging. Back up before upgrading.
+Migrations are forward-only additive files (`migrations/`), and applied files are checksum protected: editing one makes startup fail instead of silently diverging. Back up before upgrading. If a second urlet process starts against the same database while the first is still migrating, it waits for the first to finish (up to 120 seconds, then startup fails) and does not listen until then.
 
 ## 9. Storage and disk usage
 
