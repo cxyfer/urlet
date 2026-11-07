@@ -77,8 +77,10 @@ docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
 ```ini
 URLET_BASE_URL=https://s.example.com
 URLET_SECURE_COOKIES=true
-URLET_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-* 時才開啟
+URLET_TRUST_PROXY=true      # 只有在代理會覆寫 X-Real-IP 與 X-Forwarded-* 時才開啟（§10）
 ```
+
+第 10 節提供讓 `URLET_TRUST_PROXY=true` 安全可用的 Nginx 與 Traefik 設定，並說明為什麼 urlet 只能透過代理存取。
 
 ## 4. 設定參考
 
@@ -94,7 +96,7 @@ URLET_TRUST_PROXY=true      # 只有在你能確保代理會覆寫 X-Forwarded-*
 | `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` | — | 啟動時建立或升級管理員 |
 | `URLET_REGISTRATION` | 讀取設定表 | 覆寫註冊模式：`open` / `invite` / `closed`。`invite_only` 視同 `invite`，`disabled`/`none` 視同 `closed`；無法辨識的值會退回 `open` |
 | `URLET_SECURE_COOKIES` | 依 `BASE_URL` 判斷 | 強制 Cookie `Secure`。compose 檔一律會帶入值（預設 `false`），因此在 Docker 環境自行終結 TLS 時請明確設為 `true`；TLS overlay 已自動處理 |
-| `URLET_TRUST_PROXY` | `false` | 信任 `X-Forwarded-For` / `X-Forwarded-Proto` |
+| `URLET_TRUST_PROXY` | `false` | 信任代理送來的 `X-Real-IP`、`X-Forwarded-For` 與 `X-Forwarded-Proto`（§10）。只有在由你控制的代理會覆寫這些標頭、且 urlet 只能經由該代理存取時才開啟 |
 | `URLET_SESSION_TTL_HOURS` | `168` | Session 有效期 |
 | `URLET_UNLOCK_TTL_MINUTES` | `30` | 短網址解鎖 Cookie 有效期 |
 | `URLET_DEFAULT_SLUG_LENGTH` | 讀取設定表 | 覆寫自動 slug 長度（4–16） |
@@ -295,9 +297,44 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 ## 10. 反向代理注意事項
 
 - 一定要設定 `URLET_BASE_URL` 為使用者實際看到的網址，否則短網址會指向錯誤的網域。
-- 只有在代理**保證覆寫** `X-Forwarded-For` / `X-Real-IP` 時才開啟 `URLET_TRUST_PROXY`，否則客戶端可以偽造 IP 繞過速率限制。程式優先採用 `X-Real-IP`（代理自行設定），其次取 `X-Forwarded-For` 最右側的位址，因此附加式代理也安全；隨附的 `deploy/Caddyfile` 已設定 `header_up X-Real-IP {remote_host}`。
+- 只有在代理**保證覆寫** `X-Real-IP` 時才開啟 `URLET_TRUST_PROXY`。程式優先採用 `X-Real-IP`，只有它缺少或不是 IP 位址時才退回 `X-Forwarded-For` 最右側的位址，因此代理若原封不動轉發客戶端自帶的 `X-Real-IP`，即使 `X-Forwarded-For` 正確，偽造值仍會勝出。依 IP 的速率限制、儲存的 IP 雜湊與驗證碼的 `remoteip` 都使用這個位址，偽造值會讓客戶端得以規避限制。
+- 開啟 `URLET_TRUST_PROXY=true` 時，不要讓 urlet 直接暴露在網路上。任何不經代理就能連到 8080 連接埠的人，都可以送出任意 `X-Real-IP` 並被採信。請把對外發布的連接埠改為 `127.0.0.1:8080:8080`，或以防火牆限制為只有代理能連線；TLS overlay 已不再發布該連接埠。前面沒有代理時，請維持 `URLET_TRUST_PROXY=false`。
 - 需要傳遞 `Host`、`X-Forwarded-For`、`X-Forwarded-Proto`；Caddy 會自動處理。
 - 邀請連結會在 `?invite=` 攜帶邀請碼；若反向代理的存取日誌記錄 query string，就會留下邀請碼。請限制或遮蔽該日誌，或改為只分享邀請碼。
+
+### Nginx
+
+把 `X-Real-IP` 設為 `$remote_addr`。`proxy_set_header` 會取代客戶端送來的同名標頭，因此偽造值不會到達 urlet：
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name s.example.com;
+    # ssl_certificate 與 ssl_certificate_key 寫在這裡
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+若 Nginx 本身還在另一層代理或 CDN 後面，`$remote_addr` 會是那層代理的位址。請先以 `ngx_http_realip_module`（`set_real_ip_from` 只列上游的位址，搭配 `real_ip_header`）還原訪客位址，再保留 `proxy_set_header X-Real-IP $remote_addr;`。
+
+### Traefik
+
+Traefik 會自行寫入 `X-Real-Ip`。在不信任連線位址的入口點（預設如此）上，它會刪除客戶端送來的 `X-Real-Ip` 與 `X-Forwarded-*` 標頭，再依連線重新設定，因此不需要額外的 middleware。請維持這個行為：
+
+- 不要在訪客直接連入的入口點設定 `forwardedHeaders.insecure: true`。
+- `forwardedHeaders.trustedIPs` 只列出你自己營運的代理，因為 Traefik 會保留受信任位址送來的 `X-Real-Ip` 標頭。
+- 若信任 Traefik 前面的 CDN 或負載平衡器，那一層必須自行覆寫 `X-Real-IP`。
+
+### 其他代理
+
+其他代理也要做到同樣的事：把 `X-Real-IP` 設為連線到它的對端位址，取代客戶端送來的值；或移除 `X-Real-IP` 並附加 `X-Forwarded-For`，讓 urlet 退回取最右側的位址。隨附的 `deploy/Caddyfile` 以 `header_up X-Real-IP {remote_host}` 採用前一種做法。
 
 ## 11. 監控
 
@@ -331,7 +368,7 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 - [ ] `URLET_ADMIN_PASSWORD` 為強密碼，且登入後於 `/app/account` 更換
 - [ ] 設定 `URLET_SECRET`（至少 32 個隨機字元）或確保自動產生的 `secret.key`（0600）已備份
 - [ ] 對外只開放 80/443。基礎 compose 檔會在所有介面發布 `${URLET_PORT:-8080}:8080`；TLS overlay 會移除這個發布，因此請使用 overlay 或以防火牆封鎖該連接埠
-- [ ] 確認 `URLET_TRUST_PROXY` 的設定與代理行為一致
+- [ ] 確認 `URLET_TRUST_PROXY` 的設定與代理行為一致：只有在代理會覆寫 `X-Real-IP`、且 urlet 只能經由該代理存取時才設為 `true`（§10）
 - [ ] 註冊模式設為 `invite` 或 `closed`（除非真的要開放註冊）
 - [ ] 已規劃 `click_retention_days` 與備份排程
 - [ ] 有固定的更新流程（本機重建或拉取新的 `URLET_IMAGE` 標籤），且每次升級前先備份

@@ -77,8 +77,10 @@ If you already run Nginx or Traefik, reverse proxy to `127.0.0.1:8080` yourself 
 ```ini
 URLET_BASE_URL=https://s.example.com
 URLET_SECURE_COOKIES=true
-URLET_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-Forwarded-*
+URLET_TRUST_PROXY=true      # only when the proxy overwrites X-Real-IP and X-Forwarded-* (§10)
 ```
+
+Section 10 has the Nginx and Traefik settings that make `URLET_TRUST_PROXY=true` safe, and explains why urlet must not be reachable except through the proxy.
 
 ## 4. Configuration reference
 
@@ -94,7 +96,7 @@ URLET_TRUST_PROXY=true      # only when you are sure the proxy overwrites X-Forw
 | `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` | — | Create or promote the administrator at startup |
 | `URLET_REGISTRATION` | Read from the settings table | Override the registration mode: `open` / `invite` / `closed`. `invite_only` is accepted as `invite` and `disabled`/`none` as `closed`; an unrecognised value falls back to `open` |
 | `URLET_SECURE_COOKIES` | Derived from `BASE_URL` | Force the `Secure` cookie flag. The compose files always pass a value through (default `false`), so in Docker set it to `true` explicitly when you terminate TLS yourself; the TLS overlay does that for you |
-| `URLET_TRUST_PROXY` | `false` | Trust `X-Forwarded-For` / `X-Forwarded-Proto` |
+| `URLET_TRUST_PROXY` | `false` | Trust `X-Real-IP`, `X-Forwarded-For` and `X-Forwarded-Proto` sent by the proxy (§10). Enable it only when a proxy you control overwrites them and is the only way to reach urlet |
 | `URLET_SESSION_TTL_HOURS` | `168` | Session lifetime |
 | `URLET_UNLOCK_TTL_MINUTES` | `30` | Lifetime of the short link unlock cookie |
 | `URLET_DEFAULT_SLUG_LENGTH` | Read from the settings table | Override the generated slug length (4–16) |
@@ -295,9 +297,44 @@ Migrations are forward-only additive files (`migrations/`), and applied files ar
 ## 10. Reverse proxy notes
 
 - Always set `URLET_BASE_URL` to the URL users actually see, otherwise short links point at the wrong domain.
-- Only enable `URLET_TRUST_PROXY` when the proxy is **guaranteed to overwrite** `X-Forwarded-For` / `X-Real-IP`; otherwise clients can forge their IP and bypass the rate limits. The application prefers `X-Real-IP` (set by the proxy itself) and otherwise takes the rightmost entry of `X-Forwarded-For`, so appending proxies are safe too. The shipped `deploy/Caddyfile` already sets `header_up X-Real-IP {remote_host}`.
+- Only enable `URLET_TRUST_PROXY` when the proxy is **guaranteed to overwrite** `X-Real-IP`. The application prefers `X-Real-IP` and only falls back to the rightmost entry of `X-Forwarded-For` when it is missing or not an IP address, so a proxy that leaves a client-supplied `X-Real-IP` untouched lets the forged value win even if its `X-Forwarded-For` is correct. The per-IP rate limits, the stored IP hash and the CAPTCHA `remoteip` all use that address, so a forged one lets a client evade the limits.
+- Never expose urlet directly to the internet while `URLET_TRUST_PROXY=true`. Whoever can reach port 8080 without going through the proxy can send any `X-Real-IP` and be believed. Change the published port to `127.0.0.1:8080:8080` or firewall it so that only the proxy can connect; the TLS overlay already stops publishing it. With no proxy in front, leave `URLET_TRUST_PROXY=false`.
 - `Host`, `X-Forwarded-For` and `X-Forwarded-Proto` must be forwarded; Caddy handles this automatically.
 - Invite links carry the code in `?invite=`; reverse-proxy access logs that record query strings expose it. Restrict or redact those logs, or share the code instead.
+
+### Nginx
+
+Set `X-Real-IP` to `$remote_addr`. `proxy_set_header` replaces any header of the same name that the client sent, so the forged value never reaches urlet:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name s.example.com;
+    # ssl_certificate and ssl_certificate_key go here
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+If Nginx itself sits behind another proxy or a CDN, `$remote_addr` is that proxy's address. Restore the visitor's address first with `ngx_http_realip_module` (`set_real_ip_from` limited to the upstream's addresses, plus `real_ip_header`), then keep `proxy_set_header X-Real-IP $remote_addr;`.
+
+### Traefik
+
+Traefik writes `X-Real-Ip` itself. On an entry point that does not trust the connecting address, which is the default, it deletes the `X-Real-Ip` and `X-Forwarded-*` headers the client sent and sets them from the connection, so no extra middleware is needed. Keep it that way:
+
+- Do not set `forwardedHeaders.insecure: true` on an entry point that visitors reach directly.
+- List only proxies you operate in `forwardedHeaders.trustedIPs`, because Traefik keeps the `X-Real-Ip` header it receives from a trusted address.
+- When a CDN or load balancer in front of Traefik is trusted, that hop must overwrite `X-Real-IP` itself.
+
+### Other proxies
+
+Any other proxy has to do the equivalent: set `X-Real-IP` to the address of the peer that connected to it, replacing what the client sent, or remove `X-Real-IP` and append to `X-Forwarded-For` so that urlet falls back to the rightmost entry. The shipped `deploy/Caddyfile` does the first with `header_up X-Real-IP {remote_host}`.
 
 ## 11. Monitoring
 
@@ -331,7 +368,7 @@ Migrations are forward-only additive files (`migrations/`), and applied files ar
 - [ ] `URLET_ADMIN_PASSWORD` is a strong password, changed at `/app/account` after the first sign-in
 - [ ] `URLET_SECRET` is set (at least 32 random characters), or the auto-generated `secret.key` (0600) is backed up
 - [ ] Only 80/443 are reachable from the internet. The base compose file publishes `${URLET_PORT:-8080}:8080` on every interface; the TLS overlay removes that publish, so use the overlay or firewall the port
-- [ ] `URLET_TRUST_PROXY` matches the actual proxy behavior
+- [ ] `URLET_TRUST_PROXY` matches the actual proxy behavior: it is `true` only when the proxy overwrites `X-Real-IP` and is the only way to reach urlet (§10)
 - [ ] The registration mode is `invite` or `closed` (unless you really want open registration)
 - [ ] `click_retention_days` and a backup schedule are planned
 - [ ] A regular update routine exists (rebuild locally or pull a new `URLET_IMAGE` tag), with a backup before each upgrade
