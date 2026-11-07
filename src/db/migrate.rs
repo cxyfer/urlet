@@ -11,6 +11,8 @@
 //! migration rebuilds `urls`, so it must run on a dedicated connection with
 //! `PRAGMA foreign_keys = OFF` and restore the pragma before closing.
 
+use std::time::{Duration, Instant};
+
 use sha2::{Digest, Sha256};
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{Connection, SqliteConnection, SqlitePool};
@@ -130,6 +132,59 @@ pub const MIGRATIONS: &[Migration] = &[
     },
 ];
 
+/// How long a migrator keeps retrying for the write lock while another
+/// migrator holds it.
+///
+/// `busy_timeout` bounds a single lock acquisition, but a waiting migrator
+/// needs the lock *after* the leading one has applied every remaining
+/// migration: the leader releases the lock between migrations for about a
+/// millisecond and takes it straight back, while the busy handler polls every
+/// 100 ms and almost never lands in that gap. Its wait is therefore the
+/// leader's whole run, not one transaction, and on a slow disk that easily
+/// passes 5 s.
+const LOCK_WAIT: Duration = Duration::from_secs(120);
+
+/// Pause between attempts, so a zero `busy_timeout` cannot turn the retry
+/// into a busy loop.
+const LOCK_RETRY_PAUSE: Duration = Duration::from_millis(50);
+
+/// `SQLITE_BUSY` or one of its extended codes (`BUSY_RECOVERY`,
+/// `BUSY_SNAPSHOT`, `BUSY_TIMEOUT`).
+fn is_busy(err: &sqlx::Error) -> bool {
+    err.as_database_error()
+        .and_then(|db| db.code())
+        .and_then(|code| code.parse::<i32>().ok())
+        .is_some_and(|code| (code & 0xff) == 5)
+}
+
+/// Deadline for one migrator waiting on another one's write lock.
+///
+/// Retry only statements that hold no lock once they fail: an autocommit
+/// statement or a `BEGIN IMMEDIATE`. A busy error in the middle of a
+/// transaction must roll back instead.
+struct LockWait {
+    deadline: Instant,
+}
+
+impl LockWait {
+    fn new() -> Self {
+        Self {
+            deadline: Instant::now() + LOCK_WAIT,
+        }
+    }
+
+    /// Whether to try `err`'s statement again: it failed with `SQLITE_BUSY`
+    /// and [`LOCK_WAIT`] has not run out. Pauses before returning `true`.
+    async fn retry(&self, err: &sqlx::Error) -> bool {
+        if !is_busy(err) || Instant::now() >= self.deadline {
+            return false;
+        }
+        tracing::info!("database is locked by another connection; waiting");
+        tokio::time::sleep(LOCK_RETRY_PAUSE).await;
+        true
+    }
+}
+
 /// Apply all pending migrations.
 pub async fn run(pool: &SqlitePool, options: &SqliteConnectOptions) -> Result<()> {
     run_inner(pool, options, None).await
@@ -153,15 +208,26 @@ async fn run_inner(
     options: &SqliteConnectOptions,
     last_version: Option<&str>,
 ) -> Result<()> {
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS schema_migrations (
-             version    TEXT PRIMARY KEY,
-             checksum   TEXT NOT NULL,
-             applied_at TEXT NOT NULL
-         )",
-    )
-    .execute(pool)
-    .await?;
+    let wait = LockWait::new();
+    loop {
+        let created = sqlx::query(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (
+                 version    TEXT PRIMARY KEY,
+                 checksum   TEXT NOT NULL,
+                 applied_at TEXT NOT NULL
+             )",
+        )
+        .execute(pool)
+        .await;
+        match created {
+            Ok(_) => break,
+            Err(err) => {
+                if !wait.retry(&err).await {
+                    return Err(err.into());
+                }
+            }
+        }
+    }
 
     for migration in MIGRATIONS {
         let checksum = checksum(migration.sql);
@@ -191,7 +257,17 @@ async fn apply_transactional(
     migration: &Migration,
     checksum: &str,
 ) -> Result<()> {
-    let mut tx = crate::db::begin_write(pool).await?;
+    let wait = LockWait::new();
+    let mut tx = loop {
+        match crate::db::begin_write(pool).await {
+            Ok(tx) => break tx,
+            Err(err) => {
+                if !wait.retry(&err).await {
+                    return Err(err.into());
+                }
+            }
+        }
+    };
     if let Err(err) = sqlx::raw_sql(migration.sql).execute(&mut *tx).await {
         tx.rollback().await?;
         if is_applied(pool, migration.version, checksum).await? {
@@ -232,10 +308,21 @@ async fn apply_rebuild(
         )));
     }
 
-    if let Err(err) = sqlx::query("BEGIN IMMEDIATE")
-        .execute(&mut connection)
-        .await
-    {
+    let wait = LockWait::new();
+    let begun = loop {
+        match sqlx::query("BEGIN IMMEDIATE")
+            .execute(&mut connection)
+            .await
+        {
+            Err(err) => {
+                if !wait.retry(&err).await {
+                    break Err(err);
+                }
+            }
+            Ok(done) => break Ok(done),
+        }
+    };
+    if let Err(err) = begun {
         let _ = sqlx::query("PRAGMA foreign_keys = ON")
             .execute(&mut connection)
             .await;
@@ -347,13 +434,27 @@ async fn insert_migration(
 }
 
 /// Whether `version` is recorded with exactly this checksum.
+///
+/// The read waits for the write lock too: in a rollback-journal database (the
+/// default for a database nobody switched to WAL) a reader is refused while
+/// another migrator commits, and on a slow disk that commit outlasts
+/// `busy_timeout`. A failed read holds no lock, so it is safe to repeat.
 async fn is_applied(pool: &SqlitePool, version: &str, checksum: &str) -> Result<bool> {
-    let stored: Option<String> =
-        sqlx::query_scalar("SELECT checksum FROM schema_migrations WHERE version = ?")
+    let wait = LockWait::new();
+    let stored: Option<String> = loop {
+        match sqlx::query_scalar("SELECT checksum FROM schema_migrations WHERE version = ?")
             .bind(version)
             .fetch_optional(pool)
             .await
-            .map_err(AppError::from)?;
+        {
+            Ok(stored) => break stored,
+            Err(err) => {
+                if !wait.retry(&err).await {
+                    return Err(AppError::from(err));
+                }
+            }
+        }
+    };
     match stored {
         None => Ok(false),
         Some(stored) if stored == checksum => Ok(true),
@@ -379,7 +480,7 @@ fn checksum(sql: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::sqlite::SqliteConnectOptions;
+    use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode};
     use sqlx::Row;
     use std::str::FromStr;
 
@@ -1437,6 +1538,153 @@ mod tests {
                 .await
                 .expect("default group");
         assert_eq!(default_groups, 1, "the seed is applied once");
+
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Hold the write lock for ten times `busy_timeout`, then check that a
+    /// migrator which finds it taken waits it out instead of failing.
+    ///
+    /// `busy_timeout` bounds one lock acquisition, but a waiting migrator
+    /// needs the lock after the leading one has applied every remaining
+    /// migration, so its wait is the leader's whole run. `applied_before`
+    /// picks the statement that meets the held lock first.
+    async fn outwaits_a_held_lock(case: &str, applied_before: Option<&str>) {
+        let dir = std::env::temp_dir().join(format!(
+            "urlet-migrate-outwait-{case}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = format!("{}/outwait.db", dir.display());
+        let holder_options = test_options(&path);
+        let options = holder_options
+            .clone()
+            .busy_timeout(Duration::from_millis(50));
+        let pool = test_pool(&options).await;
+        if let Some(version) = applied_before {
+            run_until(&pool, &options, version)
+                .await
+                .expect("older schema");
+        }
+
+        let mut holder = SqliteConnection::connect_with(&holder_options)
+            .await
+            .expect("holder");
+        sqlx::query("BEGIN IMMEDIATE")
+            .execute(&mut holder)
+            .await
+            .expect("take the write lock");
+        let started = Instant::now();
+        let release = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            sqlx::query("COMMIT")
+                .execute(&mut holder)
+                .await
+                .expect("release the write lock");
+            holder.close().await.expect("close holder");
+        });
+
+        run(&pool, &options)
+            .await
+            .unwrap_or_else(|err| panic!("{case}: waits for the lock: {err:?}"));
+        assert!(
+            started.elapsed() >= Duration::from_millis(400),
+            "{case}: finished before the lock was released"
+        );
+        release.await.expect("holder task");
+        assert_eq!(
+            applied_count(&pool).await.expect("count"),
+            MIGRATIONS.len() as i64,
+            "{case}"
+        );
+
+        pool.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The first statement `run` issues, `CREATE TABLE IF NOT EXISTS
+    /// schema_migrations`, meets the held lock.
+    #[tokio::test]
+    async fn a_migrator_outwaits_a_lock_held_longer_than_busy_timeout_fresh() {
+        outwaits_a_held_lock("fresh", None).await;
+    }
+
+    /// The rebuild's `BEGIN IMMEDIATE` meets the held lock: `0003` is the next
+    /// migration to apply and rebuilds `urls`.
+    #[tokio::test]
+    async fn a_migrator_outwaits_a_lock_held_longer_than_busy_timeout_rebuild() {
+        outwaits_a_held_lock("rebuild", Some("0002_clicks_indexes")).await;
+    }
+
+    /// An ordinary migration's transaction meets the held lock: only the
+    /// newest migration is left to apply.
+    #[tokio::test]
+    async fn a_migrator_outwaits_a_lock_held_longer_than_busy_timeout_transactional() {
+        let last_but_one = MIGRATIONS[MIGRATIONS.len() - 2].version;
+        outwaits_a_held_lock("transactional", Some(last_but_one)).await;
+    }
+
+    /// The `is_applied` read between migrations meets a lock held longer than
+    /// `busy_timeout`. `BEGIN EXCLUSIVE` refuses readers only in a
+    /// rollback-journal database, as another migrator's commit does on a slow
+    /// disk, so the journal mode is pinned and a second reader proves that
+    /// the lock really refuses reads before the one under test waits it out.
+    #[tokio::test]
+    async fn is_applied_outwaits_a_lock_held_longer_than_busy_timeout() {
+        let dir =
+            std::env::temp_dir().join(format!("urlet-migrate-outwait-read-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = format!("{}/outwait.db", dir.display());
+        let holder_options = test_options(&path).journal_mode(SqliteJournalMode::Delete);
+        let options = holder_options
+            .clone()
+            .busy_timeout(Duration::from_millis(50));
+        let pool = test_pool(&options).await;
+        run(&pool, &options).await.expect("schema");
+
+        // Connect before the lock is taken: opening a connection reads the
+        // database header, which the exclusive lock would refuse.
+        let mut probe = SqliteConnection::connect_with(&options)
+            .await
+            .expect("probe");
+        let mut holder = SqliteConnection::connect_with(&holder_options)
+            .await
+            .expect("holder");
+        sqlx::query("BEGIN EXCLUSIVE")
+            .execute(&mut holder)
+            .await
+            .expect("take the exclusive lock");
+
+        let refused = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM schema_migrations")
+            .fetch_one(&mut probe)
+            .await
+            .expect_err("a reader is refused while the exclusive lock is held");
+        assert!(is_busy(&refused), "{refused:?}");
+        probe.close().await.expect("close probe");
+
+        let started = Instant::now();
+        let release = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            sqlx::query("COMMIT")
+                .execute(&mut holder)
+                .await
+                .expect("release the exclusive lock");
+            holder.close().await.expect("close holder");
+        });
+
+        let first = &MIGRATIONS[0];
+        let applied = is_applied(&pool, first.version, &checksum(first.sql))
+            .await
+            .unwrap_or_else(|err| panic!("waits for the lock: {err:?}"));
+        assert!(
+            started.elapsed() >= Duration::from_millis(400),
+            "finished before the lock was released"
+        );
+        release.await.expect("holder task");
+        assert!(applied);
 
         pool.close().await;
         let _ = std::fs::remove_dir_all(&dir);
