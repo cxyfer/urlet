@@ -17,7 +17,6 @@ use crate::middleware::auth::{ClientInfo, CurrentUser};
 use crate::routes::dto::Pagination;
 use crate::services::invite_quota::{usage_for, InviteQuota};
 use crate::services::invites::{self, Issuer};
-use crate::services::ratelimit::limits;
 use crate::services::time;
 use crate::state::AppState;
 
@@ -184,12 +183,9 @@ pub async fn create(
     Json(payload): Json<CreateMemberInvitePayload>,
 ) -> Result<Response, ApiError> {
     state
-        .limiter
-        .check(
-            &format!("create-invite:{}", user.id),
-            limits::CREATE_INVITE_CAPACITY,
-            limits::CREATE_INVITE_REFILL_PER_SEC,
-        )
+        .limiters
+        .create_invite
+        .check(&user.id.to_string())
         .map_err(|retry| ApiError(crate::error::AppError::rate_limited(retry)))?;
 
     let created = Issuer {

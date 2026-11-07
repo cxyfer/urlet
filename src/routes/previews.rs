@@ -18,7 +18,6 @@ use crate::{
     },
     services::{
         audit::{action, Audit},
-        ratelimit::limits,
         settings::PreviewImagePolicy,
         url_preview as service,
     },
@@ -175,12 +174,9 @@ pub(crate) async fn save(
 
 pub(crate) fn upload_limit(state: &AppState, user_id: i64) -> Result<(), AppError> {
     state
-        .limiter
-        .check(
-            &format!("preview-upload:{user_id}"),
-            limits::CREATE_URL_CAPACITY,
-            limits::CREATE_URL_REFILL_PER_SEC,
-        )
+        .limiters
+        .preview_upload
+        .check(&user_id.to_string())
         .map_err(AppError::rate_limited)
 }
 

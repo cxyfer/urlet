@@ -342,6 +342,156 @@ async fn unlock_attempts_are_rate_limited() {
 }
 
 #[tokio::test]
+async fn unlock_of_an_unknown_slug_tracks_no_limiter_key() {
+    let app = TestApp::spawn().await;
+    // Past the per-link attempt limit, an unknown slug still answers 404.
+    for index in 0..12 {
+        let response = app
+            .send(common::post_json(
+                "/missing/unlock",
+                json!({ "password": "wrong" }),
+            ))
+            .await;
+        assert_eq!(response.status, StatusCode::NOT_FOUND, "attempt {index}");
+    }
+    assert_eq!(app.state.limiters.unlock.tracked_keys(), 0);
+}
+
+#[tokio::test]
+async fn unlock_charges_only_active_password_links() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let disabled = create_url(
+        &app,
+        &cookie,
+        json!({ "target_url": "https://example.com", "slug": "off", "password": "linkpass" }),
+    )
+    .await;
+    app.send(common::patch_json_as(
+        &format!("/api/v1/urls/{}", disabled["id"].as_i64().expect("id")),
+        json!({ "status": "disabled" }),
+        &cookie,
+    ))
+    .await;
+    let deleted = create_url(
+        &app,
+        &cookie,
+        json!({ "target_url": "https://example.com", "slug": "gone", "password": "linkpass" }),
+    )
+    .await;
+    app.send(common::delete_as(
+        &format!("/api/v1/urls/{}", deleted["id"].as_i64().expect("id")),
+        &cookie,
+    ))
+    .await;
+    create_url(
+        &app,
+        &cookie,
+        json!({ "target_url": "https://example.com", "slug": "open" }),
+    )
+    .await;
+
+    let attempt = |slug: &str| {
+        app.send(common::post_json(
+            &format!("/{slug}/unlock"),
+            json!({ "password": "wrong" }),
+        ))
+    };
+    // Disabled and deleted protected links answer like an unknown slug and never turn into 429.
+    for slug in ["missing", "off", "gone"] {
+        for index in 0..12 {
+            let response = attempt(slug).await;
+            assert_eq!(
+                response.status,
+                StatusCode::NOT_FOUND,
+                "{slug} attempt {index}"
+            );
+            assert!(response.body.contains("Link not found"), "{slug}");
+        }
+    }
+    let open = attempt("open").await;
+    assert_eq!(open.status, StatusCode::OK, "{}", open.body);
+    assert_eq!(open.json()["redirect"], "/open");
+    assert_eq!(app.state.limiters.unlock.tracked_keys(), 0);
+}
+
+#[tokio::test]
+async fn unlock_of_expired_or_exhausted_password_links_stays_410() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let expired = create_url(
+        &app,
+        &cookie,
+        json!({ "target_url": "https://example.com", "slug": "lapsed", "password": "linkpass", "expires_at": "2030-01-01" }),
+    )
+    .await;
+    sqlx::query("UPDATE urls SET expires_at = ? WHERE id = ?")
+        .bind("2000-01-01T00:00:00.000Z")
+        .bind(expired["id"].as_i64().expect("id"))
+        .execute(&app.state.db)
+        .await
+        .expect("expire");
+    let exhausted = create_url(
+        &app,
+        &cookie,
+        json!({ "target_url": "https://example.com", "slug": "spent", "password": "linkpass", "max_clicks": 1 }),
+    )
+    .await;
+    sqlx::query("UPDATE urls SET click_count = max_clicks WHERE id = ?")
+        .bind(exhausted["id"].as_i64().expect("id"))
+        .execute(&app.state.db)
+        .await
+        .expect("exhaust");
+
+    // Past the per-link attempt limit, both links keep answering 410 without a bucket.
+    for slug in ["lapsed", "spent"] {
+        for index in 0..12 {
+            let response = app
+                .send(common::post_json(
+                    &format!("/{slug}/unlock"),
+                    json!({ "password": "wrong" }),
+                ))
+                .await;
+            assert_eq!(response.status, StatusCode::GONE, "{slug} attempt {index}");
+        }
+    }
+    assert_eq!(app.state.limiters.unlock.tracked_keys(), 0);
+}
+
+#[tokio::test]
+async fn unlock_attempts_share_one_bucket_per_ipv6_prefix() {
+    let app = TestApp::spawn_with(|config| config.trust_proxy = true).await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    create_url(
+        &app,
+        &cookie,
+        json!({ "target_url": "https://example.com", "slug": "prefix", "password": "linkpass" }),
+    )
+    .await;
+
+    let attempt = |ip: String| {
+        let mut request = common::post_json("/prefix/unlock", json!({ "password": "wrong" }));
+        request
+            .headers_mut()
+            .insert("x-real-ip", ip.parse().expect("header"));
+        app.send(request)
+    };
+    let mut limited = false;
+    for index in 1..=15 {
+        let response = attempt(format!("2001:db8:1:2::{index:x}")).await;
+        if response.status == StatusCode::TOO_MANY_REQUESTS {
+            limited = true;
+            break;
+        }
+        assert_eq!(response.status, StatusCode::UNAUTHORIZED);
+    }
+    assert!(limited, "addresses within one /64 share the unlock budget");
+    // The neighbouring /64 is another client with its own budget.
+    let neighbour = attempt("2001:db8:1:3::1".to_string()).await;
+    assert_eq!(neighbour.status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn clicks_are_recorded_with_analytics_dimensions() {
     let app = TestApp::spawn().await;
     let (cookie, _) = app.register("user@example.com", "supersecret").await;

@@ -14,7 +14,6 @@ use crate::middleware::domain::HostContext;
 use crate::routes::extract::Flexible;
 use crate::services::click::ClickInput;
 use crate::services::cookies;
-use crate::services::ratelimit::limits;
 use crate::services::redirect_mode::RedirectMode;
 use crate::services::theme::{self, ThemeView};
 use crate::services::{password, target, unlock};
@@ -216,24 +215,10 @@ pub async fn unlock_link(
     let Some(domain) = host.domain.as_ref() else {
         return Ok(not_found_page(&state));
     };
-    // Reject impossible slugs before they reach the limiter or the database.
+    // Reject impossible slugs before they reach the database.
     if slug.len() > crate::services::slug::MAX_LEN {
         return Ok(not_found_page(&state));
     }
-
-    state
-        .limiter
-        .check(
-            &format!(
-                "unlock:{}:{}:{}",
-                domain.hostname,
-                slug.to_ascii_lowercase(),
-                client.limiter_key()
-            ),
-            limits::UNLOCK_CAPACITY,
-            limits::UNLOCK_REFILL_PER_SEC,
-        )
-        .map_err(AppError::rate_limited)?;
 
     let Some(url) = urls::find_by_domain_slug(&state.db, domain.id, &slug).await? else {
         return Ok(not_found_page(&state));
@@ -261,6 +246,14 @@ pub async fn unlock_link(
     let Some(password_hash) = url.password_hash.as_deref().filter(|hash| !hash.is_empty()) else {
         return Ok(unlocked_response(&url, wants_json));
     };
+
+    // Only an active, password protected link gets a bucket: unknown slugs
+    // answer like any missing link and leave the limiter untouched.
+    state
+        .limiters
+        .unlock
+        .check(&format!("{}:{}", url.id, client.limiter_key()))
+        .map_err(AppError::rate_limited)?;
 
     if !password::verify_async(payload.password.clone(), password_hash.to_string()).await {
         tracing::info!(slug = %url.slug, "failed unlock attempt");

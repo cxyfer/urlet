@@ -315,7 +315,7 @@ Migrations are forward-only additive files (`migrations/`), and applied files ar
 | Signed out immediately after signing in | `URLET_BASE_URL` does not match the real URL, or `URLET_SECURE_COOKIES=true` while browsing over HTTP |
 | Short links point at `http://localhost:8080` | `URLET_BASE_URL` is not set |
 | `/health` returns 503 after the container starts | Volume permission problem: `/data` must be writable (the container runs as uid 10001) |
-| Rate limits hit legitimate users (many users behind NAT) | Loosen the limits or switch those clients to API tokens; limits are counted per IP |
+| Rate limits hit legitimate users (many users behind NAT) | Loosen the limits or switch those clients to API tokens; limits are counted per IP, and an IPv6 client counts as its /64 prefix, so users sharing one /64 share one allowance |
 | Login returns 429 even with the correct password | The account is temporarily locked (30 failures within 15 minutes). Wait for the window to slide past, or run `sqlite3 /data/urlet.db "DELETE FROM login_attempts"` to clear it immediately |
 | The CAPTCHA widget never appears | All four conditions must hold: a provider other than `none`, both keys, and the matching `ON_*` switch set to `true` |
 | Every submission fails with `captcha_failed` | The secret key does not belong to the configured provider, the widget's hostname list does not include the domain users visit, or an API client forgot to send the widget token as `captcha_token` |

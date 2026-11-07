@@ -23,7 +23,6 @@ use crate::routes::pages::{
 };
 use crate::services::invite_quota::usage_for;
 use crate::services::invites::{self as invite_service, Issuer, MAX_MEMBER_USES};
-use crate::services::ratelimit::limits;
 use crate::services::time;
 use crate::state::AppState;
 use crate::themed_page;
@@ -145,12 +144,9 @@ pub async fn create(
     };
 
     if state
-        .limiter
-        .check(
-            &format!("create-invite:{}", current.user.id),
-            limits::CREATE_INVITE_CAPACITY,
-            limits::CREATE_INVITE_REFILL_PER_SEC,
-        )
+        .limiters
+        .create_invite
+        .check(&current.user.id.to_string())
         .is_err()
     {
         return Ok(redirect_err("/app/invites", "rate_limited").into_response());

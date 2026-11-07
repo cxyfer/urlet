@@ -27,7 +27,6 @@ use crate::routes::previews::{self, PreviewFields};
 use crate::services::captcha::CaptchaFlow;
 use crate::services::domain_policy;
 use crate::services::domains::DomainOption;
-use crate::services::ratelimit::limits;
 use crate::services::urls::{CreateInput, UpdateInput, UrlContext};
 use crate::services::{chart, time};
 use crate::state::AppState;
@@ -302,12 +301,9 @@ pub async fn create(
     };
 
     if state
-        .limiter
-        .check(
-            &format!("create-url:{}", current.user.id),
-            limits::CREATE_URL_CAPACITY,
-            limits::CREATE_URL_REFILL_PER_SEC,
-        )
+        .limiters
+        .create_url
+        .check(&current.user.id.to_string())
         .is_err()
     {
         return Ok(redirect_err("/app", "rate_limited").into_response());

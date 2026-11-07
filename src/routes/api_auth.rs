@@ -16,7 +16,7 @@ use crate::services::auth;
 use crate::services::auth::{AuthContext, SessionToken};
 use crate::services::captcha::CaptchaFlow;
 use crate::services::cookies;
-use crate::services::ratelimit::limits;
+use crate::services::ratelimit::RateLimiter;
 use crate::services::time;
 use crate::state::AppState;
 
@@ -73,12 +73,7 @@ pub async fn register(
     client: ClientInfo,
     Json(payload): Json<RegisterPayload>,
 ) -> Result<Response, ApiError> {
-    enforce(
-        &state,
-        &format!("register:{}", client.limiter_key()),
-        limits::REGISTER_CAPACITY,
-        limits::REGISTER_REFILL_PER_SEC,
-    )?;
+    enforce(&state.limiters.register, &client.limiter_key())?;
     verify_captcha(
         &state,
         &client,
@@ -118,19 +113,12 @@ pub async fn login(
 ) -> Result<Response, ApiError> {
     // An IP-wide bucket first: it caps how much Argon2 work one host can ask
     // for, even when it rotates the email address on every attempt.
-    enforce(
-        &state,
-        &format!("login-ip:{}", client.limiter_key()),
-        limits::LOGIN_IP_CAPACITY,
-        limits::LOGIN_IP_REFILL_PER_SEC,
-    )?;
+    enforce(&state.limiters.login_ip, &client.limiter_key())?;
 
     let email_normalized = auth::normalize_email(&payload.email);
     enforce(
-        &state,
-        &format!("login:{}:{}", client.limiter_key(), email_normalized),
-        limits::LOGIN_CAPACITY,
-        limits::LOGIN_REFILL_PER_SEC,
+        &state.limiters.login,
+        &format!("{}:{}", client.limiter_key(), email_normalized),
     )?;
 
     // Bot protection runs before any password hashing work.
@@ -241,12 +229,7 @@ pub async fn change_password(
     }: CurrentUser,
     Json(payload): Json<ChangePasswordPayload>,
 ) -> Result<Response, ApiError> {
-    enforce(
-        &state,
-        &format!("password:{}", user.id),
-        limits::PASSWORD_CAPACITY,
-        limits::PASSWORD_REFILL_PER_SEC,
-    )?;
+    enforce(&state.limiters.password, &user.id.to_string())?;
     context(&state, &client)
         .change_password(
             &user,
@@ -305,10 +288,9 @@ fn context<'a>(state: &'a AppState, client: &'a ClientInfo) -> AuthContext<'a> {
     }
 }
 
-fn enforce(state: &AppState, key: &str, capacity: f64, refill: f64) -> Result<(), ApiError> {
-    state
-        .limiter
-        .check(key, capacity, refill)
+fn enforce(limiter: &RateLimiter, key: &str) -> Result<(), ApiError> {
+    limiter
+        .check(key)
         .map_err(AppError::rate_limited)
         .map_err(ApiError)
 }
