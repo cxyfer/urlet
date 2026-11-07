@@ -76,7 +76,7 @@ cargo test
 bash scripts/smoke.sh       # 建議執行：會建置並實際操作二進位檔
 ```
 
-這些檢查也會在 CI 執行：`.github/workflows/ci.yml` 會在每個 pull request，以及每個尚未被通過的 pull request 涵蓋的 `master` 推送，執行格式化、lint、測試、smoke 與 OpenAPI 合約檢查。建立標籤前仍應在本機跑完上面這組指令，作為品質關卡，因為出錯的發布標籤無法重複使用。
+這些檢查也會在 CI 執行：`.github/workflows/ci.yml` 會在每個 pull request，以及每個尚未被通過的 pull request 涵蓋的 `master` 推送，執行格式化、lint、測試、smoke、OpenAPI 合約與 MSRV 建置檢查。建立標籤前仍應在本機跑完上面這組指令，作為品質關卡，因為出錯的發布標籤無法重複使用。
 
 ### 2. 升版
 

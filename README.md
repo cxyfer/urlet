@@ -139,7 +139,7 @@ Regenerate them with `SHOTS=docs/screenshots ./scripts/demo.sh` (needs Playwrigh
 ```
 urlet/
 ├── .github/workflows/
-│   ├── ci.yml                  # fmt, Clippy, tests, smoke and OpenAPI contracts
+│   ├── ci.yml                  # fmt, Clippy, tests, smoke, OpenAPI contracts and MSRV
 │   ├── docs.yml                # build and publish the documentation site
 │   ├── release-image.yml       # tag-driven multi-arch image release
 │   └── delete-image-version.yml
@@ -187,7 +187,7 @@ bash scripts/smoke.sh      # end-to-end acceptance run against the real binary
 bash scripts/demo.sh       # build a demo site and write screenshots to .tmp/demo/shots
 ```
 
-Rust 1.80.1 or newer is required. Integration tests use their own temporary SQLite database and never touch your development data.
+Rust 1.88 or newer is required, and CI checks the build on exactly 1.88. Integration tests use their own temporary SQLite database and never touch your development data.
 
 The first five commands also run in CI on every pull request — see [`.github/workflows/ci.yml`](.github/workflows/ci.yml). `demo.sh` stays local because it needs Playwright and Chromium.
 

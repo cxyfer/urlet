@@ -1,0 +1,6 @@
+# Make `cargo update` and `cargo add` prefer dependency versions that support the
+# `rust-version` in Cargo.toml (the MSRV), so refreshing Cargo.lock does not
+# quietly pull in a crate that needs a newer Rust. Supported since Cargo 1.84;
+# the MSRV job in CI checks the result with `--locked`.
+[resolver]
+incompatible-rust-versions = "fallback"

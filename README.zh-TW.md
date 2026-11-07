@@ -139,7 +139,7 @@ urlet version | help
 ```
 urlet/
 ├── .github/workflows/
-│   ├── ci.yml                  # 格式化、Clippy、測試、smoke 與 OpenAPI 合約
+│   ├── ci.yml                  # 格式化、Clippy、測試、smoke、OpenAPI 合約與 MSRV
 │   ├── docs.yml                # 建置並發布文件網站
 │   ├── release-image.yml       # 標籤觸發的多架構映像發布
 │   └── delete-image-version.yml
@@ -187,7 +187,7 @@ bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收
 bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 ```
 
-需要 Rust 1.80 以上。整合測試使用獨立的臨時 SQLite，不會碰到你的開發資料。
+需要 Rust 1.88 以上，CI 會以 1.88 實際檢查建置。整合測試使用獨立的臨時 SQLite，不會碰到你的開發資料。
 
 前五個指令也會在每個 pull request 的 CI 中執行，見 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。`demo.sh` 需要 Playwright 與 Chromium，只在本機使用。
 

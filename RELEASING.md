@@ -76,7 +76,7 @@ cargo test
 bash scripts/smoke.sh       # recommended: builds and exercises the real binary
 ```
 
-These checks also run in CI: `.github/workflows/ci.yml` runs formatting, lints and tests, the smoke run and the OpenAPI contract job on every pull request and on every push to `master` that a green pull request did not already cover. The local run above is still the quality gate before a tag, because a release tag cannot be reused if it turns out broken.
+These checks also run in CI: `.github/workflows/ci.yml` runs formatting, lints and tests, the smoke run, the OpenAPI contract job and an MSRV build check on every pull request and on every push to `master` that a green pull request did not already cover. The local run above is still the quality gate before a tag, because a release tag cannot be reused if it turns out broken.
 
 ### 2. Bump the version
 
