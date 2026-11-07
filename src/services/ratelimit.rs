@@ -89,7 +89,7 @@ impl Inner {
     /// Drop every bucket that has refilled completely.
     fn prune(&mut self, now: Instant, limit: Limit) {
         self.buckets
-            .retain(|_, bucket| !bucket.full_at(limit).is_some_and(|at| at <= now));
+            .retain(|_, bucket| bucket.full_at(limit).is_none_or(|at| at > now));
     }
 
     /// Drop the `count` buckets that refill soonest; refilled buckets go first.
