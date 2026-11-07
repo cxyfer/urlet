@@ -406,7 +406,7 @@ Accepts `application/json` or `application/x-www-form-urlencoded`:
 - Successful JSON request → `200` `{ "ok": true, "redirect": "/slug" }` + unlock cookie
 - Successful form request → `303` redirect to `/{slug}` + unlock cookie
 - Wrong password → JSON `401`; forms re-render the password page (`401`)
-- Rate limited → `429`
+- Rate limited → `429`; only an active password-protected link is counted, so a missing, disabled or deleted slug always answers `404`
 
 ### `GET /api/v1/public/urls/{slug}?domain=<hostname>`
 
@@ -586,7 +586,7 @@ Cleanup applies **only when creating links**, through `POST /api/v1/urls`, `POST
 |-------|-------|
 | Login | 10 attempts per 5 minutes per (IP, email), **and** 40 per 5 minutes per IP (across accounts) |
 | Registration | 5 attempts per hour per IP |
-| Short link unlock | 10 attempts per 5 minutes per (slug, IP) |
+| Short link unlock | 10 attempts per 5 minutes per (link, IP) |
 | Short link creation | 120 per hour per user |
 | Public shortener | Anonymous visitors only: `public_rate_limit_per_ip` per `public_rate_limit_per_ip_period` and `public_rate_limit_global` per `public_rate_limit_global_period` (defaults: 20/hour and 500/hour). Periods are calendar minute/hour/day/week/month in the server timezone, with Monday-based weeks and actual calendar months. `0` disables either budget. The per-address budget is charged before bot protection, the shared one only after success. SQLite counters survive restart; `Retry-After` is the time to the next boundary. Signed-in callers retain group quotas and the existing per-account throttle, without consuming guest quotas |
 | Password change | 10 per hour per user |
@@ -595,7 +595,9 @@ The persistent guest-quota table holds at most 50,000 rows across sources, share
 
 Exceeding a limit returns `429` with `Retry-After` (seconds). The in-memory counters reset on restart, but **account lockout** is persistent: once one email accumulates 30 failures within 15 minutes, even the correct password returns `429` (`Retry-After: 900`) until the window slides past. Each sign-in attempt is counted as a failure before the password is checked and is cleared once the sign-in succeeds, so attempts still being checked count towards the limit.
 
-The IP used for login comes from `X-Real-IP` when `URLET_TRUST_PROXY=true`, falling back to the rightmost address in `X-Forwarded-For`.
+Each purpose has its own in-memory limiter, which tracks at most 50,000 keys. Idle counters are only cleaned up once they have fully refilled. When a limiter is full, it drops the tenth of its counters that refill soonest, so new callers are always admitted while a counter that is far from refilling is kept.
+
+The IP used for login comes from `X-Real-IP` when `URLET_TRUST_PROXY=true`, falling back to the rightmost address in `X-Forwarded-For`. Every per-IP limit, including the guest per-address budget, counts an IPv6 client by its /64 prefix and an IPv4-mapped IPv6 address as its IPv4 address.
 
 ---
 

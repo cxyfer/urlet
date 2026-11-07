@@ -174,7 +174,7 @@ The v1.6 column is measured on `master` plus the embedded API reference. Most of
 | FR-AUTH-6 | Session management | List your own signed-in devices and revoke any session |
 | FR-AUTH-7 | First user | If the database has no users, the first registrant automatically becomes `admin`; an admin can also be created at startup with `URLET_ADMIN_EMAIL/PASSWORD` |
 | FR-AUTH-8 | Suspension | A user with `status = suspended` cannot log in and existing sessions become invalid immediately |
-| FR-AUTH-9 | Rate limiting | Login, registration, and unlock are protected by in-memory token buckets, and `login_attempts` is recorded for auditing |
+| FR-AUTH-9 | Rate limiting | Login, registration, and unlock are protected by in-memory token buckets, one limiter per purpose, and `login_attempts` is recorded for auditing |
 
 **Password policy**: 8–128 characters; Argon2id parameters `m=19456 KiB, t=2, p=1` (OWASP recommendation).
 
@@ -201,7 +201,7 @@ The v1.6 column is measured on `master` plus the embedded API reference. Most of
 | FR-PWD-2 | Access | Visiting a protected link returns 200 with a password entry page (**the target URL is not leaked**) |
 | FR-PWD-3 | Unlock | `POST /{slug}/unlock` verifies the password; on success it sets the signed cookie `urlet_unlock_<slug>` (HMAC-SHA256, TTL 30 minutes) |
 | FR-PWD-4 | Already unlocked | With a valid unlock cookie the visitor is redirected immediately and the click is recorded with `password_protected = 1` |
-| FR-PWD-5 | Rate limiting | At most 10 attempts per (slug, IP) in 5 minutes; further attempts return 429 |
+| FR-PWD-5 | Rate limiting | At most 10 attempts per (link, IP) in 5 minutes; further attempts return 429. Only an active password-protected link is counted: a missing, disabled or deleted slug always answers 404 and never reaches the limiter |
 | FR-PWD-6 | Error handling | A wrong password returns 401 and shows an error on the page without revealing the target URL |
 
 ### 4.4 Expiry (FR-EXP)
@@ -450,8 +450,8 @@ The built-in rule source is `src/rules/url-cleaning.txt`, maintained separately 
 | NFR-SEC-6 | Reserved words: `api`, `app`, `assets`, `health`, `static`, `favicon.ico`, and similar names cannot be used as slugs |
 | NFR-SEC-7 | Error messages never leak internal details; a failed login always responds with "invalid email or password" |
 | NFR-SEC-8 | User enumeration protection: registering a duplicate email returns 409 (an accepted, common trade-off); login uses a uniform error message |
-| NFR-SEC-9 | Rate limiting: login 10 per 5 minutes per (IP,email) **plus** 40 per 5 minutes per IP, registration 5 per hour per IP, unlock 10 per 5 minutes per (slug,IP), link creation 120 per hour per user, password change 10 per hour per user, anonymous creation defaults to 20 per calendar hour per address **plus** a shared 500 per calendar hour, with independent minute/hour/day/week/month periods (`0` disables either budget) |
-| NFR-SEC-9b | Account lockout: 30 accumulated failures for the same email within 15 minutes temporarily refuse login (429); this is persisted in the `login_attempts` table and survives a restart; each attempt is inserted as a failure before the password is checked, in one conditional statement that only succeeds below the threshold, and is marked successful when the sign-in succeeds; in-memory rate limiter keys are stored as SHA-256 and capped at 50,000 entries |
+| NFR-SEC-9 | Rate limiting: login 10 per 5 minutes per (IP,email) **plus** 40 per 5 minutes per IP, registration 5 per hour per IP, unlock 10 per 5 minutes per (link,IP), link creation 120 per hour per user, password change 10 per hour per user, anonymous creation defaults to 20 per calendar hour per address **plus** a shared 500 per calendar hour, with independent minute/hour/day/week/month periods (`0` disables either budget); every per-IP limit, including the anonymous per-address budget, counts an IPv6 client by its /64 prefix and an IPv4-mapped IPv6 address as its IPv4 address |
+| NFR-SEC-9b | Account lockout: 30 accumulated failures for the same email within 15 minutes temporarily refuse login (429); this is persisted in the `login_attempts` table and survives a restart; each attempt is inserted as a failure before the password is checked, in one conditional statement that only succeeds below the threshold, and is marked successful when the sign-in succeeds; each purpose has its own in-memory rate limiter whose keys are stored as SHA-256 and capped at 50,000 entries; idle buckets are pruned only once they have fully refilled, and a full limiter drops the tenth of its buckets that refill soonest to admit a new key, so a bucket that owes more than freshly created ones is kept |
 | NFR-SEC-10 | All SQL is parameterized (sqlx bind) with no string concatenation (no SQL outside `src/db/`) |
 | NFR-SEC-11 | The audit log covers every sensitive operation |
 | NFR-SEC-12 | If `URLET_SECRET` is unset at startup, a random key is generated and persisted in the data directory (created with mode 0600; an existing file with overly broad permissions is tightened automatically) |

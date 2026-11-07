@@ -25,7 +25,7 @@ use crate::error::{AppError, Result};
 use crate::middleware::auth::{ClientInfo, CurrentUser};
 use crate::services::captcha::CaptchaFlow;
 use crate::services::public_quota;
-use crate::services::ratelimit::{limits, RateLimiter};
+use crate::services::ratelimit::RateLimiter;
 use crate::services::settings::{PublicCreateAccess, PublicFields, Settings};
 use crate::services::urls::{CreateInput, UrlContext};
 use crate::state::AppState;
@@ -127,10 +127,8 @@ fn enforce_fields(fields: PublicFields, input: &PublicInput) -> Result<()> {
 }
 
 /// Consume one token from a bucket, mapping an empty bucket onto a 429.
-fn enforce(limiter: &RateLimiter, key: &str, capacity: f64, refill_per_second: f64) -> Result<()> {
-    limiter
-        .check(key, capacity, refill_per_second)
-        .map_err(AppError::rate_limited)
+fn enforce(limiter: &RateLimiter, key: &str) -> Result<()> {
+    limiter.check(key).map_err(AppError::rate_limited)
 }
 
 /// Proof that [`authorize`] accepted a request.
@@ -172,12 +170,7 @@ pub async fn authorize(
     // A signed-in caller keeps the per-account bucket every other create path
     // charges, so the public endpoint cannot be used to outrun it.
     if let Some(current) = current {
-        enforce(
-            &state.limiter,
-            &format!("create-url:{}", current.user.id),
-            limits::CREATE_URL_CAPACITY,
-            limits::CREATE_URL_REFILL_PER_SEC,
-        )?;
+        enforce(&state.limiters.create_url, &current.user.id.to_string())?;
     } else {
         // 遊客才消耗來源位址額度，避免同一網路的會員互相影響。
         public_quota::enforce(

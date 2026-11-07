@@ -7,7 +7,7 @@ pub mod locale;
 pub mod security;
 pub mod theme;
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 
 use axum::extract::{ConnectInfo, Request};
 use axum::http::{Extensions, HeaderMap, HeaderValue};
@@ -90,6 +90,32 @@ pub fn hashed_client_ip_parts(
 /// [`hashed_client_ip_parts`] for a whole request.
 pub fn hashed_client_ip(request: &Request, config: &Config) -> Option<String> {
     hashed_client_ip_parts(request.headers(), request.extensions(), config)
+}
+
+/// Network a client is rate limited as: an IPv4 address on its own, an IPv6
+/// address by its /64 prefix, which a single subscriber usually controls in
+/// full. IPv4-mapped IPv6 addresses count as the IPv4 address they carry.
+pub fn limiter_network(ip: IpAddr) -> String {
+    match ip.to_canonical() {
+        IpAddr::V4(v4) => v4.to_string(),
+        IpAddr::V6(v6) => {
+            let [a, b, c, d, ..] = v6.segments();
+            format!("{}/64", Ipv6Addr::new(a, b, c, d, 0, 0, 0, 0))
+        }
+    }
+}
+
+/// Anonymised [`limiter_network`] of the client, safe to store. For a native
+/// IPv4 address it equals [`hashed_client_ip_parts`]; an IPv4-mapped IPv6
+/// address hashes like its IPv4 address here, while its `ip_hash` covers the
+/// `::ffff:` form.
+pub fn hashed_limiter_network_parts(
+    headers: &HeaderMap,
+    extensions: &Extensions,
+    config: &Config,
+) -> Option<String> {
+    client_ip_parts(headers, extensions, config)
+        .map(|ip| secret::hmac_hex(&config.secret, &limiter_network(ip)))
 }
 
 /// Assign a request id, emit one structured access log line per request.
@@ -182,6 +208,49 @@ mod tests {
         let hashed = hashed_client_ip(&request, &config).expect("hash");
         assert_eq!(hashed.len(), 64);
         assert!(!hashed.contains("203"));
+    }
+
+    #[test]
+    fn limiter_network_groups_ipv6_by_prefix() {
+        let network = |ip: &str| limiter_network(ip.parse().expect("ip"));
+        assert_eq!(network("203.0.113.9"), "203.0.113.9");
+        assert_eq!(network("::ffff:203.0.113.9"), "203.0.113.9");
+        assert_eq!(network("2001:db8:1:2::1"), "2001:db8:1:2::/64");
+        assert_eq!(
+            network("2001:db8:1:2:ffff:ffff:ffff:ffff"),
+            "2001:db8:1:2::/64"
+        );
+        assert_ne!(network("2001:db8:1:3::1"), network("2001:db8:1:2::1"));
+        assert_eq!(network("::1"), "::/64");
+    }
+
+    #[test]
+    fn hashed_limiter_network_matches_the_ip_hash_for_ipv4() {
+        let config = test_config(true);
+        let request = |ip: &str| {
+            HttpRequest::builder()
+                .header("x-real-ip", ip)
+                .body(Body::empty())
+                .expect("request")
+        };
+        let hashed = |request: &Request| {
+            hashed_limiter_network_parts(request.headers(), request.extensions(), &config)
+                .expect("hash")
+        };
+        let v4 = request("203.0.113.9");
+        assert_eq!(hashed(&v4), hashed_client_ip(&v4, &config).expect("hash"));
+        assert_eq!(hashed(&request("::ffff:203.0.113.9")), hashed(&v4));
+
+        let first = request("2001:db8:1:2::1");
+        let second = request("2001:db8:1:2::abcd");
+        assert_eq!(hashed(&first), hashed(&second));
+        assert_ne!(
+            hashed(&first),
+            hashed_client_ip(&first, &config).expect("hash"),
+            "analytics keep the full address hash"
+        );
+        assert!(!hashed(&first).contains("2001"));
+        assert_eq!(hashed(&first).len(), 64);
     }
 
     #[test]

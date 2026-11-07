@@ -315,7 +315,7 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 | 登入後馬上被登出 | `URLET_BASE_URL` 與實際網址不一致，或 `URLET_SECURE_COOKIES=true` 卻用 HTTP 存取 |
 | 短網址指向 `http://localhost:8080` | 沒設定 `URLET_BASE_URL` |
 | 容器啟動後 `/health` 回 503 | volume 權限問題：`/data` 必須可寫（容器以 uid 10001 執行） |
-| 速率限制誤擋（NAT 後多個使用者） | 拉長限制或改用 API Token；限制是每 IP 計算 |
+| 速率限制誤擋（NAT 後多個使用者） | 拉長限制或改用 API Token；限制是每 IP 計算，IPv6 以 /64 前綴計算，共用同一個 /64 的使用者共用額度 |
 | 登入回 429 但密碼正確 | 帳號被暫時鎖定（15 分鐘內 30 次失敗）。等待視窗滑過，或 `sqlite3 /data/urlet.db "DELETE FROM login_attempts"` 立即解除 |
 | 驗證元件完全沒出現 | 四個條件都要成立：provider 不是 `none`、兩把金鑰都非空、對應的 `ON_*` 為 `true` |
 | 每次提交都回 `captcha_failed` | 密鑰不屬於目前設定的供應商、元件的網域清單沒有包含使用者實際連到的網域，或 API 用戶端忘了以 `captcha_token` 帶上驗證元件的權杖 |

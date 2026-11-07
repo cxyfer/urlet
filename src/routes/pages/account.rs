@@ -18,7 +18,6 @@ use crate::routes::pages::{
 };
 use crate::services::audit::{action, target, Audit};
 use crate::services::auth::AuthContext;
-use crate::services::ratelimit::limits;
 use crate::services::{limits as effective_limits, time, tokens};
 use crate::state::AppState;
 use crate::themed_page;
@@ -174,12 +173,9 @@ pub async fn change_password(
     };
 
     if state
-        .limiter
-        .check(
-            &format!("password:{}", current.user.id),
-            limits::PASSWORD_CAPACITY,
-            limits::PASSWORD_REFILL_PER_SEC,
-        )
+        .limiters
+        .password
+        .check(&current.user.id.to_string())
         .is_err()
     {
         return Ok(redirect_err("/app/account", "rate_limited").into_response());

@@ -406,7 +406,7 @@ curl "$BASE/api/v1/urls/42/preview/image" \
 - JSON 請求成功 → `200` `{ "ok": true, "redirect": "/slug" }` + 解鎖 Cookie
 - 表單請求成功 → `303` 轉址到 `/{slug}` + 解鎖 Cookie
 - 密碼錯誤 → JSON `401`；表單則重新渲染密碼頁（`401`）
-- 超過速率限制 → `429`
+- 超過速率限制 → `429`；只有啟用中且設有密碼的連結才計數，不存在、停用或已刪除的 slug 一律回 `404`
 
 ### `GET /api/v1/public/urls/{slug}?domain=<hostname>`
 
@@ -586,7 +586,7 @@ curl "$BASE/api/v1/urls/42/preview/image" \
 |------|------|
 | 登入 | 每 (IP, email) 5 分鐘 10 次，**以及**每 IP 5 分鐘 40 次（跨帳號） |
 | 註冊 | 每 IP 每小時 5 次 |
-| 解鎖短網址 | 每 (slug, IP) 5 分鐘 10 次 |
+| 解鎖短網址 | 每 (連結, IP) 5 分鐘 10 次 |
 | 建立短網址 | 每使用者每小時 120 次 |
 | 公開短網址工具 | 只限未登入遊客：`public_rate_limit_per_ip` 依 `public_rate_limit_per_ip_period` 計數，`public_rate_limit_global` 依 `public_rate_limit_global_period` 計數（預設每小時 20／500 次）。週期為伺服器時區的自然分鐘、時、日、週、月，週一為週首，月份按曆月。`0` 停用任一配額。單一來源配額在驗證前扣抵，共用配額只在成功後扣抵。SQLite 用量跨重啟保留；`Retry-After` 為距離下個自然邊界的秒數。登入用戶維持分組額度與原有帳號防濫用機制，不消耗遊客配額 |
 | 修改密碼 | 每使用者每小時 10 次 |
@@ -595,7 +595,9 @@ curl "$BASE/api/v1/urls/42/preview/image" \
 
 超過限制回 `429` 並附 `Retry-After`（秒）。記憶體計數器重啟即重置，但**帳號鎖定**會持久化：同一個 email 於 15 分鐘內累積 30 次失敗後，即使密碼正確也會回 `429`（`Retry-After: 900`），直到視窗滑過為止。每次登入嘗試在驗證密碼前就先計為一次失敗，登入成功後才撤銷，因此仍在驗證中的嘗試也會計入上限。
 
-登入的 IP 來源：`URLET_TRUST_PROXY=true` 時優先採用 `X-Real-IP`，其次取 `X-Forwarded-For` 最右側的位址。
+每種用途各有一個記憶體限流器，各自最多追蹤 50,000 個 key。閒置的計數器完全回滿後才會被清理。限流器滿時，會移除最快回滿的一成計數器，因此新來源一律可以進入，離回滿還遠的計數器則會保留。
+
+登入的 IP 來源：`URLET_TRUST_PROXY=true` 時優先採用 `X-Real-IP`，其次取 `X-Forwarded-For` 最右側的位址。所有以 IP 計算的限制（含遊客的每來源配額）中，IPv6 依 /64 前綴計算，IPv4-mapped IPv6 位址視為其 IPv4 位址。
 
 ---
 

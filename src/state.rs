@@ -8,7 +8,7 @@ use time::OffsetDateTime;
 use crate::config::Config;
 use crate::services::click::ClickRecorder;
 use crate::services::domains::DomainRegistry;
-use crate::services::ratelimit::RateLimiter;
+use crate::services::ratelimit::Limiters;
 use crate::services::settings::Settings;
 use crate::services::theme::ThemeRegistry;
 
@@ -20,7 +20,8 @@ pub struct AppState {
     pub domains: Arc<DomainRegistry>,
     /// Administrator's theme choices, cached for the request path.
     pub themes: Arc<ThemeRegistry>,
-    pub limiter: Arc<RateLimiter>,
+    /// In-memory rate limiters, one per purpose.
+    pub limiters: Arc<Limiters>,
     pub clicks: ClickRecorder,
     pub started_at: OffsetDateTime,
 }
@@ -44,7 +45,7 @@ impl AppState {
             settings,
             domains,
             themes,
-            limiter: Arc::new(RateLimiter::new()),
+            limiters: Arc::new(Limiters::new()),
             clicks,
             started_at: OffsetDateTime::now_utc(),
         }

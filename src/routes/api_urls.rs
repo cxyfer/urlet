@@ -13,7 +13,6 @@ use crate::middleware::auth::{ClientInfo, CurrentUser};
 use crate::routes::dto::{double_option, Page, Pagination, UrlDto};
 use crate::routes::verify_captcha;
 use crate::services::captcha::CaptchaFlow;
-use crate::services::ratelimit::limits;
 use crate::services::urls::{CreateInput, UpdateInput, UrlContext};
 use crate::state::AppState;
 
@@ -194,12 +193,9 @@ pub async fn create(
     Json(payload): Json<CreatePayload>,
 ) -> Result<Response, ApiError> {
     state
-        .limiter
-        .check(
-            &format!("create-url:{}", user.id),
-            limits::CREATE_URL_CAPACITY,
-            limits::CREATE_URL_REFILL_PER_SEC,
-        )
+        .limiters
+        .create_url
+        .check(&user.id.to_string())
         .map_err(|retry| ApiError(AppError::rate_limited(retry)))?;
 
     // `token_id` is only set for Bearer authentication.

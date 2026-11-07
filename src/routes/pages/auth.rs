@@ -17,7 +17,6 @@ use crate::routes::pages::{
 };
 use crate::services::auth::{self, AuthContext};
 use crate::services::captcha::{CaptchaFlow, CaptchaWidget};
-use crate::services::ratelimit::limits;
 use crate::services::settings::RegistrationMode;
 use crate::services::theme::{self, ThemeView};
 use crate::state::AppState;
@@ -180,12 +179,9 @@ pub async fn login_submit(
     };
 
     if state
-        .limiter
-        .check(
-            &format!("login-ip:{}", client.limiter_key()),
-            limits::LOGIN_IP_CAPACITY,
-            limits::LOGIN_IP_REFILL_PER_SEC,
-        )
+        .limiters
+        .login_ip
+        .check(&client.limiter_key())
         .is_err()
     {
         return Ok(Redirect::to("/app/login?err=rate_limited").into_response());
@@ -193,12 +189,9 @@ pub async fn login_submit(
 
     let email_normalized = auth::normalize_email(&payload.email);
     if state
-        .limiter
-        .check(
-            &format!("login:{}:{}", client.limiter_key(), email_normalized),
-            limits::LOGIN_CAPACITY,
-            limits::LOGIN_REFILL_PER_SEC,
-        )
+        .limiters
+        .login
+        .check(&format!("{}:{}", client.limiter_key(), email_normalized))
         .is_err()
     {
         return Ok(Redirect::to("/app/login?err=rate_limited").into_response());
@@ -312,12 +305,9 @@ pub async fn register_submit(
     let submitted_next = payload.next.clone();
 
     if state
-        .limiter
-        .check(
-            &format!("register:{}", client.limiter_key()),
-            limits::REGISTER_CAPACITY,
-            limits::REGISTER_REFILL_PER_SEC,
-        )
+        .limiters
+        .register
+        .check(&client.limiter_key())
         .is_err()
     {
         return Ok(register_redirect(

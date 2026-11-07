@@ -514,7 +514,7 @@ async fn repeated_failures_lock_the_account_even_across_ips() {
     // attempt; the database backed lockout still has to stop it.
     let mut locked = false;
     for _ in 0..40 {
-        app.state.limiter.reset();
+        app.state.limiters.reset();
         let response = app
             .post_json(
                 "/api/v1/auth/login",
@@ -529,7 +529,7 @@ async fn repeated_failures_lock_the_account_even_across_ips() {
     assert!(locked, "the account must lock after repeated failures");
 
     // Even the correct password is refused while the lock is active.
-    app.state.limiter.reset();
+    app.state.limiters.reset();
     let correct = app
         .post_json(
             "/api/v1/auth/login",
@@ -541,7 +541,7 @@ async fn repeated_failures_lock_the_account_even_across_ips() {
 
     // Other accounts are unaffected.
     app.register("other@example.com", "supersecret").await;
-    app.state.limiter.reset();
+    app.state.limiters.reset();
     let other = app
         .post_json(
             "/api/v1/auth/login",
@@ -652,8 +652,8 @@ async fn the_lockout_does_not_depend_on_the_in_memory_limiter() {
         assert_eq!(response.status, StatusCode::UNAUTHORIZED);
     }
 
-    // 清空記憶體限流器，等同所有 bucket 被逐出或服務重啟；額度仍由資料庫判定。
-    app.state.limiter.reset();
+    // 清空記憶體限流器，等同服務重啟；額度仍由資料庫判定。
+    app.state.limiters.reset();
     let (unauthorized, limited) =
         concurrent_wrong_logins(&app, &["user@example.com"], 100, 2).await;
     assert_eq!(unauthorized + limited, 100);

@@ -304,6 +304,35 @@ async fn the_per_address_budget_is_enforced() {
 }
 
 #[tokio::test]
+async fn the_per_address_budget_counts_an_ipv6_prefix_once() {
+    let app = TestApp::spawn_with(|config| config.trust_proxy = true).await;
+    open_to_guests(&app).await;
+    set(&app, "public_rate_limit_per_ip", "1").await;
+    set(&app, "public_rate_limit_global", "0").await;
+
+    let create_from = |address: &str| {
+        let mut request =
+            common::post_json("/api/v1/public/urls", api_body("https://example.com/v6"));
+        request
+            .headers_mut()
+            .insert("x-real-ip", address.parse().expect("address header"));
+        app.send(request)
+    };
+    let first = create_from("2001:db8:5:6::1").await;
+    assert_eq!(first.status, StatusCode::CREATED, "{}", first.body);
+    let same_prefix = create_from("2001:db8:5:6::2").await;
+    assert_eq!(same_prefix.status, StatusCode::TOO_MANY_REQUESTS);
+    let other_prefix = create_from("2001:db8:5:7::1").await;
+    assert_eq!(
+        other_prefix.status,
+        StatusCode::CREATED,
+        "{}",
+        other_prefix.body
+    );
+    assert_eq!(guest_links(&app).await, 2);
+}
+
+#[tokio::test]
 async fn the_shared_visitor_budget_is_enforced() {
     let app = TestApp::spawn().await;
     open_to_guests(&app).await;
@@ -1116,7 +1145,7 @@ async fn quota_rows_are_bounded_before_captcha_and_after_global_exhaustion() {
                 common::post_json("/api/v1/public/urls", api_body("https://example.com/flood"));
             request.headers_mut().insert(
                 "x-real-ip",
-                format!("2001:db8:{}::{address}", u8::from(captcha))
+                format!("2001:db8:{}:{address}::1", u8::from(captcha))
                     .parse()
                     .expect("address header"),
             );

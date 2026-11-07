@@ -56,10 +56,14 @@ pub struct Authenticated(pub Option<CurrentUser>);
 /// Client metadata useful for rate limiting, audit trails and analytics.
 #[derive(Debug, Clone, Default)]
 pub struct ClientInfo {
-    /// Best effort client address, resolved exactly like the rate limiter key.
-    /// Forwarded to the captcha provider as `remoteip` when present.
+    /// Best effort client address, the one the rate limiter key is derived
+    /// from. Forwarded to the captcha provider as `remoteip` when present.
     pub ip: Option<std::net::IpAddr>,
+    /// HMAC of the full address, for analytics and audit trails.
     pub ip_hash: Option<String>,
+    /// HMAC of the network the client is rate limited as (an IPv6 address
+    /// counts as its /64), see [`crate::middleware::limiter_network`].
+    pub network_hash: Option<String>,
     pub user_agent: Option<String>,
     pub referrer: Option<String>,
     pub cookies: Vec<(String, String)>,
@@ -73,7 +77,7 @@ pub struct ClientInfo {
 impl ClientInfo {
     /// Key fragment identifying the caller for rate limiting.
     pub fn limiter_key(&self) -> String {
-        self.ip_hash
+        self.network_hash
             .clone()
             .unwrap_or_else(|| "unknown".to_string())
     }
@@ -202,6 +206,11 @@ impl FromRequestParts<AppState> for ClientInfo {
                 &state.config,
             ),
             ip_hash: crate::middleware::hashed_client_ip_parts(
+                &parts.headers,
+                &parts.extensions,
+                &state.config,
+            ),
+            network_hash: crate::middleware::hashed_limiter_network_parts(
                 &parts.headers,
                 &parts.extensions,
                 &state.config,
