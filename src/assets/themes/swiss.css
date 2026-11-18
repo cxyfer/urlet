@@ -2088,7 +2088,7 @@ details.manage[open] > summary::after {
     margin-top: 4px;
 }
 
-.link-form {
+.link-body .link-form {
     border-top: 1px solid var(--hair);
     padding-top: 18px;
     margin-top: 2px;

@@ -262,8 +262,21 @@
             }
             if (config.enhance) { config.enhance(body); }
             restoreFiles(body, files);
+            var alert = body.querySelector('.alert-error, [role="alert"]');
             var first = body.querySelector('input:not([type="hidden"]), select, textarea');
-            if (first) { first.focus(); }
+            if (first) {
+                try {
+                    first.focus({ preventScroll: Boolean(alert) });
+                } catch (err) {
+                    first.focus();
+                }
+            }
+            if (alert) {
+                body.scrollTop = 0;
+                if (typeof alert.scrollIntoView === "function") {
+                    alert.scrollIntoView({ block: "nearest" });
+                }
+            }
             return true;
         }
 
@@ -283,8 +296,10 @@
             if (clear) { body.textContent = ""; }
             var note = document.createElement("p");
             note.className = "alert alert-error form-dialog-error";
+            note.setAttribute("role", "alert");
             note.textContent = errorText;
             body.insertBefore(note, body.firstChild);
+            body.scrollTop = 0;
             setBusy(false);
         }
 
@@ -306,6 +321,7 @@
             sequence += 1;
             var ticket = sequence;
             if (!dialog.open) { dialog.showModal(); }
+            body.scrollTop = 0;
             showLoading();
             fetch(url, { credentials: "same-origin" })
                 .then(function (response) {
