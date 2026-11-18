@@ -307,6 +307,82 @@ impl LinkForm {
             ..Self::default()
         }
     }
+
+    /// Restore submitted values into a rendered form after a rejected POST.
+    pub fn retain(&mut self, fields: &RetainedFields<'_>) {
+        fn set(target: &mut String, value: &Option<&str>) {
+            if let Some(value) = value {
+                *target = (*value).to_string();
+            }
+        }
+        set(&mut self.target_url, &fields.target_url);
+        set(&mut self.domain, &fields.domain);
+        set(&mut self.slug, &fields.slug);
+        set(&mut self.title, &fields.title);
+        set(&mut self.tags, &fields.tags);
+        set(&mut self.expires_at, &fields.expires_at);
+        set(&mut self.max_clicks, &fields.max_clicks);
+        set(&mut self.splash_delay_seconds, &fields.splash_delay_seconds);
+        set(&mut self.splash_title, &fields.splash_title);
+        set(&mut self.splash_message, &fields.splash_message);
+        set(&mut self.status, &fields.status);
+        if let Some(value) = fields
+            .redirect_mode
+            .filter(|value| !value.trim().is_empty())
+        {
+            self.redirect_mode = value.to_string();
+        }
+        if let Some(value) = fields
+            .redirect_type
+            .and_then(|value| value.trim().parse().ok())
+        {
+            self.redirect_type = value;
+        }
+    }
+
+    /// Whether any advanced field carries a non-default submitted value.
+    pub fn has_submitted_advanced(&self) -> bool {
+        !self.expires_at.is_empty()
+            || !self.max_clicks.is_empty()
+            || self.redirect_mode == "splash"
+            || self.redirect_type != self.default_redirect_type
+            || !self.splash_title.is_empty()
+            || !self.splash_message.is_empty()
+    }
+
+    /// Whether a flash error code belongs to a field inside "Advanced settings".
+    pub fn is_advanced_error(code: &str) -> bool {
+        matches!(
+            code,
+            "expiry"
+                | "password_rules"
+                | "mode_denied"
+                | "max_clicks"
+                | "redirect_type"
+                | "redirect_mode"
+                | "splash_delay"
+                | "splash_title"
+                | "splash_message"
+        )
+    }
+}
+
+/// Borrowed form fields shared by create, public, and edit retention.
+#[derive(Debug, Default)]
+pub struct RetainedFields<'a> {
+    pub target_url: Option<&'a str>,
+    pub domain: Option<&'a str>,
+    pub slug: Option<&'a str>,
+    pub title: Option<&'a str>,
+    pub tags: Option<&'a str>,
+    pub expires_at: Option<&'a str>,
+    pub max_clicks: Option<&'a str>,
+    pub redirect_type: Option<&'a str>,
+    pub redirect_mode: Option<&'a str>,
+    pub splash_delay_seconds: Option<&'a str>,
+    pub splash_title: Option<&'a str>,
+    pub splash_message: Option<&'a str>,
+    pub status: Option<&'a str>,
 }
 
 /// A link form submission: the link fields plus, when the form carried the

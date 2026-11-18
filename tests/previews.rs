@@ -1280,7 +1280,8 @@ async fn the_create_form_can_set_the_preview_too() {
         .expect("preview saved with the new link");
     assert_eq!(preview.title.as_deref(), Some("Fresh card"));
 
-    // A rejected preview is reported before the link is created.
+    // A rejected preview is reported inline before the link is created,
+    // retaining the submitted form values and keeping the preview section open.
     let rejected = app
         .send(link_form(
             "/app/urls",
@@ -1294,10 +1295,15 @@ async fn the_create_form_can_set_the_preview_too() {
             None,
         ))
         .await;
-    assert_eq!(
-        rejected.header("location").as_deref(),
-        Some("/app?err=preview_title")
-    );
+    assert_eq!(rejected.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(rejected
+        .body
+        .contains(urlet::i18n::Lang::En.t("preview.error_title")));
+    assert!(rejected.body.contains("data-preview-form open"));
+    assert!(rejected
+        .body
+        .contains("value=\"https://destination.example/never\""));
+    assert!(rejected.body.contains("value=\"never-created\""));
     let missing: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE slug = 'never-created'")
         .fetch_one(&app.state.db)
         .await
@@ -1389,7 +1395,7 @@ async fn an_oversized_image_is_reported_in_the_editor() {
         .unwrap();
     assert_eq!(target, "https://destination.example/private-path");
 
-    // The create form reports the same problem by its flash code.
+    // The create form reports the same problem inline with 422 and reopens preview.
     let created = app
         .send(link_form(
             "/app/urls",
@@ -1401,10 +1407,11 @@ async fn an_oversized_image_is_reported_in_the_editor() {
             Some(&huge),
         ))
         .await;
-    assert_eq!(
-        created.header("location").as_deref(),
-        Some("/app?err=preview_image")
-    );
+    assert_eq!(created.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(created
+        .body
+        .contains(urlet::i18n::Lang::En.t("preview.error_image")));
+    assert!(created.body.contains("data-preview-form open"));
 }
 
 #[tokio::test]

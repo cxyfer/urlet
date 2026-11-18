@@ -735,7 +735,7 @@ mod tests {
     /// format, a sample URL, a tag list and a token name. They are machine
     /// readable examples, not prose, so translating them would mislead.
     const IDENTICAL_IN_EVERY_LANGUAGE: &[&str] = &[
-        "common.password_placeholder",
+        "common.datetime_placeholder",
         "dashboard.new.destination_placeholder",
         "dashboard.new.tags_placeholder",
         "account.tokens.name_placeholder",
