@@ -668,17 +668,18 @@ async fn a_malformed_number_is_refused_instead_of_dropped() {
     set(&app, "public_allow_max_clicks", "true").await;
 
     // The click cap is enabled and the value is nonsense: the link must not be
-    // created without the cap the visitor asked for.
+    // created without the cap the visitor asked for, and the form re-renders with 422.
     let response = submit(
         &app,
         "target_url=https%3A%2F%2Fexample.com%2Ftypo&max_clicks=abc",
     )
     .await;
-    assert_eq!(response.status, StatusCode::SEE_OTHER);
-    assert_eq!(
-        response.header("location").as_deref(),
-        Some("/?err=invalid")
-    );
+    assert_eq!(response.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(response
+        .body
+        .contains(urlet::i18n::Lang::En.t("flash.err.max_clicks")));
+    assert!(response.body.contains("value=\"https://example.com/typo\""));
+    assert!(response.body.contains("value=\"abc\""));
     assert_eq!(guest_links(&app).await, 0);
 
     // The same value must not slip past a *disabled* field either.
@@ -688,10 +689,10 @@ async fn a_malformed_number_is_refused_instead_of_dropped() {
         "target_url=https%3A%2F%2Fexample.com%2Ftypo&max_clicks=abc",
     )
     .await;
-    assert_eq!(
-        response.header("location").as_deref(),
-        Some("/?err=invalid")
-    );
+    assert_eq!(response.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(response
+        .body
+        .contains(urlet::i18n::Lang::En.t("flash.err.max_clicks")));
     assert_eq!(guest_links(&app).await, 0);
 
     // A blank field is simply "not submitted".
@@ -710,10 +711,14 @@ async fn a_malformed_number_is_refused_instead_of_dropped() {
         "target_url=https%3A%2F%2Fexample.com%2Fsplash&splash_delay_seconds=soon",
     )
     .await;
-    assert_eq!(
-        response.header("location").as_deref(),
-        Some("/?err=invalid")
-    );
+    assert_eq!(response.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(response
+        .body
+        .contains(urlet::i18n::Lang::En.t("flash.err.splash_delay")));
+    assert!(response
+        .body
+        .contains("value=\"https://example.com/splash\""));
+    assert!(response.body.contains("value=\"soon\""));
     assert_eq!(guest_links(&app).await, 1);
 }
 

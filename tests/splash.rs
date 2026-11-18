@@ -625,7 +625,7 @@ async fn a_direct_only_group_blocks_splash_creation_but_keeps_existing_links() {
         "a direct-only group must not offer the splash option"
     );
 
-    // The browser form surfaces the refusal as a specific flash message.
+    // The browser form surfaces the refusal inline with 422 and retains the submitted values.
     let form = app
         .send(post_form_as(
             "/app/urls",
@@ -633,19 +633,16 @@ async fn a_direct_only_group_blocks_splash_creation_but_keeps_existing_links() {
             &member_cookie,
         ))
         .await;
-    assert_eq!(form.status, StatusCode::SEE_OTHER);
-    assert_eq!(
-        form.header("location").as_deref(),
-        Some("/app?err=mode_denied")
-    );
-
-    // ... and the page actually shows the message, not just the code.
-    let flashed = app.get_as("/app?err=mode_denied", &member_cookie).await;
-    assert_eq!(flashed.status, StatusCode::OK);
+    assert_eq!(form.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(
-        flashed.body.contains("limits the redirect mode"),
-        "the mode_denied flash must be rendered"
+        form.body.contains("limits the redirect mode"),
+        "the mode_denied error must be rendered inline"
     );
+    assert!(form.body.contains("value=\"https://example.com/no\""));
+    assert!(form.body.contains("value=\"form-no\""));
+    assert!(form
+        .body
+        .contains("<details class=\"advanced link-section\" open>"));
 }
 
 #[tokio::test]

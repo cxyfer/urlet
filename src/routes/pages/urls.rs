@@ -17,8 +17,10 @@ use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::routes::api_stats::{click_dto, summary_dto};
 use crate::routes::dto::{StatsSummaryDto, UrlDto};
-use crate::routes::pages::dashboard::{bar_rows, BarRow};
-use crate::routes::pages::link_form::{LinkForm, LinkSubmission, Rejected, Submission};
+use crate::routes::pages::dashboard::{bar_rows, render_dashboard, BarRow, DashboardQuery};
+use crate::routes::pages::link_form::{
+    LinkForm, LinkSubmission, Rejected, RetainedFields, Submission,
+};
 use crate::routes::pages::{
     captcha_rejected, flash_from_query, redirect_err, redirect_ok, redirect_to_login, safe_next,
     Chrome, UrlRow,
@@ -147,7 +149,7 @@ pub struct DetailQuery {
     pub err: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct CreateForm {
     pub target_url: String,
     #[serde(default)]
@@ -180,6 +182,26 @@ pub struct CreateForm {
     /// Google reCAPTCHA token.
     #[serde(default, rename = "g-recaptcha-response")]
     pub recaptcha_token: Option<String>,
+}
+
+impl CreateForm {
+    fn retained(&self) -> RetainedFields<'_> {
+        RetainedFields {
+            target_url: Some(self.target_url.as_str()),
+            domain: self.domain.as_deref(),
+            slug: self.slug.as_deref(),
+            title: self.title.as_deref(),
+            tags: self.tags.as_deref(),
+            expires_at: self.expires_at.as_deref(),
+            max_clicks: self.max_clicks.as_deref(),
+            redirect_type: self.redirect_type.as_deref(),
+            redirect_mode: self.redirect_mode.as_deref(),
+            splash_delay_seconds: self.splash_delay_seconds.as_deref(),
+            splash_title: self.splash_title.as_deref(),
+            splash_message: self.splash_message.as_deref(),
+            status: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -242,6 +264,26 @@ pub struct UpdateForm {
     pub status: Option<String>,
 }
 
+impl UpdateForm {
+    fn retained(&self) -> RetainedFields<'_> {
+        RetainedFields {
+            target_url: self.target_url.as_deref(),
+            domain: self.domain.as_deref(),
+            slug: self.slug.as_deref(),
+            title: self.title.as_deref(),
+            tags: self.tags.as_deref(),
+            expires_at: self.expires_at.as_deref(),
+            max_clicks: self.max_clicks.as_deref(),
+            redirect_type: self.redirect_type.as_deref(),
+            redirect_mode: self.redirect_mode.as_deref(),
+            splash_delay_seconds: self.splash_delay_seconds.as_deref(),
+            splash_title: self.splash_title.as_deref(),
+            splash_message: self.splash_message.as_deref(),
+            status: self.status.as_deref(),
+        }
+    }
+}
+
 /// Split a comma separated tag field. Shared with the public form.
 pub(crate) fn split_tags(raw: &Option<String>) -> Vec<String> {
     raw.as_deref()
@@ -290,13 +332,18 @@ pub async fn create(
     let Some(current) = current else {
         return Ok(redirect_to_login(Some("/app")).into_response());
     };
-    let (payload, preview) = match submission {
-        Ok(LinkSubmission { form, preview }) => (form, preview),
+    let (payload, preview, cut_short) = match submission {
+        Ok(LinkSubmission { form, preview }) => (form, preview, false),
         // A multipart body only fails to read when it is over the size limit,
         // which means the preview image.
         Err(Rejected {
-            multipart: true, ..
-        }) => return Ok(redirect_err("/app", "preview_image").into_response()),
+            multipart: true,
+            partial,
+            ..
+        }) => match partial.map(|partial| *partial) {
+            Some(LinkSubmission { form, preview }) => (form, preview, true),
+            None => (CreateForm::default(), None, true),
+        },
         Err(_) => return Ok(redirect_err("/app", "invalid").into_response()),
     };
 
@@ -322,12 +369,66 @@ pub async fn create(
         return Ok(redirect_err("/app", "captcha").into_response());
     }
 
+    let reject_link = |code: &'static str| {
+        let message = flash_from_query(None, Some(code))
+            .map(|flash| flash.message)
+            .unwrap_or_default();
+        let (payload, preview) = (&payload, preview.as_ref());
+        move |form: &mut LinkForm| {
+            form.retain(&payload.retained());
+            if let (Some(view), Some(fields)) = (form.preview.as_mut(), preview) {
+                view.retain(fields);
+            }
+            form.error = message;
+            form.advanced_open = LinkForm::is_advanced_error(code) || form.has_submitted_advanced();
+            form.preview_open = has_preview_input(preview);
+        }
+    };
+    let reject_preview = |key: &'static str| {
+        let (payload, preview) = (&payload, preview.as_ref());
+        move |form: &mut LinkForm| {
+            form.retain(&payload.retained());
+            if let (Some(view), Some(fields)) = (form.preview.as_mut(), preview) {
+                view.retain(fields);
+            }
+            if let Some(view) = form.preview.as_mut() {
+                view.reject(key);
+            }
+            form.advanced_open = form.has_submitted_advanced();
+            form.preview_open = true;
+        }
+    };
+
+    if cut_short {
+        return render_dashboard(
+            &state,
+            &current.user,
+            &DashboardQuery::default(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            reject_preview("preview.error_image"),
+        )
+        .await;
+    }
+
     // The preview is checked before the link exists, so a rejected image does
     // not leave a half-configured link behind.
     let preview_changes = match preview_changes(&state, &current.user, preview.as_ref(), None).await
     {
         Ok(changes) => changes,
-        Err(err) => return Ok(redirect_err("/app", preview_error_code(&err)).into_response()),
+        Err(err @ AppError::RateLimited { .. }) => {
+            return Ok(redirect_err("/app", error_code(&err)).into_response())
+        }
+        Err(err) if previews::is_form_error(&err) => {
+            return render_dashboard(
+                &state,
+                &current.user,
+                &DashboardQuery::default(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                reject_preview(previews::error_key(&err)),
+            )
+            .await
+        }
+        Err(err) => return Err(err),
     };
 
     let context = UrlContext {
@@ -348,32 +449,55 @@ pub async fn create(
             (max_clicks, redirect_type, splash_delay_seconds)
         }
         (Err(err), _, _) | (_, Err(err), _) | (_, _, Err(err)) => {
-            return Ok(redirect_err("/app", error_code(&err)).into_response())
+            return render_dashboard(
+                &state,
+                &current.user,
+                &DashboardQuery::default(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                reject_link(error_code(&err)),
+            )
+            .await
         }
     };
 
     let outcome = context
         .create(CreateInput {
-            target_url: payload.target_url,
-            domain: payload.domain,
-            slug: payload.slug,
-            title: payload.title,
+            target_url: payload.target_url.clone(),
+            domain: payload.domain.clone(),
+            slug: payload.slug.clone(),
+            title: payload.title.clone(),
             notes: None,
             tags: split_tags(&payload.tags),
-            password: payload.password,
-            expires_at: payload.expires_at,
+            password: payload.password.clone(),
+            expires_at: payload.expires_at.clone(),
             max_clicks,
             redirect_type,
-            redirect_mode: payload.redirect_mode,
+            redirect_mode: payload.redirect_mode.clone(),
             splash_delay_seconds,
-            splash_title: payload.splash_title,
-            splash_message: payload.splash_message,
+            splash_title: payload.splash_title.clone(),
+            splash_message: payload.splash_message.clone(),
         })
         .await;
 
     let url = match outcome {
         Ok(url) => url,
-        Err(err) => return Ok(redirect_err("/app", error_code(&err)).into_response()),
+        Err(err) => {
+            let code = error_code(&err);
+            if matches!(
+                code,
+                "denied" | "quota" | "rate_limited" | "captcha" | "guest_allowlist"
+            ) {
+                return Ok(redirect_err("/app", code).into_response());
+            }
+            return render_dashboard(
+                &state,
+                &current.user,
+                &DashboardQuery::default(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                reject_link(code),
+            )
+            .await;
+        }
     };
     let detail_page = format!("/app/urls/{}", url.id);
     if let Some(changes) = preview_changes {
@@ -620,71 +744,27 @@ async fn preview_changes(
     Ok((!previews::is_noop(&changes, existing)).then_some(changes))
 }
 
-/// Flash code of a rejected preview on the create form, which redirects
-/// instead of re-rendering.
-fn preview_error_code(err: &AppError) -> &'static str {
-    match err {
-        AppError::RateLimited { .. } => "rate_limited",
-        err if previews::is_form_error(err) => match previews::error_key(err) {
-            "preview.error_policy" => "preview_policy",
-            "preview.error_title" => "preview_title",
-            "preview.error_description" => "preview_description",
-            "preview.error_url" => "preview_url",
-            _ => "preview_image",
-        },
-        _ => "invalid",
-    }
+fn has_preview_input(preview: Option<&PreviewFields>) -> bool {
+    preview.is_some_and(|fields| {
+        !fields.title.trim().is_empty()
+            || !fields.description.trim().is_empty()
+            || !fields.image_url.trim().is_empty()
+            || matches!(fields.image_mode.as_str(), "upload" | "url")
+    })
 }
 
 /// Put a rejected submission — the link values and the preview section —
 /// back into the editor.
 fn restore_submission(form: &mut LinkForm, payload: &UpdateForm, preview: Option<&PreviewFields>) {
-    retain_submission(form, payload);
-    if let (Some(view), Some(fields)) = (form.preview.as_mut(), preview) {
-        view.retain(fields);
-    }
-}
-
-/// Put the submitted link values back into the editor after a rejection.
-fn retain_submission(form: &mut LinkForm, payload: &UpdateForm) {
-    fn set(target: &mut String, value: &Option<String>) {
-        if let Some(value) = value {
-            *target = value.clone();
-        }
-    }
-    set(&mut form.target_url, &payload.target_url);
-    set(&mut form.domain, &payload.domain);
-    set(&mut form.slug, &payload.slug);
-    set(&mut form.title, &payload.title);
-    set(&mut form.tags, &payload.tags);
-    set(&mut form.expires_at, &payload.expires_at);
-    set(&mut form.max_clicks, &payload.max_clicks);
-    set(
-        &mut form.splash_delay_seconds,
-        &payload.splash_delay_seconds,
-    );
-    set(&mut form.splash_title, &payload.splash_title);
-    set(&mut form.splash_message, &payload.splash_message);
-    set(&mut form.status, &payload.status);
-    if let Some(value) = payload
-        .redirect_mode
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        form.redirect_mode = value.to_string();
-    }
-    if let Some(value) = payload
-        .redirect_type
-        .as_deref()
-        .and_then(|value| value.trim().parse().ok())
-    {
-        form.redirect_type = value;
-    }
+    form.retain(&payload.retained());
     form.clear_password = checkbox(&payload.clear_password);
     form.clear_expiry = checkbox(&payload.clear_expiry);
     form.clear_max_clicks = checkbox(&payload.clear_max_clicks);
     form.clear_tags = checkbox(&payload.clear_tags);
     form.next = return_path(payload.next.as_deref()).unwrap_or_default();
+    if let (Some(view), Some(fields)) = (form.preview.as_mut(), preview) {
+        view.retain(fields);
+    }
 }
 
 /// `POST /app/urls/{id}`
@@ -733,7 +813,7 @@ pub async fn update(
         let message = flash_from_query(None, Some(code))
             .map(|flash| flash.message)
             .unwrap_or_default();
-        let advanced = matches!(code, "expiry" | "password_rules" | "mode_denied");
+        let advanced = LinkForm::is_advanced_error(code);
         let (payload, preview) = (&payload, preview.as_ref());
         move |form: &mut LinkForm| {
             restore_submission(form, payload, preview);
@@ -1075,6 +1155,13 @@ pub fn error_code(err: &AppError) -> &'static str {
             "guest_allowlist" => "guest_allowlist_rules",
             "password" => "password_rules",
             "tags" => "tags",
+            "title" => "title",
+            "max_clicks" => "max_clicks",
+            "redirect_type" => "redirect_type",
+            "redirect_mode" => "redirect_mode",
+            "splash_delay_seconds" => "splash_delay",
+            "splash_title" => "splash_title",
+            "splash_message" => "splash_message",
             _ => "invalid",
         },
         AppError::BadRequest(_) => "invalid",

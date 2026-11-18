@@ -17,7 +17,7 @@
             <label class="label" for="{{ p }}target_url">{{ lang.t("dashboard.new.destination") }}</label>
             <input class="input" type="text" id="{{ p }}target_url" name="target_url" value="{{ link_form.target_url }}"
                    placeholder="{{ lang.t("dashboard.new.destination_placeholder") }}" required>
-            {% if !link_form.is_edit %}<span class="hint">{{ lang.t("dashboard.new.destination_hint") }}</span>{% endif %}
+            <span class="hint">{{ lang.t("dashboard.new.destination_hint") }}</span>
         </div>
         {% if link_form.show_domain %}
         <div class="field">
@@ -135,15 +135,14 @@
                 <div class="field">
                     <label class="label" for="{{ p }}expires_at">{{ lang.t("common.expires_at") }}</label>
                     <input class="input" type="text" id="{{ p }}expires_at" name="expires_at" value="{{ link_form.expires_at }}"
-                           placeholder="{{ lang.t("common.password_placeholder") }}">
+                           placeholder="{{ lang.t("common.datetime_placeholder") }}">
                     {% if link_form.is_edit %}
                     <label class="checkbox">
                         <input type="checkbox" name="clear_expiry" value="on" {% if link_form.clear_expiry %}checked{% endif %}>
                         {{ lang.t("url_detail.settings.no_expiry") }}
                     </label>
-                    {% else %}
-                    <span class="hint">{{ lang.t("dashboard.advanced.expires_hint") }}</span>
                     {% endif %}
+                    <span class="hint">{{ lang.t("dashboard.advanced.expires_hint") }}</span>
                 </div>
                 {% else if link_form.is_edit && !link_form.expires_at.is_empty() %}
                 <div class="field">
@@ -165,9 +164,8 @@
                         <input type="checkbox" name="clear_max_clicks" value="on" {% if link_form.clear_max_clicks %}checked{% endif %}>
                         {{ lang.t("url_detail.settings.unlimited") }}
                     </label>
-                    {% else %}
-                    <span class="hint">{{ lang.t("dashboard.advanced.max_clicks_hint") }}</span>
                     {% endif %}
+                    <span class="hint">{{ lang.t("dashboard.advanced.max_clicks_hint") }}</span>
                 </div>
                 {% else if link_form.is_edit && !link_form.max_clicks.is_empty() %}
                 <div class="field">

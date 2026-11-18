@@ -93,7 +93,17 @@ pub async fn dashboard(
     let Some(current) = current else {
         return Ok(redirect_to_login(None).into_response());
     };
-    let user = current.user;
+    render_dashboard(&state, &current.user, &query, StatusCode::OK, |_| {}).await
+}
+
+/// Render `/app`, optionally adjusting the create form (used on 422 rejections).
+pub(crate) async fn render_dashboard(
+    state: &AppState,
+    user: &crate::db::users::User,
+    query: &DashboardQuery,
+    status: StatusCode,
+    adjust: impl FnOnce(&mut LinkForm),
+) -> Result<Response, AppError> {
     let flash = flash_from_query(query.ok.as_deref(), query.err.as_deref());
 
     let page = query.page.unwrap_or(1).max(1);
@@ -134,7 +144,7 @@ pub async fn dashboard(
         })
         .collect();
 
-    let overview = build_overview(&state, user.id).await?;
+    let overview = build_overview(state, user.id).await?;
     let chart_svg = chart::svg_bars(&overview.daily);
     let total_pages = ((total + per_page - 1) / per_page).max(1);
 
@@ -157,8 +167,8 @@ pub async fn dashboard(
         .map_err(AppError::from)?;
 
     let lang = i18n::current();
-    let effective = limits::effective(&state.db, &state.settings, &user).await?;
-    let policy = domain_policy::effective(&state.db, &user).await?;
+    let effective = limits::effective(&state.db, &state.settings, user).await?;
+    let policy = domain_policy::effective(&state.db, user).await?;
     let quota = effective.max_urls;
     let group_name = match user.group_id {
         Some(group_id) => user_groups::find_by_id(&state.db, group_id)
@@ -174,7 +184,7 @@ pub async fn dashboard(
 
     let page_render = DashboardPage {
         site_name: state.settings.site_name(),
-        chrome: Chrome::new(&state, &user, "dashboard", flash),
+        chrome: Chrome::new(state, user, "dashboard", flash),
         overview,
         chart: chart_svg,
         chart_max: 1,
@@ -192,14 +202,18 @@ pub async fn dashboard(
         used,
         group_name,
         // The site-wide access level may restrict creation to administrators.
-        can_create: state.settings.public_create_access().allows(Some(&user)),
-        link_form: LinkForm::create(
-            &state,
-            &effective,
-            policy.allow_selection,
-            policy.options(&state.domains),
-        ),
-        captcha: crate::routes::pages::captcha_widget(&state, CaptchaFlow::Create),
+        can_create: state.settings.public_create_access().allows(Some(user)),
+        link_form: {
+            let mut form = LinkForm::create(
+                state,
+                &effective,
+                policy.allow_selection,
+                policy.options(&state.domains),
+            );
+            adjust(&mut form);
+            form
+        },
+        captcha: crate::routes::pages::captcha_widget(state, CaptchaFlow::Create),
         usage: i18n::format(
             lang,
             "dashboard.usage",
@@ -229,7 +243,7 @@ pub async fn dashboard(
     .themed();
 
     match page_render.render() {
-        Ok(html) => Ok((StatusCode::OK, Html(html)).into_response()),
+        Ok(html) => Ok((status, Html(html)).into_response()),
         Err(err) => Err(AppError::internal(format!("template error: {err}"))),
     }
 }
