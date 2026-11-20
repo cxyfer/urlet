@@ -747,3 +747,56 @@ async fn landing_page_reports_the_servers_own_readouts() {
         );
     }
 }
+
+#[tokio::test]
+async fn sign_in_and_registration_keep_the_page_to_return_to() {
+    let app = TestApp::spawn().await;
+    let (admin, _) = app.register("admin@example.com", "supersecret").await;
+    for theme in urlet::services::theme::ALL {
+        let key = theme.key();
+        let switched = app
+            .send(common::put_json_as(
+                "/api/v1/admin/themes",
+                json!({ "enabled": [key], "default": key }),
+                &admin,
+            ))
+            .await;
+        assert_eq!(switched.status, StatusCode::OK, "{key}");
+        // 互相切換登入與註冊時保留 next。
+        let login = app.get("/app/login?next=%2Fapp%2Finvites").await;
+        assert!(
+            login
+                .body
+                .contains("href=\"/app/register?next=%2Fapp%2Finvites\""),
+            "{key} login page drops next"
+        );
+        let register = app.get("/app/register?next=%2Fapp%2Finvites").await;
+        assert!(
+            register
+                .body
+                .contains("href=\"/app/login?next=%2Fapp%2Finvites\""),
+            "{key} register page drops next"
+        );
+    }
+
+    // 被拒絕的登入導回表單時也保留 next。
+    app.register("held@example.com", "supersecret").await;
+    sqlx::query("UPDATE users SET status = 'suspended' WHERE email_normalized = ?")
+        .bind("held@example.com")
+        .execute(&app.state.db)
+        .await
+        .expect("suspend");
+    let denied = app
+        .send(post_form(
+            "/app/login",
+            "email=held@example.com&password=supersecret&next=%2Fapp%2Finvites",
+            None,
+            Some("http://localhost:8080"),
+        ))
+        .await;
+    assert_eq!(denied.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        denied.header("location").as_deref(),
+        Some("/app/login?err=denied&next=%2Fapp%2Finvites")
+    );
+}
