@@ -56,13 +56,21 @@ const MAX_CONCURRENT_HASHES: usize = 4;
 static HASH_PERMITS: tokio::sync::Semaphore =
     tokio::sync::Semaphore::const_new(MAX_CONCURRENT_HASHES);
 
-/// Hash a password without blocking an async worker thread.
+/// Hash an account password without blocking an async worker thread.
 pub async fn hash_async(password: String) -> Result<String> {
+    validate(&password)?;
+    hash_validated_async(password).await
+}
+
+/// Hash a password the caller has already checked against its own policy,
+/// without blocking an async worker thread. Link passwords use this: their
+/// minimum is shorter than an account's (spec FR-PWD-1).
+pub async fn hash_validated_async(password: String) -> Result<String> {
     let _permit = HASH_PERMITS
         .acquire()
         .await
         .map_err(|_| AppError::internal("password hasher is unavailable"))?;
-    tokio::task::spawn_blocking(move || hash(&password))
+    tokio::task::spawn_blocking(move || hash_validated(&password))
         .await
         .map_err(|err| AppError::internal(format!("password task failed: {err}")))?
 }
@@ -85,9 +93,14 @@ pub async fn dummy_verify_async(password: String) {
     let _ = tokio::task::spawn_blocking(move || dummy_verify(&password)).await;
 }
 
-/// Hash a password into a PHC string.
+/// Hash an account password into a PHC string.
 pub fn hash(password: &str) -> Result<String> {
     validate(password)?;
+    hash_validated(password)
+}
+
+/// Hash a password into a PHC string without applying the account policy.
+pub fn hash_validated(password: &str) -> Result<String> {
     let salt = SaltString::generate(&mut OsRng);
     hasher()
         .hash_password(password.as_bytes(), &salt)
