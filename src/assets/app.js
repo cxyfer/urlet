@@ -97,6 +97,29 @@
         });
     });
 
+    /* Keep an opened picker menu inside the window. The menus hang from the
+       right edge of their trigger, which on a narrow screen can sit at the left
+       edge instead; nudge the menu sideways rather than let it open off-screen.
+       `toggle` does not bubble, so it is caught on the way down. */
+    document.addEventListener("toggle", function (event) {
+        var details = event.target;
+        if (!details.matches || !details.matches("details[data-lang-switcher], details[data-theme-switcher]")) { return; }
+        var menu = details.querySelector(".lang-menu, .theme-menu");
+        if (!menu) { return; }
+        menu.style.translate = "";
+        if (!details.open) { return; }
+        var margin = 8;
+        var rect = menu.getBoundingClientRect();
+        var width = document.documentElement.clientWidth;
+        var shift = 0;
+        if (rect.left < margin) {
+            shift = margin - rect.left;
+        } else if (rect.right > width - margin) {
+            shift = width - margin - rect.right;
+        }
+        if (shift) { menu.style.translate = Math.round(shift) + "px 0"; }
+    }, true);
+
     document.addEventListener("keydown", function (event) {
         if (event.key !== "Escape") { return; }
         document.querySelectorAll("details[data-lang-switcher][open], details[data-theme-switcher][open]").forEach(function (details) {

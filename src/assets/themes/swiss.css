@@ -2214,68 +2214,6 @@ footer.site .footer-link {
     opacity: 0.85;
 }
 
-/* ---------------------------------------------------- 26 language switcher */
-.lang-switcher {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    flex: none;
-}
-
-.lang-switcher a {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 28px;
-    min-height: 24px;
-    padding: 3px 6px;
-    border: 1px solid transparent;
-    border-radius: 0;
-    color: var(--muted);
-    font-family: var(--mono);
-    font-size: 0.64rem;
-    letter-spacing: 0.08em;
-    text-decoration: none;
-    text-transform: uppercase;
-    line-height: 1;
-}
-
-.lang-switcher a:hover {
-    color: var(--ink);
-    border-color: var(--ink);
-}
-
-.lang-switcher a.active {
-    color: var(--ink);
-    border-color: var(--ink);
-    font-weight: 500;
-}
-
-/* inside the black telemetry bar */
-.telemetry .lang-switcher a {
-    color: var(--band-ink);
-    opacity: 0.62;
-}
-
-.telemetry .lang-switcher a:hover,
-.telemetry .lang-switcher a.active {
-    color: var(--band-ink);
-    opacity: 1;
-    border-color: var(--band-ink);
-}
-
-/* inside the black footer */
-footer.site .lang-switcher a {
-    color: var(--band-ink);
-    opacity: 0.62;
-}
-
-footer.site .lang-switcher a:hover,
-footer.site .lang-switcher a.active {
-    opacity: 1;
-    border-color: var(--band-ink);
-}
-
 /* ------------------------------------------------- 27 link detail / account */
 .slug-display {
     font-family: var(--mono);

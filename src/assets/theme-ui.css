@@ -115,6 +115,81 @@ footer.colophon .theme-menu {
     .theme-menu { right: 0; left: auto; max-width: calc(100vw - 1.5rem); }
 }
 
+/* Language dropdown, drawn like the theme picker that sits beside it. The
+   designs were written for a row of language links; without these rules the
+   menu stayed in the flow and pushed the bar apart when it opened. Wrapped in
+   `:where()` so Verdant's own dropdown in app.css, which loads first, and any
+   rule a design adds still win. */
+:where(.lang-switcher) {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    color: inherit;
+    font: inherit;
+}
+:where(.lang-trigger) {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    padding: .34rem .6rem;
+    border: 1px solid currentColor;
+    border-radius: var(--radius-pill, 999px);
+    background: transparent;
+    background: color-mix(in srgb, currentColor 8%, transparent);
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    line-height: 1.2;
+    white-space: nowrap;
+    list-style: none;
+}
+:where(.lang-trigger)::-webkit-details-marker { display: none; }
+:where(.lang-trigger)::marker { content: ""; }
+:where(.lang-trigger:hover) {
+    border-color: var(--accent, currentColor);
+    background: color-mix(in srgb, currentColor 14%, transparent);
+}
+:where(.lang-current) { font-size: .82em; }
+:where(.lang-caret) { display: inline-flex; opacity: .7; }
+:where(.lang-switcher[open] .lang-caret) { transform: rotate(180deg); }
+:where(.lang-menu) {
+    position: absolute;
+    z-index: 40;
+    top: calc(100% + .4rem);
+    right: 0;
+    min-width: 10rem;
+    display: grid;
+    gap: .15rem;
+    padding: .35rem;
+    border: 1px solid var(--line, currentColor);
+    border-radius: var(--radius-sm, .55rem);
+    background: var(--surface, Canvas);
+    color: var(--ink, CanvasText);
+    box-shadow: 0 .6rem 1.6rem rgba(0, 0, 0, .18);
+}
+:where(footer.site .lang-menu, footer.colophon .lang-menu) {
+    top: auto;
+    bottom: calc(100% + .45rem);
+}
+/* `a` stays outside `:where()` so the links outrank a design's bare `a` rule. */
+:where(.lang-menu) a {
+    display: block;
+    padding: .38rem .55rem;
+    border-radius: var(--radius-xs, .35rem);
+    color: inherit;
+    font-size: .86em;
+    text-decoration: none;
+    white-space: nowrap;
+}
+:where(.lang-menu) a:hover {
+    background: rgba(127, 127, 127, .14);
+    background: color-mix(in srgb, currentColor 12%, transparent);
+}
+:where(.lang-menu) a.active { font-weight: 600; text-decoration: underline; text-underline-offset: .18em; }
+@media (max-width: 480px) {
+    :where(.lang-menu) { right: 0; left: auto; max-width: calc(100vw - 1.5rem); }
+}
+
 /* Light/dark switch, shared like the picker so a new design cannot forget it.
    It inherits the surrounding bar's colour and tints itself with that same
    colour, so it stays legible on light and inverted bars alike. theme.js keeps
@@ -742,13 +817,6 @@ footer.colophon .theme-menu {
 }
 :where(.landing-tagline) { margin: 0; font-size: 1.05rem; opacity: .8; }
 :where(.landing-cta) { display: flex; justify-content: center; gap: .5rem; margin-top: .5rem; }
-
-/* Aurora places the picker in the sidebar footer, where a downward menu would
- * be clipped by the scroll container and the viewport. Open it upward there. */
-.side-foot .theme-menu {
-    top: auto;
-    bottom: calc(100% + .4rem);
-}
 
 /* Splash / interstitial page ------------------------------------------------ */
 .splash-message { white-space: pre-line; }

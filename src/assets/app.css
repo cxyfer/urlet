@@ -1230,6 +1230,7 @@ footer.site .lang-menu {
     background: var(--forest);
     color: #f6f4e9;
     font-weight: 600;
+    text-decoration: none;
 }
 .lang-menu a.active::after {
     background: var(--sap);

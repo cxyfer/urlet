@@ -828,6 +828,16 @@ details > summary::before {
 
 details[open] > summary::before { transform: rotate(45deg); }
 
+/* The theme and language pickers are <details> too, but draw their own caret
+   and pill: keep the disclosure chevron and its compact padding off them. */
+.theme-switcher > summary::before,
+.lang-switcher > summary::before { content: none; }
+.lang-switcher > .lang-trigger {
+    padding: .34rem .6rem;
+    color: inherit;
+    font: inherit;
+}
+
 details.manage { position: relative; }
 
 details.manage > summary {
@@ -950,42 +960,6 @@ svg.chart rect:hover { opacity: 1; }
     color: var(--muted);
     min-width: 2.2rem;
     text-align: right;
-}
-
-/* ------------------------------------------- 10 language switcher ------- */
-.lang-switcher {
-    display: inline-flex;
-    align-items: center;
-    gap: .1rem;
-    padding: .16rem;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    background: rgba(255, 255, 255, .04);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
-    max-width: 100%;
-}
-
-.lang-switcher a {
-    padding: .18rem .5rem;
-    border-radius: 999px;
-    color: var(--muted);
-    font-size: .72rem;
-    font-weight: 600;
-    line-height: 1.5;
-    white-space: nowrap;
-    transition: background .16s ease, color .16s ease;
-}
-
-.lang-switcher a:hover {
-    background: rgba(255, 255, 255, .08);
-    color: var(--ink);
-    text-decoration: none;
-}
-
-.lang-switcher a.active {
-    background: rgba(255, 255, 255, .14);
-    color: var(--ink);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14);
 }
 
 .avatar {
@@ -1531,6 +1505,19 @@ svg.chart rect:hover { opacity: 1; }
 
 .side-foot .lang-switcher { align-self: flex-start; }
 
+/* The sidebar foot is the bottom-left corner of the window, so its pickers open
+   upward and to the right instead of past both edges. Below 880px the sidebar
+   becomes a top bar and the shared downward menus apply again. */
+@media (min-width: 880px) {
+    .side-foot .lang-menu,
+    .side-foot .theme-menu {
+        top: auto;
+        bottom: calc(100% + .4rem);
+        left: 0;
+        right: auto;
+    }
+}
+
 .side-exit { margin: 0; }
 .side-exit .btn {
     width: 100%;
@@ -2069,9 +2056,6 @@ footer.site {
     line-height: 1.5;
 }
 
-footer.site .lang-switcher { border-color: rgba(255, 255, 255, .07); }
-footer.site .lang-switcher a { font-size: .7rem; }
-
 /* Aurora 的頁尾用 `space-between` 撐開；repo 連結要跟 tagline 放在一起，
    而不是浮在整列的中間。 */
 footer.site .footer-repo { margin-right: auto; }
@@ -2160,7 +2144,6 @@ body.page-link footer.site, body.page-auth footer.site { padding-bottom: .25rem;
 
     .side-user { display: none; }
     .side-foot .lang-switcher { align-self: center; }
-    .side-foot .lang-switcher a { padding: .14rem .42rem; font-size: .68rem; }
 
     .side-exit .btn {
         width: auto;
@@ -2288,7 +2271,6 @@ body.page-link footer.site, body.page-auth footer.site { padding-bottom: .25rem;
     .stat-primary { padding: .7rem .8rem; }
     .stat-primary .stat-value { font-size: 1.5rem; }
     .stat::after { top: -2.25rem; width: 7rem; height: 7rem; }
-    .side-foot .lang-switcher a { padding: .12rem .34rem; }
     .topbar-user { max-width: 8.5rem; }
     .mock { padding: .8rem .8rem 1rem; }
     .mock-spark { height: 4.5rem; }
@@ -2297,7 +2279,6 @@ body.page-link footer.site, body.page-auth footer.site { padding-bottom: .25rem;
 /* touch targets stay comfortable */
 @media (pointer: coarse) {
     .btn-sm { min-height: 2.15rem; }
-    .lang-switcher a { padding-block: .3rem; }
     .tabs a { padding-block: .42rem; }
 }
 
