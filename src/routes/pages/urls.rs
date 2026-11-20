@@ -347,6 +347,32 @@ pub async fn create(
         Err(_) => return Ok(redirect_err("/app", "invalid").into_response()),
     };
 
+    let reject_preview = |key: &'static str| {
+        let (payload, preview) = (&payload, preview.as_ref());
+        move |form: &mut LinkForm| {
+            form.retain(&payload.retained());
+            if let (Some(view), Some(fields)) = (form.preview.as_mut(), preview) {
+                view.retain(fields);
+            }
+            if let Some(view) = form.preview.as_mut() {
+                view.reject(key);
+            }
+            form.advanced_open = form.has_submitted_advanced();
+            form.preview_open = true;
+        }
+    };
+
+    if cut_short {
+        return render_dashboard(
+            &state,
+            &current.user,
+            &DashboardQuery::default(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            reject_preview("preview.error_image"),
+        )
+        .await;
+    }
+
     if state
         .limiters
         .create_url
@@ -384,31 +410,6 @@ pub async fn create(
             form.preview_open = has_preview_input(preview);
         }
     };
-    let reject_preview = |key: &'static str| {
-        let (payload, preview) = (&payload, preview.as_ref());
-        move |form: &mut LinkForm| {
-            form.retain(&payload.retained());
-            if let (Some(view), Some(fields)) = (form.preview.as_mut(), preview) {
-                view.retain(fields);
-            }
-            if let Some(view) = form.preview.as_mut() {
-                view.reject(key);
-            }
-            form.advanced_open = form.has_submitted_advanced();
-            form.preview_open = true;
-        }
-    };
-
-    if cut_short {
-        return render_dashboard(
-            &state,
-            &current.user,
-            &DashboardQuery::default(),
-            StatusCode::UNPROCESSABLE_ENTITY,
-            reject_preview("preview.error_image"),
-        )
-        .await;
-    }
 
     // The preview is checked before the link exists, so a rejected image does
     // not leave a half-configured link behind.
