@@ -388,23 +388,23 @@ async fn short_link_forms_create_update_and_delete() {
 }
 
 #[tokio::test]
-async fn create_form_reports_errors_with_a_flash_code() {
+async fn create_form_reports_errors_with_inline_messages_and_retains_values() {
     let app = TestApp::spawn().await;
     let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let lang = urlet::i18n::Lang::En;
 
-    // Validation failures map to specific flash codes so the banner can explain
-    // the rule that was broken.
+    // Validation failures re-render the form in-place (422) with specific
+    // error messages, expanded sections, and preserved submitted values.
     let invalid_target = app
         .send(post_form_as(
             "/app/urls",
-            "target_url=javascript%3Aalert%281%29",
+            "target_url=javascript%3Aalert%281%29&slug=kept-slug",
             &cookie,
         ))
         .await;
-    assert_eq!(
-        invalid_target.header("location").as_deref(),
-        Some("/app?err=target")
-    );
+    assert_eq!(invalid_target.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(invalid_target.body.contains(lang.t("flash.err.target")));
+    assert!(invalid_target.body.contains("value=\"kept-slug\""));
 
     let reserved = app
         .send(post_form_as(
@@ -413,10 +413,10 @@ async fn create_form_reports_errors_with_a_flash_code() {
             &cookie,
         ))
         .await;
-    assert_eq!(
-        reserved.header("location").as_deref(),
-        Some("/app?err=slug")
-    );
+    assert_eq!(reserved.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(reserved.body.contains(lang.t("flash.err.slug")));
+    assert!(reserved.body.contains("value=\"https://a.example\""));
+    assert!(reserved.body.contains("value=\"api\""));
 
     let past_expiry = app
         .send(post_form_as(
@@ -425,10 +425,12 @@ async fn create_form_reports_errors_with_a_flash_code() {
             &cookie,
         ))
         .await;
-    assert_eq!(
-        past_expiry.header("location").as_deref(),
-        Some("/app?err=expiry")
-    );
+    assert_eq!(past_expiry.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(past_expiry.body.contains(lang.t("flash.err.expiry")));
+    assert!(past_expiry.body.contains("value=\"2000-01-01\""));
+    assert!(past_expiry
+        .body
+        .contains("<details class=\"advanced link-section\" open>"));
 
     let short_password = app
         .send(post_form_as(
@@ -437,10 +439,13 @@ async fn create_form_reports_errors_with_a_flash_code() {
             &cookie,
         ))
         .await;
-    assert_eq!(
-        short_password.header("location").as_deref(),
-        Some("/app?err=password_rules")
-    );
+    assert_eq!(short_password.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(short_password
+        .body
+        .contains(lang.t("flash.err.password_rules")));
+    assert!(short_password
+        .body
+        .contains("<details class=\"advanced link-section\" open>"));
 
     let first = app
         .send(post_form_as(
@@ -457,13 +462,33 @@ async fn create_form_reports_errors_with_a_flash_code() {
             &cookie,
         ))
         .await;
-    assert_eq!(
-        duplicate.header("location").as_deref(),
-        Some("/app?err=conflict")
-    );
+    assert_eq!(duplicate.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(duplicate.body.contains("already taken"));
+    assert!(duplicate.body.contains("value=\"https://b.example\""));
+    assert!(duplicate.body.contains("value=\"taken\""));
 
-    let flash = app.get_as("/app?err=conflict", &cookie).await;
-    assert!(flash.body.contains("already taken"));
+    // Edit also maps advanced field errors to specific messages and opens Advanced settings.
+    let id: i64 = first
+        .header("location")
+        .unwrap()
+        .trim_start_matches("/app/urls/")
+        .split('?')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let bad_clicks = app
+        .send(post_form_as(
+            &format!("/app/urls/{id}"),
+            "target_url=https%3A%2F%2Fa.example&max_clicks=0",
+            &cookie,
+        ))
+        .await;
+    assert_eq!(bad_clicks.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(bad_clicks.body.contains(lang.t("flash.err.max_clicks")));
+    assert!(bad_clicks
+        .body
+        .contains("<details class=\"advanced link-section\" open>"));
 }
 
 #[tokio::test]

@@ -17,7 +17,7 @@ use crate::db::domains;
 use crate::db::urls::{self, UrlState};
 use crate::error::AppError;
 use crate::i18n::{self, Lang};
-use crate::middleware::auth::MaybeUser;
+use crate::middleware::auth::{CurrentUser, MaybeUser};
 use crate::middleware::domain::HostContext;
 use crate::routes::no_store;
 use crate::routes::pages::link_form::LinkForm;
@@ -151,20 +151,30 @@ pub async fn home(
         return Ok(response);
     }
 
-    let (signed_in, email) = match &current {
+    render_landing(&state, current.as_ref(), &query, StatusCode::OK, |_| {}).await
+}
+
+/// Render the canonical landing page, optionally adjusting the public form (used on 422 rejections).
+pub(crate) async fn render_landing(
+    state: &AppState,
+    current: Option<&CurrentUser>,
+    query: &HomeQuery,
+    status: StatusCode,
+    adjust: impl FnOnce(&mut LinkForm),
+) -> Result<Response, AppError> {
+    let (signed_in, email) = match current {
         Some(current) => (true, current.user.label().to_string()),
         None => (false, String::new()),
     };
-    let theme = match &current {
+    let theme = match current {
         Some(current) => crate::services::theme::for_user(&state.settings, &current.user),
         None => crate::services::theme::current(),
     };
 
     let anonymous = current.is_none();
-    let allowed =
-        public_urls::access(&state.settings).allows(current.as_ref().map(|current| &current.user));
+    let allowed = public_urls::access(&state.settings).allows(current.map(|current| &current.user));
     let mut fields = state.settings.public_fields();
-    if let Some(current) = &current {
+    if let Some(current) = current {
         // A signed-in visitor's group can narrow the public field set further;
         // the service refuses those fields anyway, so offering them would only
         // produce a rejected submission.
@@ -181,7 +191,7 @@ pub async fn home(
         fields.redirect &= limits.redirect_mode_policy
             == crate::services::redirect_mode::RedirectModePolicy::Choice;
     }
-    let domains = match (&current, fields.domain) {
+    let domains = match (current, fields.domain) {
         (_, false) => Vec::new(),
         // A signed-in account sees the domains its group allows; a visitor gets
         // the site-wide list, which is what the ungrouped Guest account sees.
@@ -194,7 +204,7 @@ pub async fn home(
     };
     let captcha = if allowed {
         public_urls::guard_flow(&state.settings, anonymous)
-            .and_then(|flow| captcha_widget(&state, flow))
+            .and_then(|flow| captcha_widget(state, flow))
     } else {
         None
     };
@@ -202,7 +212,7 @@ pub async fn home(
     // otherwise `/?shortened=` would be a free "does this slug exist" oracle on
     // an instance whose public shortener is closed.
     let result = if allowed {
-        created_short_url(&state, &query).await
+        created_short_url(state, query).await
     } else {
         None
     };
@@ -217,7 +227,11 @@ pub async fn home(
         theme,
         flash: flash_from_query(query.ok.as_deref(), query.err.as_deref()),
         captcha,
-        link_form: LinkForm::public(&fields, domains),
+        link_form: {
+            let mut form = LinkForm::public(&fields, domains);
+            adjust(&mut form);
+            form
+        },
         // Real readouts only: the build version, the number of feature cards
         // this page actually renders, and the server clock. Everything else
         // that looks like an instrument is marked as illustrative.
@@ -240,7 +254,10 @@ pub async fn home(
         },
     }
     .themed();
-    Ok(no_store(render(page)?))
+    let html = page
+        .render()
+        .map_err(|err| AppError::internal(format!("template error: {err}")))?;
+    Ok(no_store((status, Html(html)).into_response()))
 }
 
 /// The short URL of the link the public form just created.

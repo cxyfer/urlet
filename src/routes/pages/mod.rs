@@ -144,6 +144,13 @@ pub fn flash_from_query(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
             "guest_allowlist_rules" => "flash.err.guest_allowlist_rules",
             "password_rules" => "flash.err.password_rules",
             "tags" => "flash.err.tags",
+            "title" => "flash.err.title",
+            "max_clicks" => "flash.err.max_clicks",
+            "redirect_type" => "flash.err.redirect_type",
+            "redirect_mode" => "flash.err.redirect_mode",
+            "splash_delay" => "flash.err.splash_delay",
+            "splash_title" => "flash.err.splash_title",
+            "splash_message" => "flash.err.splash_message",
             "captcha" => "flash.err.captcha",
             // A rejected SNS preview on the create form reuses the messages
             // the editor shows next to the preview fields.

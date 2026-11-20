@@ -20,8 +20,10 @@ use serde::{Deserialize, Serialize};
 use crate::error::{ApiError, AppError};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::middleware::domain::HostContext;
-use crate::routes::pages::urls::{number_field, split_tags};
-use crate::routes::pages::{captcha_rejected, encode, redirect_err};
+use crate::routes::pages::home::{render_landing, HomeQuery};
+use crate::routes::pages::link_form::{LinkForm, RetainedFields};
+use crate::routes::pages::urls::{error_code, number_field, split_tags};
+use crate::routes::pages::{captcha_rejected, encode, flash_from_query, redirect_err};
 use crate::routes::verify_captcha;
 use crate::services::public_urls::{self, PublicInput};
 use crate::state::AppState;
@@ -61,6 +63,24 @@ pub struct PublicCreateForm {
 }
 
 impl PublicCreateForm {
+    fn retained(&self) -> RetainedFields<'_> {
+        RetainedFields {
+            target_url: Some(self.target_url.as_str()),
+            domain: self.domain.as_deref(),
+            slug: self.slug.as_deref(),
+            title: self.title.as_deref(),
+            tags: self.tags.as_deref(),
+            expires_at: self.expires_at.as_deref(),
+            max_clicks: self.max_clicks.as_deref(),
+            redirect_type: None,
+            redirect_mode: self.redirect_mode.as_deref(),
+            splash_delay_seconds: self.splash_delay_seconds.as_deref(),
+            splash_title: self.splash_title.as_deref(),
+            splash_message: self.splash_message.as_deref(),
+            status: None,
+        }
+    }
+
     /// Convert the submitted form, rejecting a malformed number.
     ///
     /// A blank field means "not submitted"; `max_clicks=abc` must not be turned
@@ -169,13 +189,30 @@ pub async fn create_form(
     // call after them both need them.
     let turnstile_token = payload.turnstile_token.take();
     let recaptcha_token = payload.recaptcha_token.take();
+    let retained = payload.clone();
+    let reject_link = |code: &'static str| {
+        let message = flash_from_query(None, Some(code))
+            .map(|flash| flash.message)
+            .unwrap_or_default();
+        let retained = &retained;
+        move |form: &mut LinkForm| {
+            form.retain(&retained.retained());
+            form.error = message;
+            form.advanced_open = LinkForm::is_advanced_error(code) || form.has_submitted_advanced();
+        }
+    };
 
     let input = match payload.into_input() {
         Ok(input) => input,
         Err(err) => {
-            return Ok(
-                redirect_err("/", crate::routes::pages::urls::error_code(&err)).into_response(),
+            return render_landing(
+                &state,
+                current.as_ref(),
+                &HomeQuery::default(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                reject_link(error_code(&err)),
             )
+            .await
         }
     };
     // Access level, field switches and rate limits first: only a request that
@@ -183,9 +220,21 @@ pub async fn create_form(
     let authorized = match public_urls::authorize(&state, &client, current.as_ref(), &input).await {
         Ok(authorized) => authorized,
         Err(err) => {
-            return Ok(
-                redirect_err("/", crate::routes::pages::urls::error_code(&err)).into_response(),
+            let code = error_code(&err);
+            if matches!(
+                code,
+                "denied" | "rate_limited" | "guest_allowlist" | "quota" | "captcha"
+            ) {
+                return Ok(redirect_err("/", code).into_response());
+            }
+            return render_landing(
+                &state,
+                current.as_ref(),
+                &HomeQuery::default(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                reject_link(code),
             )
+            .await;
         }
     };
 
@@ -214,11 +263,7 @@ pub async fn create_form(
     // bot protection cannot drain it for everybody else.
     let authorized = match public_urls::admit(&state, current.as_ref(), authorized).await {
         Ok(authorized) => authorized,
-        Err(err) => {
-            return Ok(
-                redirect_err("/", crate::routes::pages::urls::error_code(&err)).into_response(),
-            )
-        }
+        Err(err) => return Ok(redirect_err("/", error_code(&err)).into_response()),
     };
 
     match public_urls::create(&state, &client, current.as_ref(), input, authorized).await {
@@ -238,7 +283,21 @@ pub async fn create_form(
             Ok(response)
         }
         Err(err) => {
-            Ok(redirect_err("/", crate::routes::pages::urls::error_code(&err)).into_response())
+            let code = error_code(&err);
+            if matches!(
+                code,
+                "denied" | "rate_limited" | "guest_allowlist" | "quota" | "captcha"
+            ) {
+                return Ok(redirect_err("/", code).into_response());
+            }
+            render_landing(
+                &state,
+                current.as_ref(),
+                &HomeQuery::default(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                reject_link(code),
+            )
+            .await
         }
     }
 }
