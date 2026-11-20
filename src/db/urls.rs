@@ -504,7 +504,28 @@ pub async fn count_live_with_slug(pool: &SqlitePool, slug: &str) -> Result<i64, 
         .await
 }
 
-/// Live links of a user that are expired or have reached their click limit.
+/// Live links of a user that currently redirect: enabled, not expired and
+/// under their click limit — [`UrlState::Active`] in SQL.
+pub async fn count_active_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    now: &str,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM urls
+         WHERE user_id = ? AND deleted_at IS NULL AND status = 'active'
+           AND (expires_at IS NULL OR expires_at > ?)
+           AND (max_clicks IS NULL OR click_count < max_clicks)",
+    )
+    .bind(user_id)
+    .bind(now)
+    .fetch_one(pool)
+    .await
+}
+
+/// Enabled live links of a user that expired or reached their click limit —
+/// [`UrlState::Expired`] and [`UrlState::LimitReached`]. A disabled link is
+/// counted as neither active nor expired, as [`Url::state_at`] reports it.
 pub async fn count_expired_for_user(
     pool: &SqlitePool,
     user_id: i64,
@@ -512,7 +533,7 @@ pub async fn count_expired_for_user(
 ) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM urls
-         WHERE user_id = ? AND deleted_at IS NULL
+         WHERE user_id = ? AND deleted_at IS NULL AND status = 'active'
            AND ((expires_at IS NOT NULL AND expires_at <= ?)
                 OR (max_clicks IS NOT NULL AND click_count >= max_clicks))",
     )

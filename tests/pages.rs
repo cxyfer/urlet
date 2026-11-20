@@ -747,3 +747,69 @@ async fn landing_page_reports_the_servers_own_readouts() {
         );
     }
 }
+
+/// The figure printed under one dashboard card label.
+fn stat_value(body: &str, label: &str) -> String {
+    let after = body
+        .split(&format!("<span class=\"stat-label\">{label}</span>"))
+        .nth(1)
+        .unwrap_or_else(|| panic!("no {label} card"));
+    let value = after
+        .split("<div class=\"stat-value\">")
+        .nth(1)
+        .expect("stat value");
+    value.split('<').next().expect("value").trim().to_string()
+}
+
+#[tokio::test]
+async fn dashboard_cards_and_quota_meter_follow_each_link_state() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let mut ids = Vec::new();
+    for slug in ["live", "off", "capped", "lapsed"] {
+        let created = app
+            .send(common::post_json_as(
+                "/api/v1/urls",
+                json!({ "target_url": "https://example.com", "slug": slug }),
+                &cookie,
+            ))
+            .await;
+        assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+        ids.push(created.json()["id"].as_i64().expect("id"));
+    }
+    // 停用、達點擊上限、已過期各一，另有一條仍可轉址。
+    let disabled = app
+        .send(common::patch_json_as(
+            &format!("/api/v1/urls/{}", ids[1]),
+            json!({ "status": "disabled" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(disabled.status, StatusCode::OK, "{}", disabled.body);
+    sqlx::query("UPDATE urls SET max_clicks = 1, click_count = 1 WHERE id = ?")
+        .bind(ids[2])
+        .execute(&app.state.db)
+        .await
+        .expect("cap");
+    sqlx::query("UPDATE urls SET expires_at = '2000-01-01T00:00:00Z' WHERE id = ?")
+        .bind(ids[3])
+        .execute(&app.state.db)
+        .await
+        .expect("expire");
+
+    let page = app.get_as("/app", &cookie).await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert_eq!(stat_value(&page.body, "Links"), "4");
+    assert_eq!(
+        stat_value(&page.body, "Active"),
+        "1",
+        "a disabled link is not active"
+    );
+    assert_eq!(stat_value(&page.body, "Expired"), "2");
+    // 預設配額 1000：4 條連結無條件進位為 1%，而不是固定的寬度。
+    assert!(
+        page.body
+            .contains("class=\"meter-fill\" style=\"width: 1%\""),
+        "the meter must show the share of the quota in use"
+    );
+}
