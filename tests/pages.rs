@@ -747,3 +747,71 @@ async fn landing_page_reports_the_servers_own_readouts() {
         );
     }
 }
+
+#[tokio::test]
+async fn quick_extend_offers_and_moves_only_the_limit_that_stopped_the_link() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let created = app
+        .send(common::post_json_as(
+            "/api/v1/urls",
+            json!({ "target_url": "https://example.com", "slug": "spent", "max_clicks": 1 }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let id = created.json()["id"].as_i64().expect("id");
+    sqlx::query("UPDATE urls SET click_count = 1 WHERE id = ?")
+        .bind(id)
+        .execute(&app.state.db)
+        .await
+        .expect("spend");
+
+    // 只因點擊上限失效：只提供增加點擊數，不提供延長天數。
+    let page = app.get_as(&format!("/app/urls/{id}"), &cookie).await;
+    assert!(page.body.contains("name=\"clicks\" value=\"100\""));
+    assert!(!page.body.contains("name=\"days\""));
+
+    // 直接送出也不會替沒有到期日的連結加上一個。
+    let refused = app
+        .send(post_form_as(
+            &format!("/app/urls/{id}/extend"),
+            "days=30",
+            &cookie,
+        ))
+        .await;
+    assert_eq!(refused.status, StatusCode::SEE_OTHER);
+    assert!(refused
+        .header("location")
+        .expect("location")
+        .contains("err=invalid"));
+    let expires: Option<String> = sqlx::query_scalar("SELECT expires_at FROM urls WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.state.db)
+        .await
+        .expect("expiry");
+    assert_eq!(expires, None);
+
+    let raised = app
+        .send(post_form_as(
+            &format!("/app/urls/{id}/extend"),
+            "clicks=100",
+            &cookie,
+        ))
+        .await;
+    assert!(raised
+        .header("location")
+        .expect("location")
+        .contains("ok=updated"));
+    let cap: Option<i64> = sqlx::query_scalar("SELECT max_clicks FROM urls WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.state.db)
+        .await
+        .expect("cap");
+    assert_eq!(cap, Some(101));
+    let live = app.get_as(&format!("/app/urls/{id}"), &cookie).await;
+    assert!(
+        !live.body.contains("/extend\""),
+        "a live link needs no extension"
+    );
+}
