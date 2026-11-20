@@ -226,7 +226,7 @@
             var doc = new DOMParser().parseFromString(html, "text/html");
             return {
                 panel: doc.querySelector(config.panel),
-                flash: doc.querySelector(".app-main > .alert"),
+                flash: doc.querySelector("[data-flash]"),
                 title: doc.querySelector(".page-title")
             };
         }
