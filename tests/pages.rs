@@ -980,3 +980,48 @@ async fn dashboard_cards_and_quota_meter_follow_each_link_state() {
         "the meter must show the share of the quota in use"
     );
 }
+
+#[tokio::test]
+async fn account_form_errors_name_the_rule_that_failed() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let long_name = "a".repeat(61);
+    // 每個帳號表單錯誤都要對應自己的規則，不能借用連結表單的訊息。
+    for (path, body, code, message) in [
+        (
+            "/app/account/password",
+            "current_password=supersecret&new_password=short".to_string(),
+            "account_password_rules",
+            "The password must be between 8 and 128 characters",
+        ),
+        (
+            "/app/account/password",
+            "current_password=supersecret&new_password=supersecret".to_string(),
+            "password_same",
+            "The new password must differ from the current one.",
+        ),
+        (
+            "/app/account",
+            format!("display_name={long_name}"),
+            "display_name",
+            "The display name must be a single line of at most 60 characters.",
+        ),
+        (
+            "/app/account/tokens",
+            format!("name={long_name}"),
+            "token_name",
+            "The token name is required",
+        ),
+    ] {
+        let response = app.send(post_form_as(path, &body, &cookie)).await;
+        let location = response.header("location").expect("location");
+        assert_eq!(
+            location,
+            format!("/app/account?err={code}"),
+            "{path} {body}"
+        );
+        let page = app.get_as(&location, &cookie).await;
+        assert!(page.body.contains(message), "{code}: {}", page.body);
+        assert!(!page.body.contains("The link password"), "{code}");
+    }
+}

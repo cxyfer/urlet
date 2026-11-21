@@ -120,6 +120,25 @@ pub async fn page(
     .await
 }
 
+/// Flash code for an error from one of the account forms.
+///
+/// The shared link-form mapping names the wrong rule here: an account password
+/// that is too short is reported as the link password's 4-character rule, and
+/// a display-name or token-name problem only as "check the highlighted
+/// values", although the account page highlights nothing.
+fn account_error_code(err: &AppError) -> &'static str {
+    match err {
+        AppError::Validation { field, .. } => match *field {
+            "password" => "account_password_rules",
+            "new_password" => "password_same",
+            "display_name" => "display_name",
+            "name" => "token_name",
+            _ => super::urls::error_code(err),
+        },
+        _ => super::urls::error_code(err),
+    }
+}
+
 /// `POST /app/account` — update the display name.
 pub async fn update_profile(
     State(state): State<AppState>,
@@ -141,7 +160,7 @@ pub async fn update_profile(
         .filter(|name| !name.is_empty());
     if let Some(name) = display_name {
         if let Err(err) = crate::services::auth::validate_display_name(name) {
-            return Ok(redirect_err("/app/account", super::urls::error_code(&err)).into_response());
+            return Ok(redirect_err("/app/account", account_error_code(&err)).into_response());
         }
     }
 
@@ -200,7 +219,7 @@ pub async fn change_password(
             .await
         {
             Ok(()) => redirect_ok("/app/account", "password").into_response(),
-            Err(err) => redirect_err("/app/account", super::urls::error_code(&err)).into_response(),
+            Err(err) => redirect_err("/app/account", account_error_code(&err)).into_response(),
         },
     )
 }
@@ -279,7 +298,7 @@ pub async fn create_token(
             )
             .await
         }
-        Err(err) => Ok(redirect_err("/app/account", super::urls::error_code(&err)).into_response()),
+        Err(err) => Ok(redirect_err("/app/account", account_error_code(&err)).into_response()),
     }
 }
 
@@ -296,7 +315,7 @@ pub async fn revoke_token(
 
     match tokens::revoke(&state.db, &current.user, id, client.ip_hash.as_deref()).await {
         Ok(()) => Ok(redirect_ok("/app/account", "token_revoked").into_response()),
-        Err(err) => Ok(redirect_err("/app/account", super::urls::error_code(&err)).into_response()),
+        Err(err) => Ok(redirect_err("/app/account", account_error_code(&err)).into_response()),
     }
 }
 
