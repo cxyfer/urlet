@@ -13,7 +13,7 @@ use crate::i18n::{self, Lang};
 use crate::middleware::auth::{ClientInfo, MaybeUser};
 use crate::routes::no_store;
 use crate::routes::pages::{
-    captcha_rejected, captcha_widget, query_string, redirect_err, redirect_ok, safe_next,
+    captcha_rejected, captcha_widget, query_string, redirect_ok, safe_next,
 };
 use crate::services::auth::{self, AuthContext};
 use crate::services::captcha::{CaptchaFlow, CaptchaWidget};
@@ -33,6 +33,13 @@ pub struct LoginPage {
     pub captcha: Option<CaptchaWidget>,
     pub lang: Lang,
     pub theme: ThemeView,
+}
+
+impl LoginPage {
+    /// The registration link, carrying the page to return to once signed up.
+    pub fn register_href(&self) -> String {
+        with_next("/app/register", &self.next)
+    }
 }
 
 themed_page!(login_templates, LoginView, LoginPage,
@@ -59,6 +66,21 @@ pub struct RegisterPage {
     pub captcha: Option<CaptchaWidget>,
     pub lang: Lang,
     pub theme: ThemeView,
+}
+
+impl RegisterPage {
+    /// The sign-in link, carrying the page to return to once signed in.
+    pub fn login_href(&self) -> String {
+        with_next("/app/login", &self.next)
+    }
+}
+
+/// `path`, with `next` attached when there is a page to return to.
+fn with_next(path: &str, next: &str) -> String {
+    match safe_next(Some(next)) {
+        Some(next) => format!("{path}?{}", query_string(&[("next", next)])),
+        None => path.to_string(),
+    }
 }
 
 themed_page!(register_templates, RegisterView, RegisterPage,
@@ -178,13 +200,14 @@ pub async fn login_submit(
         ));
     };
 
+    let next = payload.next.as_deref();
     if state
         .limiters
         .login_ip
         .check(&client.limiter_key())
         .is_err()
     {
-        return Ok(Redirect::to("/app/login?err=rate_limited").into_response());
+        return Ok(login_redirect("rate_limited", next));
     }
 
     let email_normalized = auth::normalize_email(&payload.email);
@@ -194,7 +217,7 @@ pub async fn login_submit(
         .check(&format!("{}:{}", client.limiter_key(), email_normalized))
         .is_err()
     {
-        return Ok(Redirect::to("/app/login?err=rate_limited").into_response());
+        return Ok(login_redirect("rate_limited", next));
     }
 
     // Bot protection runs before any password hashing work.
@@ -207,7 +230,7 @@ pub async fn login_submit(
     )
     .await
     {
-        return Ok(redirect_err("/app/login", "captcha").into_response());
+        return Ok(login_redirect("captcha", next));
     }
 
     let context = AuthContext {
@@ -229,10 +252,8 @@ pub async fn login_submit(
             }
             Ok(response)
         }
-        Err(AppError::Forbidden(_)) => Ok(Redirect::to("/app/login?err=denied").into_response()),
-        Err(AppError::RateLimited { .. }) => {
-            Ok(Redirect::to("/app/login?err=rate_limited").into_response())
-        }
+        Err(AppError::Forbidden(_)) => Ok(login_redirect("denied", next)),
+        Err(AppError::RateLimited { .. }) => Ok(login_redirect("rate_limited", next)),
         Err(_) => Ok(render(
             LoginPage {
                 site_name: state.settings.site_name(),
@@ -418,6 +439,16 @@ fn invite_from_query(value: Option<&str>) -> String {
         .filter(|value| !value.is_empty() && value.len() <= 64)
         .unwrap_or_default()
         .to_string()
+}
+
+/// Redirect back to the sign-in form, keeping the post-sign-in destination so
+/// a rejected attempt does not drop the visitor on the dashboard afterwards.
+fn login_redirect(err: &str, next: Option<&str>) -> Response {
+    let mut params = vec![("err", err.to_string())];
+    if let Some(next) = safe_next(next) {
+        params.push(("next", next));
+    }
+    no_store(Redirect::to(&format!("/app/login?{}", query_string(&params))).into_response())
 }
 
 /// Redirect back to the registration form, keeping the invite code and the

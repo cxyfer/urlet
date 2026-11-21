@@ -748,3 +748,46 @@ async fn favicon_svg_is_served_at_the_root_like_favicon_ico() {
         .await;
     assert_eq!(foreign.status, StatusCode::OK, "{}", foreign.body);
 }
+
+#[tokio::test]
+async fn a_link_password_may_be_as_short_as_the_link_policy_allows() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    // 帳號密碼至少 8 字元，連結密碼只要 4 字元（FR-PWD-1）。
+    let created = app
+        .send(post_json_as(
+            "/api/v1/urls",
+            json!({ "target_url": "https://secret.example/pin", "slug": "pin", "password": "1234" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+
+    let unlocked = app
+        .send(common::post_json(
+            "/pin/unlock",
+            json!({ "password": "1234" }),
+        ))
+        .await;
+    assert_eq!(unlocked.status, StatusCode::OK, "{}", unlocked.body);
+    assert_eq!(unlocked.json()["redirect"], "/pin");
+
+    let id = created.json()["id"].as_i64().expect("id");
+    let changed = app
+        .send(common::patch_json_as(
+            &format!("/api/v1/urls/{id}"),
+            json!({ "password": "4321" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(changed.status, StatusCode::OK, "{}", changed.body);
+
+    let too_short = app
+        .send(post_json_as(
+            "/api/v1/urls",
+            json!({ "target_url": "https://secret.example/pin", "slug": "pin3", "password": "123" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(too_short.status, StatusCode::UNPROCESSABLE_ENTITY);
+}
