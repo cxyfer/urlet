@@ -126,6 +126,8 @@
   "dashboard.empty": "没有符合筛选条件的链接。",
   "chart.click_title": "{day} 有 {clicks} 次点击",
   "chart.bot_click_title": "{day} 有 {clicks} 次机器人点击",
+  "chart.aria_label": "{heading}：{days} 天共 {clicks} 次点击",
+  "chart.aria_label_bots": "{heading}：{days} 天共 {clicks} 次点击，其中 {bots} 次来自机器人",
   "dashboard.pagination_note": "第 {page} 页，共 {total} 页（共 {count} 个链接）",
   "account.heading": "账号",
   "account.profile.heading": "个人资料",

@@ -126,6 +126,8 @@
   "dashboard.empty": "沒有符合篩選條件的連結。",
   "chart.click_title": "{day} 有 {clicks} 次點擊",
   "chart.bot_click_title": "{day} 有 {clicks} 次機器人點擊",
+  "chart.aria_label": "{heading}：{days} 天共 {clicks} 次點擊",
+  "chart.aria_label_bots": "{heading}：{days} 天共 {clicks} 次點擊，其中 {bots} 次來自機器人",
   "dashboard.pagination_note": "第 {page} 頁，共 {total} 頁（共 {count} 個連結）",
   "account.heading": "帳號",
   "account.profile.heading": "個人資料",
