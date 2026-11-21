@@ -1449,7 +1449,9 @@ table.table .mono {
 .cell-stack {
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
     gap: .18rem;
+    min-width: 0;
 }
 
 .cell-actions .btn {
