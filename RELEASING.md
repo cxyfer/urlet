@@ -47,7 +47,7 @@ The full image name is `ghcr.io/cxyfer/urlet`. It is derived from `github.reposi
    cargo update -p urlet
    cargo metadata --locked --format-version 1 >/dev/null
    ```
-   The embedded API reference carries the same version, in `info.version` and in the health example, so regenerate the contracts in the same commit. The CI `contracts` job fails when they are stale:
+   The embedded API reference carries the same version, in `info.version`, and the health example in [docs/API.md](docs/API.md) and [docs/zh-TW/API.md](docs/zh-TW/API.md) shows it too, so regenerate the contracts and update both examples in the same commit. The CI `contracts` job fails when they are stale:
    ```bash
    python3 scripts/build-openapi.py
    ```
@@ -105,16 +105,17 @@ cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
 ```
 
-The embedded API reference carries the same version in `info.version`, so regenerate the contracts and commit them too; the CI `contracts` job fails when the committed documents are stale:
+The embedded API reference carries the same version in `info.version`, and both health examples in `docs/API.md` and `docs/zh-TW/API.md` show it as well, so update those examples, regenerate the contracts and commit them all; the CI `contracts` job fails when the committed documents are stale:
 
 ```bash
 python3 scripts/build-openapi.py     # needs PyYAML
 ```
 
-Commit the version bump and the regenerated contracts:
+Update the health examples, then commit the version bump, the examples and the regenerated contracts:
 
 ```bash
-git add Cargo.toml Cargo.lock docker-compose.yml openapi/dist
+sed -i "s/\"version\": \"[0-9][^\"]*\"/\"version\": \"1.2.3\"/" docs/API.md docs/zh-TW/API.md
+git add Cargo.toml Cargo.lock docker-compose.yml docs/API.md docs/zh-TW/API.md openapi/dist
 git commit -m "🔖 release: v1.2.3"
 git push origin master
 ```
@@ -205,6 +206,7 @@ sed -i "s/^version = \".*\"$/version = \"$VERSION\"/" Cargo.toml
 sed -i "s/^\(    image: urlet:v\).*$/\1$VERSION/" docker-compose.yml
 cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
+sed -i "s/\"version\": \"[0-9][^\"]*\"/\"version\": \"$VERSION\"/" docs/API.md docs/zh-TW/API.md
 python3 scripts/build-openapi.py
 
 grep -m1 '^version' Cargo.toml            # 1.2.3
@@ -215,7 +217,7 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 
-git add Cargo.toml Cargo.lock docker-compose.yml openapi/dist
+git add Cargo.toml Cargo.lock docker-compose.yml docs/API.md docs/zh-TW/API.md openapi/dist
 git commit -m "🔖 release: v$VERSION"
 git push origin master
 git tag -a "v$VERSION" -m "v$VERSION"
