@@ -791,3 +791,28 @@ async fn a_link_password_may_be_as_short_as_the_link_policy_allows() {
         .await;
     assert_eq!(too_short.status, StatusCode::UNPROCESSABLE_ENTITY);
 }
+
+#[tokio::test]
+async fn a_dead_link_sends_its_visitor_to_the_site_home_in_every_design() {
+    let app = TestApp::spawn().await;
+    let (admin, _) = app.register("admin@example.com", "supersecret").await;
+    for theme in urlet::services::theme::ALL {
+        let key = theme.key();
+        let switched = app
+            .send(common::put_json_as(
+                "/api/v1/admin/themes",
+                json!({ "enabled": [key], "default": key }),
+                &admin,
+            ))
+            .await;
+        assert_eq!(switched.status, StatusCode::OK, "{key}");
+        // 訪客沒有帳號：導向 /app 只會被轉去登入頁。
+        let missing = app.get("/no-such-link").await;
+        assert_eq!(missing.status, StatusCode::NOT_FOUND, "{key}");
+        assert!(
+            missing.body.contains("href=\"/\">Go to"),
+            "{key} must link home"
+        );
+        assert!(!missing.body.contains("href=\"/app\">Go to"), "{key}");
+    }
+}
