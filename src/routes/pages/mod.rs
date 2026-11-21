@@ -700,21 +700,41 @@ pub async fn theme_preview_stop(
     theme_redirect(&target, &cookies)
 }
 
-/// Where a theme switch goes once the cookie is written.
+/// Where a theme or language switch goes once the cookie is written.
 ///
 /// An explicit same-site `next` wins, then the same-site `Referer` path, and
 /// finally the dashboard for a signed-in account or the landing page for a
 /// visitor — `/app` would only bounce an anonymous visitor to the sign-in
-/// screen.
+/// screen. A page rendered in answer to a form lives at a POST-only address,
+/// so going back there is mapped onto the page that serves the form.
 fn theme_target(
     headers: &HeaderMap,
     base_url: &str,
     next: Option<&str>,
     signed_in: bool,
 ) -> String {
-    safe_next(next)
+    let target = safe_next(next)
         .or_else(|| referrer_path(headers, base_url))
-        .unwrap_or_else(|| if signed_in { "/app" } else { "/" }.to_string())
+        .unwrap_or_else(|| if signed_in { "/app" } else { "/" }.to_string());
+    form_page(&target)
+}
+
+/// The GET page behind an address that only accepts POST and renders its
+/// answer in place: a rejected new link (`/app/urls`), a freshly created API
+/// token (`/app/account/tokens`) and a wrong link password (`/{slug}/unlock`).
+/// Redirecting a switch back to one of those would answer 405.
+fn form_page(target: &str) -> String {
+    let split = target.find(['?', '#']).unwrap_or(target.len());
+    let (path, suffix) = target.split_at(split);
+    let page = match path.trim_end_matches('/') {
+        "/app/urls" => "/app".to_string(),
+        "/app/account/tokens" => "/app/account".to_string(),
+        path => match path.strip_suffix("/unlock") {
+            Some(slug) if slug.len() > 1 && !slug[1..].contains('/') => slug.to_string(),
+            _ => return target.to_string(),
+        },
+    };
+    format!("{page}{suffix}")
 }
 
 fn theme_redirect(target: &str, cookies: &[String]) -> Response {
@@ -754,11 +774,18 @@ pub struct LangQuery {
 /// An unrecognised code is treated as English rather than failing the request.
 pub async fn lang_switch(
     State(state): State<AppState>,
+    MaybeUser(current): MaybeUser,
     Path(code): Path<String>,
     Query(query): Query<LangQuery>,
+    headers: HeaderMap,
 ) -> Response {
     let lang = Lang::parse(&code).unwrap_or(Lang::En);
-    let target = safe_next(query.next.as_deref()).unwrap_or_else(|| "/app".to_string());
+    let target = theme_target(
+        &headers,
+        &state.config.base_url,
+        query.next.as_deref(),
+        current.is_some(),
+    );
 
     let mut response = StatusCode::FOUND.into_response();
     // The fallback keeps the response a usable redirect even if encoding ever
