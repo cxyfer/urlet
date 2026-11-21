@@ -14,10 +14,11 @@
     <p class="page-note">{{ count_label }}</p>
 </header>
 
-<form method="get" action="/app/admin/audit" class="filter-bar">
-    <input class="input" type="search" name="action" value="{{ action }}" placeholder="{{ lang.t("admin.audit.action_placeholder") }}">
+<form method="get" action="/app/admin/audit" class="filter-bar" role="search">
+    <input class="input" type="search" name="action" value="{{ action }}" placeholder="{{ lang.t("admin.audit.action_placeholder") }}" aria-label="{{ lang.t("admin.audit.action") }}">
     <input class="input" type="search" name="target_type" value="{{ target_type }}"
-           placeholder="{{ lang.t("admin.audit.target_placeholder") }}">
+           placeholder="{{ lang.t("admin.audit.target_placeholder") }}"
+           aria-label="{{ lang.t("admin.audit.target") }}">
     <button class="btn" type="submit">{{ lang.t("common.filter") }}</button>
     <a class="btn btn-ghost" href="/app/admin/audit">{{ lang.t("common.reset") }}</a>
 </form>

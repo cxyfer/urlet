@@ -2294,3 +2294,52 @@ async fn every_design_skips_to_a_main_landmark_that_exists() {
         }
     }
 }
+
+#[tokio::test]
+async fn every_design_names_each_filter_control() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+    for theme in urlet::services::theme::ALL {
+        let key = theme.key();
+        let response = app
+            .send(put_json_as(
+                "/api/v1/admin/themes",
+                json!({ "enabled": [key], "default": key }),
+                &cookie,
+            ))
+            .await;
+        assert_eq!(response.status, StatusCode::OK, "{key}");
+        for path in [
+            "/app",
+            "/app/admin/urls",
+            "/app/admin/users",
+            "/app/admin/audit",
+        ] {
+            let page = app.get_as(path, &cookie).await;
+            assert_eq!(page.status, StatusCode::OK, "{key} {path}");
+            // 只檢查 GET 篩選表單；佔位文字不算名稱，必須有 aria-label 或對應的 label。
+            for form in page.body.split("<form method=\"get\"").skip(1) {
+                let form = form.split("</form>").next().expect("form");
+                let open = form.split('>').next().expect("form tag");
+                assert!(
+                    open.contains("role=\"search\""),
+                    "{key} {path}: filter form is not a search landmark"
+                );
+                for tag in form
+                    .split('<')
+                    .filter(|tag| tag.starts_with("input ") || tag.starts_with("select "))
+                    .map(|tag| tag.split('>').next().expect("tag"))
+                    .filter(|tag| !tag.contains("type=\"hidden\""))
+                {
+                    let labelled = tag.contains("aria-label=\"")
+                        || tag
+                            .split("id=\"")
+                            .nth(1)
+                            .and_then(|rest| rest.split('"').next())
+                            .is_some_and(|id| form.contains(&format!("for=\"{id}\"")));
+                    assert!(labelled, "{key} {path}: unnamed control <{tag}>");
+                }
+            }
+        }
+    }
+}
