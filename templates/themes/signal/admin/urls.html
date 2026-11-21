@@ -25,7 +25,7 @@
         <span class="bar-tag" aria-hidden="true">///</span>
     </div>
 
-    <form method="get" action="/app/admin/urls" class="toolbar">
+    <form method="get" action="/app/admin/urls" class="toolbar" role="search">
         <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ lang.t("dashboard.search.placeholder") }}"
                aria-label="{{ lang.t("dashboard.search.placeholder") }}">
         <input class="input" type="number" name="user_id" value="{{ user_id }}" placeholder="{{ lang.t("admin.urls.owner_id_placeholder") }}"

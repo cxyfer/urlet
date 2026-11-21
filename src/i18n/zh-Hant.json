@@ -57,6 +57,8 @@
   "common.page_of": "第 {page} 頁，共 {total} 頁",
   "common.expires_at": "到期時間（UTC）",
   "common.datetime_placeholder": "2030-01-31 12:00",
+  "common.skip_to_content": "跳至主要內容",
+  "common.sort": "排序",
   "dashboard.heading": "你的連結",
   "dashboard.usage": "已使用 {used} / {quota} 個連結",
   "dashboard.stat.links": "連結",
