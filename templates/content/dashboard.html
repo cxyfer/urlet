@@ -151,9 +151,9 @@
     </div>
 
     <div class="filter-wrap">
-        <form method="get" action="/app" class="filters">
-            <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ lang.t("dashboard.search.placeholder") }}">
-            <select class="select" name="tag">
+        <form method="get" action="/app" class="filters" role="search">
+            <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ lang.t("dashboard.search.placeholder") }}" aria-label="{{ lang.t("dashboard.search.placeholder") }}">
+            <select class="select" name="tag" aria-label="{{ lang.t("dashboard.new.tags") }}">
                 <option value="">{{ lang.t("dashboard.tags.all") }}</option>
                 {% for item in tags %}
                 <option value="{{ item.name }}" {% if item.name == tag %}selected{% endif %}>
@@ -161,12 +161,12 @@
                 </option>
                 {% endfor %}
             </select>
-            <select class="select" name="status">
+            <select class="select" name="status" aria-label="{{ lang.t("common.status") }}">
                 <option value="" {% if status == "" %}selected{% endif %}>{{ lang.t("common.any_status") }}</option>
                 <option value="active" {% if status == "active" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
                 <option value="disabled" {% if status == "disabled" %}selected{% endif %}>{{ lang.t("common.disabled") }}</option>
             </select>
-            <select class="select" name="sort">
+            <select class="select" name="sort" aria-label="{{ lang.t("common.sort") }}">
                 <option value="" {% if sort == "" %}selected{% endif %}>{{ lang.t("dashboard.sort.newest") }}</option>
                 <option value="clicks" {% if sort == "clicks" %}selected{% endif %}>{{ lang.t("dashboard.sort.clicks") }}</option>
                 <option value="slug" {% if sort == "slug" %}selected{% endif %}>{{ lang.t("dashboard.sort.slug") }}</option>

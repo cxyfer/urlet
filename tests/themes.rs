@@ -2253,3 +2253,44 @@ async fn no_landing_prints_a_metric_the_server_cannot_produce() {
         }
     }
 }
+
+#[tokio::test]
+async fn every_design_skips_to_a_main_landmark_that_exists() {
+    let app = TestApp::spawn().await;
+    let cookie = admin(&app).await;
+    for theme in urlet::services::theme::ALL {
+        let key = theme.key();
+        let response = app
+            .send(put_json_as(
+                "/api/v1/admin/themes",
+                json!({ "enabled": [key], "default": key }),
+                &cookie,
+            ))
+            .await;
+        assert_eq!(response.status, StatusCode::OK, "{key}");
+        // 匿名頁面與登入後頁面各自 override 了 body，都要有跳轉目標。
+        for (path, session) in [
+            ("/", None),
+            ("/app/login", None),
+            ("/app/register", None),
+            ("/no-such-link", None),
+            ("/app", Some(cookie.as_str())),
+        ] {
+            let page = match session {
+                Some(cookie) => app.get_as(path, cookie).await,
+                None => app.get(path).await,
+            };
+            assert!(
+                page.body
+                    .contains("class=\"skip-link\" href=\"#main-content\""),
+                "{key} {path} has no skip link"
+            );
+            assert_eq!(
+                page.body.matches("id=\"main-content\"").count(),
+                1,
+                "{key} {path} must have exactly one skip target"
+            );
+            assert_eq!(page.body.matches("<main").count(), 1, "{key} {path}");
+        }
+    }
+}

@@ -11,8 +11,9 @@
     {% block head %}{% endblock %}
 </head>
 <body data-theme-key="{{ self.theme_key() }}">
+<a class="skip-link" href="#main-content">{{ lang.t("common.skip_to_content") }}</a>
 {% block body %}
-<main class="page">
+<main id="main-content" class="page">
     <div class="page-inner">
         {% block content %}{% endblock %}
     </div>

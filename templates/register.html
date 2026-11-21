@@ -3,7 +3,7 @@
 {% block title %}{{ lang.t("auth.register.title") }} — {{ site_name }}{% endblock %}
 
 {% block body %}
-<div class="auth-shell">
+<main id="main-content" class="auth-shell">
     <svg class="auth-contour" viewBox="0 0 1200 760" preserveAspectRatio="xMidYMid slice" aria-hidden="true" fill="none">
         <path class="contour-a" d="M-120 620C70 580 150 452 334 452s212 92 402 64 220-152 396-152 178 20 256 28"></path>
         <path class="contour-b" d="M-120 674C66 634 158 514 342 514s218 76 402 48 212-132 390-132 180 20 258 28"></path>
@@ -80,5 +80,5 @@
             {{ lang.t("auth.register.have_account") }} <a href="/app/login">{{ lang.t("auth.register.sign_in") }}</a>
         </p>
     </div>
-</div>
+</main>
 {% endblock %}

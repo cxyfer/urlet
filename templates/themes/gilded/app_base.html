@@ -30,7 +30,7 @@
 
 {% block band %}{% endblock %}
 
-<main class="wrap">
+<main id="main-content" class="wrap">
     {% match chrome.flash %}
     {% when Some with (flash) %}
     <div class="alert alert-{{ flash.kind }}" {% if flash.kind == "ok" %}data-auto-dismiss{% endif %}>

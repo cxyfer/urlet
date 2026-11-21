@@ -9,10 +9,10 @@
     </div>
 </div>
 
-<form method="get" action="/app/admin/urls" class="filters filters-links">
-    <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ lang.t("dashboard.search.placeholder") }}">
-    <input class="input" type="number" name="user_id" value="{{ user_id }}" placeholder="{{ lang.t("admin.urls.owner_id_placeholder") }}">
-    <select class="select" name="status">
+<form method="get" action="/app/admin/urls" class="filters filters-links" role="search">
+    <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ lang.t("dashboard.search.placeholder") }}" aria-label="{{ lang.t("dashboard.search.placeholder") }}">
+    <input class="input" type="number" name="user_id" value="{{ user_id }}" placeholder="{{ lang.t("admin.urls.owner_id_placeholder") }}" aria-label="{{ lang.t("admin.urls.owner_id_placeholder") }}">
+    <select class="select" name="status" aria-label="{{ lang.t("common.status") }}">
         <option value="">{{ lang.t("common.any_status") }}</option>
         <option value="active" {% if status == "active" %}selected{% endif %}>{{ lang.t("common.enabled") }}</option>
         <option value="disabled" {% if status == "disabled" %}selected{% endif %}>{{ lang.t("common.disabled") }}</option>
