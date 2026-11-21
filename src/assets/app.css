@@ -2335,7 +2335,8 @@ dl.meta dt:last-of-type, dl.meta dd:last-of-type { border-bottom: 0; }
 .filters .input,
 .filters .select { background: var(--surface); font-size: .85rem; padding: .45rem .6rem; border-radius: var(--r-xs); }
 .filters .btn { font-size: .82rem; padding: .45rem .8rem; }
-.filters-users { grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(0, .9fr)) auto auto; }
+/* Search, role, status and group, then Filter and Reset. */
+.filters-users { grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(0, .9fr)) auto auto; }
 .filters-audit { grid-template-columns: repeat(2, minmax(0, 1.3fr)) auto auto; }
 .filters-links { grid-template-columns: minmax(0, 1.5fr) minmax(0, .7fr) minmax(0, .9fr) auto auto; }
 .filters-invite {
@@ -2345,6 +2346,8 @@ dl.meta dt:last-of-type, dl.meta dd:last-of-type { border-bottom: 0; }
     align-items: end;
 }
 .filters-invite .field { margin-bottom: 0; }
+/* The admin form adds a group and an expiry: four fields and the button. */
+.filters-invite-admin { grid-template-columns: minmax(0, 1.2fr) minmax(5rem, .45fr) minmax(0, 1.35fr) minmax(0, 1fr) auto; }
 
 /* ============================================================ auth + public */
 .auth-shell {
