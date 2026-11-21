@@ -47,7 +47,7 @@
    cargo update -p urlet
    cargo metadata --locked --format-version 1 >/dev/null
    ```
-   內嵌的 API 參考也帶有同一個版本（`info.version` 與 health 範例），因此要在同一個 commit 重新產生合約。CI 的 `contracts` job 會在合約過期時失敗：
+   內嵌的 API 參考也帶有同一個版本（`info.version`），[docs/API.md](../API.md) 與 [docs/zh-TW/API.md](API.md) 的 health 範例也會顯示它，因此要在同一個 commit 重新產生合約並更新這兩個範例。CI 的 `contracts` job 會在合約過期時失敗：
    ```bash
    python3 scripts/build-openapi.py
    ```
@@ -105,16 +105,17 @@ cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
 ```
 
-內嵌的 API 參考也會帶上同一個版本（`info.version`），因此要一併重新產生合約並提交；提交的文件過期時 CI 的 `contracts` job 會失敗：
+內嵌的 API 參考也會帶上同一個版本（`info.version`），`docs/API.md` 與 `docs/zh-TW/API.md` 的 health 範例也會顯示，因此要更新這兩個範例、重新產生合約並一併提交；提交的文件過期時 CI 的 `contracts` job 會失敗：
 
 ```bash
 python3 scripts/build-openapi.py     # 需要 PyYAML
 ```
 
-提交版本變更與重新產生的合約：
+更新 health 範例，再提交版本變更、範例與重新產生的合約：
 
 ```bash
-git add Cargo.toml Cargo.lock docker-compose.yml openapi/dist
+sed -i "s/\"version\": \"[0-9][^\"]*\"/\"version\": \"1.2.3\"/" docs/API.md docs/zh-TW/API.md
+git add Cargo.toml Cargo.lock docker-compose.yml docs/API.md docs/zh-TW/API.md openapi/dist
 git commit -m "🔖 release: v1.2.3"
 git push origin master
 ```
@@ -203,6 +204,7 @@ sed -i "s/^version = \".*\"$/version = \"$VERSION\"/" Cargo.toml
 sed -i "s/^\(    image: urlet:v\).*$/\1$VERSION/" docker-compose.yml
 cargo update -p urlet
 cargo metadata --locked --format-version 1 >/dev/null
+sed -i "s/\"version\": \"[0-9][^\"]*\"/\"version\": \"$VERSION\"/" docs/API.md docs/zh-TW/API.md
 python3 scripts/build-openapi.py
 
 grep -m1 '^version' Cargo.toml            # 1.2.3
@@ -213,7 +215,7 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 
-git add Cargo.toml Cargo.lock docker-compose.yml
+git add Cargo.toml Cargo.lock docker-compose.yml docs/API.md docs/zh-TW/API.md openapi/dist
 git commit -m "🔖 release: v$VERSION"
 git push origin master
 git tag -a "v$VERSION" -m "v$VERSION"
