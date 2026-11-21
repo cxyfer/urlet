@@ -517,44 +517,6 @@ html[lang^="zh"] .btn {
     text-decoration: none;
 }
 
-/* Language switcher: a segmented hardware control in every bar. */
-.lang-switcher {
-    display: inline-flex;
-    align-items: stretch;
-    border: 2px solid var(--bar-line);
-    background: transparent;
-}
-
-.lang-switcher a {
-    display: inline-flex;
-    align-items: center;
-    padding: .3rem .42rem;
-    color: var(--bar-fg);
-    border-right: 2px solid var(--bar-line);
-    font-family: var(--mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: .02em;
-    line-height: 1.2;
-    text-decoration: none;
-    white-space: nowrap;
-}
-
-.lang-switcher a:last-child {
-    border-right: 0;
-}
-
-.lang-switcher a:hover {
-    color: var(--bar-bg);
-    background: var(--bar-fg);
-    text-decoration: none;
-}
-
-.lang-switcher a.active {
-    color: var(--on-acid);
-    background: var(--acid);
-}
-
 /* --------------------------------------------------------------- 6. ticker */
 .ticker {
     display: flex;

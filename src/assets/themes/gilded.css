@@ -471,57 +471,6 @@ hr {
     flex-wrap: wrap;
 }
 
-/* Language switcher: small plates, never floating pills. */
-.lang-switcher {
-    display: inline-flex;
-    align-items: stretch;
-    gap: 0;
-    padding: 0;
-    border: 1px solid var(--hairline);
-    border-radius: 0;
-    background: var(--sheet);
-}
-
-.lang-switcher a {
-    padding: .3rem .5rem;
-    border: 0;
-    border-left: 1px solid var(--hairline-soft);
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: .64rem;
-    letter-spacing: .06em;
-    line-height: 1.5;
-    text-decoration: none;
-    white-space: nowrap;
-}
-
-.lang-switcher a:first-child { border-left: 0; }
-.lang-switcher a:hover { color: var(--emerald); background: var(--sheet-2); }
-.lang-switcher a.active {
-    background: var(--emerald);
-    color: var(--champagne);
-}
-
-.topbar-app .lang-switcher {
-    border-color: rgba(217, 185, 104, .45);
-    background: transparent;
-}
-
-.topbar-app .lang-switcher a {
-    border-left-color: rgba(217, 185, 104, .28);
-    color: rgba(243, 236, 221, .8);
-}
-
-.topbar-app .lang-switcher a:hover {
-    background: rgba(217, 185, 104, .12);
-    color: #fff8e8;
-}
-
-.topbar-app .lang-switcher a.active {
-    background: var(--champagne);
-    color: var(--emerald-deep);
-}
-
 /* ------------------------------------------------- 04 layout & page heads */
 .mt { margin-top: 1.25rem; }
 .mt-2 { margin-top: 2.5rem; }
@@ -1544,7 +1493,9 @@ dl.meta.spec dd {
     letter-spacing: 0;
 }
 
-.topbar-public .nav a:not(.btn) {
+/* Direct children only, so the links in the theme and language menus keep
+   their own spacing. */
+.topbar-public .nav > a:not(.btn) {
     color: var(--muted);
     font-family: var(--font-mono);
     font-size: .68rem;
@@ -1554,7 +1505,7 @@ dl.meta.spec dd {
     padding: .4rem .1rem;
 }
 
-.topbar-public .nav a:not(.btn):hover { color: var(--emerald); }
+.topbar-public .nav > a:not(.btn):hover { color: var(--emerald); }
 
 .landing-wrap { padding-top: clamp(1.5rem, 4vw, 3rem); }
 
@@ -2660,7 +2611,6 @@ footer.site .lang-switcher { margin-left: auto; }
     .stat-grid { gap: .5rem; }
     .stat { padding: .85rem .75rem; }
     .stat-value { font-size: 1.5rem; }
-    .lang-switcher a { padding: .26rem .4rem; font-size: .6rem; }
     .pagination { gap: .22rem; }
 }
 
