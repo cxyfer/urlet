@@ -171,7 +171,8 @@ async fn language_route_sets_a_cookie_and_redirects() {
     let app = TestApp::spawn().await;
     let response = app.get("/app/lang/zh-Hans").await;
     assert_eq!(response.status, StatusCode::FOUND);
-    assert_eq!(response.header("location").as_deref(), Some("/app"));
+    // 匿名訪客沒有 next 也沒有 Referer 時回首頁，不是會被導去登入的 /app。
+    assert_eq!(response.header("location").as_deref(), Some("/"));
 
     let cookie = response
         .cookie_named("urlet_lang")
@@ -220,7 +221,7 @@ async fn language_route_honours_a_safe_next_target() {
     let response = app
         .get("/app/lang/zh-Hant?next=https%3A%2F%2Fevil.example")
         .await;
-    assert_eq!(response.header("location").as_deref(), Some("/app"));
+    assert_eq!(response.header("location").as_deref(), Some("/"));
 
     // `//host` is protocol-relative, and so is `/\host` once a browser applies
     // the WHATWG backslash normalisation. Control characters must not reach the
@@ -235,7 +236,7 @@ async fn language_route_honours_a_safe_next_target() {
         assert_eq!(response.status, StatusCode::FOUND, "{target}");
         assert_eq!(
             response.header("location").as_deref(),
-            Some("/app"),
+            Some("/"),
             "off-site target {target} must be ignored"
         );
     }
@@ -663,4 +664,45 @@ async fn every_catalogue_ships_the_features_the_landing_counts() {
             assert!(keys.contains_key(key), "{name} is missing {key}");
         }
     }
+}
+
+#[tokio::test]
+async fn switching_from_a_page_rendered_by_a_form_returns_to_its_form() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    // 這些網址只接受 POST：回到原址會得到 405，所以改回提供表單的頁面。
+    for (next, expected) in [
+        ("%2Fapp%2Furls", "/app"),
+        ("%2Fapp%2Faccount%2Ftokens", "/app/account"),
+        ("%2Fdocs%2Funlock", "/docs"),
+        ("%2Fapp%2Furls%2F7", "/app/urls/7"),
+        ("%2Funlock", "/unlock"),
+    ] {
+        for switch in ["/app/lang/zh-Hant", "/app/theme/default"] {
+            let response = app
+                .send(common::get_as(&format!("{switch}?next={next}"), &cookie))
+                .await;
+            assert_eq!(response.status, StatusCode::FOUND, "{switch} {next}");
+            assert_eq!(
+                response.header("location").as_deref(),
+                Some(expected),
+                "{switch} {next}"
+            );
+        }
+    }
+
+    // 沒有 JS 時沒有 next：改用同站的 Referer，登入後的備援是 dashboard。
+    let response = app
+        .send(
+            Request::builder()
+                .uri("/app/lang/zh-Hant")
+                .header(header::REFERER, "http://localhost:8080/app/account/tokens")
+                .header(header::COOKIE, &cookie)
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+    assert_eq!(response.header("location").as_deref(), Some("/app/account"));
+    let response = app.send(common::get_as("/app/lang/en", &cookie)).await;
+    assert_eq!(response.header("location").as_deref(), Some("/app"));
 }

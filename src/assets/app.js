@@ -69,7 +69,7 @@
 
     /* Carry the current path into the language switcher so the visitor stays on
        the page they were reading — including the landing page at `/`. Without
-       JS the links still work and land on the dashboard. */
+       JS the server falls back to the Referer, then the dashboard or landing. */
     document.querySelectorAll("[data-lang-switcher] a").forEach(function (link) {
         var href = link.getAttribute("href");
         if (!href || href.indexOf("next=") !== -1) { return; }
