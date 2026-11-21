@@ -41,6 +41,8 @@ pub struct DashboardPage {
     pub sort: String,
     pub quota: i64,
     pub used: i64,
+    /// Share of the quota in use, `0..=100`; `None` when the quota is unlimited.
+    pub quota_percent: Option<i64>,
     /// Name of the user's group, empty when the account is ungrouped.
     pub group_name: String,
     /// False when the site-wide access level reserves creation for
@@ -200,6 +202,7 @@ pub(crate) async fn render_dashboard(
         sort: clean(&query.sort).unwrap_or_default(),
         quota,
         used,
+        quota_percent: quota_percent(used, quota),
         group_name,
         // The site-wide access level may restrict creation to administrators.
         can_create: state.settings.public_create_access().allows(Some(user)),
@@ -248,12 +251,16 @@ pub(crate) async fn render_dashboard(
     }
 }
 
+/// Share of a positive quota in use, rounded up so one link never reads as 0%.
+fn quota_percent(used: i64, quota: i64) -> Option<i64> {
+    (quota > 0)
+        .then(|| (used.max(0).saturating_mul(100) + quota - 1) / quota)
+        .map(|percent| percent.min(100))
+}
+
 /// Aggregate the numbers shown on the dashboard cards.
 pub async fn build_overview(state: &AppState, user_id: i64) -> Result<OverviewDto, AppError> {
-    let links = urls::count_for_user(&state.db, user_id)
-        .await
-        .map_err(AppError::from)?;
-    let expired = urls::count_expired_for_user(&state.db, user_id, &time::now_iso())
+    let counts = urls::count_states_for_user(&state.db, user_id, &time::now_iso())
         .await
         .map_err(AppError::from)?;
     let summary = clicks::user_summary(&state.db, user_id)
@@ -279,9 +286,9 @@ pub async fn build_overview(state: &AppState, user_id: i64) -> Result<OverviewDt
     };
 
     Ok(OverviewDto {
-        links,
-        active_links: (links - expired).max(0),
-        expired_links: expired,
+        links: counts.links,
+        active_links: counts.active,
+        expired_links: counts.expired,
         total_clicks: summary.total_clicks,
         unique_clicks: summary.unique_clicks,
         bot_clicks: summary.bot_clicks,
@@ -339,4 +346,18 @@ pub fn clean(value: &Option<String>) -> Option<String> {
 /// Shared flash helper for pages that only need a banner.
 pub fn flash(ok: Option<&str>, err: Option<&str>) -> Option<Flash> {
     flash_from_query(ok, err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::quota_percent;
+
+    #[test]
+    fn quota_percent_rounds_up_and_caps_at_full() {
+        assert_eq!(quota_percent(0, 1000), Some(0));
+        assert_eq!(quota_percent(1, 1000), Some(1));
+        assert_eq!(quota_percent(500, 1000), Some(50));
+        assert_eq!(quota_percent(1200, 1000), Some(100));
+        assert_eq!(quota_percent(7, 0), None, "an unlimited quota has no meter");
+    }
 }

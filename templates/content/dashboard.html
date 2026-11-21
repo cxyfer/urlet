@@ -7,7 +7,11 @@
     <div class="dash-quota">
         <span class="kicker" aria-hidden="true"><span class="kicker-dot"></span>Q · 01</span>
         <div class="meter">
-            <div class="meter-track" aria-hidden="true"><span class="meter-fill"></span></div>
+            {% match quota_percent %}
+            {% when Some with (percent) %}
+            <div class="meter-track" aria-hidden="true"><span class="meter-fill" style="width: {{ percent }}%"></span></div>
+            {% when None %}
+            {% endmatch %}
             <span class="meter-label">{{ usage }}</span>
         </div>
         {% if group_name.len() > 0 %}
