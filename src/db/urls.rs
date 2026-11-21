@@ -504,41 +504,39 @@ pub async fn count_live_with_slug(pool: &SqlitePool, slug: &str) -> Result<i64, 
         .await
 }
 
-/// Live links of a user that currently redirect: enabled, not expired and
-/// under their click limit — [`UrlState::Active`] in SQL.
-pub async fn count_active_for_user(
-    pool: &SqlitePool,
-    user_id: i64,
-    now: &str,
-) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar(
-        "SELECT COUNT(*) FROM urls
-         WHERE user_id = ? AND deleted_at IS NULL AND status = 'active'
-           AND (expires_at IS NULL OR expires_at > ?)
-           AND (max_clicks IS NULL OR click_count < max_clicks)",
-    )
-    .bind(user_id)
-    .bind(now)
-    .fetch_one(pool)
-    .await
+/// Live link counts behind the dashboard cards.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, FromRow)]
+pub struct StateCounts {
+    pub links: i64,
+    pub active: i64,
+    pub expired: i64,
 }
 
-/// Enabled live links of a user that expired or reached their click limit —
-/// [`UrlState::Expired`] and [`UrlState::LimitReached`]. A disabled link is
-/// counted as neither active nor expired, as [`Url::state_at`] reports it.
-pub async fn count_expired_for_user(
+/// Live links of a user: every link, those that currently redirect
+/// ([`UrlState::Active`]) and the enabled ones past their expiry or click limit
+/// ([`UrlState::Expired`], [`UrlState::LimitReached`]). A disabled link is
+/// neither active nor expired, as [`Url::state_at`] reports it.
+///
+/// One statement, so a redirect that reaches a click limit meanwhile cannot be
+/// counted in both cards.
+pub async fn count_states_for_user(
     pool: &SqlitePool,
     user_id: i64,
     now: &str,
-) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar(
-        "SELECT COUNT(*) FROM urls
-         WHERE user_id = ? AND deleted_at IS NULL AND status = 'active'
-           AND ((expires_at IS NOT NULL AND expires_at <= ?)
-                OR (max_clicks IS NOT NULL AND click_count >= max_clicks))",
+) -> Result<StateCounts, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT COUNT(*) AS links,
+                COALESCE(SUM(status = 'active'
+                    AND (expires_at IS NULL OR expires_at > ?1)
+                    AND (max_clicks IS NULL OR click_count < max_clicks)), 0) AS active,
+                COALESCE(SUM(status = 'active'
+                    AND ((expires_at IS NOT NULL AND expires_at <= ?1)
+                         OR (max_clicks IS NOT NULL AND click_count >= max_clicks))), 0) AS expired
+         FROM urls
+         WHERE user_id = ?2 AND deleted_at IS NULL",
     )
-    .bind(user_id)
     .bind(now)
+    .bind(user_id)
     .fetch_one(pool)
     .await
 }

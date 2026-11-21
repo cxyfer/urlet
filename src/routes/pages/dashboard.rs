@@ -260,14 +260,7 @@ fn quota_percent(used: i64, quota: i64) -> Option<i64> {
 
 /// Aggregate the numbers shown on the dashboard cards.
 pub async fn build_overview(state: &AppState, user_id: i64) -> Result<OverviewDto, AppError> {
-    let links = urls::count_for_user(&state.db, user_id)
-        .await
-        .map_err(AppError::from)?;
-    let now = time::now_iso();
-    let active = urls::count_active_for_user(&state.db, user_id, &now)
-        .await
-        .map_err(AppError::from)?;
-    let expired = urls::count_expired_for_user(&state.db, user_id, &now)
+    let counts = urls::count_states_for_user(&state.db, user_id, &time::now_iso())
         .await
         .map_err(AppError::from)?;
     let summary = clicks::user_summary(&state.db, user_id)
@@ -293,9 +286,9 @@ pub async fn build_overview(state: &AppState, user_id: i64) -> Result<OverviewDt
     };
 
     Ok(OverviewDto {
-        links,
-        active_links: active,
-        expired_links: expired,
+        links: counts.links,
+        active_links: counts.active,
+        expired_links: counts.expired,
         total_clicks: summary.total_clicks,
         unique_clicks: summary.unique_clicks,
         bot_clicks: summary.bot_clicks,
