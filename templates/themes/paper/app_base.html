@@ -31,7 +31,7 @@
     <div class="page-inner">
         {% match chrome.flash %}
         {% when Some with (flash) %}
-        <div class="alert alert-{{ flash.kind }}" role="status" {% if flash.kind == "ok" %}data-auto-dismiss{% endif %}>
+        <div class="alert alert-{{ flash.kind }}" data-flash role="status" {% if flash.kind == "ok" %}data-auto-dismiss{% endif %}>
             {{ flash.message }}
         </div>
         {% when None %}
