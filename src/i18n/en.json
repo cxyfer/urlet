@@ -126,6 +126,8 @@
   "dashboard.empty": "No links match this filter yet.",
   "chart.click_title": "{clicks} click(s) on {day}",
   "chart.bot_click_title": "{clicks} bot click(s) on {day}",
+  "chart.aria_label": "{heading}: {clicks} click(s) over {days} day(s)",
+  "chart.aria_label_bots": "{heading}: {clicks} click(s) over {days} day(s), {bots} of them from bots",
   "dashboard.pagination_note": "Page {page} of {total} ({count} links)",
   "account.heading": "Account",
   "account.profile.heading": "Profile",

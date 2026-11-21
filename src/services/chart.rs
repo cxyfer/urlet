@@ -60,6 +60,9 @@ pub fn svg_bars(points: &[DailyPointDto]) -> String {
     let chart_height = 38.0;
 
     let lang = i18n::current();
+    // 螢幕閱讀器只讀得到 aria-label，所以把長條圖的總數也念出來。
+    let total_clicks: i64 = points.iter().map(|point| point.clicks.max(0)).sum();
+    let bot_clicks: i64 = points.iter().map(|point| point.bot_clicks.max(0)).sum();
     let mut bars = String::new();
     for (index, point) in points.iter().enumerate() {
         let x = index as f64 * slot + (slot - width) / 2.0;
@@ -92,10 +95,23 @@ pub fn svg_bars(points: &[DailyPointDto]) -> String {
         }
     }
 
+    let aria_label = i18n::format(
+        lang,
+        if bot_clicks > 0 {
+            "chart.aria_label_bots"
+        } else {
+            "chart.aria_label"
+        },
+        &[
+            ("heading", lang.t("url_detail.chart.heading").to_string()),
+            ("clicks", total_clicks.to_string()),
+            ("bots", bot_clicks.to_string()),
+            ("days", points.len().to_string()),
+        ],
+    );
     format!(
         "<svg class=\"chart\" viewBox=\"0 0 100 40\" preserveAspectRatio=\"none\" role=\"img\" \
-         aria-label=\"{}\">{bars}</svg>",
-        lang.t("url_detail.chart.heading")
+         aria-label=\"{aria_label}\">{bars}</svg>"
     )
 }
 
@@ -161,7 +177,11 @@ mod tests {
             2,
             "one human bar and one bot bar"
         );
-        assert!(svg.contains("aria-label"));
+        assert!(svg.contains(
+            "aria-label=\"Clicks per day: 4 click(s) over 3 day(s), 2 of them from bots\""
+        ));
+        let quiet = svg_bars(&fill_days(&[stat(&time::day_days_ago(0), 3, 3, 0)], 7));
+        assert!(quiet.contains("aria-label=\"Clicks per day: 3 click(s) over 7 day(s)\""));
     }
 
     #[test]
