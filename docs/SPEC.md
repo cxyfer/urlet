@@ -303,7 +303,7 @@ The v1.6 column is measured on `master` plus the embedded API reference. Most of
 | `/app/admin/groups` | User groups | List groups with quotas, invite usage, policy and member counts; links to the create and edit forms |
 | `/app/admin/groups/new` | New group | Create form for quotas, feature toggles, domain policy, redirect-mode policy and default domain; the default marker can only move after the group exists |
 | `/app/admin/groups/{id}/edit` | Edit group | Same form as `/app/admin/groups/new`, prefilled with the stored values; delete and member reassignment live here |
-| `/app/lang/{code}` | Language switch | Sets the `urlet_lang` cookie and 302-redirects to `next` (or to `/app`) |
+| `/app/lang/{code}` | Language switch | Sets the `urlet_lang` cookie and 302-redirects to a same-site `next` (or the `Referer`, else `/app` for an account and `/` for a visitor), like the theme switch |
 | `/app/theme/{key}` | Theme switch | Requires the switch permission — a session, or an anonymous visitor under the `all` policy; sets the `urlet_theme` cookie and redirects to a same-site `next` (or the `Referer`, or `/app` for a signed-in account and `/` for a visitor). Under `admin` a visitor is sent to the sign-in screen instead. `?preview=1` sets the administrator-only preview cookie, including for a disabled theme |
 | `/app/theme/default` | Site default | Clears the explicit and preview cookies and follows the administrator's default; same permission as the switch |
 | `/app/theme/preview/stop` | Stop preview | Clears the administrator preview cookie |
@@ -324,7 +324,7 @@ The v1.6 column is measured on `master` plus the embedded API reference. Most of
 | FR-I18N-1 | Supported languages | Three interface languages: English (`en`, the default), Traditional Chinese (`zh-Hant`), and Simplified Chinese (`zh-Hans`). Catalogs are JSON files embedded in the binary at `src/i18n/{en,zh-Hant,zh-Hans}.json` and loaded by `src/i18n/mod.rs` |
 | FR-I18N-2 | Language selection | On the first visit (no cookie) the language is negotiated from `Accept-Language`, honoring `q=` weights in descending order; `zh-TW`, `zh-HK` and `zh-MO` map to `zh-Hant`, every other Chinese tag (including a bare `zh`) maps to `zh-Hans`, and an unrecognized or absent header falls back to **English**. The `urlet_lang` cookie always wins over the header |
 | FR-I18N-3 | Persistence | The chosen language is stored in the cookie `urlet_lang` (`Path=/`, `SameSite=Lax`, `Max-Age` one year, **not** HttpOnly; `Secure` when `URLET_SECURE_COOKIES=true`) |
-| FR-I18N-4 | Switching | `GET /app/lang/{code}?next=<path>` sets the cookie and returns 302; `next` accepts only same-site relative paths, and anything else — including a missing `next` — falls back to `/app`. An unknown `code` is treated as `en` and never fails |
+| FR-I18N-4 | Switching | `GET /app/lang/{code}?next=<path>` sets the cookie and returns 302; `next` accepts only same-site relative paths; without a valid one the switch returns to the same-site `Referer` path, else to `/app` for a signed-in account and `/` for a visitor. A page that a form renders at a POST-only address — `/app/urls`, `/app/account/tokens`, `/{slug}/unlock` — is mapped to the page that serves that form (`/app`, `/app/account`, `/{slug}`), for this switch and the theme switch alike, so returning there never answers 405. An unknown `code` is treated as `en` and never fails |
 | FR-I18N-5 | Markup and headers | `<html lang>` reflects the active language, a language switcher is available on the public pages and in the app shell, and HTML responses carry `Content-Language` plus `Vary: Accept-Language, Cookie` (static assets set no `Vary`) |
 | FR-I18N-6 | Fallback | A key missing from a catalog falls back to the English string |
 | FR-I18N-7 | API responses | All JSON API responses are English regardless of the request language or cookie |
@@ -709,7 +709,7 @@ Group updates accept a partial representation: omitting a field keeps its curren
 | POST | `/` | Public shortener form (HTML). On success 303 → `/?shortened=<slug>&domain=<hostname>`; on failure 303 → `/?err=<code>`, one of `denied` (below the access level, or a disabled field), `rate_limited`, `captcha`, `quota`, `conflict`, `slug`, `target`, `expiry`, `tags`, `password_rules`, `domain`, `mode_denied` or `invalid`. Only on the canonical host |
 | POST | `/api/v1/public/urls` | Public shortener (JSON): `{target_url, domain?, slug?, title?, tags?, password?, expires_at?, max_clicks?, redirect_mode?, splash_delay_seconds?, splash_title?, splash_message?, captcha_token?}` → `201 {domain, slug, short_url, target_url, created_at}`. `403` below the access level or for a disabled field, `400` when the bot protection check fails, `429` when a budget is exhausted |
 | GET | `/health` | `{status, version, database, uptime_seconds}` |
-| GET | `/app/lang/{code}` | Set the `urlet_lang` cookie and 302 to `next`, or to `/app` when `next` is missing or not a same-site relative path |
+| GET | `/app/lang/{code}` | Set the `urlet_lang` cookie and 302 to a same-site `next`, else the same-site `Referer`, else `/app` for an account and `/` for a visitor |
 | GET | `/{slug}` | Redirect (302 and friends), splash page (HTML), password page (HTML), or a 410/404 page |
 | POST | `/{slug}/unlock` | Form or JSON `{password}`; on success a JSON request returns 200 `{ok, redirect}` and a form request 303 → `/{slug}` |
 | GET | `/api/v1/public/urls/{slug}?domain=<hostname>` | Public metadata: `{domain, slug, has_password, redirect_mode, is_expired, state, title?}` (**never includes the target**); without `domain` the default domain is used |
@@ -803,7 +803,7 @@ v1.1 additions:
 
 - [x] Three locale catalogs (`en`, `zh-Hant`, `zh-Hans`) are embedded in the binary and cover every UI string, with a missing key falling back to English
 - [x] `Accept-Language` negotiation honors `q=` weights and defaults to English for an unrecognized or absent header
-- [x] `GET /app/lang/{code}?next=<path>` sets `urlet_lang` (Path=/, SameSite=Lax, Max-Age one year, not HttpOnly) and returns 302 to `next` or to `/app`, and `next` accepts only same-site relative paths
+- [x] `GET /app/lang/{code}?next=<path>` sets `urlet_lang` (Path=/, SameSite=Lax, Max-Age one year, not HttpOnly) and returns 302 to `next`, the `Referer`, or `/app` (account) / `/` (visitor), and `next` accepts only same-site relative paths
 - [x] `<html lang>` reflects the active language and error pages are localized
 - [x] HTML responses carry `Content-Language` and `Vary: Accept-Language, Cookie`, while static assets set no `Vary`
 - [x] JSON API responses stay English regardless of the request language

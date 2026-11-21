@@ -305,7 +305,7 @@ v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大
 | `/app/admin/groups` | 使用者群組 | 列出群組及其配額、邀請碼用量、政策與成員數；連往新增與編輯表單 |
 | `/app/admin/groups/new` | 新增群組 | 建立表單：配額、功能開關、網域政策、轉址方式政策與預設網域；群組建立後才能轉移預設標記 |
 | `/app/admin/groups/{id}/edit` | 編輯群組 | 與 `/app/admin/groups/new` 相同的表單，預填目前設定；刪除與成員轉移在此頁 |
-| `/app/lang/{code}` | 語言切換 | 設定 `urlet_lang` cookie 並 302 至 `next`（未帶時轉往 `/app`） |
+| `/app/lang/{code}` | 語言切換 | 設定 `urlet_lang` cookie 並 302 至同站 `next`（或 `Referer`，已登入帳號為 `/app`、訪客為 `/`），與主題切換相同 |
 | `/app/theme/{key}` | 主題切換 | 需要切換權限：已登入帳號，或 `all` 政策下的未登入訪客；設定 `urlet_theme` cookie 並轉往同站 `next`（或 `Referer`，已登入帳號為 `/app`、訪客為 `/`）。`admin` 政策下訪客改為導向登入頁。`?preview=1` 設定管理員專用預覽 cookie，可包含已停用主題 |
 | `/app/theme/default` | 網站預設 | 清除明確選擇與預覽 cookie，重新跟隨管理員預設；權限與切換相同 |
 | `/app/theme/preview/stop` | 結束預覽 | 清除管理員預覽 cookie |
@@ -326,7 +326,7 @@ v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大
 | FR-I18N-1 | 支援語言 | 介面提供三種語言：英文（`en`，預設）、繁體中文（`zh-Hant`）、簡體中文（`zh-Hans`）。語言目錄為內嵌於二進位檔的 JSON 檔 `src/i18n/{en,zh-Hant,zh-Hans}.json`，由 `src/i18n/mod.rs` 載入 |
 | FR-I18N-2 | 語言選擇 | 初次訪問（無 cookie）時依 `Accept-Language` 協商，正確處理 `q=` 權重並由高至低排序；`zh-TW`、`zh-HK`、`zh-MO` 對應 `zh-Hant`，其餘中文標籤（含單獨的 `zh`）對應 `zh-Hans`，無法辨識或未帶標頭時預設 **英文**。`urlet_lang` cookie 一律優先於標頭 |
 | FR-I18N-3 | 保存 | 選擇的語言存於 cookie `urlet_lang`（`Path=/`、`SameSite=Lax`、`Max-Age` 一年、**非** HttpOnly；`URLET_SECURE_COOKIES=true` 時加上 `Secure`） |
-| FR-I18N-4 | 切換 | `GET /app/lang/{code}?next=<path>` 設定 cookie 後回 302；`next` 只接受同站相對路徑，其餘（含未帶 `next`）一律回退 `/app`。無法辨識的 `code` 一律視為 `en`，不會回錯誤 |
+| FR-I18N-4 | 切換 | `GET /app/lang/{code}?next=<path>` 設定 cookie 後回 302；`next` 只接受同站相對路徑；沒有有效的 `next` 時回到同站 `Referer` 路徑，否則已登入帳號為 `/app`、訪客為 `/`。表單在只接受 POST 的網址上渲染的頁面（`/app/urls`、`/app/account/tokens`、`/{slug}/unlock`）會改回提供該表單的頁面（`/app`、`/app/account`、`/{slug}`），語言與主題切換皆然，因此回到原頁不會得到 405。無法辨識的 `code` 一律視為 `en`，不會回錯誤 |
 | FR-I18N-5 | 標記與標頭 | `<html lang>` 會反映當前語言；公開頁面與應用外框皆提供語言切換入口；HTML 回應會帶 `Content-Language` 與 `Vary: Accept-Language, Cookie`（靜態資源不設 `Vary`） |
 | FR-I18N-6 | 回退 | 語言目錄缺少的 key 回退使用英文字串 |
 | FR-I18N-7 | API 回應 | 所有 JSON API 回應一律英文，不受請求語言或 cookie 影響 |
@@ -709,7 +709,7 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 | POST | `/` | 公開短網址工具表單（HTML）。成功時 303 → `/?shortened=<slug>&domain=<hostname>`；失敗時 303 → `/?err=<code>`，為 `denied`（低於存取層級，或填了被停用的欄位）、`rate_limited`、`captcha`、`quota`、`conflict`、`slug`、`target`、`expiry`、`tags`、`password_rules`、`domain`、`mode_denied` 或 `invalid` 之一。僅限 canonical 主機 |
 | POST | `/api/v1/public/urls` | 公開短網址工具（JSON）：`{target_url, domain?, slug?, title?, tags?, password?, expires_at?, max_clicks?, redirect_mode?, splash_delay_seconds?, splash_title?, splash_message?, captcha_token?}` → `201 {domain, slug, short_url, target_url, created_at}`。低於存取層級或填了被停用的欄位回 `403`，防機器人驗證失敗回 `400`，額度用盡回 `429` |
 | GET | `/health` | `{status, version, database, uptime_seconds}` |
-| GET | `/app/lang/{code}` | 設定 `urlet_lang` cookie 並 302 至 `next`；`next` 未帶或不是同站相對路徑時轉往 `/app` |
+| GET | `/app/lang/{code}` | 設定 `urlet_lang` cookie 並 302 至同站 `next`，否則同站 `Referer`，否則已登入帳號為 `/app`、訪客為 `/` |
 | GET | `/{slug}` | 轉址（302 等）、中轉頁（HTML）或密碼頁（HTML）或 410/404 頁 |
 | POST | `/{slug}/unlock` | 表單或 JSON `{password}`；成功時 JSON 回 200 `{ok, redirect}`、表單 303 → `/{slug}` |
 | GET | `/api/v1/public/urls/{slug}?domain=<hostname>` | 公開中介資料：`{domain, slug, has_password, redirect_mode, is_expired, state, title?}`（**不含 target**）；省略 `domain` 時使用預設網域 |
@@ -803,7 +803,7 @@ v1.1 新增項目：
 
 - [x] 三份語言目錄（`en`、`zh-Hant`、`zh-Hans`）內嵌於二進位檔並涵蓋所有介面字串，缺少 key 時回退英文
 - [x] `Accept-Language` 協商正確處理 `q=` 權重，無法辨識或未帶標頭時預設英文
-- [x] `GET /app/lang/{code}?next=<path>` 設定 `urlet_lang`（Path=/、SameSite=Lax、Max-Age 一年、非 HttpOnly）並回 302 轉往 `next` 或 `/app`，且 `next` 只接受同站相對路徑
+- [x] `GET /app/lang/{code}?next=<path>` 設定 `urlet_lang`（Path=/、SameSite=Lax、Max-Age 一年、非 HttpOnly）並回 302 轉往 `next`、`Referer` 或 `/app`（帳號）／`/`（訪客），且 `next` 只接受同站相對路徑
 - [x] `<html lang>` 反映當前語言，錯誤頁面亦依語言呈現
 - [x] HTML 回應帶 `Content-Language` 與 `Vary: Accept-Language, Cookie`；靜態資源不設 `Vary`
 - [x] JSON API 回應不受請求語言影響，一律英文
