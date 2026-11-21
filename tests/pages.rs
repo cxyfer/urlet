@@ -815,3 +815,49 @@ async fn quick_extend_offers_and_moves_only_the_limit_that_stopped_the_link() {
         "a live link needs no extension"
     );
 }
+
+#[tokio::test]
+async fn quick_extend_lifts_both_limits_when_both_were_reached() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let created = app
+        .send(common::post_json_as(
+            "/api/v1/urls",
+            json!({ "target_url": "https://example.com", "slug": "both", "max_clicks": 1, "expires_at": "2030-01-01" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let id = created.json()["id"].as_i64().expect("id");
+    sqlx::query(
+        "UPDATE urls SET click_count = 1, expires_at = '2000-01-01T00:00:00Z' WHERE id = ?",
+    )
+    .bind(id)
+    .execute(&app.state.db)
+    .await
+    .expect("stop");
+    assert_eq!(app.get("/both").await.status, StatusCode::GONE);
+
+    // 每個按鈕都同時延長兩項限制；單獨延長其中一項無法讓連結恢復。
+    let page = app.get_as(&format!("/app/urls/{id}"), &cookie).await;
+    assert!(
+        page.body.contains("+30 days · +100 clicks"),
+        "{}",
+        page.body
+    );
+    assert!(!page.body.contains("type=\"submit\" name=\"days\""));
+    assert!(!page.body.contains("type=\"submit\" name=\"clicks\""));
+
+    let revived = app
+        .send(post_form_as(
+            &format!("/app/urls/{id}/extend"),
+            "days=30&clicks=100",
+            &cookie,
+        ))
+        .await;
+    assert!(revived
+        .header("location")
+        .expect("location")
+        .contains("ok=updated"));
+    assert_eq!(app.get("/both").await.status, StatusCode::FOUND);
+}

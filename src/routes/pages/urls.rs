@@ -48,10 +48,11 @@ pub struct UrlDetailPage {
     pub operating_systems: Vec<BarRow>,
     pub clicks: Vec<ClickRow>,
     pub days: i64,
-    /// Which quick "extend" actions apply: the group must allow the field and
-    /// that field must be what stopped the link. Offering "+30 days" for a
-    /// link that only ran out of clicks would add an expiry it never had and
-    /// leave it just as unreachable.
+    /// Which quick "extend" actions apply: each limit the link reached, and
+    /// only when the group lets the owner move every one of them, so that a
+    /// single press brings the link back. Offering "+30 days" for a link that
+    /// only ran out of clicks would add an expiry it never had and leave it
+    /// just as unreachable. When both are set, each action lifts both.
     pub extend_expiry: bool,
     pub extend_clicks: bool,
     /// Whether the link has a custom SNS preview.
@@ -584,6 +585,7 @@ pub async fn detail(
         && url
             .max_clicks
             .is_some_and(|max_clicks| url.click_count >= max_clicks);
+    let recoverable = (!lapsed || effective.allow_expiry) && (!spent || effective.allow_max_clicks);
     let page = UrlDetailPage {
         site_name: state.settings.site_name(),
         chrome: Chrome::new(
@@ -605,8 +607,8 @@ pub async fn detail(
             .map(|click| ClickRow::new(click, lang))
             .collect(),
         days,
-        extend_expiry: effective.allow_expiry && lapsed,
-        extend_clicks: effective.allow_max_clicks && spent,
+        extend_expiry: recoverable && lapsed,
+        extend_clicks: recoverable && spent,
         has_preview,
         days_label: i18n::format(
             lang,
