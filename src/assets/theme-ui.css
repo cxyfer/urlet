@@ -16,6 +16,30 @@
     overflow-wrap: anywhere;
 }
 
+.skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 100;
+    padding: .55rem .9rem;
+    border: 1px solid var(--accent, currentColor);
+    border-radius: var(--radius-xs, .35rem);
+    background: var(--surface, Canvas);
+    color: var(--ink, CanvasText);
+    font-family: inherit;
+    font-size: .85rem;
+    font-weight: 600;
+    line-height: 1.2;
+    text-decoration: none;
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+    left: .75rem;
+    top: .75rem;
+    outline: 2px solid var(--accent, currentColor);
+    outline-offset: 2px;
+}
+
 /* Marks decorative panels on the landing pages.
  *
  * Every design draws its own instrument chrome, and some of it sits next to the

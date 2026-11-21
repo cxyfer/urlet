@@ -16,9 +16,10 @@
     {% block head %}{% endblock %}
 </head>
 <body data-theme-key="{{ self.theme_key() }}">
+<a class="skip-link" href="#main-content">{{ lang.t("common.skip_to_content") }}</a>
 {% block topbar %}{% endblock %}
 {% block body %}
-<main class="wrap">
+<main id="main-content" class="wrap">
     {% block content %}{% endblock %}
 </main>
 {% endblock %}

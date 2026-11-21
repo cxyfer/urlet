@@ -9,19 +9,19 @@
     </div>
 </div>
 
-<form method="get" action="/app/admin/users" class="filters filters-users">
-    <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ lang.t("admin.users.search_placeholder") }}">
-    <select class="select" name="role">
+<form method="get" action="/app/admin/users" class="filters filters-users" role="search">
+    <input class="input" type="search" name="q" value="{{ q }}" placeholder="{{ lang.t("admin.users.search_placeholder") }}" aria-label="{{ lang.t("admin.users.search_placeholder") }}">
+    <select class="select" name="role" aria-label="{{ lang.t("common.role") }}">
         <option value="">{{ lang.t("common.any_role") }}</option>
         <option value="user" {% if role == "user" %}selected{% endif %}>{{ lang.t("admin.users.role.user") }}</option>
         <option value="admin" {% if role == "admin" %}selected{% endif %}>{{ lang.t("admin.users.role.admin") }}</option>
     </select>
-    <select class="select" name="status">
+    <select class="select" name="status" aria-label="{{ lang.t("common.status") }}">
         <option value="">{{ lang.t("common.any_status") }}</option>
         <option value="active" {% if status == "active" %}selected{% endif %}>{{ lang.t("admin.users.status.active") }}</option>
         <option value="suspended" {% if status == "suspended" %}selected{% endif %}>{{ lang.t("admin.users.status.suspended") }}</option>
     </select>
-    <select class="select" name="group_id">
+    <select class="select" name="group_id" aria-label="{{ lang.t("admin.users.group") }}">
         <option value="">{{ lang.t("admin.users.any_group") }}</option>
         {% for group in groups %}
         <option value="{{ group.id }}" {% if group_id == group.id.to_string() %}selected{% endif %}>{{ group.name }}</option>
@@ -68,22 +68,22 @@
                             <div class="drawer stack">
                                 <form method="post" action="/app/admin/users/{{ user.id }}" class="stack">
                                     <div class="field">
-                                        <label class="label">{{ lang.t("common.role") }}</label>
-                                        <select class="select" name="role">
+                                        <label class="label" for="user-{{ user.id }}-role">{{ lang.t("common.role") }}</label>
+                                        <select class="select" id="user-{{ user.id }}-role" name="role">
                                             <option value="user" {% if user.role == "user" %}selected{% endif %}>{{ lang.t("admin.users.role.user") }}</option>
                                             <option value="admin" {% if user.role == "admin" %}selected{% endif %}>{{ lang.t("admin.users.role.admin") }}</option>
                                         </select>
                                     </div>
                                     <div class="field">
-                                        <label class="label">{{ lang.t("common.status") }}</label>
-                                        <select class="select" name="status">
+                                        <label class="label" for="user-{{ user.id }}-status">{{ lang.t("common.status") }}</label>
+                                        <select class="select" id="user-{{ user.id }}-status" name="status">
                                             <option value="active" {% if user.status == "active" %}selected{% endif %}>{{ lang.t("admin.users.status.active") }}</option>
                                             <option value="suspended" {% if user.status == "suspended" %}selected{% endif %}>{{ lang.t("admin.users.status.suspended") }}</option>
                                         </select>
                                     </div>
                                     <div class="field">
-                                        <label class="label">{{ lang.t("admin.users.group") }}</label>
-                                        <select class="select" name="group_id">
+                                        <label class="label" for="user-{{ user.id }}-group">{{ lang.t("admin.users.group") }}</label>
+                                        <select class="select" id="user-{{ user.id }}-group" name="group_id">
                                             <option value="">{{ lang.t("admin.users.ungrouped") }}</option>
                                             {% for group in groups %}
                                             <option value="{{ group.id }}" {% if user.group_id == group.id.to_string() %}selected{% endif %}>{{ group.name }}</option>
@@ -94,8 +94,8 @@
                                 </form>
                                 <form method="post" action="/app/admin/users/{{ user.id }}/password" class="stack">
                                     <div class="field">
-                                        <label class="label">{{ lang.t("admin.users.reset_password") }}</label>
-                                        <input class="input" type="password" name="new_password" minlength="8"
+                                        <label class="label" for="user-{{ user.id }}-password">{{ lang.t("admin.users.reset_password") }}</label>
+                                        <input class="input" type="password" id="user-{{ user.id }}-password" name="new_password" minlength="8"
                                                placeholder="{{ lang.t("admin.users.new_password_placeholder") }}" required>
                                     </div>
                                     <button class="btn btn-sm" type="submit">{{ lang.t("admin.users.reset") }}</button>

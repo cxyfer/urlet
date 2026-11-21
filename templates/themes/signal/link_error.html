@@ -3,7 +3,7 @@
 {% block title %}{{ status_code }} — {{ title }}{% endblock %}
 
 {% block body %}
-<div class="link-page link-page-warn">
+<main id="main-content" class="link-page link-page-warn">
     <div class="link-card">
         <div class="link-accent" aria-hidden="true"></div>
         <div class="link-brand">
@@ -17,5 +17,5 @@
             <a class="btn btn-primary btn-block" href="/">{{ lang.t("link.go_to") }} {{ site_name }}</a>
         </div>
     </div>
-</div>
+</main>
 {% endblock %}
