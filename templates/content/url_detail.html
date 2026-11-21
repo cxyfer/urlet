@@ -92,13 +92,27 @@
 <div class="alert alert-warn mt">
     <div>
         {{ lang.t("url_detail.expired_notice") }}
-        {% if allow_expiry || allow_max_clicks %}
+        {% if extend_expiry && extend_clicks %}
+        {# 兩項限制都已達到：每個按鈕同時延長兩者，一次就能恢復。 #}
+        <div class="row mt">
+            <form method="post" action="/app/urls/{{ url.id }}/extend">
+                <input type="hidden" name="days" value="30">
+                <input type="hidden" name="clicks" value="100">
+                <button class="btn btn-sm" type="submit">{{ lang.t("url_detail.extend.days30") }} · {{ lang.t("url_detail.extend.clicks100") }}</button>
+            </form>
+            <form method="post" action="/app/urls/{{ url.id }}/extend">
+                <input type="hidden" name="days" value="365">
+                <input type="hidden" name="clicks" value="1000">
+                <button class="btn btn-sm" type="submit">{{ lang.t("url_detail.extend.year1") }} · {{ lang.t("url_detail.extend.clicks1000") }}</button>
+            </form>
+        </div>
+        {% else if extend_expiry || extend_clicks %}
         <form method="post" action="/app/urls/{{ url.id }}/extend" class="row mt">
-            {% if allow_expiry %}
+            {% if extend_expiry %}
             <button class="btn btn-sm" type="submit" name="days" value="30">{{ lang.t("url_detail.extend.days30") }}</button>
             <button class="btn btn-sm" type="submit" name="days" value="365">{{ lang.t("url_detail.extend.year1") }}</button>
             {% endif %}
-            {% if allow_max_clicks %}
+            {% if extend_clicks %}
             <button class="btn btn-sm" type="submit" name="clicks" value="100">{{ lang.t("url_detail.extend.clicks100") }}</button>
             <button class="btn btn-sm" type="submit" name="clicks" value="1000">{{ lang.t("url_detail.extend.clicks1000") }}</button>
             {% endif %}

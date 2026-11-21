@@ -749,6 +749,120 @@ async fn landing_page_reports_the_servers_own_readouts() {
 }
 
 #[tokio::test]
+async fn quick_extend_offers_and_moves_only_the_limit_that_stopped_the_link() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let created = app
+        .send(common::post_json_as(
+            "/api/v1/urls",
+            json!({ "target_url": "https://example.com", "slug": "spent", "max_clicks": 1 }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let id = created.json()["id"].as_i64().expect("id");
+    sqlx::query("UPDATE urls SET click_count = 1 WHERE id = ?")
+        .bind(id)
+        .execute(&app.state.db)
+        .await
+        .expect("spend");
+
+    // 只因點擊上限失效：只提供增加點擊數，不提供延長天數。
+    let page = app.get_as(&format!("/app/urls/{id}"), &cookie).await;
+    assert!(page.body.contains("name=\"clicks\" value=\"100\""));
+    assert!(!page.body.contains("name=\"days\""));
+
+    // 直接送出也不會替沒有到期日的連結加上一個。
+    let refused = app
+        .send(post_form_as(
+            &format!("/app/urls/{id}/extend"),
+            "days=30",
+            &cookie,
+        ))
+        .await;
+    assert_eq!(refused.status, StatusCode::SEE_OTHER);
+    assert!(refused
+        .header("location")
+        .expect("location")
+        .contains("err=invalid"));
+    let expires: Option<String> = sqlx::query_scalar("SELECT expires_at FROM urls WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.state.db)
+        .await
+        .expect("expiry");
+    assert_eq!(expires, None);
+
+    let raised = app
+        .send(post_form_as(
+            &format!("/app/urls/{id}/extend"),
+            "clicks=100",
+            &cookie,
+        ))
+        .await;
+    assert!(raised
+        .header("location")
+        .expect("location")
+        .contains("ok=updated"));
+    let cap: Option<i64> = sqlx::query_scalar("SELECT max_clicks FROM urls WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.state.db)
+        .await
+        .expect("cap");
+    assert_eq!(cap, Some(101));
+    let live = app.get_as(&format!("/app/urls/{id}"), &cookie).await;
+    assert!(
+        !live.body.contains("/extend\""),
+        "a live link needs no extension"
+    );
+}
+
+#[tokio::test]
+async fn quick_extend_lifts_both_limits_when_both_were_reached() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("user@example.com", "supersecret").await;
+    let created = app
+        .send(common::post_json_as(
+            "/api/v1/urls",
+            json!({ "target_url": "https://example.com", "slug": "both", "max_clicks": 1, "expires_at": "2030-01-01" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+    let id = created.json()["id"].as_i64().expect("id");
+    sqlx::query(
+        "UPDATE urls SET click_count = 1, expires_at = '2000-01-01T00:00:00Z' WHERE id = ?",
+    )
+    .bind(id)
+    .execute(&app.state.db)
+    .await
+    .expect("stop");
+    assert_eq!(app.get("/both").await.status, StatusCode::GONE);
+
+    // 每個按鈕都同時延長兩項限制；單獨延長其中一項無法讓連結恢復。
+    let page = app.get_as(&format!("/app/urls/{id}"), &cookie).await;
+    assert!(
+        page.body.contains("+30 days · +100 clicks"),
+        "{}",
+        page.body
+    );
+    assert!(!page.body.contains("type=\"submit\" name=\"days\""));
+    assert!(!page.body.contains("type=\"submit\" name=\"clicks\""));
+
+    let revived = app
+        .send(post_form_as(
+            &format!("/app/urls/{id}/extend"),
+            "days=30&clicks=100",
+            &cookie,
+        ))
+        .await;
+    assert!(revived
+        .header("location")
+        .expect("location")
+        .contains("ok=updated"));
+    assert_eq!(app.get("/both").await.status, StatusCode::FOUND);
+}
+
+#[tokio::test]
 async fn sign_in_and_registration_keep_the_page_to_return_to() {
     let app = TestApp::spawn().await;
     let (admin, _) = app.register("admin@example.com", "supersecret").await;
