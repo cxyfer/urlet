@@ -459,7 +459,8 @@ hr {
     white-space: nowrap;
 }
 
-/* The nav wraps onto its own scrolling row on narrow screens. */
+/* The nav takes a row of its own on narrow screens and wraps there: a
+   scrolling row would clip the theme and language menus that open from it. */
 @media (max-width: 900px) {
     .masthead-inner {
         flex-wrap: wrap;
@@ -476,10 +477,8 @@ hr {
         order: 3;
         width: 100%;
         margin-left: 0;
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        scrollbar-width: thin;
-        padding-bottom: 2px;
+        flex-wrap: wrap;
+        row-gap: 6px;
     }
 }
 
