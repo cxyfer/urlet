@@ -212,7 +212,9 @@ pub async fn prepare_password_async(raw: Option<&str>) -> Result<Option<String>>
         Some("") => Ok(None),
         Some(plain) => {
             validate_link_password(plain)?;
-            Ok(Some(password::hash_async(plain.to_string()).await?))
+            Ok(Some(
+                password::hash_validated_async(plain.to_string()).await?,
+            ))
         }
     }
 }
@@ -241,7 +243,7 @@ pub fn prepare_password(raw: Option<&str>) -> Result<Option<String>> {
         Some("") => Ok(None),
         Some(plain) => {
             validate_link_password(plain)?;
-            Ok(Some(password::hash(plain)?))
+            Ok(Some(password::hash_validated(plain)?))
         }
     }
 }
@@ -957,6 +959,11 @@ mod tests {
         assert_eq!(prepare_password(Some("")).expect("empty"), None);
         assert_eq!(prepare_password(Some("   ")).expect("blank"), None);
         assert!(prepare_password(Some("abc")).is_err());
+        // 連結密碼最少 4 字元，比帳號密碼的 8 字元短。
+        let short = prepare_password(Some("1234"))
+            .expect("a four character link password")
+            .expect("some");
+        assert!(password::verify("1234", &short));
         let hash = prepare_password(Some("linkpass"))
             .expect("hashed")
             .expect("some");
