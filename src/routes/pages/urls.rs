@@ -48,9 +48,13 @@ pub struct UrlDetailPage {
     pub operating_systems: Vec<BarRow>,
     pub clicks: Vec<ClickRow>,
     pub days: i64,
-    /// The quick "extend" actions follow the group's switches.
-    pub allow_expiry: bool,
-    pub allow_max_clicks: bool,
+    /// Which quick "extend" actions apply: each limit the link reached, and
+    /// only when the group lets the owner move every one of them, so that a
+    /// single press brings the link back. Offering "+30 days" for a link that
+    /// only ran out of clicks would add an expiry it never had and leave it
+    /// just as unreachable. When both are set, each action lifts both.
+    pub extend_expiry: bool,
+    pub extend_clicks: bool,
     /// Whether the link has a custom SNS preview.
     pub has_preview: bool,
     /// Localised "30 days ago" label of the chart axis.
@@ -569,6 +573,19 @@ pub async fn detail(
     let has_preview = crate::db::url_previews::find(&state.db, url.id)
         .await?
         .is_some();
+    // 只針對讓連結失效的原因提供延長；停用或已刪除的連結兩者皆不適用。
+    let now = time::now_iso();
+    let live = url.status == "active" && url.deleted_at.is_none();
+    let lapsed = live
+        && url
+            .expires_at
+            .as_deref()
+            .is_some_and(|expires_at| expires_at <= now.as_str());
+    let spent = live
+        && url
+            .max_clicks
+            .is_some_and(|max_clicks| url.click_count >= max_clicks);
+    let recoverable = (!lapsed || effective.allow_expiry) && (!spent || effective.allow_max_clicks);
     let page = UrlDetailPage {
         site_name: state.settings.site_name(),
         chrome: Chrome::new(
@@ -590,8 +607,8 @@ pub async fn detail(
             .map(|click| ClickRow::new(click, lang))
             .collect(),
         days,
-        allow_expiry: effective.allow_expiry,
-        allow_max_clicks: effective.allow_max_clicks,
+        extend_expiry: recoverable && lapsed,
+        extend_clicks: recoverable && spent,
         has_preview,
         days_label: i18n::format(
             lang,
@@ -1049,6 +1066,12 @@ pub async fn extend(
             return Ok(redirect_err(&target_page, error_code(&err)).into_response())
         }
     };
+    // Extending only moves a limit the link already has; it never adds one.
+    if (days.is_some() && url.expires_at.is_none())
+        || (clicks.is_some() && url.max_clicks.is_none())
+    {
+        return Ok(redirect_err(&target_page, "invalid").into_response());
+    }
     if let Some(days) = days.filter(|days| (1..=3650).contains(days)) {
         // Extend from the later of "now" and the current expiry.
         let base = url
