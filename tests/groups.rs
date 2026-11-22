@@ -799,7 +799,7 @@ async fn a_disabled_group_default_falls_back_to_the_site_default() {
         StatusCode::OK
     );
 
-    sqlx::query("UPDATE domains SET status = 'disabled' WHERE id = ?")
+    sqlx::query("UPDATE domains SET status = 'disabled' WHERE id = $1")
         .bind(b)
         .execute(&app.state.db)
         .await
@@ -867,7 +867,7 @@ async fn a_disabled_group_default_falls_back_to_the_site_default() {
     let me = app.get_as("/api/v1/auth/me", &member_cookie).await.json();
     assert_eq!(me["limits"]["default_domain"], canonical);
 
-    sqlx::query("DELETE FROM domains WHERE id = ?")
+    sqlx::query("DELETE FROM domains WHERE id = $1")
         .bind(b)
         .execute(&app.state.db)
         .await
@@ -1203,7 +1203,7 @@ async fn invalid_or_inactive_group_domains_are_rejected() {
     let app = TestApp::spawn().await;
     let (admin_cookie, _) = admin(&app).await;
     let b = app.add_domain("b.example.com", "active").await;
-    sqlx::query("UPDATE domains SET status = 'disabled' WHERE id = ?")
+    sqlx::query("UPDATE domains SET status = 'disabled' WHERE id = $1")
         .bind(b)
         .execute(&app.state.db)
         .await
@@ -1288,7 +1288,7 @@ async fn editing_a_group_keeps_a_disabled_allowlist_domain() {
     .await
     .json();
     let group_id = group["id"].as_i64().expect("id");
-    sqlx::query("UPDATE domains SET status = 'disabled' WHERE id = ?")
+    sqlx::query("UPDATE domains SET status = 'disabled' WHERE id = $1")
         .bind(b)
         .execute(&app.state.db)
         .await
@@ -2336,7 +2336,7 @@ async fn account_usage_counts_links_and_all_tokens() {
     for index in 0..101 {
         sqlx::query(
             "INSERT INTO api_tokens (user_id, name, token_prefix, token_hash, scopes, created_at)
-             VALUES (?, ?, 'ur_testprefix', ?, '[]', ?)",
+             VALUES ($1, $2, 'ur_testprefix', $3, '[]', $4)",
         )
         .bind(member_id)
         .bind(format!("token-{index}"))
@@ -2946,7 +2946,7 @@ async fn web_edits_keep_notes_and_an_expired_expiry() {
 
     // Make the link expired, then save it from its own page with the expired
     // instant echoed back. Both the past expiry and the notes must survive.
-    sqlx::query("UPDATE urls SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = ?")
+    sqlx::query("UPDATE urls SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = $1")
         .bind(url_id)
         .execute(&app.state.db)
         .await

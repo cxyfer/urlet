@@ -1,11 +1,10 @@
 //! Short link business logic: validation, quota, slug allocation, tags, audit.
 
-use sqlx::SqlitePool;
-
 use crate::db::domains::{self as domain_db, Domain};
 use crate::db::tags;
 use crate::db::urls::{self, NewUrl, Url, UrlState, UrlUpdate};
 use crate::db::users::User;
+use crate::db::Pool;
 use crate::error::{AppError, Result};
 use crate::services::audit::{action, target, Audit};
 use crate::services::domain_policy;
@@ -32,7 +31,7 @@ const SLUG_RETRIES: usize = 5;
 
 /// Everything the link service needs from the request context.
 pub struct UrlContext<'a> {
-    pub pool: &'a SqlitePool,
+    pub pool: &'a Pool,
     pub settings: &'a Settings,
     pub actor: &'a User,
     pub ip_hash: Option<&'a str>,
@@ -163,6 +162,14 @@ pub fn validate_notes(raw: &str) -> Result<Option<String>> {
         return Err(AppError::validation(
             "notes",
             format!("notes must be at most {MAX_NOTES_LEN} characters"),
+        ));
+    }
+    // PostgreSQL cannot store a NUL byte in text (§6.6), so neither backend
+    // accepts one.
+    if trimmed.contains('\0') {
+        return Err(AppError::validation(
+            "notes",
+            "notes must not contain NUL characters",
         ));
     }
     Ok(Some(trimmed.to_string()))
@@ -855,7 +862,7 @@ pub fn state_of(url: &Url) -> UrlState {
 }
 
 pub(crate) fn is_unique_violation(err: &sqlx::Error) -> bool {
-    matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("2067"))
+    crate::db::is_unique_violation(err)
 }
 
 /// Turn a unique-index violation on insert into the user-facing conflict.
@@ -868,7 +875,7 @@ fn map_url_insert_error(err: sqlx::Error, slug: &str) -> AppError {
 }
 
 /// Tag names currently attached to a link, lowercased for comparison.
-async fn stored_tag_names(pool: &SqlitePool, url_id: i64) -> Result<Vec<String>> {
+async fn stored_tag_names(pool: &Pool, url_id: i64) -> Result<Vec<String>> {
     Ok(tags::for_url(pool, url_id)
         .await
         .map_err(AppError::from)?
@@ -951,6 +958,8 @@ mod tests {
             Some("note".to_string())
         );
         assert!(validate_notes(&"x".repeat(MAX_NOTES_LEN + 1)).is_err());
+        assert!(validate_notes("line one\nline two").is_ok());
+        assert!(validate_notes("nul\0byte").is_err());
     }
 
     #[test]

@@ -1,0 +1,58 @@
+# urlet — optional PostgreSQL overlay.
+#
+# Runs PostgreSQL next to the app and points urlet at it instead of the SQLite
+# file. The password lives in `.env` as URLET_POSTGRES_PASSWORD and reaches
+# urlet through PGPASSWORD, so it never appears in the connection URL or the
+# startup log.
+#
+#   echo "URLET_POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> .env
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build
+#
+# It combines with the image and TLS overlays as usual:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.image.yml \
+#                  -f docker-compose.postgres.yml -f docker-compose.tls.yml up -d
+#
+# The urlet-data and urlet-themes volumes stay: they hold secret.key and the
+# uploaded theme stylesheets, which are not in the database. Back up both the
+# database (pg_dump) and those volumes; see docs/DEPLOYMENT.md.
+
+name: urlet
+
+services:
+  urlet:
+    environment:
+      # Same network, so plain TCP; use sslmode=verify-full for a remote server.
+      URLET_DATABASE_URL: postgres://urlet@postgres:5432/urlet
+      PGPASSWORD: ${URLET_POSTGRES_PASSWORD:?set URLET_POSTGRES_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: urlet-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: urlet
+      POSTGRES_DB: urlet
+      POSTGRES_PASSWORD: ${URLET_POSTGRES_PASSWORD:?set URLET_POSTGRES_PASSWORD}
+    volumes:
+      - urlet-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "urlet", "-d", "urlet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  urlet-postgres:
+    name: urlet-postgres

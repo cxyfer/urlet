@@ -1,26 +1,29 @@
 //! `login_attempts` table: forensic trail for authentication attempts.
 
-use sqlx::SqlitePool;
+use crate::db::Pool;
 
 /// Reserve one attempt for an identifier, recorded as a failure.
 ///
 /// The row is inserted only while fewer than `threshold` failures exist since
-/// `since`; the count and the insert are one statement, so SQLite evaluates
-/// them under the write lock and concurrent reservations cannot overshoot.
+/// `since`; the count and the insert run in one write transaction, so
+/// concurrent reservations cannot overshoot on either backend.
 /// Returns the new row id, or `None` when the identifier is locked.
 pub async fn reserve_failure(
-    pool: &SqlitePool,
+    pool: &Pool,
     identifier_hash: &str,
     ip_hash: Option<&str>,
     created_at: &str,
     since: &str,
     threshold: i64,
 ) -> Result<Option<i64>, sqlx::Error> {
-    sqlx::query_scalar(
+    // 計數與插入同屬一個寫入交易：PostgreSQL 不會序列化 autocommit 敘述，
+    // 單一 `INSERT … SELECT … WHERE (SELECT COUNT(*) …)` 在並行時可能超額（FR-DB-6）。
+    let mut tx = crate::db::begin_write(pool).await?;
+    let id = sqlx::query_scalar(
         "INSERT INTO login_attempts (identifier_hash, ip_hash, success, created_at)
-         SELECT ?, ?, 0, ?
+         SELECT $1, $2, 0, $3
           WHERE (SELECT COUNT(*) FROM login_attempts
-                  WHERE identifier_hash = ? AND success = 0 AND created_at >= ?) < ?
+                  WHERE identifier_hash = $4 AND success = 0 AND created_at >= $5) < $6
          RETURNING id",
     )
     .bind(identifier_hash)
@@ -29,13 +32,15 @@ pub async fn reserve_failure(
     .bind(identifier_hash)
     .bind(since)
     .bind(threshold)
-    .fetch_optional(pool)
-    .await
+    .fetch_optional(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(id)
 }
 
 /// Mark a reserved attempt as successful, so it no longer counts as a failure.
-pub async fn mark_success(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE login_attempts SET success = 1 WHERE id = ?")
+pub async fn mark_success(pool: &Pool, id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE login_attempts SET success = 1 WHERE id = $1")
         .bind(id)
         .execute(pool)
         .await?;
@@ -43,8 +48,8 @@ pub async fn mark_success(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error>
 }
 
 /// Delete attempts older than `before` (retention).
-pub async fn delete_older_than(pool: &SqlitePool, before: &str) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query("DELETE FROM login_attempts WHERE created_at < ?")
+pub async fn delete_older_than(pool: &Pool, before: &str) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query("DELETE FROM login_attempts WHERE created_at < $1")
         .bind(before)
         .execute(pool)
         .await?;

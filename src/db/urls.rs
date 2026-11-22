@@ -1,6 +1,7 @@
 //! `urls` table.
 
-use sqlx::{FromRow, SqlitePool};
+use crate::db::Pool;
+use sqlx::FromRow;
 
 use crate::services::time;
 
@@ -141,14 +142,14 @@ const SELECT: &str =
                       FROM urls";
 
 /// Insert a short link.
-pub async fn create(pool: &SqlitePool, new_url: &NewUrl) -> Result<i64, sqlx::Error> {
+pub async fn create(pool: &Pool, new_url: &NewUrl) -> Result<i64, sqlx::Error> {
     let now = time::now_iso();
-    let result = sqlx::query(
+    let id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO urls (user_id, domain_id, slug, target_url, title, notes, password_hash,
                            expires_at, max_clicks, redirect_type, redirect_mode,
                            splash_delay_seconds, splash_title, splash_message, status,
                            is_custom_slug, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'active', $15, $16, $17) RETURNING id",
     )
     .bind(new_url.user_id)
     .bind(new_url.domain_id)
@@ -167,30 +168,33 @@ pub async fn create(pool: &SqlitePool, new_url: &NewUrl) -> Result<i64, sqlx::Er
     .bind(i64::from(new_url.is_custom_slug))
     .bind(&now)
     .bind(&now)
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
-    Ok(result.last_insert_rowid())
+    Ok(id)
 }
 
 /// Insert a short link only while the user is below `limit` live links.
 ///
-/// The count and the insert are one statement, so two concurrent creations
-/// cannot both pass a check made before either insert. Returns `None` when the
+/// The count and the insert run in one write transaction, so two concurrent
+/// creations cannot both pass a check made before either insert. Returns `None` when the
 /// quota is already full.
 pub async fn create_within_quota(
-    pool: &SqlitePool,
+    pool: &Pool,
     new_url: &NewUrl,
     limit: i64,
 ) -> Result<Option<i64>, sqlx::Error> {
     let now = time::now_iso();
-    let result = sqlx::query(
+    // 計數與插入同屬一個寫入交易：PostgreSQL 不會序列化 autocommit 敘述，
+    // 單一 `INSERT … SELECT … WHERE (SELECT COUNT(*) …)` 在並行時可能超額（FR-DB-6）。
+    let mut tx = crate::db::begin_write(pool).await?;
+    let id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO urls (user_id, domain_id, slug, target_url, title, notes, password_hash,
                            expires_at, max_clicks, redirect_type, redirect_mode,
                            splash_delay_seconds, splash_title, splash_message, status,
                            is_custom_slug, created_at, updated_at)
-         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'active', $15, $16, $17
           WHERE (SELECT COUNT(*) FROM urls
-                  WHERE user_id = ? AND deleted_at IS NULL) < ?",
+                  WHERE user_id = $18 AND deleted_at IS NULL) < $19 RETURNING id",
     )
     .bind(new_url.user_id)
     .bind(new_url.domain_id)
@@ -211,31 +215,24 @@ pub async fn create_within_quota(
     .bind(&now)
     .bind(new_url.user_id)
     .bind(limit)
-    .execute(pool)
+    .fetch_optional(&mut *tx)
     .await?;
-    if result.rows_affected() == 0 {
-        Ok(None)
-    } else {
-        Ok(Some(result.last_insert_rowid()))
-    }
+    tx.commit().await?;
+    Ok(id)
 }
 
 /// Find a live link by id (any owner). Soft deleted links are not returned.
-pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Url>, sqlx::Error> {
-    sqlx::query_as::<_, Url>(&format!("{SELECT} WHERE id = ? AND deleted_at IS NULL"))
+pub async fn find_by_id(pool: &Pool, id: i64) -> Result<Option<Url>, sqlx::Error> {
+    sqlx::query_as::<_, Url>(&format!("{SELECT} WHERE id = $1 AND deleted_at IS NULL"))
         .bind(id)
         .fetch_optional(pool)
         .await
 }
 
 /// Find a live link by id, restricted to its owner.
-pub async fn find_owned(
-    pool: &SqlitePool,
-    id: i64,
-    user_id: i64,
-) -> Result<Option<Url>, sqlx::Error> {
+pub async fn find_owned(pool: &Pool, id: i64, user_id: i64) -> Result<Option<Url>, sqlx::Error> {
     sqlx::query_as::<_, Url>(&format!(
-        "{SELECT} WHERE id = ? AND user_id = ? AND deleted_at IS NULL"
+        "{SELECT} WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL"
     ))
     .bind(id)
     .bind(user_id)
@@ -246,12 +243,18 @@ pub async fn find_owned(
 /// Find a live link by `(domain_id, slug)`. `slug` is `COLLATE NOCASE`, so this
 /// is case-insensitive and uses the `(domain_id, slug)` unique index.
 pub async fn find_by_domain_slug(
-    pool: &SqlitePool,
+    pool: &Pool,
     domain_id: i64,
     slug: &str,
 ) -> Result<Option<Url>, sqlx::Error> {
+    // Stored slugs are printable ASCII. Anything else cannot match on SQLite,
+    // but PostgreSQL's ICU `nocase` would match a full-width `ａｂｃ` to `abc`
+    // and reject a NUL byte outright, so both answer "not found" here.
+    if !slug.bytes().all(|byte| byte.is_ascii_graphic()) {
+        return Ok(None);
+    }
     sqlx::query_as::<_, Url>(&format!(
-        "{SELECT} WHERE domain_id = ? AND slug = ? AND deleted_at IS NULL"
+        "{SELECT} WHERE domain_id = $1 AND slug = $2 AND deleted_at IS NULL"
     ))
     .bind(domain_id)
     .bind(slug)
@@ -261,13 +264,9 @@ pub async fn find_by_domain_slug(
 
 /// True when the slug is taken on `domain_id` (including by soft deleted links,
 /// which keep their slug reserved so old links cannot be hijacked).
-pub async fn slug_taken(
-    pool: &SqlitePool,
-    domain_id: i64,
-    slug: &str,
-) -> Result<bool, sqlx::Error> {
+pub async fn slug_taken(pool: &Pool, domain_id: i64, slug: &str) -> Result<bool, sqlx::Error> {
     let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE domain_id = ? AND slug = ?")
+        sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE domain_id = $1 AND slug = $2")
             .bind(domain_id)
             .bind(slug)
             .fetch_one(pool)
@@ -278,13 +277,13 @@ pub async fn slug_taken(
 /// Like [`slug_taken`], but ignores one row (used when moving a link or
 /// changing its slug).
 pub async fn slug_taken_excluding(
-    pool: &SqlitePool,
+    pool: &Pool,
     domain_id: i64,
     slug: &str,
     exclude_id: i64,
 ) -> Result<bool, sqlx::Error> {
     let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM urls WHERE domain_id = ? AND slug = ? AND id <> ?",
+        "SELECT COUNT(*) FROM urls WHERE domain_id = $1 AND slug = $2 AND id <> $3",
     )
     .bind(domain_id)
     .bind(slug)
@@ -342,84 +341,78 @@ impl UrlUpdate {
 /// With `user_id` (the owner's path), setting `status = 'active'` only matches
 /// links no administrator holds disabled.
 pub async fn update(
-    pool: &SqlitePool,
+    pool: &Pool,
     id: i64,
     user_id: Option<i64>,
     changes: &UrlUpdate,
 ) -> Result<u64, sqlx::Error> {
-    let mut sql = String::from("UPDATE urls SET updated_at = ?");
+    let mut sql = String::from("UPDATE urls SET updated_at = $1");
     let mut binds: Vec<Bind> = vec![Bind::Text(time::now_iso())];
+    // 每個欄位依加入順序取得下一個 `$N`，SQL 與綁定順序因此一致。
+    macro_rules! set {
+        ($column:ident, $bind:expr) => {{
+            binds.push($bind);
+            sql.push_str(&format!(
+                concat!(", ", stringify!($column), " = ${}"),
+                binds.len()
+            ));
+        }};
+    }
 
     if let Some(value) = changes.domain_id {
-        sql.push_str(", domain_id = ?");
-        binds.push(Bind::Int(value));
+        set!(domain_id, Bind::Int(value));
     }
     if let Some(value) = &changes.slug {
-        sql.push_str(", slug = ?");
-        binds.push(Bind::Text(value.clone()));
+        set!(slug, Bind::Text(value.clone()));
     }
     if let Some(value) = &changes.target_url {
-        sql.push_str(", target_url = ?");
-        binds.push(Bind::Text(value.clone()));
+        set!(target_url, Bind::Text(value.clone()));
     }
     if let Some(value) = &changes.title {
-        sql.push_str(", title = ?");
-        binds.push(Bind::OptText(value.clone()));
+        set!(title, Bind::OptText(value.clone()));
     }
     if let Some(value) = &changes.notes {
-        sql.push_str(", notes = ?");
-        binds.push(Bind::OptText(value.clone()));
+        set!(notes, Bind::OptText(value.clone()));
     }
     if let Some(value) = &changes.password_hash {
-        sql.push_str(", password_hash = ?");
-        binds.push(Bind::OptText(value.clone()));
+        set!(password_hash, Bind::OptText(value.clone()));
     }
     if let Some(value) = &changes.expires_at {
-        sql.push_str(", expires_at = ?");
-        binds.push(Bind::OptText(value.clone()));
+        set!(expires_at, Bind::OptText(value.clone()));
     }
     if let Some(value) = &changes.max_clicks {
-        sql.push_str(", max_clicks = ?");
-        binds.push(Bind::OptInt(*value));
+        set!(max_clicks, Bind::OptInt(*value));
     }
     if let Some(value) = changes.redirect_type {
-        sql.push_str(", redirect_type = ?");
-        binds.push(Bind::Int(value));
+        set!(redirect_type, Bind::Int(value));
     }
     if let Some(value) = &changes.redirect_mode {
-        sql.push_str(", redirect_mode = ?");
-        binds.push(Bind::Text(value.clone()));
+        set!(redirect_mode, Bind::Text(value.clone()));
     }
     if let Some(value) = changes.splash_delay_seconds {
-        sql.push_str(", splash_delay_seconds = ?");
-        binds.push(Bind::Int(value));
+        set!(splash_delay_seconds, Bind::Int(value));
     }
     if let Some(value) = &changes.splash_title {
-        sql.push_str(", splash_title = ?");
-        binds.push(Bind::OptText(value.clone()));
+        set!(splash_title, Bind::OptText(value.clone()));
     }
     if let Some(value) = &changes.splash_message {
-        sql.push_str(", splash_message = ?");
-        binds.push(Bind::OptText(value.clone()));
+        set!(splash_message, Bind::OptText(value.clone()));
     }
     if let Some(value) = &changes.status {
-        sql.push_str(", status = ?");
-        binds.push(Bind::Text(value.clone()));
+        set!(status, Bind::Text(value.clone()));
     }
     if let Some(value) = &changes.admin_disabled_at {
-        sql.push_str(", admin_disabled_at = ?");
-        binds.push(Bind::OptText(value.clone()));
+        set!(admin_disabled_at, Bind::OptText(value.clone()));
     }
     if let Some(value) = changes.is_custom_slug {
-        sql.push_str(", is_custom_slug = ?");
-        binds.push(Bind::Int(i64::from(value)));
+        set!(is_custom_slug, Bind::Int(i64::from(value)));
     }
 
-    sql.push_str(" WHERE id = ?");
     binds.push(Bind::Int(id));
+    sql.push_str(&format!(" WHERE id = ${}", binds.len()));
     if let Some(user_id) = user_id {
-        sql.push_str(" AND user_id = ?");
         binds.push(Bind::Int(user_id));
+        sql.push_str(&format!(" AND user_id = ${}", binds.len()));
     }
     sql.push_str(" AND deleted_at IS NULL");
     // 擁有者路徑（有 user_id）不得讓被管理員鎖定的連結恢復啟用；
@@ -451,40 +444,43 @@ enum Bind {
 }
 
 /// Soft delete a link. The slug stays reserved.
-pub async fn soft_delete(
-    pool: &SqlitePool,
-    id: i64,
-    user_id: Option<i64>,
-) -> Result<bool, sqlx::Error> {
+///
+/// A write transaction, so it cannot interleave with `url_previews::save`: on
+/// PostgreSQL the trigger that removes the preview would not see a preview
+/// that a concurrent first save has not committed yet, and the row would
+/// outlive its link (FR-DB-6).
+pub async fn soft_delete(pool: &Pool, id: i64, user_id: Option<i64>) -> Result<bool, sqlx::Error> {
     let now = time::now_iso();
+    let mut tx = crate::db::begin_write(pool).await?;
     let result = match user_id {
         Some(user_id) => {
             sqlx::query(
-                "UPDATE urls SET deleted_at = ?, updated_at = ?
-                 WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
+                "UPDATE urls SET deleted_at = $1, updated_at = $2
+                 WHERE id = $3 AND user_id = $4 AND deleted_at IS NULL",
             )
             .bind(&now)
             .bind(&now)
             .bind(id)
             .bind(user_id)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?
         }
         None => sqlx::query(
-            "UPDATE urls SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+            "UPDATE urls SET deleted_at = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL",
         )
         .bind(&now)
         .bind(&now)
         .bind(id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?,
     };
+    tx.commit().await?;
     Ok(result.rows_affected() > 0)
 }
 
 /// Number of live links owned by a user.
-pub async fn count_for_user(pool: &SqlitePool, user_id: i64) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE user_id = ? AND deleted_at IS NULL")
+pub async fn count_for_user(pool: &Pool, user_id: i64) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE user_id = $1 AND deleted_at IS NULL")
         .bind(user_id)
         .fetch_one(pool)
         .await
@@ -497,8 +493,8 @@ pub async fn count_for_user(pool: &SqlitePool, user_id: i64) -> Result<i64, sqlx
 /// rows are affected instead of renaming or deleting them: the slug column is
 /// `COLLATE NOCASE`, so a differently cased slug is reported too, and the owner
 /// decides what to do with their own link.
-pub async fn count_live_with_slug(pool: &SqlitePool, slug: &str) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE slug = ? AND deleted_at IS NULL")
+pub async fn count_live_with_slug(pool: &Pool, slug: &str) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE slug = $1 AND deleted_at IS NULL")
         .bind(slug)
         .fetch_one(pool)
         .await
@@ -520,20 +516,22 @@ pub struct StateCounts {
 /// One statement, so a redirect that reaches a click limit meanwhile cannot be
 /// counted in both cards.
 pub async fn count_states_for_user(
-    pool: &SqlitePool,
+    pool: &Pool,
     user_id: i64,
     now: &str,
 ) -> Result<StateCounts, sqlx::Error> {
     sqlx::query_as(
         "SELECT COUNT(*) AS links,
-                COALESCE(SUM(status = 'active'
-                    AND (expires_at IS NULL OR expires_at > ?1)
-                    AND (max_clicks IS NULL OR click_count < max_clicks)), 0) AS active,
-                COALESCE(SUM(status = 'active'
-                    AND ((expires_at IS NOT NULL AND expires_at <= ?1)
-                         OR (max_clicks IS NOT NULL AND click_count >= max_clicks))), 0) AS expired
+                CAST(COALESCE(SUM(CASE WHEN status = 'active'
+                    AND (expires_at IS NULL OR expires_at > $1)
+                    AND (max_clicks IS NULL OR click_count < max_clicks)
+                    THEN 1 ELSE 0 END), 0) AS BIGINT) AS active,
+                CAST(COALESCE(SUM(CASE WHEN status = 'active'
+                    AND ((expires_at IS NOT NULL AND expires_at <= $1)
+                         OR (max_clicks IS NOT NULL AND click_count >= max_clicks))
+                    THEN 1 ELSE 0 END), 0) AS BIGINT) AS expired
          FROM urls
-         WHERE user_id = ?2 AND deleted_at IS NULL",
+         WHERE user_id = $2 AND deleted_at IS NULL",
     )
     .bind(now)
     .bind(user_id)
@@ -603,33 +601,33 @@ pub fn like_pattern(term: &str) -> String {
 
 /// List links owned by one user.
 pub async fn list_for_user(
-    pool: &SqlitePool,
+    pool: &Pool,
     user_id: i64,
     filter: &UserUrlFilter,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<Url>, sqlx::Error> {
+    let search_sql = search_clause(crate::db::Dialect::of(pool));
     let search = filter.search.as_deref().map(like_pattern);
     let status = filter.status.as_deref();
     let tag = filter.tag.as_deref();
 
     sqlx::query_as::<_, Url>(&format!(
         "{SELECT}
-         WHERE deleted_at IS NULL AND user_id = ?1
-           AND (?2 IS NULL OR status = ?2)
-           AND (?3 IS NULL OR slug LIKE ?3 ESCAPE '\\' OR target_url LIKE ?3 ESCAPE '\\'
-                          OR IFNULL(title, '') LIKE ?3 ESCAPE '\\')
-           AND (?4 IS NULL OR id IN (SELECT ut.url_id FROM url_tags ut
+         WHERE deleted_at IS NULL AND user_id = $1
+           AND ($2 IS NULL OR status = $2)
+           AND {search_sql}
+           AND ($4 IS NULL OR id IN (SELECT ut.url_id FROM url_tags ut
                                      JOIN tags t ON t.id = ut.tag_id
-                                     WHERE t.user_id = ?1 AND t.name = ?4))
+                                     WHERE t.user_id = $1 AND t.name = $4))
          ORDER BY
-           CASE WHEN ?5 = 1 THEN click_count END DESC,
-           CASE WHEN ?5 = 2 THEN slug END ASC,
-           CASE WHEN ?5 = 3 THEN updated_at END DESC,
-           CASE WHEN ?5 = 4 THEN expires_at IS NULL END ASC,
-           CASE WHEN ?5 = 4 THEN expires_at END ASC,
+           CASE WHEN $5 = 1 THEN click_count END DESC,
+           CASE WHEN $5 = 2 THEN slug END ASC,
+           CASE WHEN $5 = 3 THEN updated_at END DESC,
+           CASE WHEN $5 = 4 THEN expires_at IS NULL END ASC,
+           CASE WHEN $5 = 4 THEN expires_at END ASC,
            created_at DESC, id DESC
-         LIMIT ?6 OFFSET ?7"
+         LIMIT $6 OFFSET $7"
     ))
     .bind(user_id)
     .bind(status)
@@ -644,21 +642,21 @@ pub async fn list_for_user(
 
 /// Count links owned by one user.
 pub async fn count_for_user_filtered(
-    pool: &SqlitePool,
+    pool: &Pool,
     user_id: i64,
     filter: &UserUrlFilter,
 ) -> Result<i64, sqlx::Error> {
+    let search_sql = search_clause(crate::db::Dialect::of(pool));
     let search = filter.search.as_deref().map(like_pattern);
-    sqlx::query_scalar(
+    sqlx::query_scalar(&format!(
         "SELECT COUNT(*) FROM urls
-         WHERE deleted_at IS NULL AND user_id = ?1
-           AND (?2 IS NULL OR status = ?2)
-           AND (?3 IS NULL OR slug LIKE ?3 ESCAPE '\\' OR target_url LIKE ?3 ESCAPE '\\'
-                          OR IFNULL(title, '') LIKE ?3 ESCAPE '\\')
-           AND (?4 IS NULL OR id IN (SELECT ut.url_id FROM url_tags ut
+         WHERE deleted_at IS NULL AND user_id = $1
+           AND ($2 IS NULL OR status = $2)
+           AND {search_sql}
+           AND ($4 IS NULL OR id IN (SELECT ut.url_id FROM url_tags ut
                                      JOIN tags t ON t.id = ut.tag_id
-                                     WHERE t.user_id = ?1 AND t.name = ?4))",
-    )
+                                     WHERE t.user_id = $1 AND t.name = $4))"
+    ))
     .bind(user_id)
     .bind(filter.status.as_deref())
     .bind(search.as_deref())
@@ -669,24 +667,24 @@ pub async fn count_for_user_filtered(
 
 /// List every link (administrative view).
 pub async fn list_all(
-    pool: &SqlitePool,
+    pool: &Pool,
     filter: &AdminUrlFilter,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<Url>, sqlx::Error> {
+    let search_sql = search_clause(crate::db::Dialect::of(pool));
     let search = filter.search.as_deref().map(like_pattern);
     sqlx::query_as::<_, Url>(&format!(
         "{SELECT}
          WHERE deleted_at IS NULL
-           AND (?1 IS NULL OR user_id = ?1)
-           AND (?2 IS NULL OR status = ?2)
-           AND (?3 IS NULL OR slug LIKE ?3 ESCAPE '\\' OR target_url LIKE ?3 ESCAPE '\\'
-                          OR IFNULL(title, '') LIKE ?3 ESCAPE '\\')
+           AND ($1 IS NULL OR user_id = $1)
+           AND ($2 IS NULL OR status = $2)
+           AND {search_sql}
          ORDER BY
-           CASE WHEN ?4 = 1 THEN click_count END DESC,
-           CASE WHEN ?4 = 2 THEN slug END ASC,
+           CASE WHEN $4 = 1 THEN click_count END DESC,
+           CASE WHEN $4 = 2 THEN slug END ASC,
            created_at DESC, id DESC
-         LIMIT ?5 OFFSET ?6"
+         LIMIT $5 OFFSET $6"
     ))
     .bind(filter.user_id)
     .bind(filter.status.as_deref())
@@ -699,16 +697,16 @@ pub async fn list_all(
 }
 
 /// Count every link (administrative view).
-pub async fn count_all(pool: &SqlitePool, filter: &AdminUrlFilter) -> Result<i64, sqlx::Error> {
+pub async fn count_all(pool: &Pool, filter: &AdminUrlFilter) -> Result<i64, sqlx::Error> {
+    let search_sql = search_clause(crate::db::Dialect::of(pool));
     let search = filter.search.as_deref().map(like_pattern);
-    sqlx::query_scalar(
+    sqlx::query_scalar(&format!(
         "SELECT COUNT(*) FROM urls
          WHERE deleted_at IS NULL
-           AND (?1 IS NULL OR user_id = ?1)
-           AND (?2 IS NULL OR status = ?2)
-           AND (?3 IS NULL OR slug LIKE ?3 ESCAPE '\\' OR target_url LIKE ?3 ESCAPE '\\'
-                          OR IFNULL(title, '') LIKE ?3 ESCAPE '\\')",
-    )
+           AND ($1 IS NULL OR user_id = $1)
+           AND ($2 IS NULL OR status = $2)
+           AND {search_sql}"
+    ))
     .bind(filter.user_id)
     .bind(filter.status.as_deref())
     .bind(search.as_deref())
@@ -717,14 +715,25 @@ pub async fn count_all(pool: &SqlitePool, filter: &AdminUrlFilter) -> Result<i64
 }
 
 /// Global link statistics (administrative dashboard).
-pub async fn global_counts(pool: &SqlitePool) -> Result<(i64, i64, i64), sqlx::Error> {
+pub async fn global_counts(pool: &Pool) -> Result<(i64, i64, i64), sqlx::Error> {
     let row: (i64, i64, i64) = sqlx::query_as(
-        "SELECT COUNT(*), IFNULL(SUM(click_count), 0),
-                IFNULL(SUM(CASE WHEN expires_at IS NOT NULL AND expires_at <= ?1 THEN 1 ELSE 0 END), 0)
+        "SELECT COUNT(*), CAST(COALESCE(SUM(click_count), 0) AS BIGINT),
+                CAST(COALESCE(SUM(CASE WHEN expires_at IS NOT NULL AND expires_at <= $1 THEN 1 ELSE 0 END), 0) AS BIGINT)
          FROM urls WHERE deleted_at IS NULL",
     )
     .bind(time::now_iso())
     .fetch_one(pool)
     .await?;
     Ok(row)
+}
+
+/// `$3`, the escaped search pattern, matched ASCII-case-insensitively against
+/// slug, destination and title on either backend (SPEC §6.6).
+fn search_clause(dialect: crate::db::Dialect) -> String {
+    format!(
+        "($3 IS NULL OR {} OR {} OR {})",
+        dialect.ci_like("slug", "$3"),
+        dialect.ci_like("target_url", "$3"),
+        dialect.ci_like("COALESCE(title, '')", "$3"),
+    )
 }

@@ -18,7 +18,7 @@ async fn configure(app: &TestApp, admin: &str, values: Value) -> common::TestRes
 }
 
 async fn stored_target(app: &TestApp, slug: &str) -> String {
-    sqlx::query_scalar("SELECT target_url FROM urls WHERE slug = ?")
+    sqlx::query_scalar("SELECT target_url FROM urls WHERE slug = $1")
         .bind(slug)
         .fetch_one(&app.state.db)
         .await

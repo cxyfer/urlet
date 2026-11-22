@@ -2,14 +2,14 @@
 
 # urlet — Phased Implementation Plan
 
-> Spec: `docs/SPEC.md` v1.8 Principle: at the end of every phase the code must **compile, test, and commit**; each phase gets one (or a few) local commits.
+> Spec: `docs/SPEC.md` v1.9 Principle: at the end of every phase the code must **compile, test, and commit**; each phase gets one (or a few) local commits.
 
 ## Contents
 
 - Overview: [Results (completed)](#results-completed) · [Milestone Overview](#milestone-overview)
 - P1–P7: [P1](#p1--project-skeleton-and-data-layer) · [P2](#p2--authentication-and-sessions) · [P3](#p3--short-link-core) · [P4](#p4--redirect-and-unlock) · [P5](#p5--web-ui) · [P6](#p6--admin-panel-and-complete-api) · [P7](#p7--tests-and-documentation)
 - P8–P14: [P8](#p8--final-verification-and-wrap-up) · [P9](#p9--i18n-bot-protection-and-navigation-homepage-v11) · [P10](#p10--user-groups-v12) · [P11](#p11--group-domain-policy-v12-follow-up) · [P12](#p12--switchable-themes-v14) · [P13](#p13--splash-pages-and-redirect-mode-policy-v15) · [P14](#p14--uploadable-themes-v15)
-- P15–P21: [P15](#p15--public-shortener-v16) · P16–P18 ([Milestone Overview](#milestone-overview)) · [P19](#p19--tracking-parameter-cleanup) · [P20](#p20--editable-guest-destination-allowlist) · [P21](#p21--sns-preview-cards)
+- P15–P22: [P15](#p15--public-shortener-v16) · P16–P18 ([Milestone Overview](#milestone-overview)) · [P19](#p19--tracking-parameter-cleanup) · [P20](#p20--editable-guest-destination-allowlist) · [P21](#p21--sns-preview-cards) · [P22](#p22--postgresql-backend-v19)
 - Appendices: [P8 Acceptance Measurements](#p8-acceptance-measurements) · [Risks and Mitigations](#risks-and-mitigations)
 
 ## Results (completed)
@@ -37,6 +37,7 @@
 | P19 Tracking parameter cleanup | ✅ Done | `5a0646b ✨ feat(urls): add configurable tracking parameter cleanup` |
 | P20 Editable guest destination allowlist | ✅ Done | `b36a1e3 ✨ feat(public): add an editable guest destination allowlist` |
 | P21 SNS preview cards | ✅ Done | `b92a2b8 ✨ feat(previews): customise social sharing cards` |
+| P22 PostgreSQL backend (v1.9) | ✅ Done | See `git log` (`$N` placeholders, `Any` pool, PostgreSQL baseline, CI job, compose overlay) |
 
 Acceptance data (v1.0): `cargo test` is all green with 187 tests, `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` report no warnings, and all 81 end-to-end checks in `scripts/smoke.sh` pass.
 
@@ -68,6 +69,7 @@ Acceptance data (v1.0): `cargo test` is all green with 187 tests, `cargo clippy 
 | P19 | Tracking parameter cleanup | `src/services/url_cleaning.rs` with bounded custom-rule validation and pure query filtering, built-in rules embedded from `src/rules/url-cleaning.txt`, `url_cleaning_enabled`/`url_cleaning_rules` settings, and the shared settings UI in all three locales | Cleanup runs on creation only and is off by default; built-in providers, spoofed hosts, encoding/fragments, rule validation and idempotence covered; existing links and edits stay unchanged; fmt/clippy/test/smoke/merge-check green | `✨ feat(urls): ...` |
 | P20 | Editable guest destination allowlist | `src/services/guest_allowlist.rs` with the compiled-in list, exact and `*.` host matching plus optional path prefixes, `guest_allowlist_enabled`/`guest_allowlist` settings, and the admin form/API with a guest-visible allowed list | 24 services / 43 host rules by default; an empty enabled list denies every guest target; signed-in callers and existing redirects keep their behavior; edits persist immediately; fmt/clippy/test/smoke/merge-check green | `✨ feat(public): ...` |
 | P21 | SNS preview cards | Opt-in per-link title/description plus HTTPS or uploaded raster image, a four-mode administrator image policy, SQLite storage | Owner-only form/API, narrow social crawler metadata output, lifecycle/privacy boundaries and tests | `✨ feat(previews): ...` |
+| P22 | PostgreSQL backend (v1.9) | `postgres://` URLs on the same binary, `migrations/postgres/`, advisory-lock write serialisation, `docker-compose.postgres.yml`, `PostgreSQL` CI job | Every suite green on both backends, schema and seed parity enforced by a test, SQLite unchanged, fmt/clippy/smoke/merge-check/MSRV green | `✨ feat(db): ...` |
 
 ---
 
@@ -374,6 +376,25 @@ Approved scope (2026-10-23): optional cleanup on **creation only**, disabled by 
 ## P21 — SNS Preview Cards
 
 Opt-in per-link title/description plus HTTPS or uploaded raster image, a four-mode administrator image policy, SQLite storage, owner-only form/API, narrow social crawler metadata output, lifecycle/privacy boundaries and tests. Implementation plan: [SNS preview plan](aegis/plans/2026-10-23-social-previews.md).
+
+---
+
+## P22 — PostgreSQL Backend (v1.9)
+
+**Goal**: one binary that serves every feature from SQLite or PostgreSQL, chosen by the `URLET_DATABASE_URL` scheme (`docs/SPEC.md` §4.19, §6.6). SQLite stays the default and its behaviour and migrations are unchanged. Out of scope: several replicas on one database, and moving an existing SQLite instance to PostgreSQL.
+
+**Tasks**
+
+1. Number every SQL placeholder (`$N`), so the same text runs on both drivers.
+2. Move every query to the sqlx `Any` pool: `RETURNING id` instead of `last_insert_rowid`, `ON CONFLICT DO NOTHING` instead of `INSERT OR IGNORE`, qualified upsert columns, `CAST(SUM(…) AS BIGINT)`, `db::Flag` for 0/1 columns, and error classification through the error kind. Keep the SQLite migration runner on a native connection.
+3. Add `migrations/postgres/0001_baseline.sql`, equal to SQLite after `0018`, with an ICU `nocase` collation and `COLLATE "C"` for every other text column; a migrator holding a session advisory lock; and write transactions serialised by `pg_advisory_xact_lock` with a five-second lock timeout. Move the four aggregate-guarded inserts into write transactions on both backends.
+4. Search through `Dialect::ci_like`, since PostgreSQL before 18 refuses `LIKE` on a nondeterministic collation. Redact the URL in `Config`'s debug output and the startup log.
+5. Run every integration suite on PostgreSQL when `URLET_TEST_DATABASE_URL` is set, with a fresh database per test app, and add `tests/postgres.rs` for schema and seed parity, concurrent migrators, quota races and write serialisation. Add the `PostgreSQL` CI job and list it in the gate's `REQUIRED`.
+6. Add `docker-compose.postgres.yml`, the deployment section, README entries and the Traditional Chinese mirrors.
+
+**Acceptance**: `cargo test` is green on SQLite and on PostgreSQL 14 and 17; the parity test fails when a table, column, index, foreign key, CHECK or trigger exists on one side only; fmt/clippy/smoke/merge-check and the MSRV check are green.
+
+**Risks**: a PostgreSQL-only SQL mistake is caught only by the PostgreSQL job, so that job is required. ICU and ASCII case folding differ for non-ASCII tag and group names; the difference is documented rather than hidden.
 
 ---
 

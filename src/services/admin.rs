@@ -3,9 +3,8 @@
 //! Every mutation is audited and guarded by the invariants that keep an instance
 //! administrable (never lock out the last active administrator).
 
+use crate::db::Pool;
 use std::sync::Arc;
-
-use sqlx::SqlitePool;
 
 use crate::config::Config;
 use crate::db::urls::{self, UrlUpdate};
@@ -42,7 +41,7 @@ pub struct SystemStats {
 
 /// Everything an admin action needs from the request context.
 pub struct AdminContext<'a> {
-    pub pool: &'a SqlitePool,
+    pub pool: &'a Pool,
     pub config: &'a Arc<Config>,
     pub settings: &'a Settings,
     pub actor: &'a User,
@@ -655,7 +654,7 @@ impl AdminContext<'_> {
             .await
             .map_err(AppError::from)?;
 
-        let database_bytes = self.config.sqlite_path().map(|path| database_size(&path));
+        let database_bytes = crate::db::database_size(self.pool, self.config).await;
 
         Ok(SystemStats {
             version: crate::VERSION,
@@ -698,22 +697,9 @@ fn map_group_write_error(err: sqlx::Error) -> AppError {
     }
 }
 
-/// Size of the database including its write-ahead log (WAL mode keeps recent
-/// writes out of the main file).
-pub fn database_size(path: &std::path::Path) -> u64 {
-    let mut total = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
-    for suffix in ["-wal", "-shm"] {
-        let sidecar = std::path::PathBuf::from(format!("{}{suffix}", path.display()));
-        total += std::fs::metadata(sidecar)
-            .map(|meta| meta.len())
-            .unwrap_or(0);
-    }
-    total
-}
-
 /// Users matching a filter, with their link counts.
 pub async fn list_users(
-    pool: &SqlitePool,
+    pool: &Pool,
     filter: &UserFilter,
     limit: i64,
     offset: i64,
@@ -724,14 +710,14 @@ pub async fn list_users(
 }
 
 /// Count users matching a filter.
-pub async fn count_users(pool: &SqlitePool, filter: &UserFilter) -> Result<i64> {
+pub async fn count_users(pool: &Pool, filter: &UserFilter) -> Result<i64> {
     users::count_filtered(pool, filter)
         .await
         .map_err(AppError::from)
 }
 
 /// Links per user, as a lookup table.
-pub async fn link_counts(pool: &SqlitePool) -> Result<std::collections::HashMap<i64, i64>> {
+pub async fn link_counts(pool: &Pool) -> Result<std::collections::HashMap<i64, i64>> {
     Ok(users::link_counts(pool)
         .await
         .map_err(AppError::from)?
@@ -741,7 +727,7 @@ pub async fn link_counts(pool: &SqlitePool) -> Result<std::collections::HashMap<
 
 /// Audit log page plus total.
 pub async fn audit_page(
-    pool: &SqlitePool,
+    pool: &Pool,
     filter: &audit::AuditFilter,
     limit: i64,
     offset: i64,
@@ -759,12 +745,12 @@ pub async fn settings_snapshot(settings: &Settings) -> std::collections::HashMap
 }
 
 /// Checkpoint the write-ahead log so the database file stays compact.
-pub async fn checkpoint_wal(pool: &SqlitePool) -> Result<()> {
+pub async fn checkpoint_wal(pool: &Pool) -> Result<()> {
     crate::db::checkpoint_wal(pool).await
 }
 
 /// Delete stale sessions and, when configured, old analytics data.
-pub async fn run_maintenance(pool: &SqlitePool, settings: &Settings) -> Result<()> {
+pub async fn run_maintenance(pool: &Pool, settings: &Settings) -> Result<()> {
     let now = time::now_iso();
     let stale_before = time::iso_days_ago(1);
     let sessions_deleted = sessions::delete_stale(pool, &stale_before)
@@ -822,7 +808,7 @@ pub async fn run_maintenance(pool: &SqlitePool, settings: &Settings) -> Result<(
 /// reached" until an administrator deletes some of those links. Nothing prunes
 /// them automatically (expiry is optional and off by default), so the log line
 /// is the only signal short of watching the link list.
-async fn warn_about_the_guest_quota(pool: &SqlitePool, settings: &Settings) -> Result<()> {
+async fn warn_about_the_guest_quota(pool: &Pool, settings: &Settings) -> Result<()> {
     let limit = settings.public_max_urls();
     if limit <= 0 {
         return Ok(());
@@ -859,6 +845,6 @@ pub fn token_service_prefix() -> &'static str {
 pub use crate::services::settings::EDITABLE_KEYS;
 
 /// Read the settings table directly (used by tests and the CLI).
-pub async fn raw_setting(pool: &SqlitePool, key: &str) -> Result<Option<String>> {
+pub async fn raw_setting(pool: &Pool, key: &str) -> Result<Option<String>> {
     settings_db::get(pool, key).await.map_err(AppError::from)
 }

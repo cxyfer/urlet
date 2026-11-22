@@ -1,6 +1,7 @@
 //! `users` table.
 
-use sqlx::{FromRow, SqlitePool};
+use crate::db::Pool;
+use sqlx::FromRow;
 
 use crate::services::time::now_iso;
 
@@ -29,6 +30,7 @@ pub struct User {
     /// `true` for the reserved accounts the application manages itself. They are
     /// hidden from every listing and count, cannot sign in and cannot be edited
     /// by an administrator.
+    #[sqlx(try_from = "crate::db::Flag")]
     pub is_system: bool,
 }
 
@@ -75,15 +77,21 @@ const SELECT: &str = "SELECT id, email, email_normalized, password_hash, display
                       deleted_at, is_system FROM users";
 
 /// Insert a user and return its id.
-pub async fn create(pool: &SqlitePool, new_user: &NewUser) -> Result<i64, sqlx::Error> {
+///
+/// A write transaction, so the group fallback cannot interleave with
+/// `user_groups::delete_with_reassign` on PostgreSQL: there an autocommit
+/// insert could pick a group that is deleted before it commits (a foreign-key
+/// error) or after the reassignment ran (a member left without a group).
+pub async fn create(pool: &Pool, new_user: &NewUser) -> Result<i64, sqlx::Error> {
     let now = now_iso();
-    let result = sqlx::query(
+    let mut tx = crate::db::begin_write(pool).await?;
+    let id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO users (email, email_normalized, password_hash, display_name, role, status,
                             group_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'active',
-                 COALESCE((SELECT id FROM user_groups WHERE id = ?),
+         VALUES ($1, $2, $3, $4, $5, 'active',
+                 COALESCE((SELECT id FROM user_groups WHERE id = $6),
                           (SELECT id FROM user_groups WHERE is_default = 1)),
-                 ?, ?)",
+                 $7, $8) RETURNING id",
     )
     .bind(&new_user.email)
     .bind(&new_user.email_normalized)
@@ -93,25 +101,31 @@ pub async fn create(pool: &SqlitePool, new_user: &NewUser) -> Result<i64, sqlx::
     .bind(new_user.group_id)
     .bind(&now)
     .bind(&now)
-    .execute(pool)
+    .fetch_one(&mut *tx)
     .await?;
-    Ok(result.last_insert_rowid())
+    tx.commit().await?;
+    Ok(id)
 }
 
 /// Find an active-or-suspended user by normalised email.
 pub async fn find_by_email(
-    pool: &SqlitePool,
+    pool: &Pool,
     email_normalized: &str,
 ) -> Result<Option<User>, sqlx::Error> {
-    sqlx::query_as::<_, User>(&format!("{SELECT} WHERE email_normalized = ?"))
+    // PostgreSQL refuses a NUL byte in any text parameter; no stored address
+    // contains one, so the answer is "not found" on both backends.
+    if email_normalized.contains('\0') {
+        return Ok(None);
+    }
+    sqlx::query_as::<_, User>(&format!("{SELECT} WHERE email_normalized = $1"))
         .bind(email_normalized)
         .fetch_optional(pool)
         .await
 }
 
 /// Find a user by id.
-pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<User>, sqlx::Error> {
-    sqlx::query_as::<_, User>(&format!("{SELECT} WHERE id = ?"))
+pub async fn find_by_id(pool: &Pool, id: i64) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as::<_, User>(&format!("{SELECT} WHERE id = $1"))
         .bind(id)
         .fetch_optional(pool)
         .await
@@ -119,7 +133,7 @@ pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<User>, sqlx
 
 /// Total number of accounts a person registered (the reserved Guest account is
 /// not a person and is never counted; see [`User::is_system`]).
-pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
+pub async fn count(pool: &Pool) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND is_system = 0")
         .fetch_one(pool)
         .await
@@ -127,7 +141,7 @@ pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
 
 /// The reserved system account (the Guest owner of anonymous links), if the
 /// migration created it.
-pub async fn find_system(pool: &SqlitePool) -> Result<Option<User>, sqlx::Error> {
+pub async fn find_system(pool: &Pool) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(&format!(
         "{SELECT} WHERE is_system = 1 AND deleted_at IS NULL ORDER BY id LIMIT 1"
     ))
@@ -146,23 +160,23 @@ pub struct UserFilter {
 
 /// List users for the admin panel.
 pub async fn list(
-    pool: &SqlitePool,
+    pool: &Pool,
     filter: &UserFilter,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<User>, sqlx::Error> {
+    let search_sql = search_clause(crate::db::Dialect::of(pool));
     let search = filter.search.as_deref().map(crate::db::urls::like_pattern);
     sqlx::query_as::<_, User>(&format!(
         "{SELECT}
          WHERE deleted_at IS NULL
            AND is_system = 0
-           AND (?1 IS NULL OR role = ?1)
-           AND (?2 IS NULL OR status = ?2)
-           AND (?3 IS NULL OR email LIKE ?3 ESCAPE '\\'
-                          OR IFNULL(display_name, '') LIKE ?3 ESCAPE '\\')
-           AND (?4 IS NULL OR group_id = ?4)
+           AND ($1 IS NULL OR role = $1)
+           AND ($2 IS NULL OR status = $2)
+           AND {search_sql}
+           AND ($4 IS NULL OR group_id = $4)
          ORDER BY created_at DESC, id DESC
-         LIMIT ?5 OFFSET ?6"
+         LIMIT $5 OFFSET $6"
     ))
     .bind(filter.role.as_deref())
     .bind(filter.status.as_deref())
@@ -175,18 +189,18 @@ pub async fn list(
 }
 
 /// Count users matching a filter.
-pub async fn count_filtered(pool: &SqlitePool, filter: &UserFilter) -> Result<i64, sqlx::Error> {
+pub async fn count_filtered(pool: &Pool, filter: &UserFilter) -> Result<i64, sqlx::Error> {
+    let search_sql = search_clause(crate::db::Dialect::of(pool));
     let search = filter.search.as_deref().map(crate::db::urls::like_pattern);
-    sqlx::query_scalar(
+    sqlx::query_scalar(&format!(
         "SELECT COUNT(*) FROM users
          WHERE deleted_at IS NULL
            AND is_system = 0
-           AND (?1 IS NULL OR role = ?1)
-           AND (?2 IS NULL OR status = ?2)
-           AND (?3 IS NULL OR email LIKE ?3 ESCAPE '\\'
-                          OR IFNULL(display_name, '') LIKE ?3 ESCAPE '\\')
-           AND (?4 IS NULL OR group_id = ?4)",
-    )
+           AND ($1 IS NULL OR role = $1)
+           AND ($2 IS NULL OR status = $2)
+           AND {search_sql}
+           AND ($4 IS NULL OR group_id = $4)"
+    ))
     .bind(filter.role.as_deref())
     .bind(filter.status.as_deref())
     .bind(search.as_deref())
@@ -196,14 +210,11 @@ pub async fn count_filtered(pool: &SqlitePool, filter: &UserFilter) -> Result<i6
 }
 
 /// Number of active administrators, optionally ignoring one account.
-pub async fn count_active_admins(
-    pool: &SqlitePool,
-    excluding: Option<i64>,
-) -> Result<i64, sqlx::Error> {
+pub async fn count_active_admins(pool: &Pool, excluding: Option<i64>) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM users
          WHERE role = 'admin' AND status = 'active' AND deleted_at IS NULL AND is_system = 0
-           AND (?1 IS NULL OR id <> ?1)",
+           AND ($1 IS NULL OR id <> $1)",
     )
     .bind(excluding)
     .fetch_one(pool)
@@ -211,15 +222,15 @@ pub async fn count_active_admins(
 }
 
 /// Total links per user, for the admin user table.
-pub async fn link_counts(pool: &SqlitePool) -> Result<Vec<(i64, i64)>, sqlx::Error> {
+pub async fn link_counts(pool: &Pool) -> Result<Vec<(i64, i64)>, sqlx::Error> {
     sqlx::query_as("SELECT user_id, COUNT(*) FROM urls WHERE deleted_at IS NULL GROUP BY user_id")
         .fetch_all(pool)
         .await
 }
 
 /// Update the last successful login timestamp.
-pub async fn set_last_login(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?")
+pub async fn set_last_login(pool: &Pool, id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET last_login_at = $1, updated_at = $2 WHERE id = $3")
         .bind(now_iso())
         .bind(now_iso())
         .bind(id)
@@ -232,9 +243,9 @@ pub async fn set_last_login(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Erro
 ///
 /// Refuses system accounts: their unparsable sentinel is one of the defences
 /// that keep the reserved Guest account from ever signing in.
-pub async fn set_password(pool: &SqlitePool, id: i64, hash: &str) -> Result<bool, sqlx::Error> {
+pub async fn set_password(pool: &Pool, id: i64, hash: &str) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
-        "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ? AND is_system = 0",
+        "UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = $3 AND is_system = 0",
     )
     .bind(hash)
     .bind(now_iso())
@@ -246,11 +257,11 @@ pub async fn set_password(pool: &SqlitePool, id: i64, hash: &str) -> Result<bool
 
 /// Update the display name.
 pub async fn set_display_name(
-    pool: &SqlitePool,
+    pool: &Pool,
     id: i64,
     display_name: Option<&str>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?")
+    sqlx::query("UPDATE users SET display_name = $1, updated_at = $2 WHERE id = $3")
         .bind(display_name)
         .bind(now_iso())
         .bind(id)
@@ -261,12 +272,12 @@ pub async fn set_display_name(
 
 /// Update role and/or status (administrative action).
 pub async fn set_role_status(
-    pool: &SqlitePool,
+    pool: &Pool,
     id: i64,
     role: &str,
     status: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET role = ?, status = ?, updated_at = ? WHERE id = ?")
+    sqlx::query("UPDATE users SET role = $1, status = $2, updated_at = $3 WHERE id = $4")
         .bind(role)
         .bind(status)
         .bind(now_iso())
@@ -296,7 +307,7 @@ pub struct AdminUserUpdate<'a> {
 /// transaction, so a concurrently deleted group rolls everything back instead of
 /// leaving a partial update behind.
 pub async fn apply_admin_update(
-    pool: &SqlitePool,
+    pool: &Pool,
     user_id: i64,
     update: &AdminUserUpdate<'_>,
 ) -> Result<bool, sqlx::Error> {
@@ -304,18 +315,18 @@ pub async fn apply_admin_update(
     let mut tx = crate::db::begin_write(pool).await?;
     let result = sqlx::query(
         "UPDATE users
-            SET role = COALESCE(?1, role),
-                status = COALESCE(?2, status),
-                group_id = CASE WHEN ?3 = 1 THEN ?4 ELSE group_id END,
-                updated_at = ?5
-          WHERE id = ?6
+            SET role = COALESCE($1, role),
+                status = COALESCE($2, status),
+                group_id = CASE WHEN $3 = 1 THEN $4 ELSE group_id END,
+                updated_at = $5
+          WHERE id = $6
             AND is_system = 0
             AND (
               NOT (role = 'admin' AND status = 'active'
-                   AND (COALESCE(?1, role) <> 'admin' OR COALESCE(?2, status) <> 'active'))
+                   AND (COALESCE($1, role) <> 'admin' OR COALESCE($2, status) <> 'active'))
               OR (SELECT COUNT(*) FROM users
                    WHERE role = 'admin' AND status = 'active'
-                     AND deleted_at IS NULL AND id <> ?6) > 0
+                     AND deleted_at IS NULL AND id <> $6) > 0
             )",
     )
     .bind(update.role)
@@ -333,7 +344,7 @@ pub async fn apply_admin_update(
         return Ok(false);
     }
     if let Some(display_name) = update.display_name {
-        sqlx::query("UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?")
+        sqlx::query("UPDATE users SET display_name = $1, updated_at = $2 WHERE id = $3")
             .bind(display_name)
             .bind(&now)
             .bind(user_id)
@@ -341,11 +352,13 @@ pub async fn apply_admin_update(
             .await?;
     }
     if update.status == Some("suspended") {
-        sqlx::query("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
-            .bind(&now)
-            .bind(user_id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(
+            "UPDATE sessions SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL",
+        )
+        .bind(&now)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
     }
     tx.commit().await?;
     Ok(true)
@@ -356,18 +369,18 @@ pub async fn apply_admin_update(
 /// The update is conditional on the account not being the last active
 /// administrator, so two concurrent demotions/deletions cannot both pass a
 /// pre-check and leave the instance without one.
-pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error> {
+pub async fn soft_delete(pool: &Pool, id: i64) -> Result<bool, sqlx::Error> {
     let now = now_iso();
     let mut tx = crate::db::begin_write(pool).await?;
     let result = sqlx::query(
-        "UPDATE users SET deleted_at = ?, updated_at = ?
-          WHERE id = ?
+        "UPDATE users SET deleted_at = $1, updated_at = $2
+          WHERE id = $3
             AND is_system = 0
             AND (
               NOT (role = 'admin' AND status = 'active')
               OR (SELECT COUNT(*) FROM users
                    WHERE role = 'admin' AND status = 'active'
-                     AND deleted_at IS NULL AND id <> ?) > 0
+                     AND deleted_at IS NULL AND id <> $4) > 0
             )",
     )
     .bind(&now)
@@ -381,23 +394,33 @@ pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error
         return Ok(false);
     }
     sqlx::query(
-        "UPDATE urls SET deleted_at = ?, updated_at = ? WHERE user_id = ? AND deleted_at IS NULL",
+        "UPDATE urls SET deleted_at = $1, updated_at = $2 WHERE user_id = $3 AND deleted_at IS NULL",
     )
     .bind(&now)
     .bind(&now)
     .bind(id)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
+    sqlx::query("UPDATE sessions SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL")
         .bind(&now)
         .bind(id)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
+    sqlx::query("UPDATE api_tokens SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL")
         .bind(&now)
         .bind(id)
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
     Ok(true)
+}
+
+/// `$3`, the escaped search pattern, matched ASCII-case-insensitively against
+/// email and display name on either backend (SPEC §6.6).
+fn search_clause(dialect: crate::db::Dialect) -> String {
+    format!(
+        "($3 IS NULL OR {} OR {})",
+        dialect.ci_like("email", "$3"),
+        dialect.ci_like("COALESCE(display_name, '')", "$3"),
+    )
 }

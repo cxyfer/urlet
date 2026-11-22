@@ -68,6 +68,17 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 
 The overlay removes the local `build` section, so compose pulls the image instead of rebuilding. The package may be private; run `docker login ghcr.io` first (a token with `read:packages`), or make the package public under *Package settings → Change visibility*. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md#21-prebuilt-image) for pinning and upgrades.
 
+### PostgreSQL
+
+SQLite is the default. To keep the data in PostgreSQL 14 or newer instead, point `URLET_DATABASE_URL` at a `postgres://` URL; the same binary and image handle both. To run a PostgreSQL container next to urlet:
+
+```bash
+echo "URLET_POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> .env
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build
+```
+
+See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md#22-postgresql-instead-of-sqlite) for the role it needs, TLS, backups and what differs.
+
 ### Running the binary directly
 
 ```bash
@@ -126,7 +137,7 @@ Regenerate them with `SHOTS=docs/screenshots ./scripts/demo.sh` (needs Playwrigh
 | Layer | Choice | Why |
 |-------|--------|-----|
 | HTTP | Axum 0.8 + Tokio | Type-safe, mature ecosystem, single binary |
-| Database | SQLite (sqlx, WAL) | No external service, single-file backups, plenty for self-hosted scale |
+| Database | SQLite (sqlx, WAL) by default, PostgreSQL optional | SQLite needs no external service and backs up as one file, plenty for self-hosted scale; PostgreSQL fits where a managed database is already run |
 | Migrations | Embedded SQL with checksum verification | Migrations run on startup; the binary ships its own schema |
 | UI | Askama SSR with hand-written CSS/JS | No Node/Vite build step, very small image |
 | Authentication | Server-side sessions + API tokens | Revocable immediately, without adding a JWT dependency |
@@ -187,7 +198,7 @@ bash scripts/smoke.sh      # end-to-end acceptance run against the real binary
 bash scripts/demo.sh       # build a demo site and write screenshots to .tmp/demo/shots
 ```
 
-Rust 1.88 or newer is required, and CI checks the build on exactly 1.88. Integration tests use their own temporary SQLite database and never touch your development data.
+Rust 1.88 or newer is required, and CI checks the build on exactly 1.88. Integration tests use their own temporary SQLite database and never touch your development data. To run them against PostgreSQL as well, set `URLET_TEST_DATABASE_URL` to a server the tests may create and drop databases on, such as `postgres://postgres:postgres@localhost:5432/postgres`; each test app gets a database of its own, and the `PostgreSQL` CI job does the same.
 
 The first five commands also run in CI on every pull request — see [`.github/workflows/ci.yml`](.github/workflows/ci.yml). `demo.sh` stays local because it needs Playwright and Chromium.
 

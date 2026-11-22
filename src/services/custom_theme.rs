@@ -10,9 +10,8 @@
 //! Uploads happen under the same settings lock as the catalogue update: a
 //! theme cannot be deleted between validating a selection and committing it.
 
+use crate::db::Pool;
 use std::path::{Path, PathBuf};
-
-use sqlx::SqlitePool;
 
 use crate::db::custom_themes::{self as custom_db, CustomThemeRow, NewCustomTheme};
 use crate::db::themes as theme_db;
@@ -306,7 +305,7 @@ pub async fn read_css(dir: &Path, row: &CustomThemeRow) -> std::io::Result<Vec<u
 /// Register a validated stylesheet and reload the catalogue cache.
 #[allow(clippy::too_many_arguments)]
 pub async fn create(
-    pool: &SqlitePool,
+    pool: &Pool,
     registry: &ThemeRegistry,
     settings: &Settings,
     themes_dir: &Path,
@@ -377,7 +376,7 @@ pub async fn create(
 /// Update the editable metadata and, when supplied, replace the stylesheet.
 #[allow(clippy::too_many_arguments)]
 pub async fn update(
-    pool: &SqlitePool,
+    pool: &Pool,
     registry: &ThemeRegistry,
     settings: &Settings,
     themes_dir: &Path,
@@ -451,7 +450,7 @@ pub async fn update(
 /// Delete an upload. The current default cannot be removed: the administrator
 /// has to pick another default first, which keeps exactly one enabled default.
 pub async fn delete(
-    pool: &SqlitePool,
+    pool: &Pool,
     registry: &ThemeRegistry,
     settings: &Settings,
     themes_dir: &Path,

@@ -1,8 +1,7 @@
 //! `settings` table: simple key/value store for site wide configuration.
 
+use crate::db::Pool;
 use std::collections::HashMap;
-
-use sqlx::SqlitePool;
 
 use crate::services::time::now_iso;
 
@@ -72,7 +71,7 @@ pub const DEFAULTS: &[(&str, &str)] = &[
 ];
 
 /// Load all settings.
-pub async fn all(pool: &SqlitePool) -> Result<HashMap<String, String>, sqlx::Error> {
+pub async fn all(pool: &Pool) -> Result<HashMap<String, String>, sqlx::Error> {
     let rows: Vec<(String, String)> = sqlx::query_as("SELECT key, value FROM settings")
         .fetch_all(pool)
         .await?;
@@ -80,8 +79,8 @@ pub async fn all(pool: &SqlitePool) -> Result<HashMap<String, String>, sqlx::Err
 }
 
 /// Read one setting.
-pub async fn get(pool: &SqlitePool, key: &str) -> Result<Option<String>, sqlx::Error> {
-    sqlx::query_scalar("SELECT value FROM settings WHERE key = ?")
+pub async fn get(pool: &Pool, key: &str) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar("SELECT value FROM settings WHERE key = $1")
         .bind(key)
         .fetch_optional(pool)
         .await
@@ -89,14 +88,14 @@ pub async fn get(pool: &SqlitePool, key: &str) -> Result<Option<String>, sqlx::E
 
 /// Insert or update one setting.
 pub async fn set(
-    pool: &SqlitePool,
+    pool: &Pool,
     key: &str,
     value: &str,
     updated_by: Option<i64>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO settings (key, value, updated_at, updated_by)
-         VALUES (?, ?, ?, ?)
+         VALUES ($1, $2, $3, $4)
          ON CONFLICT (key) DO UPDATE SET value = excluded.value,
                                         updated_at = excluded.updated_at,
                                         updated_by = excluded.updated_by",
@@ -116,7 +115,7 @@ pub async fn set(
 /// leave the instance reconfigured with, say, a new captcha provider but the old
 /// keys.
 pub async fn set_many(
-    pool: &SqlitePool,
+    pool: &Pool,
     values: &[(String, String)],
     updated_by: Option<i64>,
 ) -> Result<(), sqlx::Error> {
@@ -125,7 +124,7 @@ pub async fn set_many(
     for (key, value) in values {
         sqlx::query(
             "INSERT INTO settings (key, value, updated_at, updated_by)
-             VALUES (?, ?, ?, ?)
+             VALUES ($1, $2, $3, $4)
              ON CONFLICT (key) DO UPDATE SET value = excluded.value,
                                             updated_at = excluded.updated_at,
                                             updated_by = excluded.updated_by",
@@ -142,11 +141,12 @@ pub async fn set_many(
 }
 
 /// Ensure every known key exists (used at start-up).
-pub async fn ensure_defaults(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+pub async fn ensure_defaults(pool: &Pool) -> Result<(), sqlx::Error> {
     for (key, value) in DEFAULTS {
         sqlx::query(
-            "INSERT OR IGNORE INTO settings (key, value, updated_at, updated_by)
-             VALUES (?, ?, ?, NULL)",
+            "INSERT INTO settings (key, value, updated_at, updated_by)
+             VALUES ($1, $2, $3, NULL)
+             ON CONFLICT DO NOTHING",
         )
         .bind(key)
         .bind(value)

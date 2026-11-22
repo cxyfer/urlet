@@ -1,6 +1,7 @@
 //! `invite_codes` and `invite_redemptions`.
 
-use sqlx::{FromRow, SqliteConnection, SqlitePool};
+use crate::db::{Connection, Pool};
+use sqlx::FromRow;
 
 use crate::db::invite_issuance;
 
@@ -47,13 +48,13 @@ const SELECT: &str = "SELECT id, code_hash, code_prefix, code_sealed, note, grou
 
 /// Find a usable invite by the hash of the submitted code.
 pub async fn find_active_by_hash(
-    pool: &SqlitePool,
+    pool: &Pool,
     code_hash: &str,
     now: &str,
 ) -> Result<Option<Invite>, sqlx::Error> {
     sqlx::query_as::<_, Invite>(&format!(
-        "{SELECT} WHERE code_hash = ? AND status = 'active' AND used_count < max_uses
-         AND (expires_at IS NULL OR expires_at > ?)"
+        "{SELECT} WHERE code_hash = $1 AND status = 'active' AND used_count < max_uses
+         AND (expires_at IS NULL OR expires_at > $2)"
     ))
     .bind(code_hash)
     .bind(now)
@@ -79,14 +80,11 @@ pub struct NewInvite<'a> {
 /// Create an invite on an explicit connection so the caller can commit it in the
 /// same transaction as its quota reservation. `group_id` optionally pins the
 /// redeemer's group.
-pub async fn create(
-    conn: &mut SqliteConnection,
-    invite: &NewInvite<'_>,
-) -> Result<i64, sqlx::Error> {
-    let result = sqlx::query(
+pub async fn create(conn: &mut Connection, invite: &NewInvite<'_>) -> Result<i64, sqlx::Error> {
+    let id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO invite_codes (code_hash, code_prefix, code_sealed, note, group_id, created_by,
                                    max_uses, used_count, expires_at, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 'active', ?)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, 'active', $9) RETURNING id",
     )
     .bind(invite.code_hash)
     .bind(invite.code_prefix)
@@ -97,9 +95,9 @@ pub async fn create(
     .bind(invite.max_uses)
     .bind(invite.expires_at)
     .bind(crate::services::time::now_iso())
-    .execute(&mut *conn)
+    .fetch_one(&mut *conn)
     .await?;
-    Ok(result.last_insert_rowid())
+    Ok(id)
 }
 
 /// Atomically consume one use of an invite and record the redemption.
@@ -107,7 +105,7 @@ pub async fn create(
 /// The conditional `UPDATE` is what makes this safe under concurrency: only one
 /// transaction can move `used_count` past `max_uses`.
 pub async fn redeem(
-    pool: &SqlitePool,
+    pool: &Pool,
     invite_id: i64,
     user_id: i64,
     now: &str,
@@ -115,8 +113,8 @@ pub async fn redeem(
     let mut tx = crate::db::begin_write(pool).await?;
     let updated = sqlx::query(
         "UPDATE invite_codes SET used_count = used_count + 1
-         WHERE id = ? AND status = 'active' AND used_count < max_uses
-           AND (expires_at IS NULL OR expires_at > ?)",
+         WHERE id = $1 AND status = 'active' AND used_count < max_uses
+           AND (expires_at IS NULL OR expires_at > $2)",
     )
     .bind(invite_id)
     .bind(now)
@@ -129,8 +127,9 @@ pub async fn redeem(
     }
 
     sqlx::query(
-        "INSERT OR IGNORE INTO invite_redemptions (invite_id, user_id, redeemed_at)
-         VALUES (?, ?, ?)",
+        "INSERT INTO invite_redemptions (invite_id, user_id, redeemed_at)
+         VALUES ($1, $2, $3)
+         ON CONFLICT DO NOTHING",
     )
     .bind(invite_id)
     .bind(user_id)
@@ -143,8 +142,8 @@ pub async fn redeem(
 }
 
 /// List invites, newest first.
-pub async fn list(pool: &SqlitePool, limit: i64, offset: i64) -> Result<Vec<Invite>, sqlx::Error> {
-    sqlx::query_as::<_, Invite>(&format!("{SELECT} ORDER BY id DESC LIMIT ? OFFSET ?"))
+pub async fn list(pool: &Pool, limit: i64, offset: i64) -> Result<Vec<Invite>, sqlx::Error> {
+    sqlx::query_as::<_, Invite>(&format!("{SELECT} ORDER BY id DESC LIMIT $1 OFFSET $2"))
         .bind(limit)
         .bind(offset)
         .fetch_all(pool)
@@ -153,13 +152,13 @@ pub async fn list(pool: &SqlitePool, limit: i64, offset: i64) -> Result<Vec<Invi
 
 /// Invites created by one account, newest first (member self-service).
 pub async fn list_by_creator(
-    pool: &SqlitePool,
+    pool: &Pool,
     creator_id: i64,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<Invite>, sqlx::Error> {
     sqlx::query_as::<_, Invite>(&format!(
-        "{SELECT} WHERE created_by = ? ORDER BY id DESC LIMIT ? OFFSET ?"
+        "{SELECT} WHERE created_by = $1 ORDER BY id DESC LIMIT $2 OFFSET $3"
     ))
     .bind(creator_id)
     .bind(limit)
@@ -169,23 +168,23 @@ pub async fn list_by_creator(
 }
 
 /// Number of invites created by one account.
-pub async fn count_by_creator(pool: &SqlitePool, creator_id: i64) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM invite_codes WHERE created_by = ?")
+pub async fn count_by_creator(pool: &Pool, creator_id: i64) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("SELECT COUNT(*) FROM invite_codes WHERE created_by = $1")
         .bind(creator_id)
         .fetch_one(pool)
         .await
 }
 
 /// Find one invite by id.
-pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Invite>, sqlx::Error> {
-    sqlx::query_as::<_, Invite>(&format!("{SELECT} WHERE id = ?"))
+pub async fn find_by_id(pool: &Pool, id: i64) -> Result<Option<Invite>, sqlx::Error> {
+    sqlx::query_as::<_, Invite>(&format!("{SELECT} WHERE id = $1"))
         .bind(id)
         .fetch_optional(pool)
         .await
 }
 
 /// Count invites.
-pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
+pub async fn count(pool: &Pool) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar("SELECT COUNT(*) FROM invite_codes")
         .fetch_one(pool)
         .await
@@ -199,10 +198,10 @@ pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
 /// no longer active. Returns `None` when the invite was missing or already
 /// revoked, or `Some(released)` where `released` reports whether the quota slot
 /// was actually returned.
-pub async fn revoke(pool: &SqlitePool, id: i64) -> Result<Option<bool>, sqlx::Error> {
+pub async fn revoke(pool: &Pool, id: i64) -> Result<Option<bool>, sqlx::Error> {
     let mut tx = crate::db::begin_write(pool).await?;
     let result = sqlx::query(
-        "UPDATE invite_codes SET status = 'revoked' WHERE id = ? AND status = 'active'",
+        "UPDATE invite_codes SET status = 'revoked' WHERE id = $1 AND status = 'active'",
     )
     .bind(id)
     .execute(&mut *tx)
@@ -211,7 +210,7 @@ pub async fn revoke(pool: &SqlitePool, id: i64) -> Result<Option<bool>, sqlx::Er
         tx.rollback().await?;
         return Ok(None);
     }
-    let used_count: i64 = sqlx::query_scalar("SELECT used_count FROM invite_codes WHERE id = ?")
+    let used_count: i64 = sqlx::query_scalar("SELECT used_count FROM invite_codes WHERE id = $1")
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;

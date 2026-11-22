@@ -2,7 +2,7 @@
 
 # urlet — 輕量化多用戶短網址系統規格書 (Spec)
 
-> 版本：1.8 狀態：Approved for implementation 最後更新：2026-10-28
+> 版本：1.9 狀態：Approved for implementation 最後更新：2026-11-22
 
 **目錄**
 
@@ -25,7 +25,7 @@
 
 `urlet` 是一套**自託管、多用戶**的短網址服務。每位使用者擁有自己獨立的短網址空間，可建立短網址、設定**密碼保護**與**過期機制**、檢視點擊統計，並透過個人 API Token 以程式方式操作。
 
-系統以「**盡可能輕量**」為最高設計原則：單一 Rust 二進位檔 + 單一 SQLite 檔案，一個 `docker compose up -d` 即可完成部署，不需要外部資料庫、快取或前端建置流程。v1.1 起介面提供三種語言（英文／繁體中文／簡體中文）、可選的防機器人驗證，並新增公開導覽首頁。v1.2 起新增**使用者群組**：可為不同群組設定各自的連結與 API Token 配額及功能開關，讓同一套單一二進位部署能支援分級方案（例如免費組與付費組）。v1.4 起新增**可切換主題**：視覺識別可由編譯進 binary 的模板集與樣式表組成，管理員也可上傳純 CSS 的自訂主題；管理員決定提供哪些設計與誰能切換，使用者則以 cookie 記住選擇。v1.5 起新增**中轉頁 (Splash Page)**：連結可先顯示帶倒數的宣傳頁，再由分組政策決定成員只能用直接跳轉、只能中轉頁，或可自行選擇。v1.6 起新增**公開短網址工具**：導覽首頁可提供免帳號訪客使用的縮網址表單，並由管理員控制存取層級、逐欄位開關、防機器人驗證，以及每來源位址與全體訪客共用的速率限制。
+系統以「**盡可能輕量**」為最高設計原則：單一 Rust 二進位檔 + 單一 SQLite 檔案，一個 `docker compose up -d` 即可完成部署，不需要外部資料庫、快取或前端建置流程。v1.1 起介面提供三種語言（英文／繁體中文／簡體中文）、可選的防機器人驗證，並新增公開導覽首頁。v1.2 起新增**使用者群組**：可為不同群組設定各自的連結與 API Token 配額及功能開關，讓同一套單一二進位部署能支援分級方案（例如免費組與付費組）。v1.4 起新增**可切換主題**：視覺識別可由編譯進 binary 的模板集與樣式表組成，管理員也可上傳純 CSS 的自訂主題；管理員決定提供哪些設計與誰能切換，使用者則以 cookie 記住選擇。v1.5 起新增**中轉頁 (Splash Page)**：連結可先顯示帶倒數的宣傳頁，再由分組政策決定成員只能用直接跳轉、只能中轉頁，或可自行選擇。v1.6 起新增**公開短網址工具**：導覽首頁可提供免帳號訪客使用的縮網址表單，並由管理員控制存取層級、逐欄位開關、防機器人驗證，以及每來源位址與全體訪客共用的速率限制。修訂版 1.9 新增可選的 **PostgreSQL 後端**：`URLET_DATABASE_URL` 指向 PostgreSQL 時，同一個二進位與映像檔即改用 PostgreSQL，功能完全相同；SQLite 仍是預設，單檔部署方式不變（§4.19）。
 
 ### 1.1 核心設計原則 (來自需求方)
 
@@ -35,8 +35,8 @@
 | P2 | 密碼保護 | 短網址層級 Argon2id 密碼雜湊 + 簽章解鎖 Cookie（TTL 30 分鐘） |
 | P3 | 過期機制 | 絕對時間 `expires_at` + 點擊次數上限 `max_clicks`，過期後回 410 Gone |
 | P4 | Docker Compose 部署 | 單一 `docker-compose.yml`（app + named volume），可選 Caddy TLS overlay |
-| P5 | 盡可能輕量化 | 單一二進位、SQLite（無 MySQL/Redis）、SSR 模板（無 Node 建置）、映像檔 < 40 MB |
-| P6 | Rust 實作 | Rust 2021 + Axum 0.8 + Tokio + sqlx(SQLite) |
+| P5 | 盡可能輕量化 | 單一二進位、預設 SQLite 並可選用 PostgreSQL（無 MySQL/Redis）、SSR 模板（無 Node 建置）、映像檔 < 40 MB |
+| P6 | Rust 實作 | Rust 2021 + Axum 0.8 + Tokio + sqlx（SQLite，可選 PostgreSQL） |
 | P7 | 完善的資料表設計 | 21 張表、37 個索引、軟刪除、稽核日誌、時間序列彙總表，便於未來擴充 |
 | P8 | 適度添加功能 | 標籤、點擊分析、API Token、邀請碼、管理後台、稽核日誌、每日彙總、三語介面、可選防機器人驗證、配額／功能開關使用者群組、可切換與可上傳主題、中轉頁、供訪客使用的公開短網址工具 |
 
@@ -124,7 +124,8 @@ Browser / curl          │                                                  │
                         │ Services: slug / url / click / ua / ratelimit /  │
                         │           audit / settings / i18n / captcha      │
                         │                                                  │
-                        │ sqlx Pool (WAL)  ──►  /data/urlet.db             │
+                        │ sqlx Any pool ──► /data/urlet.db (WAL)           │
+                        │               or ──► PostgreSQL (optional)       │
                         └─────────────────────────────────────────────────┘
                          named volume: urlet-data
 ```
@@ -134,8 +135,8 @@ Browser / curl          │                                                  │
 | 層級 | 選擇 | 理由（相對於先前半成品） |
 |------|------|--------------------------|
 | HTTP | `axum` 0.8 + `tokio` | 生態成熟、型別安全、單一二進位 |
-| DB | `sqlx` 0.8 + SQLite（`bundled`） | 免外部服務、單檔備份、WAL 併發讀取足夠自託管規模 |
-| 遷移 | `include_str!` 內嵌 SQL + 自製 runner | 編譯期嵌入、啟動自動遷移、`schema_migrations` 記錄 checksum，無需 CLI |
+| DB | `sqlx` 0.8 `Any` driver，底層為 SQLite（`bundled`，預設）或 PostgreSQL（可選，rustls TLS） | SQLite：免外部服務、單檔備份、WAL 併發讀取足夠自託管規模。PostgreSQL：給已經在維運 PostgreSQL、想沿用其備份、複寫與工具的管理者。driver 由 URL scheme 在執行期決定，因此仍只有一個二進位與一個映像檔（§4.19） |
+| 遷移 | `include_str!` 內嵌 SQL + 自製 runner | 編譯期嵌入、啟動自動遷移、`schema_migrations` 記錄 checksum，無需 CLI；每個後端各一組（FR-DB-4） |
 | 模板 | `askama` 0.12 | 編譯期檢查的 SSR，無 Node/Vite 建置流程 |
 | 靜態資產 | `include_str!` 內嵌 CSS/JS | 二進位自帶資源，映像檔不需檔案系統 |
 | i18n | 以 `include_str!` 內嵌 JSON 語言目錄（`src/i18n/mod.rs` + `src/i18n/{en,zh-Hant,zh-Hans}.json`） | 與二進位一同部署、無外部語言檔；缺少 key 時回退英文 |
@@ -149,16 +150,18 @@ Browser / curl          │                                                  │
 
 ### 3.3 二進位檔與映像檔尺寸目標
 
-| 項目 | 目標 | v1.0 | v1.1 | v1.6 |
-|------|------|------|------|------|
-| Release 二進位（stripped, LTO, `opt-level=z`） | ≤ 15 MB | 4.2 MB（glibc）／4.5 MB（musl） | **5.7 MB**（glibc 本機）／**5.8 MB**（容器內 musl） | **15.7 MB**（容器內 musl） |
-| 執行期映像（`alpine` + 二進位 + CA 憑證） | ≤ 40 MB | 13.2 MB | **14.8 MB** | **37.2 MB**（35.5 MiB） |
-| 閒置／負載記憶體 | ≤ 30 MB RSS | 6.8 MB（500 次請求後） | **8.7 MB**（500 次請求後） | 未重新量測 |
-| 冷啟動到可服務 | ≤ 1 秒 | 約 0.2 秒（含遷移） | **約 0.1 秒**（全新資料庫，含遷移） | 未重新量測 |
+| 項目 | 目標 | v1.0 | v1.1 | v1.6 | v1.9 |
+|------|------|------|------|------|------|
+| Release 二進位（stripped, LTO, `opt-level=z`） | ≤ 15 MB | 4.2 MB（glibc）／4.5 MB（musl） | **5.7 MB**（glibc 本機）／**5.8 MB**（容器內 musl） | **15.7 MB**（容器內 musl） | **17.0 MB**（容器內 musl）／16.8 MB（glibc） |
+| 執行期映像（`alpine` + 二進位 + CA 憑證） | ≤ 40 MB | 13.2 MB | **14.8 MB** | **37.2 MB**（35.5 MiB） | **39.2 MB**（37.4 MiB） |
+| 閒置／負載記憶體 | ≤ 30 MB RSS | 6.8 MB（500 次請求後） | **8.7 MB**（500 次請求後） | 未重新量測 | 未重新量測 |
+| 冷啟動到可服務 | ≤ 1 秒 | 約 0.2 秒（含遷移） | **約 0.1 秒**（全新資料庫，含遷移） | 未重新量測 | 未重新量測 |
 
 v1.1 欄已包含內嵌語言目錄與以 rustls 實作的驗證碼用戶端，v1.1 各項目標仍然達成。
 
 v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大部分成長來自其間新增的功能 ——SNS 預覽圖片、公開短網址工具與主題系統——而非參考頁本身：同一棵樹移除參考頁後為 30.4 MB。參考頁增加 6.5 MiB，其中內嵌的 Scalar 前端佔 4.9 MB、兩份 OpenAPI 合約佔 0.4 MB。二進位檔已超出 15 MB 目標 0.7 MB，而 37.2 MB 的映像仍在 40 MB 目標之內；若需要縮減映像，槓桿在內嵌前端——壓縮後約 1.3 MB，改用 RapiDoc 之類較小的渲染器則為 0.5 MB，代價是失去在地化的介面文字。
+
+v1.9 欄是在 GitHub Codespace 中於 PostgreSQL 分支量測，映像以 repo 的 `Dockerfile` 執行 `docker build` 建置。相較 v1.6，musl 二進位增加 1.3 MB、映像增加 2.0 MB；這包含 PostgreSQL 驅動程式與其上的 `Any` 層，以及其間合併的功能，兩者未分開量測。二進位目前超出 15 MB 目標 2.0 MB，39.2 MB 的映像仍在 40 MB 目標之內，只剩 0.8 MB 餘裕：下一個讓映像變大的功能，應同時採用上述的 Scalar 縮減方案。
 
 ---
 
@@ -436,6 +439,23 @@ v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大
 | FR-PREVIEW-6 | 錯誤與權限 | 文字與圖片修改具原子性，限擁有者並遵循既有 CSRF 規則。上傳限制請求大小與速率。無效圖片不覆寫既有設定；重試表單保留文字，檔案依瀏覽器限制需重新選取 |
 | FR-PREVIEW-7 | 圖片政策 | 管理員在設定頁或設定 API 選擇 `preview_image_policy=none/url/upload/both`（預設 `both`）。政策套用所有擁有者、表單／API 寫入、metadata 圖片與上傳圖片回應。編輯器隱藏禁止的來源，伺服器同樣拒絕；保留／移除與僅編輯文字仍可使用。不允許的既有圖片會保留但暫停輸出，重新允許後恢復；第三方已複製的外部內容無法撤回 |
 
+### 4.19 資料庫後端 (FR-DB)
+
+SQLite 是預設值，也仍是建議的部署方式：一個檔案、不需外部服務。PostgreSQL 是給已經在維運它的管理者的替代選項。兩者透過 sqlx 的 `Any` driver 走同一條程式路徑；讓同一段查詢文字在兩者都成立的 SQL 規則見 §6.6。
+
+| ID | 需求 | 說明 |
+|----|------|------|
+| FR-DB-1 | 後端選擇 | `URLET_DATABASE_URL` 以 scheme 選擇後端：`sqlite:`（預設，行為不變）或 `postgres://`／`postgresql://`。其他 scheme 會以設定錯誤中止啟動；in-memory SQLite URL（`sqlite::memory:`、`mode=memory`）也一樣，因為遷移與應用程式連線池使用不同連線，連線池會開到空的資料庫。兩個 driver 都編譯進同一個二進位與映像檔，沒有需要選擇的建置 feature |
+| FR-DB-2 | 功能一致 | §4 的每一項功能需求在兩個後端上行為相同，包括配額、slug／標籤／群組／主機名稱的不分大小寫唯一性、搜尋、軟刪除、SNS 預覽 trigger 與遊客自然週期計數。兩個 collation 效應是明文列出的例外（§6.6）：只差在非 ASCII 大小寫或全半形的標籤與群組名稱在 PostgreSQL 上會衝突，以及不分大小寫的排序（標籤、群組、slug）在 PostgreSQL 上依 ICU 順序而非 ASCII 順序。除此之外只有維運面不同：備份方式、管理總覽顯示的資料庫大小，以及 WAL checkpoint（僅 SQLite） |
+| FR-DB-3 | 支援的伺服器 | PostgreSQL 14 以上，且以 ICU 建置（官方映像、Debian／Ubuntu 套件與主要託管服務皆是）。不需要任何 extension，也不需要 superuser：角色需要資料庫的 `CONNECT` 權限，以及目標 schema 的 `CREATE` 權限，遷移會在其中建立資料表、索引、一個 collation、一個 trigger 函式與其 trigger。物件建立在連線 `search_path` 的第一個 schema（預設 `public`）。TLS 在 URL 中設定（`sslmode`、`sslrootcert`），使用 rustls 與 webpki roots，因此 musl 映像仍不需要 OpenSSL。sqlx 預設 `sslmode=prefer`，會在沒有任何警告的情況下退回明文連線，因此不在同一台主機或私有網路上的伺服器應使用 `sslmode=verify-full`。driver 也會讀取標準 libpq 變數（`PGPASSWORD`、`PGSSLMODE`、`PGSSLROOTCERT`）與 `~/.pgpass`，因此密碼可以不放在 `URLET_DATABASE_URL` 中。不支援 `transaction` 模式的 PgBouncer 等交易層連線池代理：遷移鎖是 session 範圍，driver 也使用 prepared statement |
+| FR-DB-4 | Schema 與遷移 | PostgreSQL 有自己內嵌的遷移組，位於 `migrations/postgres/`。其中 `0001_baseline.sql` 在單一交易內建立 SQLite 執行完 `0018_admin_url_lock.sql` 後的 schema 與種子資料；SQLite 的升級步驟不會重播，因為沒有任何 PostgreSQL 部署早於它們。此後每個遷移都以相同版本名稱成對提供——`migrations/NNNN_name.sql` 與 `migrations/postgres/NNNN_name.sql`——並同時登記在 `src/db/migrate.rs`。兩個後端都在 `schema_migrations` 記錄已套用的版本與 checksum，修改已套用的檔案在任一後端都會中止啟動。一個一致性測試會比對兩邊遷移後的 schema（資料表；欄位的正規化型別、可否為空與預設值；索引；外鍵與其 `ON DELETE` 動作；帶有 `CHECK` 約束的欄位；trigger）與種子資料列，因此只加在一邊的遷移會讓 CI 失敗。比對時忽略 SQLite 內部的 `sqlite_sequence` 表與自動索引，種子資料列也不比對時間值；兩個後端寫入的時間都使用 §6.2 的 ISO 格式 |
+| FR-DB-5 | 並行遷移 | 在 PostgreSQL 上，遷移程序在整個執行期間以專用連線持有 session 層級的 advisory lock，在建立或讀取 `schema_migrations` 之前取得，且使用與 FR-DB-6 不同的鍵。第二個程序會在與 SQLite 相同的 120 秒上限（`LOCK_WAIT`）內等待，取得後重新讀取 `schema_migrations`，因此不會重複套用，兩個程序在遷移完成前都不會開始監聽。每個遷移在單一交易內執行；PostgreSQL 的 DDL 具交易性 |
+| FR-DB-6 | 寫入序列化 | 在 SQLite 上，每個寫入交易以 `BEGIN IMMEDIATE` 開啟（NFR-PERF-2），而 SQLite 一次只允許一個寫入者，autocommit 敘述也包含在內。在 PostgreSQL 上，寫入交易會執行 `BEGIN ISOLATION LEVEL READ COMMITTED`（不論伺服器預設為何）、`SET LOCAL lock_timeout = '5s'`，以及對固定 urlet 鍵的 `pg_advisory_xact_lock`，讓寫入交易一次只跑一個，等待中的交易在五秒後放棄，與 SQLite 的 `busy_timeout` 相同。PostgreSQL 不會序列化 autocommit 敘述，因此每個受彙總或其他列保護的寫入——目前是計數受限的插入 `urls::create_within_quota`、`tokens::create_within_quota`、`login_attempts::reserve_failure`（鎖定門檻），以及 `public_quota::reserve` 中的遊客計數上限——在兩個後端上都放在寫入交易內，邀請碼發放已是如此。只有以其目標列本身為條件的寫入（例如 `users::set_password` 的 `UPDATE … WHERE id = $n AND is_system = 0`，或遊客計數的 `DO UPDATE … WHERE used < $n`）可以維持 autocommit，因為 PostgreSQL 會在列鎖下重新檢查該列。不使用 `SERIALIZABLE`，因為那樣每個呼叫端都需要重試迴圈。測試會在距配額只差一筆時並行建立連結，並預期恰好一筆成功 |
+| FR-DB-7 | 約束錯誤 | 唯一性與外鍵違反改以 sqlx 的 error kind 判斷（兩個 driver 皆適用），不再比對 SQLite 結果碼。PostgreSQL 交易中一旦有敘述失敗，整個交易即中止，因此需要從預期中的約束錯誤恢復的交易，會在 savepoint 內處理，或在寫入前先檢查，結果與 SQLite 相同。PostgreSQL 的鎖逾時（`55P03`）或死結（`40P01`）與目前 SQLite 的 busy timeout 一樣，回報為內部錯誤（500） |
+| FR-DB-8 | 維運 | `/health` 在兩者都以 `SELECT 1` 探測。管理總覽顯示 SQLite 檔案大小或 `pg_database_size(current_database())`。維護工作只在 SQLite 上做 WAL checkpoint；PostgreSQL 交給 autovacuum。`URLET_DATA_DIR` 仍存放 `secret.key`，`URLET_THEMES_DIR` 存放上傳的樣式表，因此使用 PostgreSQL 時兩者同樣必須是持久儲存（映像設為 `/data` 與 `/data/themes`，compose 分別掛載 `urlet-data` 與 `urlet-themes` volume）。備份為 `pg_dump` 加上這兩個目錄。資料庫伺服器升級作業系統或 ICU 後，應依 PostgreSQL 的 collation 版本警告，以 `REINDEX` 重建使用 `nocase` collation 的索引 |
+| FR-DB-9 | 憑證 | 資料庫 URL 不會寫入日誌、顯示於頁面或由 API 回傳。`Config` 的 debug 輸出（目前會印出完整 URL）與啟動日誌只列出後端、主機、連接埠與資料庫名稱，並移除密碼。PostgreSQL URL 中驅動程式不認得的參數會以設定錯誤中止啟動，錯誤只列出參數名稱、不含其值，因為 sqlx 否則會在 urlet 處理之前把兩者一起寫入 `WARN` 日誌（libpq 的 `sslpassword` 即屬此類） |
+| FR-DB-10 | 範圍 | 每個資料庫只對應一個 urlet 程序。速率限制器與其他程序內狀態不會共享，上傳的樣式表放在本機檔案系統，因此即使 FR-DB-6 能讓它們的寫入保持正確，本修訂版仍不支援多個副本共用同一個 PostgreSQL 資料庫。也不提供把現有 SQLite 執行個體搬到 PostgreSQL 的工具：新的 PostgreSQL 部署從空資料庫開始（§12）。兩個後端使用相同的連線池設定（NFR-PERF-3） |
+
 ---
 
 ## 5. 非功能需求
@@ -469,7 +489,7 @@ v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大
 | ID | 需求 |
 |----|------|
 | NFR-PERF-1 | 轉址路徑：以索引查詢 URL 與選填預覽 + 佇列化寫入；目標 P95 < 10 ms（歷史轉址基準 0.74 ms；新增預覽查詢尚未測速） |
-| NFR-PERF-2 | SQLite：`journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000`；每個寫入交易以 `BEGIN IMMEDIATE` 開啟，讓「先讀後寫」的交易從一開始就持有寫鎖，而不會因失去 WAL 快照得到 `SQLITE_BUSY_SNAPSHOT`——該錯誤不會觸發 busy handler，因此 `busy_timeout` 無法涵蓋 |
+| NFR-PERF-2 | SQLite：`journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000`；每個寫入交易以 `BEGIN IMMEDIATE` 開啟，讓「先讀後寫」的交易從一開始就持有寫鎖，而不會因失去 WAL 快照得到 `SQLITE_BUSY_SNAPSHOT`——該錯誤不會觸發 busy handler，因此 `busy_timeout` 無法涵蓋。sqlx 的預設值只涵蓋 `foreign_keys` 與 `busy_timeout`，因此透過 `Any` driver 時，`journal_mode`、`synchronous` 與 `journal_size_limit=8388608` 會套用到每條新連線；SQLite URL 沒有 `mode` 參數時會補上 `mode=rwc`，首次啟動仍會建立檔案。PostgreSQL 的寫入交易則改用 FR-DB-6 的 advisory lock |
 | NFR-PERF-3 | 連線池：`max_connections=8`；點擊寫入由單一背景 writer 序列化（避免 WAL 因並發寫入無法 checkpoint 而無限成長） |
 | NFR-PERF-4 | 列表查詢一律分頁（預設 20，上限 100） |
 | NFR-PERF-5 | 統計查詢使用 `url_daily_stats` 與索引，避免全表掃描 |
@@ -484,7 +504,7 @@ v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大
 | NFR-OPS-4 | 日誌輸出 stdout（`tracing`，JSON 或 compact 由 `URLET_LOG_FORMAT` 控制） |
 | NFR-OPS-5 | 設定全部來自環境變數（12-factor），`.env.example` 完整說明 |
 | NFR-OPS-6 | 每日維護任務：清理過期 Session、可選清理過期點擊紀錄 |
-| NFR-OPS-7 | 備份 = 複製 `urlet.db`（WAL checkpoint 後），以及 `URLET_THEMES_DIR` 的上傳主題檔案；README 與 DEPLOYMENT 有說明 |
+| NFR-OPS-7 | 備份 = 複製 `urlet.db`（WAL checkpoint 後），以及 `URLET_THEMES_DIR` 的上傳主題檔案；README 與 DEPLOYMENT 有說明；使用 PostgreSQL 時為 `pg_dump` 加上 `URLET_DATA_DIR` 與 `URLET_THEMES_DIR`（FR-DB-8） |
 | NFR-OPS-8 | 非 root 使用者執行容器；唯讀根檔案系統可運作 |
 | NFR-OPS-9 | 語言目錄以 `include_str!` 內嵌於二進位檔，部署仍為單一 binary；唯一可寫入的資產目錄是 `URLET_THEMES_DIR`，供管理員上傳使用 |
 
@@ -494,7 +514,7 @@ v1.6 欄是在 `master` 加上內嵌 API 參考後量測。自 v1.1 以來的大
 |----|------|
 | NFR-MAINT-1 | 分層：`routes/`（HTTP）→ `services/`（業務）→ `db/`（SQL）；不跨層直接查詢 |
 | NFR-MAINT-2 | 單一錯誤型別 `AppError`，集中轉換為 HTTP 回應 |
-| NFR-MAINT-3 | 所有 SQL 集中於 `src/db/` 各模組，使用執行期查詢（無需 `DATABASE_URL` 即可編譯） |
+| NFR-MAINT-3 | 所有 SQL 集中於 `src/db/` 各模組，使用執行期查詢（無需 `DATABASE_URL` 即可編譯）。每段查詢文字依 §6.6 的規則，在 SQLite 與 PostgreSQL 上不經修改即可執行；少數必須不同的敘述透過 `db::Dialect` 選擇。`services/domain_policy.rs` 與 `services/limits.rs` 目前仍直接執行的查詢，會在這次移植時移入 `src/db/` |
 | NFR-MAINT-4 | `cargo clippy -- -D warnings` 與 `cargo fmt --check` 通過 |
 | NFR-MAINT-5 | 單元測試 + 整合測試（含 `tower::ServiceExt::oneshot` 端到端）覆蓋核心流程 |
 | NFR-MAINT-6 | 所有介面字串只存在於三份語言目錄中；模板與 handler 不得硬寫顯示文字 |
@@ -529,10 +549,10 @@ login_attempts（稽核用）
 ### 6.2 設計原則
 
 1. **時間欄位**：全部 `TEXT` 存 ISO-8601 UTC（`YYYY-MM-DDTHH:MM:SS.sssZ`），可直接字串比較與排序。
-2. **主鍵**：`INTEGER PRIMARY KEY AUTOINCREMENT`（SQLite rowid 最佳化）。
+2. **主鍵**：`INTEGER PRIMARY KEY AUTOINCREMENT`（SQLite rowid 最佳化）；PostgreSQL 為 `BIGINT` identity 欄位（§6.6）。
 3. **軟刪除**：`users.deleted_at`、`urls.deleted_at`；查詢一律加 `deleted_at IS NULL`。
 4. **枚舉**：以 `TEXT + CHECK` 約束，保留未來擴充彈性（SQLite 無原生 ENUM）。
-5. **布林**：`INTEGER 0/1`。
+5. **布林**：`INTEGER 0/1`（PostgreSQL 為 `BIGINT 0/1`），透過 `db::Flag` 解碼（§6.6）。
 6. **彙總表**：`url_daily_stats` 為統計查詢的加速層，寫入時 upsert。
 7. **保留擴充欄位**：`api_tokens.scopes`、`urls.notes`、`audit_logs.metadata`。
 8. **群組繼承**：`user_groups.max_urls` 與 `max_api_tokens` 可為 `NULL`；`NULL` 代表跟隨全站設定，`0` 代表無上限。功能開關為 `INTEGER 0/1`，預設 `1`（允許），因此群組在管理員編輯前不會改變任何行為。
@@ -542,7 +562,7 @@ login_attempts（稽核用）
 
 ### 6.3 DDL（migration 摘要）
 
-> 完整真實來源為 `migrations/` 目錄（`0001_init.sql` 至 `0018_admin_url_lock.sql`）：`0003_multi_domain.sql` 重建網域 schema，`0004_user_groups.sql`–`0007_member_invites.sql` 新增群組與邀請碼配額，`0010`／`0012`／`0013` 新增主題，`0011_splash_pages.sql` 新增轉址中繼頁，`0014_invite_issuance_released.sql` 新增邀請碼退還欄位，`0015_public_shorten.sql` 新增 `users.is_system`、保留的訪客帳號與公開短網址工具設定；`0016_url_previews.sql` 新增 SNS 預覽資料與圖片（每條連結至多一筆）；`0017_public_creation_quota.sql` 新增遊客自然週期計數與週期設定；`0018_admin_url_lock.sql` 新增可空的 `urls.admin_disabled_at` 欄位，並依稽核紀錄中「最後一次管理員狀態變更為停用」的連結回填；以下為結構摘要。
+> 完整真實來源為 `migrations/` 目錄（`0001_init.sql` 至 `0018_admin_url_lock.sql`）：`0003_multi_domain.sql` 重建網域 schema，`0004_user_groups.sql`–`0007_member_invites.sql` 新增群組與邀請碼配額，`0010`／`0012`／`0013` 新增主題，`0011_splash_pages.sql` 新增轉址中繼頁，`0014_invite_issuance_released.sql` 新增邀請碼退還欄位，`0015_public_shorten.sql` 新增 `users.is_system`、保留的訪客帳號與公開短網址工具設定；`0016_url_previews.sql` 新增 SNS 預覽資料與圖片（每條連結至多一筆）；`0017_public_creation_quota.sql` 新增遊客自然週期計數與週期設定；`0018_admin_url_lock.sql` 新增可空的 `urls.admin_disabled_at` 欄位，並依稽核紀錄中「最後一次管理員狀態變更為停用」的連結回填。PostgreSQL 從等同上述全部遷移的 `migrations/postgres/0001_baseline.sql` 開始（FR-DB-4）。以下為結構摘要。
 
 | 表 | 主要欄位 | 用途 |
 |----|----------|------|
@@ -610,6 +630,33 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 - 公開短網址工具（v1.6）：`public_create_access=user`（升級後維持原有行為）、`public_captcha=true`、`public_rate_limit_per_ip=20`、`public_rate_limit_per_ip_period=hour`、`public_rate_limit_global=500`、`public_rate_limit_global_period=hour`、`public_max_urls=1000`、`public_allow_slug=true`、`public_allow_title=true`，而 `public_allow_tags`、`public_allow_password`、`public_allow_expiry`、`public_allow_max_clicks`、`public_allow_redirect`、`public_allow_domain` 皆為 `false`；`guest_allowlist_enabled=true`，`guest_allowlist` 以內建的 43 條主機規則清單（`src/services/guest_allowlist.txt`，由 `src/db/settings.rs` 寫入）作為預設，僅在缺少時插入，因此已編輯或刻意清空的清單不會被覆寫。migration 也會插入保留的訪客帳號（`guest@urlet.invalid`、`is_system = 1`、`status = suspended`、無群組）；只有在該位址已屬於其他人的極端情況下才會略過，並於啟動時回報。
 - `domains`：啟動時依 `URLET_BASE_URL` 的 host 插入/更新 canonical 網域（`source=system`，永遠 active）。只有在沒有任何預設網域時才會設為預設，讓管理員可以改選其他預設。`URLET_DOMAINS` 只插入缺少的網域（`active`/`env`），不改既有資料。
 - `settings`（首頁時鐘）：`landing_clock=server`（`server`、`utc` 或 `off`）。它控制首頁底部顯示伺服器資訊的設計（預設 Verdant 與以其為基礎的上傳主題）中的時鐘。`server` 顯示行程時區（`TZ`）的時鐘；`utc` 顯示同一時鐘的 UTC 時間，讓首頁不顯示伺服器時區；`off` 隱藏時鐘。資訊條中的版本與運行時間會保留。年份標籤在 `server` 模式使用伺服器時區，在 `utc`／`off` 模式使用 UTC，避免隱藏時區後仍透過跨年邊界透露資訊。訪客配額的週期一律跟隨 `TZ`，此設定不會改變實例對「本地時間」的定義。
+
+### 6.6 PostgreSQL 對應與可攜 SQL
+
+PostgreSQL 的 baseline 逐欄轉換 SQLite schema：
+
+| SQLite | PostgreSQL | 說明 |
+|--------|------------|------|
+| `INTEGER`（id、計數、0/1 旗標） | `BIGINT` | 同樣是 64 位元範圍；旗標保留 `CHECK (x IN (0, 1))` |
+| `INTEGER PRIMARY KEY AUTOINCREMENT` | `BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY` | baseline 會把每個 identity 推進到種子資料的 id 之後 |
+| `TEXT` | `TEXT COLLATE "C"` | 與 SQLite 的 `BINARY` 相同的位元組順序，因此無論資料庫預設 collation 為何，這些欄位上的 ISO 時間、鍵值與 `ORDER BY` 比較結果都一致 |
+| `TEXT COLLATE NOCASE` | `TEXT COLLATE nocase` | `nocase` 是 baseline 建立的 ICU nondeterministic collation（`und-u-ks-level2`），因此寫著 `COLLATE NOCASE` 的 SQL 在兩邊都不需修改 |
+| `BLOB` | `BYTEA` | SNS 預覽圖片 |
+| Trigger | PL/pgSQL 函式加 trigger | `url_previews_delete_with_link` |
+
+SQLite 的 `NOCASE` 只折疊 ASCII 字母，`nocase` 則會折疊所有文字系統的大小寫，也忽略全形／半形差異。slug 與主機名稱都是 ASCII，相等與唯一性的行為完全相同；只差在非 ASCII 大小寫或全半形的標籤與群組名稱，在 SQLite 上是不同的值，在 PostgreSQL 上則會衝突。依 `nocase` 欄位排序時採用 ICU 順序，標點、數字與非 ASCII 字母的順序可能與 SQLite 的 ASCII 順序不同；這只影響顯示順序。子字串搜尋在兩邊都維持 ASCII 不分大小寫：SQLite 的 `LIKE` 本來就是如此，PostgreSQL 則使用 `COLLATE "C" ILIKE` 搭配相同的跳脫字元，因為 PostgreSQL 18 之前無法在 nondeterministic collation 上做樣式比對。
+
+查詢文字遵守以下規則，讓同一個字串在兩個後端都成立：
+
+1. placeholder 一律為 `$1`…`$N`；sqlx 在 SQLite 上也接受，重複的編號會沿用同一個參數。不使用 `?` 與 `?N`。
+2. 使用 `COALESCE`，不用 `IFNULL`；使用 `IS NOT DISTINCT FROM`，不用 `IS $n`；使用 `INSERT … ON CONFLICT … DO NOTHING`，不用 `INSERT OR IGNORE`；使用 `RETURNING id`，不用 `last_insert_rowid()`；使用 `CASE`，不用兩個參數的 `MAX`／`MIN`。
+3. `SUM` 一律包在 `CAST(… AS BIGINT)` 中，因為 PostgreSQL 會回傳 `Any` driver 無法解碼的 `NUMERIC`；加總條件時寫成 `CASE WHEN … THEN 1 ELSE 0 END`，不直接加總比較式。
+4. `ON CONFLICT … DO UPDATE SET … WHERE` 中，`SET` 右側與 `WHERE` 內的欄位要加上資料表名稱（`t.col + excluded.col`）；PostgreSQL 會把未限定的名稱視為模稜兩可而拒絕。
+5. 旗標以整數字面值比較、以 `i64` 綁定；不綁定 Rust `bool`，因為 PostgreSQL 不會把布林參數存進整數欄位。旗標欄位與布林運算式透過 `db::Flag` 解碼，它同時接受整數與布林，因為 `Any` driver 只會從布林值解碼 `bool`。
+6. 綁定值的型別要與欄位一致（`TEXT` 綁文字、`BIGINT` 綁整數）；PostgreSQL 不會在兩者之間轉換。分組查詢中每個非彙總欄位都要列在 `GROUP BY`，字串字面值使用單引號，所有布林位置（`WHERE`、`CASE WHEN`、`AND`／`OR`／`NOT` 的運算元）都放比較式，例如 `$n = 1`，不直接放整數欄位或參數。
+7. PostgreSQL 拒絕任何含 NUL 位元組的文字值，ICU `nocase` 又會把全形字母視為對應的 ASCII 字母；SQLite 則會儲存前者、區分後者。因此 URL 含編碼 NUL（`%00`）的請求在路由前即以 400 拒絕；沒有控制字元檢查的自由文字欄位（連結備註、顯示名稱、邀請碼備註、設定值）遇到 NUL 時回傳欄位錯誤；以 slug、主機名稱或 email 查找時，若鍵值不是可列印 ASCII 或含 NUL，不查詢資料庫，直接回答「找不到」。兩種後端因此給出相同結果。
+
+方言專屬的敘述只出現在 `db::Dialect` 的呼叫點：交易開始（FR-DB-6）、不分大小寫搜尋、資料庫大小、WAL 維護與遷移 runner。
 
 ---
 
@@ -724,8 +771,8 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 | `URLET_BIND` | `0.0.0.0:8080` | 監聽位址 |
 | `URLET_BASE_URL` | `http://localhost:8080` | Canonical 對外網址（用於產生短網址、CSRF 同源檢查、Cookie Secure 判斷） |
 | `URLET_DOMAINS` | 空 | 額外網域（僅轉址），逗號分隔；第一次啟動插入為 `active`，不覆寫既有資料 |
-| `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite 連線字串 |
-| `URLET_DATA_DIR` | 資料庫所在目錄 | 自動產生密鑰的存放位置 |
+| `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite（`sqlite:`）或 PostgreSQL（`postgres://`、`postgresql://`）連線字串；scheme 決定後端（FR-DB-1），此值不會寫入日誌（FR-DB-9） |
+| `URLET_DATA_DIR` | SQLite 資料庫所在目錄；沒有資料庫檔案時（PostgreSQL）為 `data` | 自動產生密鑰的存放位置；任一後端都必須是持久儲存 |
 | `URLET_THEMES_DIR` | `<URLET_DATA_DIR>/themes` | 上傳主題樣式表的存放目錄；docker compose 將 `urlet-themes` volume 掛載於此 |
 | `URLET_HEALTHCHECK_URL` | 由 `URLET_BIND` 推導 | `urlet healthcheck` 的目標 URL |
 | `URLET_SECRET` | 自動產生並存檔 | Session/解鎖 Cookie/IP 雜湊的 HMAC 密鑰（至少 16 字元；自動產生的為 44 字元 base64，寫入資料目錄的 `secret.key`） |
@@ -769,6 +816,8 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 
 `docker-compose.tls.yml`：額外加入 Caddy（80/443、自動 Let's Encrypt），urlet 不對外暴露連接埠，由 Caddy 反向代理。
 
+`docker-compose.postgres.yml`：加入一個 `postgres` 服務，使用獨立的 `urlet-postgres` volume 與健康檢查，把 `URLET_DATABASE_URL` 指向它，密碼另外透過 `PGPASSWORD` 傳入，並在資料庫健康後才啟動 urlet。`urlet-data` 與 `urlet-themes` volume 仍保留，因為其中存放 `secret.key` 與上傳的樣式表（FR-DB-8）。
+
 ---
 
 ## 10. 測試策略
@@ -777,6 +826,7 @@ v1.1 的變更只新增 `settings` 的 key；由於 `settings` 為 key-value 表
 |------|------|------|
 | 單元測試 | slug 產生/驗證/保留字、UA 解析、過期判定、設定解析、群組配額繼承（NULL／0／自訂值、未分組回退）、密碼雜湊、IP 雜湊、CSRF 同源判斷、`Accept-Language` 協商（`q=` 權重、回退英文）、語言目錄回退、驗證碼啟用條件矩陣、驗證碼失敗關閉判定 | `#[cfg(test)]` 模組 |
 | 整合測試 | 註冊→登入→建立→轉址→統計；密碼保護流程；過期與點擊上限；所有權隔離；admin 授權；API Token；群組 CRUD 與預設標記轉移；各群組的連結與 Token 配額；建立與更新時的功能開關強制；帶群組的邀請碼；刪除群組並改派；CSRF 拒絕；語言協商與 cookie 切換；API JSON 維持英文；註冊、登入與建立時的驗證碼拒絕（網頁與 JSON API）；導覽首頁；中轉頁渲染、密碼優先與轉址方式政策 | `tests/`——`auth.rs`、`urls.rs`、`redirect.rs`、`splash.rs`、`pages.rs`、`admin.rs`、`groups.rs`、`invites.rs`、`i18n.rs`、`captcha.rs`、`multi_domain.rs`、`previews.rs`、`public_urls.rs`、`themes.rs`、`url_cleaning.rs`、`guest_allowlist.rs`，外加 `contract.rs`、`api_docs.rs` 與 `ci_workflow.rs`——以 `tower::ServiceExt::oneshot` 對臨時 SQLite 執行。`contract.rs` 檢查 §4.9 所述的 router 與合約集合相等，`ci_workflow.rs` 檢查每個 CI job 都在 gate 的 `REQUIRED` 清單中 |
+| PostgreSQL 後端 | 當 `URLET_TEST_DATABASE_URL` 是 `postgres://` URL 時，`tests/` 下的整合測試會再對 PostgreSQL 執行一次，每個測試 app 使用全新的資料庫。為此 `tests/common/mod.rs` 與測試檔直接執行的 SQL 改用 `Any` pool 並遵守 §6.6 的規則；檢查 SQLite 本身（檔案、pragma 或升級路徑）的測試標為僅限 SQLite。設定 `URLET_REQUIRE_POSTGRES=1`（CI job 會設定）而缺少 `URLET_TEST_DATABASE_URL` 時，`tests/postgres.rs` 會失敗而不是略過，因此設定錯誤的 job 不會因略過而通過；它另外檢查與 SQLite 的 schema 與種子資料一致（FR-DB-4）、包含配額邊界並行建立在內的寫入序列化（FR-DB-6）、並行遷移（FR-DB-5）與 §6.6 的對應（不分大小寫唯一性、搜尋、種子資料後的 identity）。`#[cfg(test)]` 模組、SQLite 遷移升級測試、`smoke.sh` 與 `merge-check.sh` 仍只跑 SQLite | CI job `PostgreSQL`，使用 `postgres:17-alpine` service container，並列在 gate 的 `REQUIRED` 清單 |
 | 端對端煙霧測試 | 以真實二進位 + curl 走完主要流程 | `scripts/smoke.sh` |
 | 靜態檢查 | `cargo fmt --check`、`cargo clippy -D warnings` | CI 指令（README 說明） |
 
@@ -857,6 +907,14 @@ v1.6 新增項目：
 - [x] 三份語言目錄與六個導覽首頁模板都帶有新字串與共用的表單 partial
 - [x] `cargo test`、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`scripts/smoke.sh` 與 `scripts/merge-check.sh` 全綠
 
+修訂版 1.9 新增項目（PostgreSQL 後端）：
+
+- [x] 同一個二進位與映像檔在 SQLite 與 PostgreSQL 14+ 上提供全部功能，只由 `URLET_DATABASE_URL` 決定
+- [x] 完整整合測試在兩個後端都通過，一致性測試在 `PostgreSQL` CI job 中通過，且該 job 列在 gate 的 `REQUIRED` 清單
+- [x] 既有 SQLite 資料庫升級時沒有遷移變更，也沒有行為變更
+- [x] 資料庫 URL 不出現在任何日誌或 debug 輸出
+- [x] 在 §3.3 重新量測二進位與映像大小，映像仍低於 40 MB
+
 ---
 
 ## 12. 未來擴充路徑（本版僅保留 schema/架構空間）
@@ -870,3 +928,5 @@ v1.6 新增項目：
 | GeoIP 國家統計 | `clicks.country_code` 已存在，只需加入解析器 |
 | 點擊明細匯出 / CSV | `clicks` 完整欄位 + 索引 |
 | 稽核合規 | `audit_logs.metadata` JSON 保留完整上下文 |
+| SQLite → PostgreSQL 複製 | 兩邊 schema 逐欄相同（§6.6），因此 `urlet copy-db` 指令可依相依順序串流每張資料表並推進 identity |
+| 多個執行個體共用 PostgreSQL | 寫入交易與受彙總保護的寫入已在資料庫內序列化（FR-DB-6）；速率限制器、快取與上傳主題則需移出程序記憶體與本機檔案系統 |

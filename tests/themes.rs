@@ -1409,7 +1409,7 @@ async fn a_stale_enabled_row_does_not_break_a_partial_update() {
     let now = urlet::services::time::now_iso();
     sqlx::query(
         "INSERT INTO themes (key, is_enabled, is_default, sort_order, created_at, updated_at)
-         VALUES ('ghost', 1, 0, 999, ?, ?)",
+         VALUES ('ghost', 1, 0, 999, $1, $2)",
     )
     .bind(&now)
     .bind(&now)

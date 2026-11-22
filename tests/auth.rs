@@ -517,7 +517,7 @@ async fn suspended_accounts_cannot_use_existing_sessions() {
         StatusCode::OK
     );
 
-    sqlx::query("UPDATE users SET status = 'suspended' WHERE email_normalized = ?")
+    sqlx::query("UPDATE users SET status = 'suspended' WHERE email_normalized = $1")
         .bind("user@example.com")
         .execute(&app.state.db)
         .await
@@ -942,13 +942,7 @@ async fn a_success_that_cannot_be_recorded_opens_no_session() {
     app.register("user@example.com", "supersecret").await;
 
     // 預留的 INSERT 可以成功，但標記成功的 UPDATE 一律失敗。
-    sqlx::query(
-        "CREATE TRIGGER reject_login_attempt_update BEFORE UPDATE ON login_attempts
-         BEGIN SELECT RAISE(ABORT, 'login_attempts is read-only'); END",
-    )
-    .execute(&app.state.db)
-    .await
-    .expect("create trigger");
+    common::reject_updates_on(&app, "login_attempts").await;
 
     let response = app
         .post_json(
@@ -1031,7 +1025,7 @@ async fn sessions_slide_while_in_use() {
     // Give the session a nearly expired deadline and an old last_seen_at, then
     // verify that using it pushes the expiry out instead of leaving it fixed.
     let nearly_expired = urlet::services::time::iso_in_hours(1);
-    sqlx::query("UPDATE sessions SET last_seen_at = ?, expires_at = ?")
+    sqlx::query("UPDATE sessions SET last_seen_at = $1, expires_at = $2")
         .bind("2020-01-01T00:00:00.000Z")
         .bind(&nearly_expired)
         .execute(&app.state.db)

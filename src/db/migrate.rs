@@ -14,6 +14,7 @@
 use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
+use sqlx::postgres::PgConnection;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{Connection, SqliteConnection, SqlitePool};
 
@@ -262,7 +263,8 @@ async fn apply_transactional(
 ) -> Result<()> {
     let wait = LockWait::new();
     let mut tx = loop {
-        match crate::db::begin_write(pool).await {
+        // 遷移一律走原生 SQLite 連線；與 `db::begin_write` 相同，先取得寫鎖。
+        match pool.begin_with("BEGIN IMMEDIATE").await {
             Ok(tx) => break tx,
             Err(err) => {
                 if !wait.retry(&err).await {
@@ -468,11 +470,115 @@ async fn is_applied(pool: &SqlitePool, version: &str, checksum: &str) -> Result<
 }
 
 /// Number of migrations recorded as applied.
-pub async fn applied_count(pool: &SqlitePool) -> Result<i64> {
+pub async fn applied_count(pool: &crate::db::Pool) -> Result<i64> {
     sqlx::query_scalar("SELECT COUNT(*) FROM schema_migrations")
         .fetch_one(pool)
         .await
         .map_err(AppError::from)
+}
+
+/// PostgreSQL migrations (SPEC FR-DB-4). `0001_baseline` equals SQLite
+/// `0001_init` through `0018_admin_url_lock`; every later entry has a SQLite
+/// twin with the same version name. Append only — never edit an applied file.
+pub const PG_MIGRATIONS: &[Migration] = &[Migration {
+    version: "0001_baseline",
+    sql: include_str!("../../migrations/postgres/0001_baseline.sql"),
+    kind: MigrationKind::Transactional,
+}];
+
+/// Session advisory-lock key held by a PostgreSQL migrator for its whole run
+/// (FR-DB-5). It differs from the write-transaction key in `db::mod`; it
+/// spells `urlet-mg`.
+const PG_MIGRATION_LOCK_KEY: i64 = 0x75726c65_742d6d67;
+
+/// Apply all pending PostgreSQL migrations on a dedicated connection.
+///
+/// The connection first takes a session-level advisory lock, before it creates
+/// or reads `schema_migrations`, so a second process waits (up to
+/// [`LOCK_WAIT`]) and then finds everything applied. Each migration runs in one
+/// transaction; PostgreSQL DDL is transactional.
+pub async fn run_postgres(url: &str) -> Result<()> {
+    let mut connection = PgConnection::connect(url)
+        .await
+        .map_err(|err| AppError::internal(format!("cannot open migration connection: {err}")))?;
+    let result = match acquire_pg_lock(&mut connection).await {
+        Ok(()) => {
+            let applied = run_postgres_locked(&mut connection).await;
+            let _ = sqlx::query("SELECT pg_advisory_unlock($1)")
+                .bind(PG_MIGRATION_LOCK_KEY)
+                .execute(&mut connection)
+                .await;
+            applied
+        }
+        Err(err) => Err(err),
+    };
+    let _ = connection.close().await;
+    result
+}
+
+async fn acquire_pg_lock(connection: &mut PgConnection) -> Result<()> {
+    let deadline = Instant::now() + LOCK_WAIT;
+    loop {
+        let locked: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
+            .bind(PG_MIGRATION_LOCK_KEY)
+            .fetch_one(&mut *connection)
+            .await?;
+        if locked {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(AppError::internal(
+                "another migrator held the database migration lock for too long",
+            ));
+        }
+        tracing::info!("database is being migrated by another process; waiting");
+        tokio::time::sleep(LOCK_RETRY_PAUSE * 4).await;
+    }
+}
+
+async fn run_postgres_locked(connection: &mut PgConnection) -> Result<()> {
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS schema_migrations (
+             version    TEXT COLLATE \"C\" PRIMARY KEY,
+             checksum   TEXT COLLATE \"C\" NOT NULL,
+             applied_at TEXT COLLATE \"C\" NOT NULL
+         )",
+    )
+    .execute(&mut *connection)
+    .await?;
+
+    for migration in PG_MIGRATIONS {
+        let checksum = checksum(migration.sql);
+        let stored: Option<String> =
+            sqlx::query_scalar("SELECT checksum FROM schema_migrations WHERE version = $1")
+                .bind(migration.version)
+                .fetch_optional(&mut *connection)
+                .await?;
+        match stored {
+            Some(stored) if stored == checksum => continue,
+            Some(_) => {
+                return Err(AppError::internal(format!(
+                    "migration {} was modified after being applied",
+                    migration.version
+                )))
+            }
+            None => {}
+        }
+
+        tracing::info!(version = migration.version, "applying migration");
+        let mut tx = connection.begin().await?;
+        sqlx::raw_sql(migration.sql).execute(&mut *tx).await?;
+        sqlx::query(
+            "INSERT INTO schema_migrations (version, checksum, applied_at) VALUES ($1, $2, $3)",
+        )
+        .bind(migration.version)
+        .bind(&checksum)
+        .bind(now_iso())
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+    }
+    Ok(())
 }
 
 fn checksum(sql: &str) -> String {
@@ -492,6 +598,13 @@ mod tests {
             .expect("valid sqlite url")
             .create_if_missing(true)
             .foreign_keys(true)
+    }
+
+    async fn applied_count_sqlite(pool: &SqlitePool) -> Result<i64> {
+        sqlx::query_scalar("SELECT COUNT(*) FROM schema_migrations")
+            .fetch_one(pool)
+            .await
+            .map_err(AppError::from)
     }
 
     async fn test_pool(options: &SqliteConnectOptions) -> SqlitePool {
@@ -1200,7 +1313,7 @@ mod tests {
             "foreign key violations: {violations:?}"
         );
         assert_eq!(
-            applied_count(&pool).await.expect("count"),
+            applied_count_sqlite(&pool).await.expect("count"),
             MIGRATIONS.len() as i64
         );
 
@@ -1279,7 +1392,7 @@ mod tests {
             .expect("remaining rows");
         assert_eq!(remaining, 0, "deleting a domain cascades the allowlist row");
         assert_eq!(
-            applied_count(&pool).await.expect("count"),
+            applied_count_sqlite(&pool).await.expect("count"),
             MIGRATIONS.len() as i64
         );
 
@@ -1531,7 +1644,7 @@ mod tests {
         second.expect("second migrator");
         third.expect("third migrator");
         assert_eq!(
-            applied_count(&pool).await.expect("count"),
+            applied_count_sqlite(&pool).await.expect("count"),
             MIGRATIONS.len() as i64,
             "each migration is recorded exactly once"
         );
@@ -1598,7 +1711,7 @@ mod tests {
         );
         release.await.expect("holder task");
         assert_eq!(
-            applied_count(&pool).await.expect("count"),
+            applied_count_sqlite(&pool).await.expect("count"),
             MIGRATIONS.len() as i64,
             "{case}"
         );
@@ -1790,7 +1903,7 @@ mod tests {
             "the group policy column stays constrained"
         );
         assert_eq!(
-            applied_count(&pool).await.expect("count"),
+            applied_count_sqlite(&pool).await.expect("count"),
             MIGRATIONS.len() as i64
         );
 

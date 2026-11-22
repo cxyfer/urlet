@@ -11,9 +11,8 @@
 //! already admitted someone keeps it. Periods are calendar based: the counter
 //! resets on its own at the next boundary, with no scheduled job.
 
+use crate::db::{Connection, Pool};
 use std::collections::HashMap;
-
-use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::db::invite_issuance;
 use crate::db::user_groups::UserGroup;
@@ -104,7 +103,7 @@ impl InviteQuota {
     /// Invites issued in the current period for `group_id`.
     pub async fn used(
         self,
-        pool: &SqlitePool,
+        pool: &Pool,
         group_id: Option<i64>,
         now: OffsetDateTime,
     ) -> Result<i64> {
@@ -117,7 +116,7 @@ impl InviteQuota {
     /// exhausted. `quota.limit == 0` always grants.
     pub async fn reserve(
         self,
-        conn: &mut SqliteConnection,
+        conn: &mut Connection,
         group_id: Option<i64>,
         actor_id: Option<i64>,
         now: OffsetDateTime,
@@ -160,7 +159,7 @@ pub struct InviteUsage {
 impl InviteUsage {
     pub async fn load(
         quota: InviteQuota,
-        pool: &SqlitePool,
+        pool: &Pool,
         group_id: Option<i64>,
         now: OffsetDateTime,
     ) -> Result<Self> {
@@ -190,7 +189,7 @@ impl InviteUsage {
 
 /// Usage snapshot for one group (`None` = the site-wide pool).
 pub async fn usage_for(
-    pool: &SqlitePool,
+    pool: &Pool,
     settings: &Settings,
     group: Option<&UserGroup>,
     now: OffsetDateTime,
@@ -202,7 +201,7 @@ pub async fn usage_for(
 /// Usage snapshots for many groups, with at most one grouped query per distinct
 /// period instead of one query per group.
 pub async fn usage_map(
-    pool: &SqlitePool,
+    pool: &Pool,
     settings: &Settings,
     groups: &[UserGroup],
     now: OffsetDateTime,

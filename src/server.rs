@@ -74,6 +74,9 @@ pub fn build_router(state: AppState) -> Router {
             state.clone(),
             middleware::domain::domain_gate,
         ))
+        // Inside security headers and the request log, so a refused URL is
+        // still hardened and logged.
+        .layer(axum::middleware::from_fn(middleware::reject_nul))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             middleware::security::security_headers,
@@ -305,6 +308,7 @@ pub async fn serve(config: Config) -> Result<()> {
     let settings = Settings::load(&pool, &config).await?;
     let bind = config.bind;
     let base_url = config.base_url.clone();
+    let database = db::redacted_url(&config.database_url).into_owned();
     let state = AppState::new(config, pool, settings);
     bootstrap(&state).await?;
     spawn_maintenance(state.clone());
@@ -320,6 +324,7 @@ pub async fn serve(config: Config) -> Result<()> {
         version = crate::VERSION,
         %local,
         %base_url,
+        %database,
         registration = state.settings.registration_mode().as_str(),
         "urlet is listening"
     );

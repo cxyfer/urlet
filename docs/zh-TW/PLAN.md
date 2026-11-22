@@ -2,14 +2,14 @@
 
 # urlet — 分階段實作計畫 (Implementation Plan)
 
-> 對應規格：`docs/SPEC.md` v1.8 原則：每個階段結束時程式碼必須**可編譯、可測試、可提交**；每個階段一個（或數個）本地 commit。
+> 對應規格：`docs/SPEC.md` v1.9 原則：每個階段結束時程式碼必須**可編譯、可測試、可提交**；每個階段一個（或數個）本地 commit。
 
 ## 目錄
 
 - 總覽：[執行結果（已完成）](#執行結果已完成) · [里程碑總覽](#里程碑總覽)
 - P1–P7：[P1](#p1--專案骨架與資料層) · [P2](#p2--認證與-session) · [P3](#p3--短網址核心) · [P4](#p4--轉址與解鎖) · [P5](#p5--web-ui) · [P6](#p6--管理後台與-api-完整化) · [P7](#p7--測試與文件)
 - P8–P14：[P8](#p8--最終驗證與收尾) · [P9](#p9--多語系防機器人驗證與導覽首頁-v11) · [P10](#p10--使用者群組-v12) · [P11](#p11--群組網域策略v12-follow-up) · [P12](#p12--可切換主題-v14) · [P13](#p13--中轉頁與轉址方式政策-v15) · [P14](#p14--可上傳主題-v15)
-- P15–P21：[P15](#p15--公開短網址工具-v16) · P16–P18（[里程碑總覽](#里程碑總覽)） · [P19](#p19--追蹤參數清理) · [P20](#p20--可編輯的訪客目標網址白名單) · [P21](#p21--sns-分享預覽)
+- P15–P22：[P15](#p15--公開短網址工具-v16) · P16–P18（[里程碑總覽](#里程碑總覽)） · [P19](#p19--追蹤參數清理) · [P20](#p20--可編輯的訪客目標網址白名單) · [P21](#p21--sns-分享預覽) · [P22](#p22--postgresql-後端v19)
 - 附錄：[P8 驗收量測結果](#p8-驗收量測結果) · [風險與對策](#風險與對策)
 
 ## 執行結果（已完成）
@@ -37,6 +37,7 @@
 | P19 追蹤參數清理 | ✅ 完成 | `5a0646b ✨ feat(urls): add configurable tracking parameter cleanup` |
 | P20 可編輯的訪客目標網址白名單 | ✅ 完成 | `b36a1e3 ✨ feat(public): add an editable guest destination allowlist` |
 | P21 SNS 分享預覽 | ✅ 完成 | `b92a2b8 ✨ feat(previews): customise social sharing cards` |
+| P22 PostgreSQL 後端（v1.9） | ✅ 完成 | 見 `git log`（`$N` 佔位符、`Any` pool、PostgreSQL baseline、CI job、compose overlay） |
 
 驗收數據（v1.0）：`cargo test` 187 個測試全綠、`cargo clippy --all-targets -- -D warnings` 與 `cargo fmt --check` 無警告、`scripts/smoke.sh` 81 項端對端檢查全數通過。
 
@@ -68,6 +69,7 @@
 | P19 | 追蹤參數清理 | `src/services/url_cleaning.rs` 的有界規則驗證與純 query 過濾、`src/rules/url-cleaning.txt` 內建的服務規則、`url_cleaning_enabled`／`url_cleaning_rules` 設定，以及三語共用設定介面 | 僅在建立時清理且預設關閉；內建服務、偽裝主機、編碼／fragment、規則驗證與冪等性皆有涵蓋；既有連結與編輯不變；fmt/clippy/test/smoke/merge-check 全綠 | `✨ feat(urls): ...` |
 | P20 | 可編輯的訪客目標網址白名單 | `src/services/guest_allowlist.rs` 的內建清單、精確與 `*.` 主機比對及選填路徑前綴、`guest_allowlist_enabled`／`guest_allowlist` 設定，以及含訪客可見允許清單的管理表單／API | 預設 24 個服務／43 條主機規則；啟用但清單為空時拒絕所有訪客目標；登入者與既有轉址維持原行為；編輯即時生效；fmt/clippy/test/smoke/merge-check 全綠 | `✨ feat(public): ...` |
 | P21 | SNS 分享預覽 | 每條連結可選的標題／描述與 HTTPS 或上傳圖片、四種模式的圖片來源政策、SQLite 儲存 | 僅擁有者可見的表單／API、限定的 SNS 爬蟲 metadata 輸出、生命週期與隱私邊界及測試 | `✨ feat(previews): ...` |
+| P22 | PostgreSQL 後端（v1.9） | 同一個執行檔支援 `postgres://` URL、`migrations/postgres/`、以 advisory lock 序列化寫入、`docker-compose.postgres.yml`、`PostgreSQL` CI job | 所有測試在兩種後端上全綠，schema 與種子資料一致性由測試把關，SQLite 不變，fmt/clippy/smoke/merge-check/MSRV 全綠 | `✨ feat(db): ...` |
 
 ---
 
@@ -374,6 +376,25 @@
 ## P21 — SNS 分享預覽
 
 每條短網址可選擇設定標題、內容與 HTTPS／上傳圖片，管理員可設定四種圖片來源政策。以 SQLite 儲存，提供擁有者表單與 API、限定 SNS 爬蟲的 metadata 輸出，驗證生命週期與隱私邊界。[實作計畫](aegis/plans/2026-10-23-social-previews.md)。
+
+---
+
+## P22 — PostgreSQL 後端（v1.9）
+
+**目標**：同一個執行檔可由 SQLite 或 PostgreSQL 提供所有功能，依 `URLET_DATABASE_URL` 的 scheme 選擇（`docs/SPEC.md` §4.19、§6.6）。SQLite 仍是預設，其行為與遷移不變。不在範圍內：同一個資料庫上的多個副本，以及把既有 SQLite 實例搬到 PostgreSQL。
+
+**工作項目**
+
+1. 為每個 SQL 佔位符編號（`$N`），讓同一段文字可在兩種驅動程式上執行。
+2. 所有查詢改用 sqlx 的 `Any` pool：以 `RETURNING id` 取代 `last_insert_rowid`、以 `ON CONFLICT DO NOTHING` 取代 `INSERT OR IGNORE`、upsert 欄位加上表名、`CAST(SUM(…) AS BIGINT)`、0/1 欄位使用 `db::Flag`，並依錯誤種類分類錯誤。SQLite 的遷移執行器維持使用原生連線。
+3. 新增 `migrations/postgres/0001_baseline.sql`，等同 SQLite 套用 `0018` 後的結果，使用 ICU `nocase` collation，其餘文字欄位一律 `COLLATE "C"`；遷移執行器持有 session advisory lock；寫入交易以 `pg_advisory_xact_lock` 序列化，鎖等待上限五秒。四個以彙總值守門的插入在兩種後端上都移入寫入交易。
+4. 搜尋改經 `Dialect::ci_like`，因為 PostgreSQL 18 以前不允許對 nondeterministic collation 使用 `LIKE`。`Config` 的 debug 輸出與啟動日誌會遮蔽 URL。
+5. 設定 `URLET_TEST_DATABASE_URL` 時，所有整合測試都在 PostgreSQL 上執行，每個測試 app 使用新的資料庫；新增 `tests/postgres.rs` 驗證 schema 與種子資料一致、並行遷移、配額競態與寫入序列化。新增 `PostgreSQL` CI job 並列入 gate 的 `REQUIRED`。
+6. 新增 `docker-compose.postgres.yml`、部署章節、README 說明與繁體中文鏡像文件。
+
+**驗收**：`cargo test` 在 SQLite 與 PostgreSQL 14、17 上全綠；只要資料表、欄位、索引、外鍵、CHECK 或觸發器只存在於一側，一致性測試就會失敗；fmt/clippy/smoke/merge-check 與 MSRV 檢查全綠。
+
+**風險**：只在 PostgreSQL 上出錯的 SQL 只有 PostgreSQL job 抓得到，因此該 job 是必要檢查。非 ASCII 的標籤與群組名稱在 ICU 與 ASCII 大小寫折疊下結果不同；這項差異以文件說明，而不是隱藏。
 
 ---
 

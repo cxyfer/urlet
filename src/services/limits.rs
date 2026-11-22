@@ -5,7 +5,8 @@
 //! site-wide defaults, which is why a group can only narrow what the instance
 //! allows, never widen it.
 
-use sqlx::{FromRow, SqlitePool};
+use crate::db::user_groups::{self, GroupOverrides};
+use crate::db::Pool;
 
 use crate::db::users::User;
 use crate::error::{AppError, Result};
@@ -76,24 +77,9 @@ impl Limits {
     }
 }
 
-/// The group columns that participate in limit resolution.
-#[derive(Debug, Clone, FromRow)]
-struct GroupOverrides {
-    max_urls: Option<i64>,
-    max_api_tokens: Option<i64>,
-    allow_custom_slug: bool,
-    allow_password: bool,
-    allow_expiry: bool,
-    allow_max_clicks: bool,
-    allow_tags: bool,
-    allow_api_tokens: bool,
-    allow_domain_selection: bool,
-    redirect_mode_policy: String,
-}
-
 /// Resolve the limits for a user. One indexed lookup at most; there is no cache,
 /// so an administrator's change applies to the next request.
-pub async fn effective(pool: &SqlitePool, settings: &Settings, user: &User) -> Result<Limits> {
+pub async fn effective(pool: &Pool, settings: &Settings, user: &User) -> Result<Limits> {
     // The reserved Guest account that owns anonymous links draws on the public
     // shortener's own budget rather than the per-user quota: a flood of
     // anonymous links must not consume the limit an administrator set for real
@@ -111,7 +97,7 @@ pub async fn effective(pool: &SqlitePool, settings: &Settings, user: &User) -> R
 
 /// Resolve the limits for a group id (`None` = site defaults).
 pub async fn effective_for_group(
-    pool: &SqlitePool,
+    pool: &Pool,
     settings: &Settings,
     group_id: Option<i64>,
 ) -> Result<Limits> {
@@ -119,16 +105,9 @@ pub async fn effective_for_group(
     let Some(group_id) = group_id else {
         return Ok(base);
     };
-    let group = sqlx::query_as::<_, GroupOverrides>(
-        "SELECT max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry,
-                allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection,
-                redirect_mode_policy
-           FROM user_groups WHERE id = ?",
-    )
-    .bind(group_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(AppError::from)?;
+    let group = user_groups::overrides(pool, group_id)
+        .await
+        .map_err(AppError::from)?;
     Ok(group.map(|group| base.merge(&group)).unwrap_or(base))
 }
 

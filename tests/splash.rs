@@ -59,7 +59,7 @@ async fn create_url(app: &TestApp, cookie: &str, payload: Value) -> Value {
 async fn wait_for_clicks(app: &TestApp, url_id: i64, expected: i64) {
     let mut seen = 0;
     for _ in 0..150 {
-        seen = sqlx::query_scalar("SELECT click_count FROM urls WHERE id = ?")
+        seen = sqlx::query_scalar("SELECT click_count FROM urls WHERE id = $1")
             .bind(url_id)
             .fetch_one(&app.state.db)
             .await
@@ -271,21 +271,13 @@ async fn an_unknown_stored_mode_falls_back_to_direct_and_the_form_preserves_it()
 
     // The CHECK constraint prevents this in normal operation; bypass it on one
     // connection to model a database written by an older/future build.
-    let mut connection = app.state.db.acquire().await.expect("connection");
-    sqlx::query("PRAGMA ignore_check_constraints = ON")
-        .execute(&mut *connection)
-        .await
-        .expect("relax checks");
-    sqlx::query("UPDATE urls SET redirect_mode = 'legacy' WHERE id = ?")
-        .bind(id)
-        .execute(&mut *connection)
-        .await
-        .expect("legacy mode");
-    sqlx::query("PRAGMA ignore_check_constraints = OFF")
-        .execute(&mut *connection)
-        .await
-        .expect("restore checks");
-    drop(connection);
+    common::update_bypassing_checks(
+        &app,
+        "UPDATE urls SET redirect_mode = 'legacy' WHERE id = $1",
+        id,
+        "urls_redirect_mode_check",
+    )
+    .await;
 
     // The redirect path treats the unknown value as direct.
     let response = app.get("/legacy-mode").await;
@@ -312,7 +304,7 @@ async fn an_unknown_stored_mode_falls_back_to_direct_and_the_form_preserves_it()
         ))
         .await;
     assert_eq!(saved.status, StatusCode::SEE_OTHER, "{}", saved.body);
-    let stored: String = sqlx::query_scalar("SELECT redirect_mode FROM urls WHERE id = ?")
+    let stored: String = sqlx::query_scalar("SELECT redirect_mode FROM urls WHERE id = $1")
         .bind(id)
         .fetch_one(&app.state.db)
         .await
@@ -336,21 +328,13 @@ async fn an_out_of_range_stored_delay_is_clamped_when_rendering() {
     .await;
     let id = url["id"].as_i64().expect("id");
 
-    let mut connection = app.state.db.acquire().await.expect("connection");
-    sqlx::query("PRAGMA ignore_check_constraints = ON")
-        .execute(&mut *connection)
-        .await
-        .expect("relax checks");
-    sqlx::query("UPDATE urls SET splash_delay_seconds = 999 WHERE id = ?")
-        .bind(id)
-        .execute(&mut *connection)
-        .await
-        .expect("out-of-range delay");
-    sqlx::query("PRAGMA ignore_check_constraints = OFF")
-        .execute(&mut *connection)
-        .await
-        .expect("restore checks");
-    drop(connection);
+    common::update_bypassing_checks(
+        &app,
+        "UPDATE urls SET splash_delay_seconds = 999 WHERE id = $1",
+        id,
+        "urls_splash_delay_seconds_check",
+    )
+    .await;
 
     let page = app.get("/clamped-delay").await;
     assert_eq!(page.status, StatusCode::OK, "{}", page.body);

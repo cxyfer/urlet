@@ -59,7 +59,7 @@ async fn create_url(app: &TestApp, cookie: &str, payload: Value) -> Value {
 async fn wait_for_clicks(app: &TestApp, url_id: i64, expected: i64) {
     let mut seen = 0;
     for _ in 0..150 {
-        seen = sqlx::query_scalar("SELECT click_count FROM urls WHERE id = ?")
+        seen = sqlx::query_scalar("SELECT click_count FROM urls WHERE id = $1")
             .bind(url_id)
             .fetch_one(&app.state.db)
             .await

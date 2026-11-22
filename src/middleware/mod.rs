@@ -12,7 +12,7 @@ use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use axum::extract::{ConnectInfo, Request};
 use axum::http::{Extensions, HeaderMap, HeaderValue};
 use axum::middleware::Next;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 
 use crate::config::Config;
 use crate::services::secret;
@@ -116,6 +116,29 @@ pub fn hashed_limiter_network_parts(
 ) -> Option<String> {
     client_ip_parts(headers, extensions, config)
         .map(|ip| secret::hmac_hex(&config.secret, &limiter_network(ip)))
+}
+
+/// Refuse a request whose path or query carries an encoded NUL byte (`%00`).
+///
+/// No route, slug, tag or search term can contain one, and PostgreSQL rejects
+/// a NUL byte in any text parameter, so without this a lookup such as
+/// `/abc%00` would answer 500 there and 404 on SQLite. Answering 400 up front
+/// keeps the two backends alike (§6.6).
+pub async fn reject_nul(request: Request, next: Next) -> Response {
+    let raw = request
+        .uri()
+        .path_and_query()
+        .map(|target| target.as_str())
+        .unwrap_or("");
+    if has_encoded_nul(raw) {
+        return crate::error::AppError::bad_request("the request URL contains a NUL byte")
+            .into_response();
+    }
+    next.run(request).await
+}
+
+fn has_encoded_nul(raw: &str) -> bool {
+    raw.as_bytes().windows(3).any(|window| window == b"%00")
 }
 
 /// Assign a request id, emit one structured access log line per request.

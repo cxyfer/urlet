@@ -6,8 +6,7 @@
 //! database means a restart or a theme upgrade never silently changes what
 //! visitors see.
 
-use sqlx::SqlitePool;
-
+use crate::db::Pool;
 use crate::services::time::now_iso;
 
 /// One row of the `themes` table.
@@ -22,7 +21,7 @@ pub struct ThemeRow {
 }
 
 /// Every theme, ordered for the admin list and the picker.
-pub async fn all(pool: &SqlitePool) -> Result<Vec<ThemeRow>, sqlx::Error> {
+pub async fn all(pool: &Pool) -> Result<Vec<ThemeRow>, sqlx::Error> {
     let rows: Vec<(String, i64, i64, i64, String, String)> = sqlx::query_as(
         "SELECT key, is_enabled, is_default, sort_order, created_at, updated_at
            FROM themes
@@ -34,7 +33,7 @@ pub async fn all(pool: &SqlitePool) -> Result<Vec<ThemeRow>, sqlx::Error> {
 }
 
 /// Only the themes an administrator has enabled, in picker order.
-pub async fn enabled(pool: &SqlitePool) -> Result<Vec<ThemeRow>, sqlx::Error> {
+pub async fn enabled(pool: &Pool) -> Result<Vec<ThemeRow>, sqlx::Error> {
     let rows: Vec<(String, i64, i64, i64, String, String)> = sqlx::query_as(
         "SELECT key, is_enabled, is_default, sort_order, created_at, updated_at
            FROM themes
@@ -47,11 +46,11 @@ pub async fn enabled(pool: &SqlitePool) -> Result<Vec<ThemeRow>, sqlx::Error> {
 }
 
 /// Read one theme row.
-pub async fn find(pool: &SqlitePool, key: &str) -> Result<Option<ThemeRow>, sqlx::Error> {
+pub async fn find(pool: &Pool, key: &str) -> Result<Option<ThemeRow>, sqlx::Error> {
     let row: Option<(String, i64, i64, i64, String, String)> = sqlx::query_as(
         "SELECT key, is_enabled, is_default, sort_order, created_at, updated_at
            FROM themes
-          WHERE key = ?",
+          WHERE key = $1",
     )
     .bind(key)
     .fetch_optional(pool)
@@ -65,7 +64,7 @@ pub async fn find(pool: &SqlitePool, key: &str) -> Result<Option<ThemeRow>, sqlx
 /// adds a theme usable without a migration rewrite, and an upgrade from an
 /// older database gains the new row with its default enabled state.
 pub async fn ensure_defaults(
-    pool: &SqlitePool,
+    pool: &Pool,
     keys: &[&str],
     default_key: &str,
 ) -> Result<(), sqlx::Error> {
@@ -80,7 +79,7 @@ pub async fn ensure_defaults(
         let is_default = if *key == default_key { 1 } else { 0 };
         sqlx::query(
             "INSERT INTO themes (key, is_enabled, is_default, sort_order, created_at, updated_at)
-             VALUES (?, 1, ?, ?, ?, ?)",
+             VALUES ($1, 1, $2, $3, $4, $5)",
         )
         .bind(key)
         .bind(is_default)
@@ -104,7 +103,7 @@ pub async fn ensure_defaults(
 /// failure while saving the policy must not leave the enabled/default set
 /// changed while the endpoint reports an error.
 pub async fn set_state_and_setting(
-    pool: &SqlitePool,
+    pool: &Pool,
     enabled: &[String],
     default_key: &str,
     switching: &str,
@@ -113,24 +112,24 @@ pub async fn set_state_and_setting(
     let now = now_iso();
     let mut tx = crate::db::begin_write(pool).await?;
 
-    sqlx::query("UPDATE themes SET is_enabled = 0, updated_at = ?")
+    sqlx::query("UPDATE themes SET is_enabled = 0, updated_at = $1")
         .bind(&now)
         .execute(&mut *tx)
         .await?;
 
     for key in enabled {
-        sqlx::query("UPDATE themes SET is_enabled = 1, updated_at = ? WHERE key = ?")
+        sqlx::query("UPDATE themes SET is_enabled = 1, updated_at = $1 WHERE key = $2")
             .bind(&now)
             .bind(key)
             .execute(&mut *tx)
             .await?;
     }
 
-    sqlx::query("UPDATE themes SET is_default = 0, updated_at = ? WHERE is_default = 1")
+    sqlx::query("UPDATE themes SET is_default = 0, updated_at = $1 WHERE is_default = 1")
         .bind(&now)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("UPDATE themes SET is_default = 1, updated_at = ? WHERE key = ?")
+    sqlx::query("UPDATE themes SET is_default = 1, updated_at = $1 WHERE key = $2")
         .bind(&now)
         .bind(default_key)
         .execute(&mut *tx)
@@ -138,7 +137,7 @@ pub async fn set_state_and_setting(
 
     sqlx::query(
         "INSERT INTO settings (key, value, updated_at, updated_by)
-         VALUES ('theme_switching', ?, ?, ?)
+         VALUES ('theme_switching', $1, $2, $3)
          ON CONFLICT (key) DO UPDATE SET value = excluded.value,
                                         updated_at = excluded.updated_at,
                                         updated_by = excluded.updated_by",

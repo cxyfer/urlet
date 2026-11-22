@@ -2,7 +2,7 @@
 
 # urlet — Lightweight Multi-User URL Shortener Specification
 
-> Version: 1.8 Status: Approved for implementation Last updated: 2026-10-28
+> Version: 1.9 Status: Approved for implementation Last updated: 2026-11-22
 
 **Contents**
 
@@ -25,7 +25,7 @@
 
 `urlet` is a **self-hosted, multi-user** URL shortener. Every user gets an isolated space for their own short links, can attach **password protection** and **expiry rules**, review click analytics, and drive the service programmatically with a personal API token.
 
-The top design principle is **as lightweight as possible**: a single Rust binary plus a single SQLite file, deployed with one `docker compose up -d`, with no external database, cache, or frontend build step. The v1.1 line adds a trilingual interface (English / Traditional Chinese / Simplified Chinese), optional bot protection, and a public landing page. The v1.2 line adds **user groups**: per-group link and API-token quotas plus feature toggles, so an instance can be operated with tiers (for example a free and a paid group) without changing the single-binary deployment model. The v1.4 line adds **switchable themes**: the visual identity is a compiled-in template set plus stylesheet, administrators may also upload additional CSS-only themes, choose which designs are offered and who may switch, and users keep their choice in a cookie. The v1.5 line adds **splash pages**: a link can show a promotional interstitial with a countdown before the destination, and a per-group policy decides whether members may use direct redirects, splash pages, or either. The v1.6 line adds the **public shortener**: the landing page can carry a shortening form for visitors without an account, with an administrator-controlled access level, a per-field switch set, bot protection and both a per-address and a shared visitor rate limit.
+The top design principle is **as lightweight as possible**: a single Rust binary plus a single SQLite file, deployed with one `docker compose up -d`, with no external database, cache, or frontend build step. The v1.1 line adds a trilingual interface (English / Traditional Chinese / Simplified Chinese), optional bot protection, and a public landing page. The v1.2 line adds **user groups**: per-group link and API-token quotas plus feature toggles, so an instance can be operated with tiers (for example a free and a paid group) without changing the single-binary deployment model. The v1.4 line adds **switchable themes**: the visual identity is a compiled-in template set plus stylesheet, administrators may also upload additional CSS-only themes, choose which designs are offered and who may switch, and users keep their choice in a cookie. The v1.5 line adds **splash pages**: a link can show a promotional interstitial with a countdown before the destination, and a per-group policy decides whether members may use direct redirects, splash pages, or either. The v1.6 line adds the **public shortener**: the landing page can carry a shortening form for visitors without an account, with an administrator-controlled access level, a per-field switch set, bot protection and both a per-address and a shared visitor rate limit. Revision 1.9 adds an optional **PostgreSQL backend**: the same binary and image run against PostgreSQL when `URLET_DATABASE_URL` names one, with the same features, while SQLite stays the default and the single-file deployment is unchanged (§4.19).
 
 ### 1.1 Core Design Principles (from the requester)
 
@@ -35,8 +35,8 @@ The top design principle is **as lightweight as possible**: a single Rust binary
 | P2 | Password protection | Per-link Argon2id password hash + signed unlock cookie (TTL 30 minutes) |
 | P3 | Expiry | Absolute `expires_at` plus a `max_clicks` cap; an expired link returns 410 Gone |
 | P4 | Docker Compose deployment | A single `docker-compose.yml` (app + named volume), with an optional Caddy TLS overlay |
-| P5 | As lightweight as possible | One binary, SQLite (no MySQL/Redis), SSR templates (no Node build), image < 40 MB |
-| P6 | Rust implementation | Rust 2021 + Axum 0.8 + Tokio + sqlx (SQLite) |
+| P5 | As lightweight as possible | One binary, SQLite by default with optional PostgreSQL (no MySQL/Redis), SSR templates (no Node build), image < 40 MB |
+| P6 | Rust implementation | Rust 2021 + Axum 0.8 + Tokio + sqlx (SQLite, optional PostgreSQL) |
 | P7 | Well-designed schema | 21 tables, 37 indexes, soft deletes, audit log, time-series rollup table, ready to grow |
 | P8 | Sensible extra features | Tags, click analytics, API tokens, invite codes, admin panel, audit log, daily rollups, trilingual UI, optional bot protection, quota/feature user groups, switchable and uploadable themes, splash pages, a public shortener for visitors |
 
@@ -122,7 +122,8 @@ Browser / curl          │                                                  │
                         │ Services: slug / url / click / ua / ratelimit /  │
                         │           audit / settings / i18n / captcha      │
                         │                                                  │
-                        │ sqlx Pool (WAL)  ──►  /data/urlet.db             │
+                        │ sqlx Any pool ──► /data/urlet.db (WAL)           │
+                        │               or ──► PostgreSQL (optional)       │
                         └─────────────────────────────────────────────────┘
                          named volume: urlet-data
 ```
@@ -132,8 +133,8 @@ Browser / curl          │                                                  │
 | Layer | Choice | Rationale (relative to the earlier prototypes) |
 |-------|--------|-----------------------------------------------|
 | HTTP | `axum` 0.8 + `tokio` | Mature ecosystem, type safety, single binary |
-| DB | `sqlx` 0.8 + SQLite (`bundled`) | No external service, single-file backup, WAL gives enough concurrent reads for a self-hosted scale |
-| Migrations | SQL embedded with `include_str!` + a small custom runner | Embedded at compile time, applied automatically on startup, checksums recorded in `schema_migrations`, no CLI needed |
+| DB | `sqlx` 0.8 `Any` driver over SQLite (`bundled`, default) or PostgreSQL (optional, rustls TLS) | SQLite: no external service, single-file backup, WAL gives enough concurrent reads for a self-hosted scale. PostgreSQL: for operators who already run one and want its backups, replication and tooling. The URL scheme selects the driver at runtime, so there is still one binary and one image (§4.19) |
+| Migrations | SQL embedded with `include_str!` + a small custom runner | Embedded at compile time, applied automatically on startup, checksums recorded in `schema_migrations`, no CLI needed; one set per backend (FR-DB-4) |
 | Templates | `askama` 0.12 | Compile-time-checked SSR, no Node/Vite build pipeline |
 | Static assets | CSS/JS embedded with `include_str!` | The binary carries its own assets, so the image needs no writable filesystem |
 | i18n | JSON catalogs embedded with `include_str!` (`src/i18n/mod.rs` + `src/i18n/{en,zh-Hant,zh-Hans}.json`) | Ships with the binary, no external locale files; a missing key falls back to English |
@@ -147,16 +148,18 @@ Browser / curl          │                                                  │
 
 ### 3.3 Binary and Image Size Targets
 
-| Item | Target | v1.0 | v1.1 | v1.6 |
-|------|--------|------|------|------|
-| Release binary (stripped, LTO, `opt-level=z`) | ≤ 15 MB | 4.2 MB (glibc) / 4.5 MB (musl) | **5.7 MB** (glibc, local) / **5.8 MB** (musl, in container) | **15.7 MB** (musl, in container) |
-| Runtime image (`alpine` + binary + CA certificates) | ≤ 40 MB | 13.2 MB | **14.8 MB** | **37.2 MB** (35.5 MiB) |
-| Idle / under-load memory | ≤ 30 MB RSS | 6.8 MB (after 500 requests) | **8.7 MB** (after 500 requests) | not re-measured |
-| Cold start to serving | ≤ 1 second | ~0.2 s (including migrations) | **~0.1 s** (fresh database, including migrations) | not re-measured |
+| Item | Target | v1.0 | v1.1 | v1.6 | v1.9 |
+|------|--------|------|------|------|------|
+| Release binary (stripped, LTO, `opt-level=z`) | ≤ 15 MB | 4.2 MB (glibc) / 4.5 MB (musl) | **5.7 MB** (glibc, local) / **5.8 MB** (musl, in container) | **15.7 MB** (musl, in container) | **17.0 MB** (musl, in container) / 16.8 MB (glibc) |
+| Runtime image (`alpine` + binary + CA certificates) | ≤ 40 MB | 13.2 MB | **14.8 MB** | **37.2 MB** (35.5 MiB) | **39.2 MB** (37.4 MiB) |
+| Idle / under-load memory | ≤ 30 MB RSS | 6.8 MB (after 500 requests) | **8.7 MB** (after 500 requests) | not re-measured | not re-measured |
+| Cold start to serving | ≤ 1 second | ~0.2 s (including migrations) | **~0.1 s** (fresh database, including migrations) | not re-measured | not re-measured |
 
 The v1.1 column includes the embedded locale catalogs and the rustls-based captcha client. Every v1.1 target is still met.
 
 The v1.6 column is measured on `master` plus the embedded API reference. Most of the growth since v1.1 is the features added in between — SNS preview images, the public shortener and the theme system — not the reference itself: the same tree without it measures 30.4 MB. The reference adds 6.5 MiB, of which the vendored Scalar bundle is 4.9 MB and the two OpenAPI contracts are 0.4 MB. The binary now exceeds its 15 MB target by 0.7 MB (15.7 MB), while the 37.2 MB image is still under its 40 MB target. If the image needs to come down, the vendored bundle is the lever — it compresses to about 1.3 MB and a smaller renderer such as RapiDoc is 0.5 MB, at the cost of the localised interface chrome.
+
+The v1.9 column is measured on the PostgreSQL branch in a GitHub Codespace, with `docker build` on the repository's `Dockerfile`. Against v1.6 the musl binary grew by 1.3 MB and the image by 2.0 MB; that covers the PostgreSQL driver with the `Any` layer above it as well as the features merged in between, which were not measured apart. The binary is now 2.0 MB over its 15 MB target, and the 39.2 MB image stays under its 40 MB target with 0.8 MB to spare: the next feature that grows the image should come with the Scalar trim described above.
 
 ---
 
@@ -434,6 +437,23 @@ The built-in rule source is `src/rules/url-cleaning.txt`, maintained separately 
 | FR-PREVIEW-6 | Recovery and permission | Metadata/image changes are atomic, owner-only and subject to existing CSRF protection. Upload routes have bounded bodies and rate limits. Invalid uploads preserve stored data and retry forms retain entered text; browsers require file reselection |
 | FR-PREVIEW-7 | Image policy | Administrators choose `preview_image_policy=none/url/upload/both` (default `both`) in settings or the settings API. The policy applies to all owners, form/API writes, metadata images and uploaded-image delivery. Prohibited sources are hidden in the editor and rejected server-side; keep/clear and text-only edits remain available. Disallowed existing images are retained but not served until allowed again; external content already copied by third parties cannot be revoked |
 
+### 4.19 Database Backends (FR-DB)
+
+SQLite is the default and remains the recommended deployment: one file, no external service. PostgreSQL is an alternative for operators who already run it. Both are served by the same code path through sqlx's `Any` driver; the SQL rules that make one query text valid on both are in §6.6.
+
+| ID | Requirement | Description |
+|----|-------------|-------------|
+| FR-DB-1 | Backend selection | `URLET_DATABASE_URL` selects the backend by scheme: `sqlite:` (default, behaviour unchanged) or `postgres://` / `postgresql://`. Any other scheme stops startup with a configuration error, and so does an in-memory SQLite URL (`sqlite::memory:`, `mode=memory`), because the migrations and the application pool use separate connections and the pool would open an empty database. Both drivers are compiled into the one binary and image; there is no build feature to choose |
+| FR-DB-2 | Parity | Every functional requirement in §4 behaves the same on both backends, including quotas, case-insensitive slug/tag/group/hostname uniqueness, search, soft deletes, the SNS preview trigger and the guest calendar counters. Two collation effects are the documented exceptions (§6.6): tag and group names that differ only in non-ASCII case or width collide on PostgreSQL, and case-insensitive sorts (tags, groups, slugs) follow ICU order there instead of ASCII order. Otherwise only operations differ: backups, the size shown in the admin overview, and the WAL checkpoint (SQLite only) |
+| FR-DB-3 | Supported servers | PostgreSQL 14 or newer, built with ICU (the official images, the Debian/Ubuntu packages and the major managed services are). No extension and no superuser are needed: the role needs `CONNECT` on the database and `CREATE` on its target schema, where migrations create tables, indexes, one collation, one trigger function and its trigger. Objects go in the first schema of the connection's `search_path` (`public` by default). TLS is configured in the URL (`sslmode`, `sslrootcert`) and uses rustls with webpki roots, so the musl image still needs no OpenSSL. sqlx defaults to `sslmode=prefer`, which falls back to plaintext without warning, so any server that is not on the same host or private network should use `sslmode=verify-full`. The driver also reads the standard libpq variables (`PGPASSWORD`, `PGSSLMODE`, `PGSSLROOTCERT`) and `~/.pgpass`, so the password can stay out of `URLET_DATABASE_URL`. A transaction-pooling proxy such as PgBouncer in `transaction` mode is not supported: the migration lock is session-scoped and the driver uses prepared statements |
+| FR-DB-4 | Schema and migrations | PostgreSQL has its own embedded migration set in `migrations/postgres/`. Its `0001_baseline.sql` creates, in one transaction, the schema and seed data that SQLite reaches after `0018_admin_url_lock.sql`; SQLite's upgrade steps are not replayed, because no PostgreSQL deployment predates them. From then on every migration ships as a pair with the same version name — `migrations/NNNN_name.sql` and `migrations/postgres/NNNN_name.sql` — both registered in `src/db/migrate.rs`. Both backends record applied versions and checksums in `schema_migrations`, and editing an applied file stops startup on either. A parity test compares the two migrated schemas (tables; columns with normalised type, nullability and default; indexes; foreign keys with their `ON DELETE` actions; the columns that carry a `CHECK` constraint; triggers) and their seed rows, so a migration added to one side only fails CI. It ignores SQLite's internal `sqlite_sequence` table and automatic indexes, and compares seed rows without their timestamp values, which on both backends are written in the §6.2 ISO format |
+| FR-DB-5 | Concurrent migrators | On PostgreSQL a migrator holds a session-level advisory lock on a dedicated connection for the whole run, taken before it creates or reads `schema_migrations` and on a different key from the FR-DB-6 lock. A second process waits for it within the same 120-second limit as on SQLite (`LOCK_WAIT`) and then re-reads `schema_migrations`, so nothing is applied twice and neither process listens before migrations are done. Each migration runs in one transaction; DDL is transactional on PostgreSQL |
+| FR-DB-6 | Write serialisation | On SQLite every write transaction opens with `BEGIN IMMEDIATE` (NFR-PERF-2), and SQLite admits one writer at a time, autocommit statements included. On PostgreSQL a write transaction runs `BEGIN ISOLATION LEVEL READ COMMITTED` (whatever the server's default), `SET LOCAL lock_timeout = '5s'` and `pg_advisory_xact_lock` on a fixed urlet key, so write transactions run one at a time and a waiting one gives up after five seconds, as with SQLite's `busy_timeout`. PostgreSQL does not serialise autocommit statements, so every write guarded by an aggregate or by another row — today the count-limited inserts `urls::create_within_quota`, `tokens::create_within_quota`, `login_attempts::reserve_failure` (lockout threshold) and the guest-counter cap in `public_quota::reserve` — runs inside a write transaction on both backends, as invite issuance already does. Only a write conditioned on its own target row (for example `users::set_password`'s `UPDATE … WHERE id = $n AND is_system = 0`, or the guest counter's `DO UPDATE … WHERE used < $n`) may stay autocommit, because PostgreSQL re-checks that row under its row lock. `SERIALIZABLE` is not used, because every caller would then need a retry loop. A test creates links concurrently at one below the quota and expects exactly one to succeed |
+| FR-DB-7 | Constraint errors | Unique and foreign-key violations are classified through sqlx's error kind, which covers both drivers, instead of SQLite result codes. A failed statement aborts a PostgreSQL transaction, so a transaction that recovers from an expected constraint error does so inside a savepoint, or checks before it writes, and the outcome matches SQLite. A PostgreSQL lock timeout (`55P03`) or deadlock (`40P01`) is reported as an internal error (500), as an SQLite busy timeout is today |
+| FR-DB-8 | Operations | `/health` probes with `SELECT 1` on both. The admin overview reports the SQLite file size or `pg_database_size(current_database())`. The maintenance task checkpoints the WAL only on SQLite; PostgreSQL relies on autovacuum. `URLET_DATA_DIR` still holds `secret.key` and `URLET_THEMES_DIR` the uploaded stylesheets, so both must be persistent with PostgreSQL too (the image sets `/data` and `/data/themes`, which compose mounts as the `urlet-data` and `urlet-themes` volumes). A backup is `pg_dump` plus those two directories. After an operating-system or ICU upgrade on the database server, the indexes that use the `nocase` collation should be rebuilt with `REINDEX`, as PostgreSQL's collation version warning advises |
+| FR-DB-9 | Credentials | The database URL is never logged, rendered or returned. `Config`'s debug output, which prints the whole URL today, and the startup log name the backend, host, port and database with the password removed. A PostgreSQL URL parameter that the driver does not recognise stops startup with a configuration error that names the parameter but not its value, because sqlx would otherwise log both at `WARN` before urlet sees them (libpq's `sslpassword` is one such parameter) |
+| FR-DB-10 | Scope | One urlet process per database. Rate limiters and the other in-process state are not shared, and uploaded stylesheets live on the local filesystem, so several replicas on one PostgreSQL database are not supported in this revision, even though FR-DB-6 keeps their writes correct. Moving an existing SQLite instance to PostgreSQL is not provided either: a new PostgreSQL deployment starts empty (§12). Both backends use the same pool (NFR-PERF-3) |
+
 ---
 
 ## 5. Non-Functional Requirements
@@ -467,7 +487,7 @@ The built-in rule source is `src/rules/url-cleaning.txt`, maintained separately 
 | ID | Requirement |
 |----|-------------|
 | NFR-PERF-1 | Redirect path: indexed URL and optional-preview lookups plus a queued write; target P95 < 10 ms (historical redirect baseline 0.74 ms; the new preview lookup is not benchmarked) |
-| NFR-PERF-2 | SQLite: `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=5000`; every write transaction opens with `BEGIN IMMEDIATE`, so a transaction that reads before it writes holds the write lock from the start instead of losing its WAL snapshot to `SQLITE_BUSY_SNAPSHOT`, an error the busy handler never absorbs and `busy_timeout` therefore cannot cover |
+| NFR-PERF-2 | SQLite: `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=5000`; every write transaction opens with `BEGIN IMMEDIATE`, so a transaction that reads before it writes holds the write lock from the start instead of losing its WAL snapshot to `SQLITE_BUSY_SNAPSHOT`, an error the busy handler never absorbs and `busy_timeout` therefore cannot cover. sqlx's defaults cover only `foreign_keys` and `busy_timeout`, so through the `Any` driver `journal_mode`, `synchronous` and `journal_size_limit=8388608` are applied to every new connection, and `mode=rwc` is added to a SQLite URL without a `mode`, so the file is still created on first start. PostgreSQL write transactions take the advisory lock of FR-DB-6 instead |
 | NFR-PERF-3 | Connection pool: `max_connections=8`; click writes are serialized through a single background writer (so the WAL cannot grow without bound because concurrent writes prevent checkpointing) |
 | NFR-PERF-4 | List queries are always paginated (default 20, maximum 100) |
 | NFR-PERF-5 | Analytics queries use `url_daily_stats` and indexes to avoid full table scans |
@@ -482,7 +502,7 @@ The built-in rule source is `src/rules/url-cleaning.txt`, maintained separately 
 | NFR-OPS-4 | Logs go to stdout (`tracing`; JSON or compact controlled by `URLET_LOG_FORMAT`) |
 | NFR-OPS-5 | All configuration comes from environment variables (12-factor); `.env.example` documents everything |
 | NFR-OPS-6 | Daily maintenance task: purge expired sessions and optionally prune expired click records |
-| NFR-OPS-7 | Backup = copy `urlet.db` (after a WAL checkpoint) plus the uploaded theme files in `URLET_THEMES_DIR`, as described in the README and DEPLOYMENT guide |
+| NFR-OPS-7 | Backup = copy `urlet.db` (after a WAL checkpoint) plus the uploaded theme files in `URLET_THEMES_DIR`, as described in the README and DEPLOYMENT guide; with PostgreSQL, `pg_dump` plus `URLET_DATA_DIR` and `URLET_THEMES_DIR` (FR-DB-8) |
 | NFR-OPS-8 | The container runs as a non-root user and works with a read-only root filesystem |
 | NFR-OPS-9 | Locale catalogs are embedded in the binary with `include_str!`, so a deployment is still a single binary; the only writable asset directory is `URLET_THEMES_DIR`, used by administrator uploads |
 
@@ -492,7 +512,7 @@ The built-in rule source is `src/rules/url-cleaning.txt`, maintained separately 
 |----|-------------|
 | NFR-MAINT-1 | Layering: `routes/` (HTTP) → `services/` (business) → `db/` (SQL); no cross-layer direct queries |
 | NFR-MAINT-2 | A single `AppError` type converted centrally into HTTP responses |
-| NFR-MAINT-3 | All SQL lives in the `src/db/` modules and uses runtime queries (the project compiles without `DATABASE_URL`) |
+| NFR-MAINT-3 | All SQL lives in the `src/db/` modules and uses runtime queries (the project compiles without `DATABASE_URL`). Each query text runs unchanged on SQLite and PostgreSQL under the rules of §6.6; the few statements that must differ are chosen through `db::Dialect`. The queries that `services/domain_policy.rs` and `services/limits.rs` still run move into `src/db/` with the port |
 | NFR-MAINT-4 | `cargo clippy -- -D warnings` and `cargo fmt --check` pass |
 | NFR-MAINT-5 | Unit tests plus integration tests (including `tower::ServiceExt::oneshot` end-to-end) cover the core flows |
 | NFR-MAINT-6 | Every UI string lives in the three locale catalogs; templates and handlers never hard-code display text |
@@ -527,10 +547,10 @@ login_attempts (auditing)
 ### 6.2 Design Principles
 
 1. **Time columns**: all are `TEXT` holding ISO-8601 UTC (`YYYY-MM-DDTHH:MM:SS.sssZ`), directly comparable and sortable as strings.
-2. **Primary keys**: `INTEGER PRIMARY KEY AUTOINCREMENT` (SQLite rowid optimization).
+2. **Primary keys**: `INTEGER PRIMARY KEY AUTOINCREMENT` (SQLite rowid optimization); `BIGINT` identity columns on PostgreSQL (§6.6).
 3. **Soft delete**: `users.deleted_at`, `urls.deleted_at`; every query adds `deleted_at IS NULL`.
 4. **Enums**: `TEXT + CHECK` constraints, which leave room to grow (SQLite has no native ENUM).
-5. **Booleans**: `INTEGER 0/1`.
+5. **Booleans**: `INTEGER 0/1` (`BIGINT 0/1` on PostgreSQL), decoded through `db::Flag` (§6.6).
 6. **Rollup table**: `url_daily_stats` is the acceleration layer for analytics queries, upserted on write.
 7. **Reserved extension columns**: `api_tokens.scopes`, `urls.notes`, `audit_logs.metadata`.
 8. **Group inheritance**: `user_groups.max_urls` and `max_api_tokens` are nullable; `NULL` means "inherit the site-wide setting", `0` means unlimited. Feature toggles are `INTEGER 0/1` booleans that default to `1` (allowed), so a group carries no behaviour change until an administrator edits it.
@@ -540,7 +560,7 @@ login_attempts (auditing)
 
 ### 6.3 DDL (migration summary)
 
-> The complete source of truth is `migrations/` (`0001_init.sql` through `0018_admin_url_lock.sql`): `0003_multi_domain.sql` rebuilds the domain schema, `0004_user_groups.sql`–`0007_member_invites.sql` add groups and invite quotas, `0010`/`0012`/`0013` add themes, `0011_splash_pages.sql` adds splash pages, `0014_invite_issuance_released.sql` adds the invite-refund column, and `0015_public_shorten.sql` adds `users.is_system` with the reserved Guest account and the public-shortener settings. `0016_url_previews.sql` adds SNS preview metadata and images (one optional row per link). `0017_public_creation_quota.sql` adds durable guest calendar counters and period settings. `0018_admin_url_lock.sql` adds the nullable `urls.admin_disabled_at` column and backfills it for links whose latest administrator status change in the audit log was a disable. The table below is a structural summary.
+> The complete source of truth is `migrations/` (`0001_init.sql` through `0018_admin_url_lock.sql`): `0003_multi_domain.sql` rebuilds the domain schema, `0004_user_groups.sql`–`0007_member_invites.sql` add groups and invite quotas, `0010`/`0012`/`0013` add themes, `0011_splash_pages.sql` adds splash pages, `0014_invite_issuance_released.sql` adds the invite-refund column, and `0015_public_shorten.sql` adds `users.is_system` with the reserved Guest account and the public-shortener settings. `0016_url_previews.sql` adds SNS preview metadata and images (one optional row per link). `0017_public_creation_quota.sql` adds durable guest calendar counters and period settings. `0018_admin_url_lock.sql` adds the nullable `urls.admin_disabled_at` column and backfills it for links whose latest administrator status change in the audit log was a disable. PostgreSQL starts from `migrations/postgres/0001_baseline.sql`, equivalent to all of the above (FR-DB-4). The table below is a structural summary.
 
 
 | Table | Main columns | Purpose |
@@ -610,6 +630,33 @@ The v1.1 changes add settings **keys** only; because `settings` is a key-value t
 - Public shortener (v1.6): `public_create_access=user` (an upgrade keeps the previous behaviour), `public_captcha=true`, `public_rate_limit_per_ip=20`, `public_rate_limit_per_ip_period=hour`, `public_rate_limit_global=500`, `public_rate_limit_global_period=hour`, `public_max_urls=1000`, `public_allow_slug=true`, `public_allow_title=true`, and `public_allow_tags`, `public_allow_password`, `public_allow_expiry`, `public_allow_max_clicks`, `public_allow_redirect`, `public_allow_domain` all `false`; `guest_allowlist_enabled=true` and `guest_allowlist` is seeded with the built-in 43-host-rule list (`src/services/guest_allowlist.txt`, wired in `src/db/settings.rs`), inserted only when missing so an edited or deliberately empty list is preserved. The migration also inserts the reserved Guest account (`guest@urlet.invalid`, `is_system = 1`, `status = suspended`, no group); it is skipped only in the pathological case where that address already belongs to somebody, which is reported at startup.
 - `domains`: at startup the canonical domain is inserted/updated from the host of `URLET_BASE_URL` (`source=system`, always active). It is made the default only when no default exists, so an administrator can choose another default. `URLET_DOMAINS` inserts missing domains as `active`/`env`; it never changes an existing row.
 - `settings` (landing clock): `landing_clock=server` (`server`, `utc` or `off`). It controls the clock in landing designs with a server information strip at the bottom: the default Verdant design and uploaded themes based on it. `server` shows the clock in the process zone (`TZ`); `utc` shows the same clock in UTC without displaying the server time zone; `off` hides the clock. The version and uptime remain visible in that strip. Year labels use the server zone in `server` mode and UTC in `utc`/`off` modes, so they do not reveal its New Year boundary when the zone is hidden. Guest quota periods always follow `TZ`; this setting never changes the instance's notion of local time.
+
+### 6.6 PostgreSQL Mapping and Portable SQL
+
+The PostgreSQL baseline translates the SQLite schema column by column:
+
+| SQLite | PostgreSQL | Notes |
+|--------|------------|-------|
+| `INTEGER` (ids, counters, 0/1 flags) | `BIGINT` | Same 64-bit range; flags keep their `CHECK (x IN (0, 1))` |
+| `INTEGER PRIMARY KEY AUTOINCREMENT` | `BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY` | The baseline advances each identity past its seeded ids |
+| `TEXT` | `TEXT COLLATE "C"` | Byte order like SQLite's `BINARY`, so ISO timestamps, keys and `ORDER BY` on these columns compare identically whatever the database's default collation |
+| `TEXT COLLATE NOCASE` | `TEXT COLLATE nocase` | `nocase` is an ICU nondeterministic collation (`und-u-ks-level2`) created by the baseline, so SQL that says `COLLATE NOCASE` runs unchanged on both |
+| `BLOB` | `BYTEA` | SNS preview images |
+| Trigger | PL/pgSQL function plus trigger | `url_previews_delete_with_link` |
+
+SQLite's `NOCASE` folds only ASCII letters, while `nocase` folds case in every script and also ignores width. Slugs and hostnames are ASCII, so their equality and uniqueness behave identically; tag and group names that differ only in non-ASCII case or width are distinct on SQLite and collide on PostgreSQL. Sorting by a `nocase` column follows ICU order, so punctuation, digits and non-ASCII letters can sort differently from SQLite's ASCII order; this affects display order only. Substring search stays ASCII-case-insensitive on both: SQLite's `LIKE` already is, and PostgreSQL uses `COLLATE "C" ILIKE` with the same escape character, because pattern matching is not available on a nondeterministic collation before PostgreSQL 18.
+
+Query text follows these rules so that one string is valid on both backends:
+
+1. Placeholders are `$1`…`$N`; sqlx accepts them on SQLite too, and a repeated number reuses its argument. `?` and `?N` are not used.
+2. `COALESCE`, never `IFNULL`; `IS NOT DISTINCT FROM`, never `IS $n`; `INSERT … ON CONFLICT … DO NOTHING`, never `INSERT OR IGNORE`; `RETURNING id`, never `last_insert_rowid()`; `CASE`, never two-argument `MAX`/`MIN`.
+3. A `SUM` is wrapped in `CAST(… AS BIGINT)`, because PostgreSQL returns `NUMERIC`, which the `Any` driver cannot decode; a condition is summed as `CASE WHEN … THEN 1 ELSE 0 END`, never as a bare comparison.
+4. In `ON CONFLICT … DO UPDATE SET … WHERE`, a column on the right-hand side of `SET` and in the `WHERE` is qualified with its table name (`t.col + excluded.col`); PostgreSQL rejects the bare name as ambiguous.
+5. Flags are compared with integer literals and bound as `i64`; a Rust `bool` is never bound, because PostgreSQL will not store a boolean parameter in an integer column. Flag columns and boolean expressions are decoded through `db::Flag`, which accepts an integer or a boolean, because the `Any` driver decodes `bool` only from a boolean.
+6. A value is bound with its column's type (text for `TEXT`, an integer for `BIGINT`); PostgreSQL does not convert between them. Every non-aggregated column of a grouped query is in `GROUP BY`, string literals use single quotes, and every boolean position (`WHERE`, `CASE WHEN`, the operands of `AND`/`OR`/`NOT`) holds a comparison such as `$n = 1`, never a bare integer column or parameter.
+7. PostgreSQL refuses a NUL byte in any text value and ICU `nocase` treats full-width letters as their ASCII forms, while SQLite stores the first and tells the second apart. So a request whose URL carries an encoded NUL (`%00`) is refused with 400 before routing; every free-text field that has no control-character check (link notes, display names, invite notes, settings values) refuses NUL with a field error; and a lookup by slug, hostname or email answers "not found" for a key that is not printable ASCII, or contains NUL, without querying. Both backends then answer the same.
+
+Dialect-specific statements are limited to the `db::Dialect` call sites: transaction start (FR-DB-6), case-insensitive search, the database size, WAL maintenance and the migration runner.
 
 ---
 
@@ -724,8 +771,8 @@ Group updates accept a partial representation: omitting a field keeps its curren
 | `URLET_BIND` | `0.0.0.0:8080` | Listen address |
 | `URLET_BASE_URL` | `http://localhost:8080` | Canonical public base URL (used to build short links, check CSRF same-origin, and decide cookie `Secure`) |
 | `URLET_DOMAINS` | Empty | Extra redirect-only hostnames, comma separated; inserted as `active` on first boot and never overriding an existing row |
-| `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite connection string |
-| `URLET_DATA_DIR` | Directory containing the database | Where an auto-generated secret is stored |
+| `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite (`sqlite:`) or PostgreSQL (`postgres://`, `postgresql://`) connection string; the scheme selects the backend (FR-DB-1) and the value is never logged (FR-DB-9) |
+| `URLET_DATA_DIR` | Directory containing the SQLite database; `data` when there is none (PostgreSQL) | Where an auto-generated secret is stored; must be persistent on either backend |
 | `URLET_THEMES_DIR` | `<URLET_DATA_DIR>/themes` | Where uploaded theme stylesheets are stored; docker compose mounts the `urlet-themes` volume here |
 | `URLET_HEALTHCHECK_URL` | Derived from `URLET_BIND` | Target URL for `urlet healthcheck` |
 | `URLET_SECRET` | Auto-generated and persisted | HMAC key for sessions/unlock cookies/IP hashing (at least 16 characters; auto-generated keys are 44-character base64, written to `secret.key` in the data directory) |
@@ -769,6 +816,8 @@ Multi-stage build:
 
 `docker-compose.tls.yml`: adds Caddy (80/443, automatic Let's Encrypt) and stops exposing the urlet port, so Caddy reverse-proxies it.
 
+`docker-compose.postgres.yml`: adds a `postgres` service with its own `urlet-postgres` volume and a health check, points `URLET_DATABASE_URL` at it with the password passed separately through `PGPASSWORD`, and starts urlet only once the database is healthy. The `urlet-data` and `urlet-themes` volumes stay, because they hold `secret.key` and the uploaded stylesheets (FR-DB-8).
+
 ---
 
 ## 10. Test Strategy
@@ -777,6 +826,7 @@ Multi-stage build:
 |-------|-------|---------|
 | Unit tests | Slug generation/validation/reserved words, UA parsing, expiry decisions, settings parsing, group limit inheritance (NULL / 0 / value, ungrouped fallback), password hashing, IP hashing, CSRF same-origin checks, `Accept-Language` negotiation (`q=` weights, fallback to English), locale fallback, the captcha enablement matrix, and captcha fail-closed classification | `#[cfg(test)]` modules |
 | Integration tests | Register → login → create → redirect → analytics; the password protection flow; expiry and click caps; ownership isolation; admin authorization; API tokens; group CRUD and default-marker transfer; per-group link and token quotas; feature-toggle enforcement on create and update; invite codes that carry a group; group deletion with reassignment; CSRF rejection; language negotiation and cookie switching; API JSON staying English; captcha rejection on register, sign-in and create (web forms and JSON API); the landing page; splash rendering, group policy enforcement and password precedence | `tests/` — `auth.rs`, `urls.rs`, `redirect.rs`, `splash.rs`, `pages.rs`, `admin.rs`, `groups.rs`, `invites.rs`, `i18n.rs`, `captcha.rs`, `multi_domain.rs`, `previews.rs`, `public_urls.rs`, `themes.rs`, `url_cleaning.rs`, `guest_allowlist.rs`, plus `contract.rs`, `api_docs.rs` and `ci_workflow.rs` — run with `tower::ServiceExt::oneshot` against a temporary SQLite database. `contract.rs` checks the router-to-contract set equality described in §4.9, and `ci_workflow.rs` checks that every CI job is in the gate's `REQUIRED` list |
+| PostgreSQL backend | The integration suites under `tests/` run again against PostgreSQL when `URLET_TEST_DATABASE_URL` is a `postgres://` URL, with a fresh database per test app. For that, `tests/common/mod.rs` and the SQL the test files run directly move to the `Any` pool and the §6.6 rules; a test that inspects SQLite itself (its file, pragmas or upgrade path) is marked SQLite-only. `tests/postgres.rs` fails rather than skips when `URLET_TEST_DATABASE_URL` is missing and `URLET_REQUIRE_POSTGRES=1`, which the CI job sets, so a misconfigured job cannot pass by skipping; it adds schema and seed parity with SQLite (FR-DB-4), write serialisation including concurrent creation at the quota boundary (FR-DB-6), concurrent migrators (FR-DB-5) and the mapping of §6.6 (case-insensitive uniqueness, search, identities after seeds). `#[cfg(test)]` modules, the SQLite migration-upgrade tests, `smoke.sh` and `merge-check.sh` stay SQLite-only | CI job `PostgreSQL` with a `postgres:17-alpine` service container, listed in the gate's `REQUIRED` list |
 | End-to-end smoke test | Runs the main flows against the real binary with curl | `scripts/smoke.sh` |
 | Static checks | `cargo fmt --check`, `cargo clippy -D warnings` | CI commands (documented in the README) |
 
@@ -857,6 +907,14 @@ v1.6 additions:
 - [x] The three locale catalogues and all six landing templates carry the new strings and the shared form partial
 - [x] `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `scripts/smoke.sh` and `scripts/merge-check.sh` are green
 
+Revision 1.9 additions (PostgreSQL backend):
+
+- [x] The same binary and image serve every feature on SQLite and on PostgreSQL 14+, selected only by `URLET_DATABASE_URL`
+- [x] The full integration suite passes on both backends, and the parity test passes in the `PostgreSQL` CI job, which is in the gate's `REQUIRED` list
+- [x] An existing SQLite database upgrades with no migration change and no behaviour change
+- [x] The database URL appears in no log line or debug output
+- [x] The binary and image sizes are re-measured in §3.3 and the image stays under 40 MB
+
 ---
 
 ## 12. Future Extension Paths (this version only reserves schema/architecture room)
@@ -870,3 +928,5 @@ v1.6 additions:
 | GeoIP country analytics | `clicks.country_code` already exists; only a resolver is missing |
 | Click export / CSV | The full `clicks` column set + indexes |
 | Audit compliance | `audit_logs.metadata` keeps the full JSON context |
+| SQLite → PostgreSQL copy | Both schemas are column-for-column equal (§6.6), so a `urlet copy-db` command could stream every table in dependency order and advance the identities |
+| Several instances on one PostgreSQL | Write transactions and aggregate-guarded writes are already serialised in the database (FR-DB-6); rate limiters, caches and uploaded themes would have to move out of process memory and the local filesystem |
