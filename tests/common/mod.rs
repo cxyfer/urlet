@@ -292,34 +292,50 @@ pub async fn send_router(router: Router, request: Request<Body>) -> TestResponse
 impl Drop for TestApp {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.dir);
-        if let (Some(url), Some(admin_url)) = (self.postgres_database.take(), postgres_url()) {
-            // Drop runs outside any async context, so a short-lived runtime on
-            // its own thread removes the database; `FORCE` closes the pool's
-            // connections first.
-            let _ = std::thread::spawn(move || {
-                use sqlx::Connection;
-                let Some(name) = url.rsplit('/').next().map(str::to_string) else {
-                    return;
-                };
-                let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                else {
-                    return;
-                };
-                runtime.block_on(async move {
-                    if let Ok(mut admin) = sqlx::postgres::PgConnection::connect(&admin_url).await {
-                        let _ =
-                            sqlx::query(&format!("DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
-                                .execute(&mut admin)
-                                .await;
-                        let _ = admin.close().await;
-                    }
-                });
-            })
-            .join();
+        if let Some(url) = self.postgres_database.take() {
+            drop_postgres_database(url);
         }
     }
+}
+
+/// A PostgreSQL database created by [`fresh_postgres_database`] for a test
+/// that migrates it itself; dropped with the guard.
+pub struct ScratchDatabase(pub String);
+
+impl Drop for ScratchDatabase {
+    fn drop(&mut self) {
+        drop_postgres_database(std::mem::take(&mut self.0));
+    }
+}
+
+/// Remove a database made by [`fresh_postgres_database`]. Drop runs outside
+/// any async context, so a short-lived runtime on its own thread does it;
+/// `FORCE` closes the pool's connections first.
+fn drop_postgres_database(url: String) {
+    let Some(admin_url) = postgres_url() else {
+        return;
+    };
+    let _ = std::thread::spawn(move || {
+        use sqlx::Connection;
+        let Some(name) = url.rsplit('/').next().map(str::to_string) else {
+            return;
+        };
+        let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        else {
+            return;
+        };
+        runtime.block_on(async move {
+            if let Ok(mut admin) = sqlx::postgres::PgConnection::connect(&admin_url).await {
+                let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
+                    .execute(&mut admin)
+                    .await;
+                let _ = admin.close().await;
+            }
+        });
+    })
+    .join();
 }
 
 /// Parsed response.

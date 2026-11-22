@@ -1,8 +1,9 @@
 name: CI
 
 # Everything a pull request has to pass before it can merge: formatting, lints,
-# the test suite, the end-to-end smoke run, the OpenAPI contracts and a build on
-# the oldest Rust the crate declares support for.
+# the test suite on SQLite and on PostgreSQL, the end-to-end smoke run, the
+# OpenAPI contracts and a build on the oldest Rust the crate declares support
+# for.
 #
 # The same jobs run on every push to the default branch, with one exception:
 # when the push is the merge commit of a pull request whose checks already
@@ -46,7 +47,7 @@ env:
 
 jobs:
   # --------------------------------------------------------------------- gate
-  # One cheap job decides whether the five real jobs have to run. On pull
+  # One cheap job decides whether the six real jobs have to run. On pull
   # requests it always answers "run"; only pushes can answer "false".
   gate:
     name: Decide whether CI is needed
@@ -58,7 +59,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check whether this commit was already tested
         id: decide
-        # The five jobs below run on `always()` and skip only on an explicit
+        # The six jobs below run on `always()` and skip only on an explicit
         # "false", so a crashed or timed-out gate still runs the suite instead
         # of silently skipping it. A gate failure stays visible as a red job.
         env:
@@ -70,11 +71,11 @@ jobs:
           FORCED: ${{ github.event.forced }}
           # The jobs whose work the gate is allowed to skip. The gate verifies
           # that every one of them ran on the pull request and passed, so keep
-          # this in step with the `name:` of the five jobs below — a pull
+          # this in step with the `name:` of the six jobs below — a pull
           # request that drops or renames one must not look tested. Adding a job
           # means adding its name here, or a pull request that dropped it would
           # still look tested and the push run would skip a suite that never ran.
-          REQUIRED: Formatting, Lints and tests, Smoke test, OpenAPI contracts, MSRV
+          REQUIRED: Formatting, Lints and tests, PostgreSQL, Smoke test, OpenAPI contracts, MSRV
         run: bash scripts/ci-push-gate.sh
 
   # --------------------------------------------------------------- formatting
@@ -120,6 +121,43 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: cargo test
         run: cargo test --locked
+
+  # -------------------------------------------------------------- PostgreSQL
+  # The same suite against PostgreSQL (SPEC FR-DB-9). Every `TestApp` creates
+  # and drops a database of its own on the service, and tests/postgres.rs adds
+  # the schema-parity and concurrency checks. `URLET_REQUIRE_POSTGRES=1` turns a
+  # missing or misnamed server into a failure instead of a quiet skip. Unit
+  # tests inside the crate always use SQLite, so `--tests` runs only the
+  # integration suites; `Lints and tests` already covers the rest.
+  #
+  # Like the other jobs, it hangs off the gate and its name is in `REQUIRED`.
+  postgres:
+    name: PostgreSQL
+    needs: gate
+    if: always() && needs.gate.outputs.run != 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      URLET_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      URLET_REQUIRE_POSTGRES: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test --locked --tests
+        run: cargo test --locked --tests
 
   # --------------------------------------------------------- end-to-end smoke
   # scripts/smoke.sh builds the real binary and drives it over HTTP. It needs
