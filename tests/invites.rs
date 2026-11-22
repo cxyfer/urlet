@@ -69,7 +69,7 @@ async fn revoke_audit(app: &TestApp, invite_id: i64) -> Value {
           WHERE action = 'invite.revoked' AND target_type = 'invite' AND target_id = $1
           ORDER BY id DESC LIMIT 1",
     )
-    .bind(invite_id)
+    .bind(invite_id.to_string())
     .fetch_one(&app.state.db)
     .await
     .expect("revoke audit row");

@@ -594,6 +594,7 @@ pub async fn list_for_user(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<Url>, sqlx::Error> {
+    let search_sql = search_clause(crate::db::Dialect::of(pool));
     let search = filter.search.as_deref().map(like_pattern);
     let status = filter.status.as_deref();
     let tag = filter.tag.as_deref();
@@ -602,8 +603,7 @@ pub async fn list_for_user(
         "{SELECT}
          WHERE deleted_at IS NULL AND user_id = $1
            AND ($2 IS NULL OR status = $2)
-           AND ($3 IS NULL OR slug LIKE $3 ESCAPE '\\' OR target_url LIKE $3 ESCAPE '\\'
-                          OR COALESCE(title, '') LIKE $3 ESCAPE '\\')
+           AND {search_sql}
            AND ($4 IS NULL OR id IN (SELECT ut.url_id FROM url_tags ut
                                      JOIN tags t ON t.id = ut.tag_id
                                      WHERE t.user_id = $1 AND t.name = $4))
@@ -633,17 +633,17 @@ pub async fn count_for_user_filtered(
     user_id: i64,
     filter: &UserUrlFilter,
 ) -> Result<i64, sqlx::Error> {
+    let search_sql = search_clause(crate::db::Dialect::of(pool));
     let search = filter.search.as_deref().map(like_pattern);
-    sqlx::query_scalar(
+    sqlx::query_scalar(&format!(
         "SELECT COUNT(*) FROM urls
          WHERE deleted_at IS NULL AND user_id = $1
            AND ($2 IS NULL OR status = $2)
-           AND ($3 IS NULL OR slug LIKE $3 ESCAPE '\\' OR target_url LIKE $3 ESCAPE '\\'
-                          OR COALESCE(title, '') LIKE $3 ESCAPE '\\')
+           AND {search_sql}
            AND ($4 IS NULL OR id IN (SELECT ut.url_id FROM url_tags ut
                                      JOIN tags t ON t.id = ut.tag_id
-                                     WHERE t.user_id = $1 AND t.name = $4))",
-    )
+                                     WHERE t.user_id = $1 AND t.name = $4))"
+    ))
     .bind(user_id)
     .bind(filter.status.as_deref())
     .bind(search.as_deref())
@@ -659,14 +659,14 @@ pub async fn list_all(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<Url>, sqlx::Error> {
+    let search_sql = search_clause(crate::db::Dialect::of(pool));
     let search = filter.search.as_deref().map(like_pattern);
     sqlx::query_as::<_, Url>(&format!(
         "{SELECT}
          WHERE deleted_at IS NULL
            AND ($1 IS NULL OR user_id = $1)
            AND ($2 IS NULL OR status = $2)
-           AND ($3 IS NULL OR slug LIKE $3 ESCAPE '\\' OR target_url LIKE $3 ESCAPE '\\'
-                          OR COALESCE(title, '') LIKE $3 ESCAPE '\\')
+           AND {search_sql}
          ORDER BY
            CASE WHEN $4 = 1 THEN click_count END DESC,
            CASE WHEN $4 = 2 THEN slug END ASC,
@@ -685,15 +685,15 @@ pub async fn list_all(
 
 /// Count every link (administrative view).
 pub async fn count_all(pool: &Pool, filter: &AdminUrlFilter) -> Result<i64, sqlx::Error> {
+    let search_sql = search_clause(crate::db::Dialect::of(pool));
     let search = filter.search.as_deref().map(like_pattern);
-    sqlx::query_scalar(
+    sqlx::query_scalar(&format!(
         "SELECT COUNT(*) FROM urls
          WHERE deleted_at IS NULL
            AND ($1 IS NULL OR user_id = $1)
            AND ($2 IS NULL OR status = $2)
-           AND ($3 IS NULL OR slug LIKE $3 ESCAPE '\\' OR target_url LIKE $3 ESCAPE '\\'
-                          OR COALESCE(title, '') LIKE $3 ESCAPE '\\')",
-    )
+           AND {search_sql}"
+    ))
     .bind(filter.user_id)
     .bind(filter.status.as_deref())
     .bind(search.as_deref())
@@ -712,4 +712,15 @@ pub async fn global_counts(pool: &Pool) -> Result<(i64, i64, i64), sqlx::Error> 
     .fetch_one(pool)
     .await?;
     Ok(row)
+}
+
+/// `$3`, the escaped search pattern, matched ASCII-case-insensitively against
+/// slug, destination and title on either backend (SPEC §6.6).
+fn search_clause(dialect: crate::db::Dialect) -> String {
+    format!(
+        "($3 IS NULL OR {} OR {} OR {})",
+        dialect.ci_like("slug", "$3"),
+        dialect.ci_like("target_url", "$3"),
+        dialect.ci_like("COALESCE(title, '')", "$3"),
+    )
 }

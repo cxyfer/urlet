@@ -153,6 +153,7 @@ pub async fn list(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<User>, sqlx::Error> {
+    let search_sql = search_clause(crate::db::Dialect::of(pool));
     let search = filter.search.as_deref().map(crate::db::urls::like_pattern);
     sqlx::query_as::<_, User>(&format!(
         "{SELECT}
@@ -160,8 +161,7 @@ pub async fn list(
            AND is_system = 0
            AND ($1 IS NULL OR role = $1)
            AND ($2 IS NULL OR status = $2)
-           AND ($3 IS NULL OR email LIKE $3 ESCAPE '\\'
-                          OR COALESCE(display_name, '') LIKE $3 ESCAPE '\\')
+           AND {search_sql}
            AND ($4 IS NULL OR group_id = $4)
          ORDER BY created_at DESC, id DESC
          LIMIT $5 OFFSET $6"
@@ -178,17 +178,17 @@ pub async fn list(
 
 /// Count users matching a filter.
 pub async fn count_filtered(pool: &Pool, filter: &UserFilter) -> Result<i64, sqlx::Error> {
+    let search_sql = search_clause(crate::db::Dialect::of(pool));
     let search = filter.search.as_deref().map(crate::db::urls::like_pattern);
-    sqlx::query_scalar(
+    sqlx::query_scalar(&format!(
         "SELECT COUNT(*) FROM users
          WHERE deleted_at IS NULL
            AND is_system = 0
            AND ($1 IS NULL OR role = $1)
            AND ($2 IS NULL OR status = $2)
-           AND ($3 IS NULL OR email LIKE $3 ESCAPE '\\'
-                          OR COALESCE(display_name, '') LIKE $3 ESCAPE '\\')
-           AND ($4 IS NULL OR group_id = $4)",
-    )
+           AND {search_sql}
+           AND ($4 IS NULL OR group_id = $4)"
+    ))
     .bind(filter.role.as_deref())
     .bind(filter.status.as_deref())
     .bind(search.as_deref())
@@ -401,4 +401,14 @@ pub async fn soft_delete(pool: &Pool, id: i64) -> Result<bool, sqlx::Error> {
         .await?;
     tx.commit().await?;
     Ok(true)
+}
+
+/// `$3`, the escaped search pattern, matched ASCII-case-insensitively against
+/// email and display name on either backend (SPEC §6.6).
+fn search_clause(dialect: crate::db::Dialect) -> String {
+    format!(
+        "($3 IS NULL OR {} OR {})",
+        dialect.ci_like("email", "$3"),
+        dialect.ci_like("COALESCE(display_name, '')", "$3"),
+    )
 }

@@ -942,13 +942,7 @@ async fn a_success_that_cannot_be_recorded_opens_no_session() {
     app.register("user@example.com", "supersecret").await;
 
     // 預留的 INSERT 可以成功，但標記成功的 UPDATE 一律失敗。
-    sqlx::query(
-        "CREATE TRIGGER reject_login_attempt_update BEFORE UPDATE ON login_attempts
-         BEGIN SELECT RAISE(ABORT, 'login_attempts is read-only'); END",
-    )
-    .execute(&app.state.db)
-    .await
-    .expect("create trigger");
+    common::reject_updates_on(&app, "login_attempts").await;
 
     let response = app
         .post_json(

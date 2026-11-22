@@ -1,7 +1,10 @@
 //! Shared helpers for the integration tests.
 //!
-//! Each test gets its own temporary SQLite database and a router built exactly
-//! like the production one, so the tests exercise the real middleware stack.
+//! Each test gets its own temporary database and a router built exactly like
+//! the production one, so the tests exercise the real middleware stack. The
+//! database is SQLite unless `URLET_TEST_DATABASE_URL` names a PostgreSQL
+//! server, in which case every app gets a fresh PostgreSQL database there
+//! (SPEC §10).
 
 #![allow(dead_code)]
 
@@ -24,6 +27,8 @@ pub struct TestApp {
     pub router: Router,
     pub state: AppState,
     pub dir: PathBuf,
+    /// The PostgreSQL database created for this app, dropped with it.
+    postgres_database: Option<String>,
 }
 
 impl TestApp {
@@ -37,6 +42,10 @@ impl TestApp {
         let dir = unique_dir();
         std::fs::create_dir_all(&dir).expect("create temp dir");
         let mut config = Config::for_tests(&dir);
+        let postgres_database = fresh_postgres_database().await;
+        if let Some(url) = &postgres_database {
+            config.database_url = url.clone();
+        }
         tweak(&mut config);
 
         let pool = urlet::db::init(&config).await.expect("database init");
@@ -44,7 +53,12 @@ impl TestApp {
         let state = AppState::new(config, pool, settings);
         urlet::server::bootstrap(&state).await.expect("bootstrap");
         let router = urlet::server::build_router(state.clone());
-        Self { router, state, dir }
+        Self {
+            router,
+            state,
+            dir,
+            postgres_database,
+        }
     }
 
     /// Send a request through the real router.
@@ -174,6 +188,101 @@ impl TestApp {
     }
 }
 
+/// The PostgreSQL server the suite runs against, if any.
+pub fn postgres_url() -> Option<String> {
+    std::env::var("URLET_TEST_DATABASE_URL")
+        .ok()
+        .filter(|url| url.starts_with("postgres://") || url.starts_with("postgresql://"))
+}
+
+/// Whether this run uses PostgreSQL instead of SQLite.
+pub fn on_postgres() -> bool {
+    postgres_url().is_some()
+}
+
+/// Create an empty database on the PostgreSQL server named by
+/// `URLET_TEST_DATABASE_URL` and return its URL, or `None` on SQLite.
+pub async fn fresh_postgres_database() -> Option<String> {
+    use sqlx::Connection;
+
+    let admin_url = postgres_url()?;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    let name = format!(
+        "urlet_t_{}_{}_{nanos}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    let mut admin = sqlx::postgres::PgConnection::connect(&admin_url)
+        .await
+        .expect("connect to URLET_TEST_DATABASE_URL");
+    sqlx::query(&format!("CREATE DATABASE {name}"))
+        .execute(&mut admin)
+        .await
+        .expect("create test database");
+    let _ = admin.close().await;
+    let mut url = url::Url::parse(&admin_url).expect("valid URLET_TEST_DATABASE_URL");
+    url.set_path(&format!("/{name}"));
+    Some(url.to_string())
+}
+
+/// Run one `UPDATE` that a `CHECK` constraint would refuse, to model a row
+/// written by an older or newer build. SQLite skips the checks on one
+/// connection; PostgreSQL drops `constraint` from this app's own database.
+pub async fn update_bypassing_checks(app: &TestApp, sql: &str, id: i64, constraint: &str) {
+    let mut connection = app.state.db.acquire().await.expect("connection");
+    if on_postgres() {
+        sqlx::query(&format!("ALTER TABLE urls DROP CONSTRAINT {constraint}"))
+            .execute(&mut *connection)
+            .await
+            .expect("drop check");
+        sqlx::query(sql)
+            .bind(id)
+            .execute(&mut *connection)
+            .await
+            .expect("unchecked update");
+        return;
+    }
+    sqlx::query("PRAGMA ignore_check_constraints = ON")
+        .execute(&mut *connection)
+        .await
+        .expect("relax checks");
+    sqlx::query(sql)
+        .bind(id)
+        .execute(&mut *connection)
+        .await
+        .expect("unchecked update");
+    sqlx::query("PRAGMA ignore_check_constraints = OFF")
+        .execute(&mut *connection)
+        .await
+        .expect("restore checks");
+}
+
+/// Make every `UPDATE` of `table` fail, to model a write the database refuses.
+pub async fn reject_updates_on(app: &TestApp, table: &str) {
+    if on_postgres() {
+        sqlx::raw_sql(&format!(
+            "CREATE FUNCTION reject_update() RETURNS trigger LANGUAGE plpgsql AS $$
+             BEGIN RAISE EXCEPTION '{table} is read-only'; END; $$;
+             CREATE TRIGGER reject_{table}_update BEFORE UPDATE ON {table}
+             FOR EACH ROW EXECUTE FUNCTION reject_update();"
+        ))
+        .execute(&app.state.db)
+        .await
+        .expect("create trigger");
+        return;
+    }
+    sqlx::query(&format!(
+        "CREATE TRIGGER reject_{table}_update BEFORE UPDATE ON {table}
+         BEGIN SELECT RAISE(ABORT, '{table} is read-only'); END"
+    ))
+    .execute(&app.state.db)
+    .await
+    .expect("create trigger");
+}
+
 /// Send one request through an arbitrary router built by a test.
 pub async fn send_router(router: Router, request: Request<Body>) -> TestResponse {
     let response = router.oneshot(request).await.expect("router call");
@@ -183,6 +292,33 @@ pub async fn send_router(router: Router, request: Request<Body>) -> TestResponse
 impl Drop for TestApp {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.dir);
+        if let (Some(url), Some(admin_url)) = (self.postgres_database.take(), postgres_url()) {
+            // Drop runs outside any async context, so a short-lived runtime on
+            // its own thread removes the database; `FORCE` closes the pool's
+            // connections first.
+            let _ = std::thread::spawn(move || {
+                use sqlx::Connection;
+                let Some(name) = url.rsplit('/').next().map(str::to_string) else {
+                    return;
+                };
+                let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                else {
+                    return;
+                };
+                runtime.block_on(async move {
+                    if let Ok(mut admin) = sqlx::postgres::PgConnection::connect(&admin_url).await {
+                        let _ =
+                            sqlx::query(&format!("DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
+                                .execute(&mut admin)
+                                .await;
+                        let _ = admin.close().await;
+                    }
+                });
+            })
+            .join();
+        }
     }
 }
 

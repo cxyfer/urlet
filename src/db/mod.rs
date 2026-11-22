@@ -345,18 +345,18 @@ pub async fn init(config: &Config) -> Result<Pool> {
 /// A database URL with its password and query string removed, for logs and
 /// debug output (FR-DB-9).
 pub fn redacted_url(url: &str) -> Cow<'_, str> {
-    if Dialect::from_url(url) != Some(Dialect::Postgres) {
+    // A SQLite URL is a file path and carries no credential.
+    if Dialect::from_url(url) == Some(Dialect::Sqlite) {
         return Cow::Borrowed(url);
     }
     match url::Url::parse(url) {
         Ok(mut parsed) => {
-            if parsed.password().is_some() {
-                let _ = parsed.set_password(Some(crate::services::secret::REDACTED));
-            }
+            let _ = parsed.set_password(None);
             parsed.set_query(None);
+            parsed.set_fragment(None);
             Cow::Owned(parsed.to_string())
         }
-        Err(_) => Cow::Borrowed("postgres://<unparsable url>"),
+        Err(_) => Cow::Borrowed("<unparsable database url>"),
     }
 }
 
@@ -396,6 +396,54 @@ mod tests {
             .await
             .expect("schema");
         pool
+    }
+
+    #[test]
+    fn the_url_scheme_selects_the_backend() {
+        assert_eq!(
+            Dialect::from_url("sqlite:///data/urlet.db?mode=rwc"),
+            Some(Dialect::Sqlite)
+        );
+        assert_eq!(Dialect::from_url("sqlite::memory:"), Some(Dialect::Sqlite));
+        assert_eq!(
+            Dialect::from_url("postgres://u@h/db"),
+            Some(Dialect::Postgres)
+        );
+        assert_eq!(
+            Dialect::from_url("PostgreSQL://u@h/db"),
+            Some(Dialect::Postgres)
+        );
+        assert_eq!(Dialect::from_url("mysql://u@h/db"), None);
+        assert_eq!(Dialect::from_url("urlet.db"), None);
+    }
+
+    #[test]
+    fn redacted_urls_keep_no_password_or_query() {
+        let redacted = redacted_url(
+            "postgres://urlet:s3cret@db.internal:5433/urlet?sslmode=verify-full&password=x",
+        );
+        assert_eq!(redacted, "postgres://urlet@db.internal:5433/urlet");
+        assert!(!redacted_url("mysql://root:hunter2@h/db").contains("hunter2"));
+        assert_eq!(
+            redacted_url("sqlite:///data/urlet.db?mode=rwc"),
+            "sqlite:///data/urlet.db?mode=rwc"
+        );
+        assert!(!redacted_url("postgres://u:p@[bad").contains(":p@"));
+    }
+
+    #[test]
+    fn a_sqlite_url_without_a_mode_still_creates_the_file() {
+        let dir = std::env::temp_dir().join(format!("urlet-any-url-{}", std::process::id()));
+        let mut config = Config::for_tests(&dir);
+        config.database_url = "sqlite:///tmp/a.db".into();
+        assert_eq!(any_url(&config), "sqlite:///tmp/a.db?mode=rwc");
+        config.database_url = "sqlite:///tmp/a.db?cache=shared".into();
+        assert_eq!(any_url(&config), "sqlite:///tmp/a.db?cache=shared&mode=rwc");
+        config.database_url = "sqlite:///tmp/a.db?mode=ro".into();
+        assert_eq!(any_url(&config), "sqlite:///tmp/a.db?mode=ro");
+        config.database_url = "postgres://u@h/db".into();
+        assert_eq!(any_url(&config), "postgres://u@h/db");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Extended SQLite result code, as `is_foreign_key_violation` reads it.
