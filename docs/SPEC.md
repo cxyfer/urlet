@@ -148,16 +148,18 @@ Browser / curl          │                                                  │
 
 ### 3.3 Binary and Image Size Targets
 
-| Item | Target | v1.0 | v1.1 | v1.6 |
-|------|--------|------|------|------|
-| Release binary (stripped, LTO, `opt-level=z`) | ≤ 15 MB | 4.2 MB (glibc) / 4.5 MB (musl) | **5.7 MB** (glibc, local) / **5.8 MB** (musl, in container) | **15.7 MB** (musl, in container) |
-| Runtime image (`alpine` + binary + CA certificates) | ≤ 40 MB | 13.2 MB | **14.8 MB** | **37.2 MB** (35.5 MiB) |
-| Idle / under-load memory | ≤ 30 MB RSS | 6.8 MB (after 500 requests) | **8.7 MB** (after 500 requests) | not re-measured |
-| Cold start to serving | ≤ 1 second | ~0.2 s (including migrations) | **~0.1 s** (fresh database, including migrations) | not re-measured |
+| Item | Target | v1.0 | v1.1 | v1.6 | v1.9 |
+|------|--------|------|------|------|------|
+| Release binary (stripped, LTO, `opt-level=z`) | ≤ 15 MB | 4.2 MB (glibc) / 4.5 MB (musl) | **5.7 MB** (glibc, local) / **5.8 MB** (musl, in container) | **15.7 MB** (musl, in container) | **17.0 MB** (musl, in container) / 16.8 MB (glibc) |
+| Runtime image (`alpine` + binary + CA certificates) | ≤ 40 MB | 13.2 MB | **14.8 MB** | **37.2 MB** (35.5 MiB) | **39.2 MB** (37.4 MiB) |
+| Idle / under-load memory | ≤ 30 MB RSS | 6.8 MB (after 500 requests) | **8.7 MB** (after 500 requests) | not re-measured | not re-measured |
+| Cold start to serving | ≤ 1 second | ~0.2 s (including migrations) | **~0.1 s** (fresh database, including migrations) | not re-measured | not re-measured |
 
 The v1.1 column includes the embedded locale catalogs and the rustls-based captcha client. Every v1.1 target is still met.
 
 The v1.6 column is measured on `master` plus the embedded API reference. Most of the growth since v1.1 is the features added in between — SNS preview images, the public shortener and the theme system — not the reference itself: the same tree without it measures 30.4 MB. The reference adds 6.5 MiB, of which the vendored Scalar bundle is 4.9 MB and the two OpenAPI contracts are 0.4 MB. The binary now exceeds its 15 MB target by 0.7 MB (15.7 MB), while the 37.2 MB image is still under its 40 MB target. If the image needs to come down, the vendored bundle is the lever — it compresses to about 1.3 MB and a smaller renderer such as RapiDoc is 0.5 MB, at the cost of the localised interface chrome.
+
+The v1.9 column is measured on the PostgreSQL branch in a GitHub Codespace, with `docker build` on the repository's `Dockerfile`. Against v1.6 the musl binary grew by 1.3 MB and the image by 2.0 MB; that covers the PostgreSQL driver with the `Any` layer above it as well as the features merged in between, which were not measured apart. The binary is now 2.0 MB over its 15 MB target, and the 39.2 MB image stays under its 40 MB target with 0.8 MB to spare: the next feature that grows the image should come with the Scalar trim described above.
 
 ---
 
@@ -907,11 +909,11 @@ v1.6 additions:
 
 Revision 1.9 additions (PostgreSQL backend):
 
-- [ ] The same binary and image serve every feature on SQLite and on PostgreSQL 14+, selected only by `URLET_DATABASE_URL`
-- [ ] The full integration suite passes on both backends, and the parity test passes in the `PostgreSQL` CI job, which is in the gate's `REQUIRED` list
-- [ ] An existing SQLite database upgrades with no migration change and no behaviour change
-- [ ] The database URL appears in no log line or debug output
-- [ ] The binary and image sizes are re-measured in §3.3 and the image stays under 40 MB
+- [x] The same binary and image serve every feature on SQLite and on PostgreSQL 14+, selected only by `URLET_DATABASE_URL`
+- [x] The full integration suite passes on both backends, and the parity test passes in the `PostgreSQL` CI job, which is in the gate's `REQUIRED` list
+- [x] An existing SQLite database upgrades with no migration change and no behaviour change
+- [x] The database URL appears in no log line or debug output
+- [x] The binary and image sizes are re-measured in §3.3 and the image stays under 40 MB
 
 ---
 
