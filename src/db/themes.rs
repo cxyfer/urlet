@@ -51,7 +51,7 @@ pub async fn find(pool: &SqlitePool, key: &str) -> Result<Option<ThemeRow>, sqlx
     let row: Option<(String, i64, i64, i64, String, String)> = sqlx::query_as(
         "SELECT key, is_enabled, is_default, sort_order, created_at, updated_at
            FROM themes
-          WHERE key = ?",
+          WHERE key = $1",
     )
     .bind(key)
     .fetch_optional(pool)
@@ -80,7 +80,7 @@ pub async fn ensure_defaults(
         let is_default = if *key == default_key { 1 } else { 0 };
         sqlx::query(
             "INSERT INTO themes (key, is_enabled, is_default, sort_order, created_at, updated_at)
-             VALUES (?, 1, ?, ?, ?, ?)",
+             VALUES ($1, 1, $2, $3, $4, $5)",
         )
         .bind(key)
         .bind(is_default)
@@ -113,24 +113,24 @@ pub async fn set_state_and_setting(
     let now = now_iso();
     let mut tx = crate::db::begin_write(pool).await?;
 
-    sqlx::query("UPDATE themes SET is_enabled = 0, updated_at = ?")
+    sqlx::query("UPDATE themes SET is_enabled = 0, updated_at = $1")
         .bind(&now)
         .execute(&mut *tx)
         .await?;
 
     for key in enabled {
-        sqlx::query("UPDATE themes SET is_enabled = 1, updated_at = ? WHERE key = ?")
+        sqlx::query("UPDATE themes SET is_enabled = 1, updated_at = $1 WHERE key = $2")
             .bind(&now)
             .bind(key)
             .execute(&mut *tx)
             .await?;
     }
 
-    sqlx::query("UPDATE themes SET is_default = 0, updated_at = ? WHERE is_default = 1")
+    sqlx::query("UPDATE themes SET is_default = 0, updated_at = $1 WHERE is_default = 1")
         .bind(&now)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("UPDATE themes SET is_default = 1, updated_at = ? WHERE key = ?")
+    sqlx::query("UPDATE themes SET is_default = 1, updated_at = $1 WHERE key = $2")
         .bind(&now)
         .bind(default_key)
         .execute(&mut *tx)
@@ -138,7 +138,7 @@ pub async fn set_state_and_setting(
 
     sqlx::query(
         "INSERT INTO settings (key, value, updated_at, updated_by)
-         VALUES ('theme_switching', ?, ?, ?)
+         VALUES ('theme_switching', $1, $2, $3)
          ON CONFLICT (key) DO UPDATE SET value = excluded.value,
                                         updated_at = excluded.updated_at,
                                         updated_by = excluded.updated_by",

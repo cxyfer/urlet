@@ -82,7 +82,7 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<UserGroup>, sqlx::Error> {
 
 /// Find a group by id.
 pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<UserGroup>, sqlx::Error> {
-    sqlx::query_as::<_, UserGroup>(&format!("{SELECT} WHERE id = ?"))
+    sqlx::query_as::<_, UserGroup>(&format!("{SELECT} WHERE id = $1"))
         .bind(id)
         .fetch_optional(pool)
         .await
@@ -91,7 +91,7 @@ pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<UserGroup>,
 /// Find a group by name. `name` uses `COLLATE NOCASE`, so the comparison is
 /// case-insensitive without normalising the input.
 pub async fn find_by_name(pool: &SqlitePool, name: &str) -> Result<Option<UserGroup>, sqlx::Error> {
-    sqlx::query_as::<_, UserGroup>(&format!("{SELECT} WHERE name = ?"))
+    sqlx::query_as::<_, UserGroup>(&format!("{SELECT} WHERE name = $1"))
         .bind(name)
         .fetch_optional(pool)
         .await
@@ -125,7 +125,7 @@ pub async fn member_counts(pool: &SqlitePool) -> Result<HashMap<i64, i64>, sqlx:
 
 /// Number of live members in one group.
 pub async fn count_members(pool: &SqlitePool, group_id: i64) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE group_id = ? AND deleted_at IS NULL")
+    sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE group_id = $1 AND deleted_at IS NULL")
         .bind(group_id)
         .fetch_one(pool)
         .await
@@ -147,7 +147,7 @@ pub async fn create(
              allow_invites, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks,
              allow_tags, allow_api_tokens, allow_domain_selection, redirect_mode_policy,
              default_domain_id, restrict_domains, is_default, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)",
     )
     .bind(values.name)
     .bind(values.description)
@@ -173,7 +173,7 @@ pub async fn create(
     .await?;
     let id = result.last_insert_rowid();
     for domain_id in allowed_domain_ids {
-        sqlx::query("INSERT INTO group_domains (group_id, domain_id) VALUES (?, ?)")
+        sqlx::query("INSERT INTO group_domains (group_id, domain_id) VALUES ($1, $2)")
             .bind(id)
             .bind(domain_id)
             .execute(&mut *tx)
@@ -199,13 +199,13 @@ pub async fn update(
     let mut tx = crate::db::begin_write(pool).await?;
     let updated = sqlx::query(
         "UPDATE user_groups
-            SET name = ?, description = ?, max_urls = ?, max_api_tokens = ?,
-                max_invites = ?, invite_period = ?, allow_invites = ?,
-                allow_custom_slug = ?, allow_password = ?, allow_expiry = ?,
-                allow_max_clicks = ?, allow_tags = ?, allow_api_tokens = ?,
-                allow_domain_selection = ?, redirect_mode_policy = ?, default_domain_id = ?,
-                restrict_domains = ?, updated_at = ?
-          WHERE id = ?",
+            SET name = $1, description = $2, max_urls = $3, max_api_tokens = $4,
+                max_invites = $5, invite_period = $6, allow_invites = $7,
+                allow_custom_slug = $8, allow_password = $9, allow_expiry = $10,
+                allow_max_clicks = $11, allow_tags = $12, allow_api_tokens = $13,
+                allow_domain_selection = $14, redirect_mode_policy = $15, default_domain_id = $16,
+                restrict_domains = $17, updated_at = $18
+          WHERE id = $19",
     )
     .bind(values.name)
     .bind(values.description)
@@ -236,12 +236,12 @@ pub async fn update(
     }
 
     if let Some(domain_ids) = allowed_domain_ids {
-        sqlx::query("DELETE FROM group_domains WHERE group_id = ?")
+        sqlx::query("DELETE FROM group_domains WHERE group_id = $1")
             .bind(id)
             .execute(&mut *tx)
             .await?;
         for domain_id in domain_ids {
-            sqlx::query("INSERT INTO group_domains (group_id, domain_id) VALUES (?, ?)")
+            sqlx::query("INSERT INTO group_domains (group_id, domain_id) VALUES ($1, $2)")
                 .bind(id)
                 .bind(domain_id)
                 .execute(&mut *tx)
@@ -251,14 +251,14 @@ pub async fn update(
 
     if make_default {
         sqlx::query(
-            "UPDATE user_groups SET is_default = 0, updated_at = ?
-              WHERE is_default = 1 AND id <> ?",
+            "UPDATE user_groups SET is_default = 0, updated_at = $1
+              WHERE is_default = 1 AND id <> $2",
         )
         .bind(&now)
         .bind(id)
         .execute(&mut *tx)
         .await?;
-        sqlx::query("UPDATE user_groups SET is_default = 1, updated_at = ? WHERE id = ?")
+        sqlx::query("UPDATE user_groups SET is_default = 1, updated_at = $1 WHERE id = $2")
             .bind(&now)
             .bind(id)
             .execute(&mut *tx)
@@ -271,7 +271,7 @@ pub async fn update(
 
 /// The explicit domain allowlist of one group.
 pub async fn domain_ids(pool: &SqlitePool, group_id: i64) -> Result<Vec<i64>, sqlx::Error> {
-    sqlx::query_scalar("SELECT domain_id FROM group_domains WHERE group_id = ? ORDER BY domain_id")
+    sqlx::query_scalar("SELECT domain_id FROM group_domains WHERE group_id = $1 ORDER BY domain_id")
         .bind(group_id)
         .fetch_all(pool)
         .await
@@ -307,13 +307,13 @@ pub async fn delete_with_reassign(
 ) -> Result<bool, sqlx::Error> {
     let now = now_iso();
     let mut tx = crate::db::begin_write(pool).await?;
-    sqlx::query("UPDATE users SET group_id = ?, updated_at = ? WHERE group_id = ?")
+    sqlx::query("UPDATE users SET group_id = $1, updated_at = $2 WHERE group_id = $3")
         .bind(target)
         .bind(&now)
         .bind(id)
         .execute(&mut *tx)
         .await?;
-    let deleted = sqlx::query("DELETE FROM user_groups WHERE id = ? AND is_default = 0")
+    let deleted = sqlx::query("DELETE FROM user_groups WHERE id = $1 AND is_default = 0")
         .bind(id)
         .execute(&mut *tx)
         .await?;

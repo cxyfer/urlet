@@ -19,13 +19,13 @@ pub async fn reserve(
     delete_expired(pool, now).await?;
     let used: Option<i64> = sqlx::query_scalar(
         "INSERT INTO public_creation_quota (scope, period, window_start, window_end, used)
-         SELECT ?, ?, ?, ?, 1
+         SELECT $1, $2, $3, $4, 1
          WHERE EXISTS (
              SELECT 1 FROM public_creation_quota
-             WHERE scope = ? AND period = ? AND window_start = ?
-         ) OR (SELECT COUNT(*) FROM public_creation_quota) < ?
+             WHERE scope = $5 AND period = $6 AND window_start = $7
+         ) OR (SELECT COUNT(*) FROM public_creation_quota) < $8
          ON CONFLICT (scope, period, window_start) DO UPDATE SET used = used + 1
-         WHERE used < ?
+         WHERE used < $9
          RETURNING used",
     )
     .bind(scope)
@@ -45,7 +45,7 @@ pub async fn reserve(
 /// 只移除已結束的週期，未到期的使用量必須保留。
 pub async fn delete_expired(pool: &SqlitePool, now: i64) -> Result<u64, sqlx::Error> {
     Ok(
-        sqlx::query("DELETE FROM public_creation_quota WHERE window_end <= ?")
+        sqlx::query("DELETE FROM public_creation_quota WHERE window_end <= $1")
             .bind(now)
             .execute(pool)
             .await?

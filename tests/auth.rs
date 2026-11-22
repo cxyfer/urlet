@@ -517,7 +517,7 @@ async fn suspended_accounts_cannot_use_existing_sessions() {
         StatusCode::OK
     );
 
-    sqlx::query("UPDATE users SET status = 'suspended' WHERE email_normalized = ?")
+    sqlx::query("UPDATE users SET status = 'suspended' WHERE email_normalized = $1")
         .bind("user@example.com")
         .execute(&app.state.db)
         .await
@@ -1031,7 +1031,7 @@ async fn sessions_slide_while_in_use() {
     // Give the session a nearly expired deadline and an old last_seen_at, then
     // verify that using it pushes the expiry out instead of leaving it fixed.
     let nearly_expired = urlet::services::time::iso_in_hours(1);
-    sqlx::query("UPDATE sessions SET last_seen_at = ?, expires_at = ?")
+    sqlx::query("UPDATE sessions SET last_seen_at = $1, expires_at = $2")
         .bind("2020-01-01T00:00:00.000Z")
         .bind(&nearly_expired)
         .execute(&app.state.db)

@@ -30,7 +30,7 @@ async fn create_url(app: &TestApp, cookie: &str, payload: Value) -> Value {
 }
 
 async fn domain_id(app: &TestApp, hostname: &str) -> i64 {
-    sqlx::query_scalar("SELECT id FROM domains WHERE hostname = ? COLLATE NOCASE")
+    sqlx::query_scalar("SELECT id FROM domains WHERE hostname = $1 COLLATE NOCASE")
         .bind(hostname)
         .fetch_one(&app.state.db)
         .await
@@ -550,7 +550,7 @@ async fn environment_domains_are_active_and_insert_only() {
     urlet::server::bootstrap(&app.state)
         .await
         .expect("bootstrap again");
-    let status: String = sqlx::query_scalar("SELECT status FROM domains WHERE id = ?")
+    let status: String = sqlx::query_scalar("SELECT status FROM domains WHERE id = $1")
         .bind(env_id)
         .fetch_one(&app.state.db)
         .await
@@ -568,7 +568,7 @@ async fn environment_domains_are_active_and_insert_only() {
         .expect("detach env domains");
     assert_eq!(detached, 1);
     app.reload_domains().await;
-    let source: String = sqlx::query_scalar("SELECT source FROM domains WHERE id = ?")
+    let source: String = sqlx::query_scalar("SELECT source FROM domains WHERE id = $1")
         .bind(env_id)
         .fetch_one(&app.state.db)
         .await
@@ -1033,13 +1033,13 @@ async fn conditional_domain_updates_do_not_leave_a_disabled_default() {
         .await
         .expect("conditional disable");
     assert_eq!(changed, 0);
-    let status: String = sqlx::query_scalar("SELECT status FROM domains WHERE id = ?")
+    let status: String = sqlx::query_scalar("SELECT status FROM domains WHERE id = $1")
         .bind(go_id)
         .fetch_one(&app.state.db)
         .await
         .expect("status");
     assert_eq!(status, "active");
-    let is_default: i64 = sqlx::query_scalar("SELECT is_default FROM domains WHERE id = ?")
+    let is_default: i64 = sqlx::query_scalar("SELECT is_default FROM domains WHERE id = $1")
         .bind(go_id)
         .fetch_one(&app.state.db)
         .await
@@ -1150,7 +1150,7 @@ async fn demoted_opaque_canonical_host_still_resolves_old_links() {
     let now = urlet::services::time::now_iso();
     sqlx::query(
         "INSERT INTO users (email, email_normalized, password_hash, created_at, updated_at)
-         VALUES ('legacy@example.com', 'legacy@example.com', 'hash', ?, ?)",
+         VALUES ('legacy@example.com', 'legacy@example.com', 'hash', $1, $2)",
     )
     .bind(&now)
     .bind(&now)
@@ -1169,7 +1169,7 @@ async fn demoted_opaque_canonical_host_still_resolves_old_links() {
             .expect("opaque canonical id");
     sqlx::query(
         "INSERT INTO urls (user_id, domain_id, slug, target_url, created_at, updated_at)
-         VALUES (?, ?, 'legacy', 'https://example.com/legacy', ?, ?)",
+         VALUES ($1, $2, 'legacy', 'https://example.com/legacy', $3, $4)",
     )
     .bind(user_id)
     .bind(domain_id)
@@ -1355,7 +1355,7 @@ async fn opaque_canonical_hosts_accept_link_domains() {
         );
         let edit_location = form_edit.header("location").expect("location");
         assert!(!edit_location.contains("err="), "{edit_location}");
-        let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = ?")
+        let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = $1")
             .bind(form_id.parse::<i64>().expect("numeric id"))
             .fetch_one(&app.state.db)
             .await

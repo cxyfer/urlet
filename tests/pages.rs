@@ -105,7 +105,7 @@ async fn landing_page_treats_a_stale_session_as_anonymous() {
     assert!(!response.body.contains("action=\"/app/logout\""));
 
     // So is a real session that has expired.
-    sqlx::query("UPDATE sessions SET expires_at = ?")
+    sqlx::query("UPDATE sessions SET expires_at = $1")
         .bind(urlet::services::time::iso_in_hours(-1))
         .execute(&app.state.db)
         .await
@@ -761,7 +761,7 @@ async fn quick_extend_offers_and_moves_only_the_limit_that_stopped_the_link() {
         .await;
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
     let id = created.json()["id"].as_i64().expect("id");
-    sqlx::query("UPDATE urls SET click_count = 1 WHERE id = ?")
+    sqlx::query("UPDATE urls SET click_count = 1 WHERE id = $1")
         .bind(id)
         .execute(&app.state.db)
         .await
@@ -785,7 +785,7 @@ async fn quick_extend_offers_and_moves_only_the_limit_that_stopped_the_link() {
         .header("location")
         .expect("location")
         .contains("err=invalid"));
-    let expires: Option<String> = sqlx::query_scalar("SELECT expires_at FROM urls WHERE id = ?")
+    let expires: Option<String> = sqlx::query_scalar("SELECT expires_at FROM urls WHERE id = $1")
         .bind(id)
         .fetch_one(&app.state.db)
         .await
@@ -803,7 +803,7 @@ async fn quick_extend_offers_and_moves_only_the_limit_that_stopped_the_link() {
         .header("location")
         .expect("location")
         .contains("ok=updated"));
-    let cap: Option<i64> = sqlx::query_scalar("SELECT max_clicks FROM urls WHERE id = ?")
+    let cap: Option<i64> = sqlx::query_scalar("SELECT max_clicks FROM urls WHERE id = $1")
         .bind(id)
         .fetch_one(&app.state.db)
         .await
@@ -830,7 +830,7 @@ async fn quick_extend_lifts_both_limits_when_both_were_reached() {
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
     let id = created.json()["id"].as_i64().expect("id");
     sqlx::query(
-        "UPDATE urls SET click_count = 1, expires_at = '2000-01-01T00:00:00Z' WHERE id = ?",
+        "UPDATE urls SET click_count = 1, expires_at = '2000-01-01T00:00:00Z' WHERE id = $1",
     )
     .bind(id)
     .execute(&app.state.db)
@@ -895,7 +895,7 @@ async fn sign_in_and_registration_keep_the_page_to_return_to() {
 
     // 被拒絕的登入導回表單時也保留 next。
     app.register("held@example.com", "supersecret").await;
-    sqlx::query("UPDATE users SET status = 'suspended' WHERE email_normalized = ?")
+    sqlx::query("UPDATE users SET status = 'suspended' WHERE email_normalized = $1")
         .bind("held@example.com")
         .execute(&app.state.db)
         .await
@@ -953,12 +953,12 @@ async fn dashboard_cards_and_quota_meter_follow_each_link_state() {
         ))
         .await;
     assert_eq!(disabled.status, StatusCode::OK, "{}", disabled.body);
-    sqlx::query("UPDATE urls SET max_clicks = 1, click_count = 1 WHERE id = ?")
+    sqlx::query("UPDATE urls SET max_clicks = 1, click_count = 1 WHERE id = $1")
         .bind(ids[2])
         .execute(&app.state.db)
         .await
         .expect("cap");
-    sqlx::query("UPDATE urls SET expires_at = '2000-01-01T00:00:00Z' WHERE id = ?")
+    sqlx::query("UPDATE urls SET expires_at = '2000-01-01T00:00:00Z' WHERE id = $1")
         .bind(ids[3])
         .execute(&app.state.db)
         .await

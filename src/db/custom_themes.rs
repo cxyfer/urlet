@@ -73,7 +73,7 @@ pub async fn find(pool: &SqlitePool, id: i64) -> Result<Option<CustomThemeRow>, 
         "SELECT id, key, name, description, appearance, css_version, css_size,
                 original_filename, created_by, created_at, updated_at
            FROM custom_themes
-          WHERE id = ?",
+          WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -90,7 +90,7 @@ pub async fn find_by_key(
         "SELECT id, key, name, description, appearance, css_version, css_size,
                 original_filename, created_by, created_at, updated_at
            FROM custom_themes
-          WHERE key = ?",
+          WHERE key = $1",
     )
     .bind(key)
     .fetch_optional(pool)
@@ -120,8 +120,8 @@ pub async fn create(pool: &SqlitePool, new: &NewCustomTheme) -> Result<i64, sqlx
     sqlx::query(
         "INSERT INTO themes
              (key, is_enabled, is_default, sort_order, created_at, updated_at)
-         VALUES (?, 1, 0,
-                 (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM themes), ?, ?)",
+         VALUES ($1, 1, 0,
+                 (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM themes), $2, $3)",
     )
     .bind(&new.key)
     .bind(&now)
@@ -133,7 +133,7 @@ pub async fn create(pool: &SqlitePool, new: &NewCustomTheme) -> Result<i64, sqlx
         "INSERT INTO custom_themes
              (key, name, description, appearance, css_version, css_size,
               original_filename, created_by, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
     )
     .bind(&new.key)
     .bind(&new.name)
@@ -169,8 +169,8 @@ pub async fn update(
     let mut tx = crate::db::begin_write(pool).await?;
     sqlx::query(
         "UPDATE custom_themes
-            SET name = ?, description = ?, appearance = ?, updated_at = ?
-          WHERE id = ?",
+            SET name = $1, description = $2, appearance = $3, updated_at = $4
+          WHERE id = $5",
     )
     .bind(name)
     .bind(description)
@@ -182,8 +182,8 @@ pub async fn update(
     if let Some((css_version, css_size, original_filename)) = replaced_css {
         sqlx::query(
             "UPDATE custom_themes
-                SET css_version = ?, css_size = ?, original_filename = ?, updated_at = ?
-              WHERE id = ?",
+                SET css_version = $1, css_size = $2, original_filename = $3, updated_at = $4
+              WHERE id = $5",
         )
         .bind(css_version)
         .bind(css_size)
@@ -200,11 +200,11 @@ pub async fn update(
 /// Delete the upload and its catalogue row in one transaction.
 pub async fn delete(pool: &SqlitePool, id: i64, key: &str) -> Result<(), sqlx::Error> {
     let mut tx = crate::db::begin_write(pool).await?;
-    sqlx::query("DELETE FROM custom_themes WHERE id = ?")
+    sqlx::query("DELETE FROM custom_themes WHERE id = $1")
         .bind(id)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("DELETE FROM themes WHERE key = ?")
+    sqlx::query("DELETE FROM themes WHERE key = $1")
         .bind(key)
         .execute(&mut *tx)
         .await?;

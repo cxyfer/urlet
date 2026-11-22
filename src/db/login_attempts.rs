@@ -18,9 +18,9 @@ pub async fn reserve_failure(
 ) -> Result<Option<i64>, sqlx::Error> {
     sqlx::query_scalar(
         "INSERT INTO login_attempts (identifier_hash, ip_hash, success, created_at)
-         SELECT ?, ?, 0, ?
+         SELECT $1, $2, 0, $3
           WHERE (SELECT COUNT(*) FROM login_attempts
-                  WHERE identifier_hash = ? AND success = 0 AND created_at >= ?) < ?
+                  WHERE identifier_hash = $4 AND success = 0 AND created_at >= $5) < $6
          RETURNING id",
     )
     .bind(identifier_hash)
@@ -35,7 +35,7 @@ pub async fn reserve_failure(
 
 /// Mark a reserved attempt as successful, so it no longer counts as a failure.
 pub async fn mark_success(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE login_attempts SET success = 1 WHERE id = ?")
+    sqlx::query("UPDATE login_attempts SET success = 1 WHERE id = $1")
         .bind(id)
         .execute(pool)
         .await?;
@@ -44,7 +44,7 @@ pub async fn mark_success(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error>
 
 /// Delete attempts older than `before` (retention).
 pub async fn delete_older_than(pool: &SqlitePool, before: &str) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query("DELETE FROM login_attempts WHERE created_at < ?")
+    let result = sqlx::query("DELETE FROM login_attempts WHERE created_at < $1")
         .bind(before)
         .execute(pool)
         .await?;

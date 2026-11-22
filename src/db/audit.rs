@@ -32,7 +32,7 @@ pub async fn insert(pool: &SqlitePool, entry: &NewAuditLog) -> Result<(), sqlx::
     sqlx::query(
         "INSERT INTO audit_logs (actor_user_id, actor_role, action, target_type, target_id,
                                  metadata, ip_hash, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
     )
     .bind(entry.actor_user_id)
     .bind(entry.actor_role.as_deref())
@@ -66,11 +66,11 @@ pub async fn list(
         "SELECT id, actor_user_id, actor_role, action, target_type, target_id, metadata, ip_hash,
                 created_at
          FROM audit_logs
-         WHERE (?1 IS NULL OR action = ?1)
-           AND (?2 IS NULL OR target_type = ?2)
-           AND (?3 IS NULL OR actor_user_id = ?3)
+         WHERE ($1 IS NULL OR action = $1)
+           AND ($2 IS NULL OR target_type = $2)
+           AND ($3 IS NULL OR actor_user_id = $3)
          ORDER BY id DESC
-         LIMIT ?4 OFFSET ?5",
+         LIMIT $4 OFFSET $5",
     )
     .bind(filter.action.as_deref())
     .bind(filter.target_type.as_deref())
@@ -85,9 +85,9 @@ pub async fn list(
 pub async fn count(pool: &SqlitePool, filter: &AuditFilter) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM audit_logs
-         WHERE (?1 IS NULL OR action = ?1)
-           AND (?2 IS NULL OR target_type = ?2)
-           AND (?3 IS NULL OR actor_user_id = ?3)",
+         WHERE ($1 IS NULL OR action = $1)
+           AND ($2 IS NULL OR target_type = $2)
+           AND ($3 IS NULL OR actor_user_id = $3)",
     )
     .bind(filter.action.as_deref())
     .bind(filter.target_type.as_deref())
@@ -98,7 +98,7 @@ pub async fn count(pool: &SqlitePool, filter: &AuditFilter) -> Result<i64, sqlx:
 
 /// Delete entries older than `before`.
 pub async fn delete_older_than(pool: &SqlitePool, before: &str) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query("DELETE FROM audit_logs WHERE created_at < ?")
+    let result = sqlx::query("DELETE FROM audit_logs WHERE created_at < $1")
         .bind(before)
         .execute(pool)
         .await?;

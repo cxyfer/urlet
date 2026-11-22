@@ -59,7 +59,7 @@ async fn create_url(app: &TestApp, cookie: &str, payload: Value) -> Value {
 async fn wait_for_clicks(app: &TestApp, url_id: i64, expected: i64) {
     let mut seen = 0;
     for _ in 0..150 {
-        seen = sqlx::query_scalar("SELECT click_count FROM urls WHERE id = ?")
+        seen = sqlx::query_scalar("SELECT click_count FROM urls WHERE id = $1")
             .bind(url_id)
             .fetch_one(&app.state.db)
             .await
@@ -276,7 +276,7 @@ async fn an_unknown_stored_mode_falls_back_to_direct_and_the_form_preserves_it()
         .execute(&mut *connection)
         .await
         .expect("relax checks");
-    sqlx::query("UPDATE urls SET redirect_mode = 'legacy' WHERE id = ?")
+    sqlx::query("UPDATE urls SET redirect_mode = 'legacy' WHERE id = $1")
         .bind(id)
         .execute(&mut *connection)
         .await
@@ -312,7 +312,7 @@ async fn an_unknown_stored_mode_falls_back_to_direct_and_the_form_preserves_it()
         ))
         .await;
     assert_eq!(saved.status, StatusCode::SEE_OTHER, "{}", saved.body);
-    let stored: String = sqlx::query_scalar("SELECT redirect_mode FROM urls WHERE id = ?")
+    let stored: String = sqlx::query_scalar("SELECT redirect_mode FROM urls WHERE id = $1")
         .bind(id)
         .fetch_one(&app.state.db)
         .await
@@ -341,7 +341,7 @@ async fn an_out_of_range_stored_delay_is_clamped_when_rendering() {
         .execute(&mut *connection)
         .await
         .expect("relax checks");
-    sqlx::query("UPDATE urls SET splash_delay_seconds = 999 WHERE id = ?")
+    sqlx::query("UPDATE urls SET splash_delay_seconds = 999 WHERE id = $1")
         .bind(id)
         .execute(&mut *connection)
         .await

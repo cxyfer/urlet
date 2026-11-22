@@ -81,7 +81,7 @@ pub async fn all(pool: &SqlitePool) -> Result<HashMap<String, String>, sqlx::Err
 
 /// Read one setting.
 pub async fn get(pool: &SqlitePool, key: &str) -> Result<Option<String>, sqlx::Error> {
-    sqlx::query_scalar("SELECT value FROM settings WHERE key = ?")
+    sqlx::query_scalar("SELECT value FROM settings WHERE key = $1")
         .bind(key)
         .fetch_optional(pool)
         .await
@@ -96,7 +96,7 @@ pub async fn set(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO settings (key, value, updated_at, updated_by)
-         VALUES (?, ?, ?, ?)
+         VALUES ($1, $2, $3, $4)
          ON CONFLICT (key) DO UPDATE SET value = excluded.value,
                                         updated_at = excluded.updated_at,
                                         updated_by = excluded.updated_by",
@@ -125,7 +125,7 @@ pub async fn set_many(
     for (key, value) in values {
         sqlx::query(
             "INSERT INTO settings (key, value, updated_at, updated_by)
-             VALUES (?, ?, ?, ?)
+             VALUES ($1, $2, $3, $4)
              ON CONFLICT (key) DO UPDATE SET value = excluded.value,
                                             updated_at = excluded.updated_at,
                                             updated_by = excluded.updated_by",
@@ -146,7 +146,7 @@ pub async fn ensure_defaults(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     for (key, value) in DEFAULTS {
         sqlx::query(
             "INSERT OR IGNORE INTO settings (key, value, updated_at, updated_by)
-             VALUES (?, ?, ?, NULL)",
+             VALUES ($1, $2, $3, NULL)",
         )
         .bind(key)
         .bind(value)

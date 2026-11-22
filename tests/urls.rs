@@ -465,7 +465,7 @@ async fn link_state_reflects_expiry_limit_and_status() {
         .starts_with("in "));
 
     // Force the expiry into the past and re-read the state.
-    sqlx::query("UPDATE urls SET expires_at = ? WHERE id = ?")
+    sqlx::query("UPDATE urls SET expires_at = $1 WHERE id = $2")
         .bind("2000-01-01T00:00:00.000Z")
         .bind(expiring["id"].as_i64().expect("id"))
         .execute(&app.state.db)
@@ -486,7 +486,7 @@ async fn link_state_reflects_expiry_limit_and_status() {
     )
     .await
     .json();
-    sqlx::query("UPDATE urls SET click_count = 2 WHERE id = ?")
+    sqlx::query("UPDATE urls SET click_count = 2 WHERE id = $1")
         .bind(limited["id"].as_i64().expect("id"))
         .execute(&app.state.db)
         .await

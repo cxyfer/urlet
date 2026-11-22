@@ -107,7 +107,7 @@ pub async fn effective(pool: &SqlitePool, user: &User) -> Result<DomainPolicy> {
     };
     let group = sqlx::query_as::<_, GroupDomainRow>(
         "SELECT default_domain_id, allow_domain_selection, restrict_domains
-           FROM user_groups WHERE id = ?",
+           FROM user_groups WHERE id = $1",
     )
     .bind(group_id)
     .fetch_optional(pool)
@@ -134,7 +134,7 @@ pub async fn effective(pool: &SqlitePool, user: &User) -> Result<DomainPolicy> {
             "SELECT gd.domain_id
                FROM group_domains gd
                JOIN domains d ON d.id = gd.domain_id
-              WHERE gd.group_id = ? AND d.status = 'active'
+              WHERE gd.group_id = $1 AND d.status = 'active'
               ORDER BY gd.domain_id",
         )
         .bind(group_id)

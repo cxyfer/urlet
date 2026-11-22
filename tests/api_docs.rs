@@ -361,7 +361,7 @@ async fn a_live_link_holding_the_docs_slug_is_counted() {
         sqlx::query(
             "INSERT INTO urls (user_id, domain_id, slug, target_url, redirect_type, status,
                                is_custom_slug, created_at, updated_at, deleted_at)
-             VALUES (?, ?, ?, 'https://example.com', 302, 'active', 1, ?, ?, ?)",
+             VALUES ($1, $2, $3, 'https://example.com', 302, 'active', 1, $4, $5, $6)",
         )
         .bind(user_id)
         .bind(domain_id)

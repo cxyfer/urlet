@@ -80,10 +80,10 @@ pub async fn create(pool: &SqlitePool, new_user: &NewUser) -> Result<i64, sqlx::
     let result = sqlx::query(
         "INSERT INTO users (email, email_normalized, password_hash, display_name, role, status,
                             group_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'active',
-                 COALESCE((SELECT id FROM user_groups WHERE id = ?),
+         VALUES ($1, $2, $3, $4, $5, 'active',
+                 COALESCE((SELECT id FROM user_groups WHERE id = $6),
                           (SELECT id FROM user_groups WHERE is_default = 1)),
-                 ?, ?)",
+                 $7, $8)",
     )
     .bind(&new_user.email)
     .bind(&new_user.email_normalized)
@@ -103,7 +103,7 @@ pub async fn find_by_email(
     pool: &SqlitePool,
     email_normalized: &str,
 ) -> Result<Option<User>, sqlx::Error> {
-    sqlx::query_as::<_, User>(&format!("{SELECT} WHERE email_normalized = ?"))
+    sqlx::query_as::<_, User>(&format!("{SELECT} WHERE email_normalized = $1"))
         .bind(email_normalized)
         .fetch_optional(pool)
         .await
@@ -111,7 +111,7 @@ pub async fn find_by_email(
 
 /// Find a user by id.
 pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<User>, sqlx::Error> {
-    sqlx::query_as::<_, User>(&format!("{SELECT} WHERE id = ?"))
+    sqlx::query_as::<_, User>(&format!("{SELECT} WHERE id = $1"))
         .bind(id)
         .fetch_optional(pool)
         .await
@@ -156,13 +156,13 @@ pub async fn list(
         "{SELECT}
          WHERE deleted_at IS NULL
            AND is_system = 0
-           AND (?1 IS NULL OR role = ?1)
-           AND (?2 IS NULL OR status = ?2)
-           AND (?3 IS NULL OR email LIKE ?3 ESCAPE '\\'
-                          OR IFNULL(display_name, '') LIKE ?3 ESCAPE '\\')
-           AND (?4 IS NULL OR group_id = ?4)
+           AND ($1 IS NULL OR role = $1)
+           AND ($2 IS NULL OR status = $2)
+           AND ($3 IS NULL OR email LIKE $3 ESCAPE '\\'
+                          OR IFNULL(display_name, '') LIKE $3 ESCAPE '\\')
+           AND ($4 IS NULL OR group_id = $4)
          ORDER BY created_at DESC, id DESC
-         LIMIT ?5 OFFSET ?6"
+         LIMIT $5 OFFSET $6"
     ))
     .bind(filter.role.as_deref())
     .bind(filter.status.as_deref())
@@ -181,11 +181,11 @@ pub async fn count_filtered(pool: &SqlitePool, filter: &UserFilter) -> Result<i6
         "SELECT COUNT(*) FROM users
          WHERE deleted_at IS NULL
            AND is_system = 0
-           AND (?1 IS NULL OR role = ?1)
-           AND (?2 IS NULL OR status = ?2)
-           AND (?3 IS NULL OR email LIKE ?3 ESCAPE '\\'
-                          OR IFNULL(display_name, '') LIKE ?3 ESCAPE '\\')
-           AND (?4 IS NULL OR group_id = ?4)",
+           AND ($1 IS NULL OR role = $1)
+           AND ($2 IS NULL OR status = $2)
+           AND ($3 IS NULL OR email LIKE $3 ESCAPE '\\'
+                          OR IFNULL(display_name, '') LIKE $3 ESCAPE '\\')
+           AND ($4 IS NULL OR group_id = $4)",
     )
     .bind(filter.role.as_deref())
     .bind(filter.status.as_deref())
@@ -203,7 +203,7 @@ pub async fn count_active_admins(
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM users
          WHERE role = 'admin' AND status = 'active' AND deleted_at IS NULL AND is_system = 0
-           AND (?1 IS NULL OR id <> ?1)",
+           AND ($1 IS NULL OR id <> $1)",
     )
     .bind(excluding)
     .fetch_one(pool)
@@ -219,7 +219,7 @@ pub async fn link_counts(pool: &SqlitePool) -> Result<Vec<(i64, i64)>, sqlx::Err
 
 /// Update the last successful login timestamp.
 pub async fn set_last_login(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?")
+    sqlx::query("UPDATE users SET last_login_at = $1, updated_at = $2 WHERE id = $3")
         .bind(now_iso())
         .bind(now_iso())
         .bind(id)
@@ -234,7 +234,7 @@ pub async fn set_last_login(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Erro
 /// that keep the reserved Guest account from ever signing in.
 pub async fn set_password(pool: &SqlitePool, id: i64, hash: &str) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
-        "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ? AND is_system = 0",
+        "UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = $3 AND is_system = 0",
     )
     .bind(hash)
     .bind(now_iso())
@@ -250,7 +250,7 @@ pub async fn set_display_name(
     id: i64,
     display_name: Option<&str>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?")
+    sqlx::query("UPDATE users SET display_name = $1, updated_at = $2 WHERE id = $3")
         .bind(display_name)
         .bind(now_iso())
         .bind(id)
@@ -266,7 +266,7 @@ pub async fn set_role_status(
     role: &str,
     status: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE users SET role = ?, status = ?, updated_at = ? WHERE id = ?")
+    sqlx::query("UPDATE users SET role = $1, status = $2, updated_at = $3 WHERE id = $4")
         .bind(role)
         .bind(status)
         .bind(now_iso())
@@ -304,18 +304,18 @@ pub async fn apply_admin_update(
     let mut tx = crate::db::begin_write(pool).await?;
     let result = sqlx::query(
         "UPDATE users
-            SET role = COALESCE(?1, role),
-                status = COALESCE(?2, status),
-                group_id = CASE WHEN ?3 = 1 THEN ?4 ELSE group_id END,
-                updated_at = ?5
-          WHERE id = ?6
+            SET role = COALESCE($1, role),
+                status = COALESCE($2, status),
+                group_id = CASE WHEN $3 = 1 THEN $4 ELSE group_id END,
+                updated_at = $5
+          WHERE id = $6
             AND is_system = 0
             AND (
               NOT (role = 'admin' AND status = 'active'
-                   AND (COALESCE(?1, role) <> 'admin' OR COALESCE(?2, status) <> 'active'))
+                   AND (COALESCE($1, role) <> 'admin' OR COALESCE($2, status) <> 'active'))
               OR (SELECT COUNT(*) FROM users
                    WHERE role = 'admin' AND status = 'active'
-                     AND deleted_at IS NULL AND id <> ?6) > 0
+                     AND deleted_at IS NULL AND id <> $6) > 0
             )",
     )
     .bind(update.role)
@@ -333,7 +333,7 @@ pub async fn apply_admin_update(
         return Ok(false);
     }
     if let Some(display_name) = update.display_name {
-        sqlx::query("UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?")
+        sqlx::query("UPDATE users SET display_name = $1, updated_at = $2 WHERE id = $3")
             .bind(display_name)
             .bind(&now)
             .bind(user_id)
@@ -341,7 +341,7 @@ pub async fn apply_admin_update(
             .await?;
     }
     if update.status == Some("suspended") {
-        sqlx::query("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
+        sqlx::query("UPDATE sessions SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL")
             .bind(&now)
             .bind(user_id)
             .execute(&mut *tx)
@@ -360,14 +360,14 @@ pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error
     let now = now_iso();
     let mut tx = crate::db::begin_write(pool).await?;
     let result = sqlx::query(
-        "UPDATE users SET deleted_at = ?, updated_at = ?
-          WHERE id = ?
+        "UPDATE users SET deleted_at = $1, updated_at = $2
+          WHERE id = $3
             AND is_system = 0
             AND (
               NOT (role = 'admin' AND status = 'active')
               OR (SELECT COUNT(*) FROM users
                    WHERE role = 'admin' AND status = 'active'
-                     AND deleted_at IS NULL AND id <> ?) > 0
+                     AND deleted_at IS NULL AND id <> $4) > 0
             )",
     )
     .bind(&now)
@@ -381,19 +381,19 @@ pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<bool, sqlx::Error
         return Ok(false);
     }
     sqlx::query(
-        "UPDATE urls SET deleted_at = ?, updated_at = ? WHERE user_id = ? AND deleted_at IS NULL",
+        "UPDATE urls SET deleted_at = $1, updated_at = $2 WHERE user_id = $3 AND deleted_at IS NULL",
     )
     .bind(&now)
     .bind(&now)
     .bind(id)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
+    sqlx::query("UPDATE sessions SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL")
         .bind(&now)
         .bind(id)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("UPDATE api_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
+    sqlx::query("UPDATE api_tokens SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL")
         .bind(&now)
         .bind(id)
         .execute(&mut *tx)

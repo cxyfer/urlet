@@ -96,7 +96,7 @@ impl TestApp {
         sqlx::query(
             "INSERT INTO domains
                  (hostname, is_default, is_verified, created_by, created_at, status, source, updated_at)
-             VALUES (?, 0, ?, NULL, ?, ?, 'ui', ?)
+             VALUES ($1, 0, $2, NULL, $3, $4, 'ui', $5)
              ON CONFLICT(hostname) DO NOTHING",
         )
         .bind(hostname)
@@ -108,7 +108,7 @@ impl TestApp {
         .await
         .expect("insert domain");
         let id: i64 =
-            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = ? COLLATE NOCASE")
+            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = $1 COLLATE NOCASE")
                 .bind(hostname)
                 .fetch_one(&self.state.db)
                 .await
@@ -122,7 +122,7 @@ impl TestApp {
             .execute(&self.state.db)
             .await
             .expect("clear default");
-        sqlx::query("UPDATE domains SET is_default = 1 WHERE id = ?")
+        sqlx::query("UPDATE domains SET is_default = 1 WHERE id = $1")
             .bind(id)
             .execute(&self.state.db)
             .await

@@ -511,13 +511,13 @@ async fn sealed_codes_cannot_be_swapped_between_rows() {
             .await
             .expect("sealed rows");
     assert_eq!(rows.len(), 2);
-    sqlx::query("UPDATE invite_codes SET code_sealed = ? WHERE id = ?")
+    sqlx::query("UPDATE invite_codes SET code_sealed = $1 WHERE id = $2")
         .bind(&rows[1].1)
         .bind(rows[0].0)
         .execute(&app.state.db)
         .await
         .expect("swap first");
-    sqlx::query("UPDATE invite_codes SET code_sealed = ? WHERE id = ?")
+    sqlx::query("UPDATE invite_codes SET code_sealed = $1 WHERE id = $2")
         .bind(&rows[0].1)
         .bind(rows[1].0)
         .execute(&app.state.db)

@@ -27,7 +27,7 @@ async fn create_url(app: &TestApp, cookie: &str, payload: Value) -> Value {
 async fn wait_for_clicks(app: &TestApp, url_id: i64, expected: i64) -> i64 {
     let mut seen = 0;
     for _ in 0..150 {
-        seen = sqlx::query_scalar("SELECT click_count FROM urls WHERE id = ?")
+        seen = sqlx::query_scalar("SELECT click_count FROM urls WHERE id = $1")
             .bind(url_id)
             .fetch_one(&app.state.db)
             .await
@@ -146,7 +146,7 @@ async fn expired_and_exhausted_links_are_410() {
     )
     .await;
     assert_eq!(app.get("/expiring").await.status, StatusCode::FOUND);
-    sqlx::query("UPDATE urls SET expires_at = ? WHERE id = ?")
+    sqlx::query("UPDATE urls SET expires_at = $1 WHERE id = $2")
         .bind("2000-01-01T00:00:00.000Z")
         .bind(expiring["id"].as_i64().expect("id"))
         .execute(&app.state.db)
@@ -193,7 +193,7 @@ async fn password_protected_links_never_leak_the_target() {
 
     // No click is recorded for a page view alone.
     tokio::time::sleep(Duration::from_millis(60)).await;
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clicks WHERE url_id = ?")
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clicks WHERE url_id = $1")
         .bind(id)
         .fetch_one(&app.state.db)
         .await
@@ -425,7 +425,7 @@ async fn unlock_of_expired_or_exhausted_password_links_stays_410() {
         json!({ "target_url": "https://example.com", "slug": "lapsed", "password": "linkpass", "expires_at": "2030-01-01" }),
     )
     .await;
-    sqlx::query("UPDATE urls SET expires_at = ? WHERE id = ?")
+    sqlx::query("UPDATE urls SET expires_at = $1 WHERE id = $2")
         .bind("2000-01-01T00:00:00.000Z")
         .bind(expired["id"].as_i64().expect("id"))
         .execute(&app.state.db)
@@ -437,7 +437,7 @@ async fn unlock_of_expired_or_exhausted_password_links_stays_410() {
         json!({ "target_url": "https://example.com", "slug": "spent", "password": "linkpass", "max_clicks": 1 }),
     )
     .await;
-    sqlx::query("UPDATE urls SET click_count = max_clicks WHERE id = ?")
+    sqlx::query("UPDATE urls SET click_count = max_clicks WHERE id = $1")
         .bind(exhausted["id"].as_i64().expect("id"))
         .execute(&app.state.db)
         .await
@@ -521,7 +521,7 @@ async fn clicks_are_recorded_with_analytics_dimensions() {
     wait_for_clicks(&app, id, 1).await;
 
     let row: (String, String, String, Option<String>, i64, i64) = sqlx::query_as(
-        "SELECT device_type, browser, os, referrer_host, is_bot, is_unique FROM clicks WHERE url_id = ?",
+        "SELECT device_type, browser, os, referrer_host, is_bot, is_unique FROM clicks WHERE url_id = $1",
     )
     .bind(id)
     .fetch_one(&app.state.db)
@@ -536,7 +536,7 @@ async fn clicks_are_recorded_with_analytics_dimensions() {
 
     // Counters and rollups are updated too.
     let (clicks, unique, last): (i64, i64, Option<String>) = sqlx::query_as(
-        "SELECT click_count, unique_click_count, last_clicked_at FROM urls WHERE id = ?",
+        "SELECT click_count, unique_click_count, last_clicked_at FROM urls WHERE id = $1",
     )
     .bind(id)
     .fetch_one(&app.state.db)
@@ -545,7 +545,7 @@ async fn clicks_are_recorded_with_analytics_dimensions() {
     assert_eq!((clicks, unique), (1, 1));
     assert!(last.is_some());
 
-    let rollup: i64 = sqlx::query_scalar("SELECT clicks FROM url_daily_stats WHERE url_id = ?")
+    let rollup: i64 = sqlx::query_scalar("SELECT clicks FROM url_daily_stats WHERE url_id = $1")
         .bind(id)
         .fetch_one(&app.state.db)
         .await
@@ -575,7 +575,7 @@ async fn bot_traffic_is_flagged_and_can_be_disabled() {
     assert_eq!(app.send(request).await.status, StatusCode::FOUND);
     wait_for_clicks(&app, id, 1).await;
 
-    let is_bot: i64 = sqlx::query_scalar("SELECT is_bot FROM clicks WHERE url_id = ?")
+    let is_bot: i64 = sqlx::query_scalar("SELECT is_bot FROM clicks WHERE url_id = $1")
         .bind(id)
         .fetch_one(&app.state.db)
         .await
@@ -590,7 +590,7 @@ async fn bot_traffic_is_flagged_and_can_be_disabled() {
         .expect("disable analytics");
     assert_eq!(app.get("/bots").await.status, StatusCode::FOUND);
     tokio::time::sleep(Duration::from_millis(80)).await;
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clicks WHERE url_id = ?")
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clicks WHERE url_id = $1")
         .bind(id)
         .fetch_one(&app.state.db)
         .await

@@ -51,7 +51,7 @@ async fn guest_id(app: &TestApp) -> i64 {
 
 /// Number of links owned by the Guest account.
 async fn guest_links(app: &TestApp) -> i64 {
-    sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE user_id = ?")
+    sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE user_id = $1")
         .bind(guest_id(app).await)
         .fetch_one(&app.state.db)
         .await
@@ -127,7 +127,7 @@ async fn an_anonymous_visitor_creates_a_link_owned_by_the_guest_account() {
     let slug = created_slug(&response);
 
     let (owner, target): (i64, String) =
-        sqlx::query_as("SELECT user_id, target_url FROM urls WHERE slug = ?")
+        sqlx::query_as("SELECT user_id, target_url FROM urls WHERE slug = $1")
             .bind(&slug)
             .fetch_one(&app.state.db)
             .await
@@ -266,7 +266,7 @@ async fn enabled_fields_are_stored() {
     let slug = created_slug(&submit(&app, &body).await);
 
     let (custom, expires_at): (i64, Option<String>) =
-        sqlx::query_as("SELECT is_custom_slug, expires_at FROM urls WHERE slug = ?")
+        sqlx::query_as("SELECT is_custom_slug, expires_at FROM urls WHERE slug = $1")
             .bind(&slug)
             .fetch_one(&app.state.db)
             .await
@@ -276,7 +276,7 @@ async fn enabled_fields_are_stored() {
 
     let tags: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM url_tags ut JOIN tags t ON t.id = ut.tag_id
-          WHERE ut.url_id = (SELECT id FROM urls WHERE slug = ?)",
+          WHERE ut.url_id = (SELECT id FROM urls WHERE slug = $1)",
     )
     .bind(&slug)
     .fetch_one(&app.state.db)
@@ -417,7 +417,7 @@ async fn a_signed_in_member_owns_what_the_public_form_creates() {
     let slug = created_slug(&response);
 
     let owner_email: String = sqlx::query_scalar(
-        "SELECT u.email FROM urls JOIN users u ON u.id = urls.user_id WHERE urls.slug = ?",
+        "SELECT u.email FROM urls JOIN users u ON u.id = urls.user_id WHERE urls.slug = $1",
     )
     .bind(&slug)
     .fetch_one(&app.state.db)
@@ -762,7 +762,7 @@ async fn the_form_hides_fields_the_group_forbids() {
     let now = urlet::services::time::now_iso();
     sqlx::query(
         "INSERT INTO user_groups (name, allow_custom_slug, is_default, created_at, updated_at)
-         VALUES ('NoSlug', 0, 0, ?, ?)",
+         VALUES ('NoSlug', 0, 0, $1, $2)",
     )
     .bind(&now)
     .bind(&now)
@@ -773,7 +773,7 @@ async fn the_form_hides_fields_the_group_forbids() {
         .fetch_one(&app.state.db)
         .await
         .expect("group id");
-    sqlx::query("UPDATE users SET group_id = ? WHERE email_normalized = 'member@example.com'")
+    sqlx::query("UPDATE users SET group_id = $1 WHERE email_normalized = 'member@example.com'")
         .bind(group)
         .execute(&app.state.db)
         .await
@@ -1110,10 +1110,10 @@ const QUOTA_ROW_CAP: i64 = 50_000;
 async fn fill_quota_rows(app: &TestApp, count: i64, now: i64) {
     sqlx::query(
         "WITH RECURSIVE sources(n) AS (
-             SELECT 1 UNION ALL SELECT n + 1 FROM sources WHERE n < ?
+             SELECT 1 UNION ALL SELECT n + 1 FROM sources WHERE n < $1
          )
          INSERT INTO public_creation_quota (scope, period, window_start, window_end, used)
-         SELECT 'seed-quota-' || n, 'month', 0, ?, 1 FROM sources",
+         SELECT 'seed-quota-' || n, 'month', 0, $2, 1 FROM sources",
     )
     .bind(count)
     .bind(now + 31 * 86400)
@@ -1205,7 +1205,7 @@ async fn quota_capacity_preserves_active_usage_and_reclaims_expired_rows() {
             .is_err()
     );
 
-    sqlx::query("UPDATE public_creation_quota SET window_end = ? WHERE scope = 'seed-quota-1'")
+    sqlx::query("UPDATE public_creation_quota SET window_end = $1 WHERE scope = 'seed-quota-1'")
         .bind(now.as_second())
         .execute(&app.state.db)
         .await

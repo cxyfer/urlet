@@ -99,7 +99,7 @@ pub async fn visitor_seen(
     visitor_hash: &str,
 ) -> Result<bool, sqlx::Error> {
     let found: Option<i64> =
-        sqlx::query_scalar("SELECT 1 FROM clicks WHERE url_id = ? AND visitor_hash = ? LIMIT 1")
+        sqlx::query_scalar("SELECT 1 FROM clicks WHERE url_id = $1 AND visitor_hash = $2 LIMIT 1")
             .bind(url_id)
             .bind(visitor_hash)
             .fetch_optional(pool)
@@ -113,7 +113,7 @@ pub async fn insert(pool: &SqlitePool, click: &NewClick) -> Result<i64, sqlx::Er
         "INSERT INTO clicks (url_id, clicked_at, ip_hash, visitor_hash, user_agent, referrer,
                              referrer_host, device_type, browser, os, is_bot, is_unique,
                              password_protected)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
     )
     .bind(click.url_id)
     .bind(&click.clicked_at)
@@ -143,7 +143,7 @@ pub async fn bump_daily(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO url_daily_stats (url_id, day, clicks, unique_clicks, bot_clicks)
-         VALUES (?, ?, 1, ?, ?)
+         VALUES ($1, $2, 1, $3, $4)
          ON CONFLICT (url_id, day) DO UPDATE SET
              clicks = clicks + 1,
              unique_clicks = unique_clicks + excluded.unique_clicks,
@@ -167,9 +167,9 @@ pub async fn bump_url_counters(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE urls SET click_count = click_count + 1,
-                         unique_click_count = unique_click_count + ?,
-                         last_clicked_at = ?
-         WHERE id = ?",
+                         unique_click_count = unique_click_count + $1,
+                         last_clicked_at = $2
+         WHERE id = $3",
     )
     .bind(i64::from(is_unique))
     .bind(clicked_at)
@@ -189,9 +189,9 @@ pub async fn recent_for_url(
     sqlx::query_as::<_, Click>(
         "SELECT id, url_id, clicked_at, ip_hash, visitor_hash, user_agent, referrer, referrer_host,
                 country_code, device_type, browser, os, is_bot, is_unique, password_protected
-         FROM clicks WHERE url_id = ?
+         FROM clicks WHERE url_id = $1
          ORDER BY clicked_at DESC, id DESC
-         LIMIT ? OFFSET ?",
+         LIMIT $2 OFFSET $3",
     )
     .bind(url_id)
     .bind(limit)
@@ -202,7 +202,7 @@ pub async fn recent_for_url(
 
 /// Number of click rows for a link.
 pub async fn count_for_url(pool: &SqlitePool, url_id: i64) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM clicks WHERE url_id = ?")
+    sqlx::query_scalar("SELECT COUNT(*) FROM clicks WHERE url_id = $1")
         .bind(url_id)
         .fetch_one(pool)
         .await
@@ -216,7 +216,7 @@ pub async fn summary_for_url(pool: &SqlitePool, url_id: i64) -> Result<ClickSumm
                 IFNULL(SUM(is_bot), 0) AS bot_clicks,
                 MIN(clicked_at) AS first_click_at,
                 MAX(clicked_at) AS last_click_at
-         FROM clicks WHERE url_id = ?",
+         FROM clicks WHERE url_id = $1",
     )
     .bind(url_id)
     .fetch_one(pool)
@@ -232,7 +232,7 @@ pub async fn daily_series(
     sqlx::query_as::<_, DailyStat>(
         "SELECT day, clicks, unique_clicks, bot_clicks
          FROM url_daily_stats
-         WHERE url_id = ? AND day >= ?
+         WHERE url_id = $1 AND day >= $2
          ORDER BY day ASC",
     )
     .bind(url_id)
@@ -250,8 +250,8 @@ pub async fn breakdown_for_url(
 ) -> Result<Vec<DimensionCount>, sqlx::Error> {
     let sql = format!(
         "SELECT {} AS label, COUNT(*) AS count
-         FROM clicks WHERE url_id = ?
-         GROUP BY label ORDER BY count DESC, label ASC LIMIT ?",
+         FROM clicks WHERE url_id = $1
+         GROUP BY label ORDER BY count DESC, label ASC LIMIT $2",
         dimension.column()
     );
     sqlx::query_as::<_, DimensionCount>(&sql)
@@ -270,7 +270,7 @@ pub async fn user_summary(pool: &SqlitePool, user_id: i64) -> Result<ClickSummar
                 MIN(c.clicked_at) AS first_click_at,
                 MAX(c.clicked_at) AS last_click_at
          FROM clicks c JOIN urls u ON u.id = c.url_id
-         WHERE u.user_id = ? AND u.deleted_at IS NULL",
+         WHERE u.user_id = $1 AND u.deleted_at IS NULL",
     )
     .bind(user_id)
     .fetch_one(pool)
@@ -289,7 +289,7 @@ pub async fn user_daily_series(
                 SUM(s.unique_clicks) AS unique_clicks,
                 SUM(s.bot_clicks) AS bot_clicks
          FROM url_daily_stats s JOIN urls u ON u.id = s.url_id
-         WHERE u.user_id = ? AND u.deleted_at IS NULL AND s.day >= ?
+         WHERE u.user_id = $1 AND u.deleted_at IS NULL AND s.day >= $2
          GROUP BY s.day
          ORDER BY s.day ASC",
     )
@@ -307,7 +307,7 @@ pub async fn user_clicks_since(
 ) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM clicks c JOIN urls u ON u.id = c.url_id
-         WHERE u.user_id = ? AND u.deleted_at IS NULL AND c.clicked_at >= ?",
+         WHERE u.user_id = $1 AND u.deleted_at IS NULL AND c.clicked_at >= $2",
     )
     .bind(user_id)
     .bind(from)
@@ -323,8 +323,8 @@ pub async fn top_urls_for_user(
 ) -> Result<Vec<(i64, String, String, i64)>, sqlx::Error> {
     sqlx::query_as(
         "SELECT id, slug, target_url, click_count FROM urls
-         WHERE user_id = ? AND deleted_at IS NULL
-         ORDER BY click_count DESC, created_at DESC LIMIT ?",
+         WHERE user_id = $1 AND deleted_at IS NULL
+         ORDER BY click_count DESC, created_at DESC LIMIT $2",
     )
     .bind(user_id)
     .bind(limit)
@@ -334,7 +334,7 @@ pub async fn top_urls_for_user(
 
 /// Retention: delete clicks older than `before`.
 pub async fn delete_older_than(pool: &SqlitePool, before: &str) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query("DELETE FROM clicks WHERE clicked_at < ?")
+    let result = sqlx::query("DELETE FROM clicks WHERE clicked_at < $1")
         .bind(before)
         .execute(pool)
         .await?;
@@ -343,7 +343,7 @@ pub async fn delete_older_than(pool: &SqlitePool, before: &str) -> Result<u64, s
 
 /// Retention: drop rollup rows for days older than `before_day`.
 pub async fn delete_daily_before(pool: &SqlitePool, before_day: &str) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query("DELETE FROM url_daily_stats WHERE day < ?")
+    let result = sqlx::query("DELETE FROM url_daily_stats WHERE day < $1")
         .bind(before_day)
         .execute(pool)
         .await?;

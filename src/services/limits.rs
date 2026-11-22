@@ -123,7 +123,7 @@ pub async fn effective_for_group(
         "SELECT max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry,
                 allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection,
                 redirect_mode_policy
-           FROM user_groups WHERE id = ?",
+           FROM user_groups WHERE id = $1",
     )
     .bind(group_id)
     .fetch_optional(pool)

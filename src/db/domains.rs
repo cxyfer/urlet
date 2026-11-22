@@ -152,7 +152,7 @@ pub async fn list_with_counts(pool: &SqlitePool) -> Result<Vec<DomainWithCount>,
 }
 
 pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Domain>, sqlx::Error> {
-    sqlx::query_as::<_, Domain>(&format!("{SELECT} WHERE id = ?"))
+    sqlx::query_as::<_, Domain>(&format!("{SELECT} WHERE id = $1"))
         .bind(id)
         .fetch_optional(pool)
         .await
@@ -162,7 +162,7 @@ pub async fn find_by_hostname(
     pool: &SqlitePool,
     hostname: &str,
 ) -> Result<Option<Domain>, sqlx::Error> {
-    sqlx::query_as::<_, Domain>(&format!("{SELECT} WHERE hostname = ? COLLATE NOCASE"))
+    sqlx::query_as::<_, Domain>(&format!("{SELECT} WHERE hostname = $1 COLLATE NOCASE"))
         .bind(hostname)
         .fetch_optional(pool)
         .await
@@ -212,7 +212,7 @@ pub async fn create(pool: &SqlitePool, new_domain: &NewDomain) -> Result<Domain,
     let result = sqlx::query(
         "INSERT INTO domains
              (hostname, is_default, is_verified, created_by, created_at, status, source, updated_at)
-         VALUES (?, 0, ?, ?, ?, ?, ?, ?)",
+         VALUES ($1, 0, $2, $3, $4, $5, $6, $7)",
     )
     .bind(&new_domain.hostname)
     .bind(i64::from(new_domain.verified))
@@ -233,8 +233,8 @@ pub async fn create(pool: &SqlitePool, new_domain: &NewDomain) -> Result<Domain,
 pub async fn activate(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
     let result = sqlx::query(
         "UPDATE domains
-            SET status = 'active', is_verified = 1, updated_at = ?
-          WHERE id = ?",
+            SET status = 'active', is_verified = 1, updated_at = $1
+          WHERE id = $2",
     )
     .bind(now_iso())
     .bind(id)
@@ -250,8 +250,8 @@ pub async fn disable(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
     // this affects 0 rows and reports the reason.
     let result = sqlx::query(
         "UPDATE domains
-            SET status = 'disabled', updated_at = ?
-          WHERE id = ? AND is_default = 0 AND source <> 'system'",
+            SET status = 'disabled', updated_at = $1
+          WHERE id = $2 AND is_default = 0 AND source <> 'system'",
     )
     .bind(now_iso())
     .bind(id)
@@ -264,7 +264,7 @@ pub async fn disable(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
 pub async fn set_default(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> {
     let mut tx = crate::db::begin_write(pool).await?;
 
-    let status: Option<String> = sqlx::query_scalar("SELECT status FROM domains WHERE id = ?")
+    let status: Option<String> = sqlx::query_scalar("SELECT status FROM domains WHERE id = $1")
         .bind(id)
         .fetch_optional(&mut *tx)
         .await?;
@@ -275,7 +275,7 @@ pub async fn set_default(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> 
     sqlx::query("UPDATE domains SET is_default = 0 WHERE is_default = 1")
         .execute(&mut *tx)
         .await?;
-    sqlx::query("UPDATE domains SET is_default = 1, updated_at = ? WHERE id = ?")
+    sqlx::query("UPDATE domains SET is_default = 1, updated_at = $1 WHERE id = $2")
         .bind(now_iso())
         .bind(id)
         .execute(&mut *tx)
@@ -290,7 +290,7 @@ pub async fn delete(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
     // out from under the instance. The caller re-reads the row when this
     // affects 0 rows and reports the reason.
     let result =
-        sqlx::query("DELETE FROM domains WHERE id = ? AND is_default = 0 AND source = 'ui'")
+        sqlx::query("DELETE FROM domains WHERE id = $1 AND is_default = 0 AND source = 'ui'")
             .bind(id)
             .execute(pool)
             .await?;
@@ -299,7 +299,7 @@ pub async fn delete(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
 
 /// Number of links on a domain, including soft-deleted rows.
 pub async fn link_count(pool: &SqlitePool, id: i64) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE domain_id = ?")
+    sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE domain_id = $1")
         .bind(id)
         .fetch_one(pool)
         .await
@@ -315,7 +315,7 @@ pub async fn ensure_canonical(pool: &SqlitePool, hostname: &str) -> Result<i64, 
     let now = now_iso();
 
     let existing: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM domains WHERE hostname = ? COLLATE NOCASE")
+        sqlx::query_scalar("SELECT id FROM domains WHERE hostname = $1 COLLATE NOCASE")
             .bind(hostname)
             .fetch_optional(&mut *tx)
             .await?;
@@ -326,7 +326,7 @@ pub async fn ensure_canonical(pool: &SqlitePool, hostname: &str) -> Result<i64, 
     let previous_system_default: Option<i64> = sqlx::query_scalar(
         "SELECT id FROM domains
           WHERE source = 'system' AND is_default = 1
-            AND hostname <> ? COLLATE NOCASE
+            AND hostname <> $1 COLLATE NOCASE
           LIMIT 1",
     )
     .bind(hostname)
@@ -337,9 +337,9 @@ pub async fn ensure_canonical(pool: &SqlitePool, hostname: &str) -> Result<i64, 
         Some(id) => {
             sqlx::query(
                 "UPDATE domains
-                    SET hostname = ?, status = 'active', source = 'system',
-                        is_verified = 1, updated_at = ?
-                  WHERE id = ?",
+                    SET hostname = $1, status = 'active', source = 'system',
+                        is_verified = 1, updated_at = $2
+                  WHERE id = $3",
             )
             .bind(hostname)
             .bind(&now)
@@ -356,7 +356,7 @@ pub async fn ensure_canonical(pool: &SqlitePool, hostname: &str) -> Result<i64, 
             let result = sqlx::query(
                 "INSERT INTO domains
                      (hostname, is_default, is_verified, created_by, created_at, status, source, updated_at)
-                 VALUES (?, ?, 1, NULL, ?, 'active', 'system', ?)",
+                 VALUES ($1, $2, 1, NULL, $3, 'active', 'system', $4)",
             )
             .bind(hostname)
             .bind(if has_default == 0 { 1 } else { 0 })
@@ -374,7 +374,7 @@ pub async fn ensure_canonical(pool: &SqlitePool, hostname: &str) -> Result<i64, 
         sqlx::query("UPDATE domains SET is_default = 0 WHERE is_default = 1")
             .execute(&mut *tx)
             .await?;
-        sqlx::query("UPDATE domains SET is_default = 1 WHERE id = ?")
+        sqlx::query("UPDATE domains SET is_default = 1 WHERE id = $1")
             .bind(id)
             .execute(&mut *tx)
             .await?;
@@ -385,8 +385,8 @@ pub async fn ensure_canonical(pool: &SqlitePool, hostname: &str) -> Result<i64, 
     // delete. Only the current canonical host remains `source = 'system'`.
     let demoted = sqlx::query(
         "UPDATE domains
-            SET source = 'ui', updated_at = ?
-          WHERE source = 'system' AND hostname <> ? COLLATE NOCASE",
+            SET source = 'ui', updated_at = $1
+          WHERE source = 'system' AND hostname <> $2 COLLATE NOCASE",
     )
     .bind(&now)
     .bind(hostname)
@@ -410,7 +410,7 @@ pub async fn ensure_canonical(pool: &SqlitePool, hostname: &str) -> Result<i64, 
             .fetch_one(&mut *tx)
             .await?;
     if has_default == 0 {
-        sqlx::query("UPDATE domains SET is_default = 1 WHERE id = ?")
+        sqlx::query("UPDATE domains SET is_default = 1 WHERE id = $1")
             .bind(id)
             .execute(&mut *tx)
             .await?;
@@ -444,8 +444,8 @@ pub async fn detach_env(pool: &SqlitePool, declared: &[String]) -> Result<usize,
             continue;
         }
         let result = sqlx::query(
-            "UPDATE domains SET source = 'ui', updated_at = ?
-              WHERE hostname = ? COLLATE NOCASE AND source = 'env'",
+            "UPDATE domains SET source = 'ui', updated_at = $1
+              WHERE hostname = $2 COLLATE NOCASE AND source = 'env'",
         )
         .bind(&now)
         .bind(&hostname)
@@ -469,7 +469,7 @@ pub async fn seed_env(pool: &SqlitePool, hostnames: &[String]) -> Result<usize, 
 
     for hostname in hostnames {
         let existing: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = ? COLLATE NOCASE")
+            sqlx::query_scalar("SELECT id FROM domains WHERE hostname = $1 COLLATE NOCASE")
                 .bind(hostname)
                 .fetch_optional(&mut *tx)
                 .await?;
@@ -479,7 +479,7 @@ pub async fn seed_env(pool: &SqlitePool, hostnames: &[String]) -> Result<usize, 
         let result = sqlx::query(
             "INSERT INTO domains
                  (hostname, is_default, is_verified, created_by, created_at, status, source, updated_at)
-             VALUES (?, 0, 1, NULL, ?, 'active', 'env', ?)",
+             VALUES ($1, 0, 1, NULL, $2, 'active', 'env', $3)",
         )
         .bind(hostname)
         .bind(&now)

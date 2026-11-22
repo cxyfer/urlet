@@ -55,7 +55,7 @@ async fn set_setting(app: &TestApp, cookie: &str, key: &str, value: &str) {
 
 /// The release timestamp of an invite's ledger row (`None` while it still counts).
 async fn released_at(app: &TestApp, invite_id: i64) -> Option<String> {
-    sqlx::query_scalar("SELECT released_at FROM invite_issuance WHERE invite_id = ?")
+    sqlx::query_scalar("SELECT released_at FROM invite_issuance WHERE invite_id = $1")
         .bind(invite_id)
         .fetch_one(&app.state.db)
         .await
@@ -66,7 +66,7 @@ async fn released_at(app: &TestApp, invite_id: i64) -> Option<String> {
 async fn revoke_audit(app: &TestApp, invite_id: i64) -> Value {
     let raw: String = sqlx::query_scalar(
         "SELECT metadata FROM audit_logs
-          WHERE action = 'invite.revoked' AND target_type = 'invite' AND target_id = ?
+          WHERE action = 'invite.revoked' AND target_type = 'invite' AND target_id = $1
           ORDER BY id DESC LIMIT 1",
     )
     .bind(invite_id)
@@ -233,7 +233,7 @@ async fn a_new_period_frees_the_quota() {
     );
 
     // Move the charged slot into the past: yesterday's issuance must not count.
-    sqlx::query("UPDATE invite_issuance SET created_at = ? WHERE group_id = ?")
+    sqlx::query("UPDATE invite_issuance SET created_at = $1 WHERE group_id = $2")
         .bind("2020-01-01T00:00:00.000Z")
         .bind(group_id)
         .execute(&app.state.db)
@@ -725,7 +725,7 @@ async fn member_api_hides_links_for_exhausted_and_expired_codes() {
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
     let created = created.json();
     let expired_id = created["invite"]["id"].as_i64().expect("invite id");
-    sqlx::query("UPDATE invite_codes SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = ?")
+    sqlx::query("UPDATE invite_codes SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = $1")
         .bind(expired_id)
         .execute(&app.state.db)
         .await
@@ -946,7 +946,7 @@ async fn the_member_invite_page_renders_and_revokes() {
         .header("location")
         .unwrap_or_default()
         .contains("ok=invite_revoked"));
-    let status: String = sqlx::query_scalar("SELECT status FROM invite_codes WHERE id = ?")
+    let status: String = sqlx::query_scalar("SELECT status FROM invite_codes WHERE id = $1")
         .bind(invite_id)
         .fetch_one(&app.state.db)
         .await
@@ -1291,7 +1291,7 @@ async fn deleting_a_group_removes_its_issuance_rows() {
             .status,
         StatusCode::CREATED
     );
-    let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM invite_issuance WHERE group_id = ?")
+    let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM invite_issuance WHERE group_id = $1")
         .bind(group_id)
         .fetch_one(&app.state.db)
         .await
@@ -1305,7 +1305,7 @@ async fn deleting_a_group_removes_its_issuance_rows() {
         ))
         .await;
     assert_eq!(deleted.status, StatusCode::NO_CONTENT, "{}", deleted.body);
-    let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM invite_issuance WHERE group_id = ?")
+    let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM invite_issuance WHERE group_id = $1")
         .bind(group_id)
         .fetch_one(&app.state.db)
         .await
@@ -1332,7 +1332,7 @@ async fn an_ungrouped_account_uses_the_default_group() {
     let (member_cookie, member_id) =
         member_in_group(&app, &admin_cookie, "orphan@example.com", default_id).await;
     // Simulate an account whose group link was lost outside the normal paths.
-    sqlx::query("UPDATE users SET group_id = NULL WHERE id = ?")
+    sqlx::query("UPDATE users SET group_id = NULL WHERE id = $1")
         .bind(member_id)
         .execute(&app.state.db)
         .await
@@ -1414,7 +1414,7 @@ async fn a_redemption_racing_a_revocation_never_refunds_a_used_slot() {
         let redeemed = redeemed.expect("redeem");
         let released = revoked.expect("revoke").expect("active invite");
         let used_count: i64 =
-            sqlx::query_scalar("SELECT used_count FROM invite_codes WHERE id = ?")
+            sqlx::query_scalar("SELECT used_count FROM invite_codes WHERE id = $1")
                 .bind(invite_id)
                 .fetch_one(&app.state.db)
                 .await

@@ -30,10 +30,10 @@ pub async fn reserve(
 ) -> Result<Option<i64>, sqlx::Error> {
     let result = sqlx::query(
         "INSERT INTO invite_issuance (group_id, actor_id, created_at)
-         SELECT ?, ?, ?
-          WHERE ? = 0
+         SELECT $1, $2, $3
+          WHERE $4 = 0
              OR (SELECT COUNT(*) FROM invite_issuance
-                  WHERE group_id IS ? AND created_at >= ? AND released_at IS NULL) < ?",
+                  WHERE group_id IS $5 AND created_at >= $6 AND released_at IS NULL) < $7",
     )
     .bind(group_id)
     .bind(actor_id)
@@ -62,8 +62,8 @@ pub async fn release(
     now: &str,
 ) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
-        "UPDATE invite_issuance SET released_at = ?
-          WHERE invite_id = ? AND released_at IS NULL",
+        "UPDATE invite_issuance SET released_at = $1
+          WHERE invite_id = $2 AND released_at IS NULL",
     )
     .bind(now)
     .bind(invite_id)
@@ -78,7 +78,7 @@ pub async fn attach(
     issuance_id: i64,
     invite_id: i64,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE invite_issuance SET invite_id = ? WHERE id = ?")
+    sqlx::query("UPDATE invite_issuance SET invite_id = $1 WHERE id = $2")
         .bind(invite_id)
         .bind(issuance_id)
         .execute(&mut *conn)
@@ -93,7 +93,7 @@ pub async fn counts_since(
 ) -> Result<Vec<(i64, i64)>, sqlx::Error> {
     sqlx::query_as(
         "SELECT group_id, COUNT(*) FROM invite_issuance
-          WHERE group_id IS NOT NULL AND created_at >= ? AND released_at IS NULL
+          WHERE group_id IS NOT NULL AND created_at >= $1 AND released_at IS NULL
           GROUP BY group_id",
     )
     .bind(window_start)
@@ -110,7 +110,7 @@ pub async fn used(
 ) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM invite_issuance
-          WHERE group_id IS ? AND created_at >= ? AND released_at IS NULL",
+          WHERE group_id IS $1 AND created_at >= $2 AND released_at IS NULL",
     )
     .bind(group_id)
     .bind(window_start)

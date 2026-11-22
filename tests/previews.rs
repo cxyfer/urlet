@@ -714,7 +714,7 @@ async fn lifecycle_checks_precede_metadata_and_media_delivery() {
         ))
         .await;
         if expected == StatusCode::GONE {
-            sqlx::query("UPDATE urls SET click_count=1 WHERE id=?")
+            sqlx::query("UPDATE urls SET click_count=1 WHERE id=$1")
                 .bind(id)
                 .execute(&app.state.db)
                 .await
@@ -727,9 +727,9 @@ async fn lifecycle_checks_precede_metadata_and_media_delivery() {
         assert_eq!(blocked.status, StatusCode::NOT_FOUND);
         assert_eq!(blocked.header("cache-control").as_deref(), Some("no-store"));
     }
-    sqlx::query("UPDATE urls SET click_count=0,max_clicks=NULL,expires_at='2000-01-01T00:00:00Z' WHERE id=?").bind(id).execute(&app.state.db).await.unwrap();
+    sqlx::query("UPDATE urls SET click_count=0,max_clicks=NULL,expires_at='2000-01-01T00:00:00Z' WHERE id=$1").bind(id).execute(&app.state.db).await.unwrap();
     assert_eq!(crawl(&app, "Discordbot").await.status, StatusCode::GONE);
-    sqlx::query("UPDATE urls SET expires_at=NULL WHERE id=?")
+    sqlx::query("UPDATE urls SET expires_at=NULL WHERE id=$1")
         .bind(id)
         .execute(&app.state.db)
         .await
@@ -1009,7 +1009,7 @@ async fn supported_rasters_are_validated_from_content_and_audited_without_conten
     assert_eq!(changed.status, StatusCode::OK, "{}", changed.body);
     assert_eq!(changed.json()["title"], "Do not audit the content");
     let metadata: String = sqlx::query_scalar(
-        "SELECT metadata FROM audit_logs WHERE action='url.updated' AND target_type='url' AND target_id=? AND id>?",
+        "SELECT metadata FROM audit_logs WHERE action='url.updated' AND target_type='url' AND target_id=$1 AND id>$2",
     )
     .bind(id.to_string())
     .bind(before)
@@ -1060,7 +1060,7 @@ async fn custom_domains_splash_and_password_unlock_keep_existing_browser_behavio
     assert!(browser.body.contains("Browser splash"));
     assert!(!browser.body.contains("Public card"));
     assert_eq!(app.get(path).await.status, StatusCode::OK);
-    sqlx::query("UPDATE domains SET status='disabled' WHERE id=?")
+    sqlx::query("UPDATE domains SET status='disabled' WHERE id=$1")
         .bind(domain_id)
         .execute(&app.state.db)
         .await
@@ -1070,7 +1070,7 @@ async fn custom_domains_splash_and_password_unlock_keep_existing_browser_behavio
     let blocked = app.get(path).await;
     assert_eq!(blocked.status, StatusCode::NOT_FOUND);
     assert_eq!(blocked.header("cache-control").as_deref(), Some("no-store"));
-    sqlx::query("UPDATE domains SET status='active' WHERE id=?")
+    sqlx::query("UPDATE domains SET status='active' WHERE id=$1")
         .bind(domain_id)
         .execute(&app.state.db)
         .await
@@ -1156,7 +1156,7 @@ async fn the_link_editor_saves_link_and_preview_in_one_submission() {
         response.header("location").as_deref(),
         Some(format!("/app/urls/{id}?ok=updated").as_str())
     );
-    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = ?")
+    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = $1")
         .bind(id)
         .fetch_one(&app.state.db)
         .await
@@ -1201,7 +1201,7 @@ async fn a_rejected_preview_leaves_the_link_untouched_and_keeps_the_input() {
     assert!(response
         .body
         .contains(urlet::i18n::Lang::En.t("preview.error_image")));
-    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = ?")
+    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = $1")
         .bind(id)
         .fetch_one(&app.state.db)
         .await
@@ -1388,7 +1388,7 @@ async fn an_oversized_image_is_reported_in_the_editor() {
         "data-max-bytes=\"{}\"",
         urlet::services::url_preview::MAX_IMAGE_BYTES
     )));
-    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = ?")
+    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = $1")
         .bind(id)
         .fetch_one(&app.state.db)
         .await
@@ -1445,7 +1445,7 @@ async fn malformed_link_forms_are_refused() {
         ))
         .await;
     assert_eq!(empty.status, StatusCode::SEE_OTHER, "{}", empty.body);
-    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = ?")
+    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = $1")
         .bind(id)
         .fetch_one(&app.state.db)
         .await
@@ -1478,7 +1478,7 @@ async fn another_users_link_cannot_be_opened_or_saved_in_the_editor() {
         saved.header("location").as_deref(),
         Some("/app?err=not_found")
     );
-    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = ?")
+    let target: String = sqlx::query_scalar("SELECT target_url FROM urls WHERE id = $1")
         .bind(id)
         .fetch_one(&app.state.db)
         .await

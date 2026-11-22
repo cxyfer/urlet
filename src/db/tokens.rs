@@ -32,7 +32,7 @@ const SELECT: &str = "SELECT id, user_id, name, token_prefix, token_hash, scopes
 
 /// Look up a token by the hash of its secret.
 pub async fn find_by_hash(pool: &SqlitePool, hash: &str) -> Result<Option<ApiToken>, sqlx::Error> {
-    sqlx::query_as::<_, ApiToken>(&format!("{SELECT} WHERE token_hash = ?"))
+    sqlx::query_as::<_, ApiToken>(&format!("{SELECT} WHERE token_hash = $1"))
         .bind(hash)
         .fetch_optional(pool)
         .await
@@ -58,7 +58,7 @@ pub async fn create(
     let result = sqlx::query(
         "INSERT INTO api_tokens (user_id, name, token_prefix, token_hash, scopes, expires_at,
                                  created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(token.user_id)
     .bind(token.name)
@@ -87,10 +87,10 @@ pub async fn create_within_quota(
     let result = sqlx::query(
         "INSERT INTO api_tokens (user_id, name, token_prefix, token_hash, scopes, expires_at,
                                  created_at)
-         SELECT ?, ?, ?, ?, ?, ?, ?
+         SELECT $1, $2, $3, $4, $5, $6, $7
           WHERE (SELECT COUNT(*) FROM api_tokens
-                  WHERE user_id = ? AND revoked_at IS NULL
-                    AND (expires_at IS NULL OR expires_at > ?)) < ?",
+                  WHERE user_id = $8 AND revoked_at IS NULL
+                    AND (expires_at IS NULL OR expires_at > $9)) < $10",
     )
     .bind(token.user_id)
     .bind(token.name)
@@ -109,7 +109,7 @@ pub async fn create_within_quota(
 
 /// Record token usage (called on every authenticated API request).
 pub async fn touch_last_used(pool: &SqlitePool, id: i64, now: &str) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE api_tokens SET last_used_at = ? WHERE id = ?")
+    sqlx::query("UPDATE api_tokens SET last_used_at = $1 WHERE id = $2")
         .bind(now)
         .bind(id)
         .execute(pool)
@@ -121,7 +121,7 @@ pub async fn touch_last_used(pool: &SqlitePool, id: i64, now: &str) -> Result<()
 pub async fn count_active(pool: &SqlitePool, now: &str) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM api_tokens
-         WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)",
+         WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at > $1)",
     )
     .bind(now)
     .fetch_one(pool)
@@ -136,8 +136,8 @@ pub async fn count_active_for_user(
 ) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM api_tokens
-         WHERE user_id = ? AND revoked_at IS NULL
-           AND (expires_at IS NULL OR expires_at > ?)",
+         WHERE user_id = $1 AND revoked_at IS NULL
+           AND (expires_at IS NULL OR expires_at > $2)",
     )
     .bind(user_id)
     .bind(now)
@@ -148,7 +148,7 @@ pub async fn count_active_for_user(
 /// Tokens of one user, newest first.
 pub async fn list_for_user(pool: &SqlitePool, user_id: i64) -> Result<Vec<ApiToken>, sqlx::Error> {
     sqlx::query_as::<_, ApiToken>(&format!(
-        "{SELECT} WHERE user_id = ? ORDER BY created_at DESC LIMIT 100"
+        "{SELECT} WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100"
     ))
     .bind(user_id)
     .fetch_all(pool)
@@ -162,7 +162,7 @@ pub async fn revoke_all_for_user(
     now: &str,
 ) -> Result<u64, sqlx::Error> {
     let result = sqlx::query(
-        "UPDATE api_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+        "UPDATE api_tokens SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL",
     )
     .bind(now)
     .bind(user_id)
@@ -179,7 +179,7 @@ pub async fn revoke(
     now: &str,
 ) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
-        "UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL",
+        "UPDATE api_tokens SET revoked_at = $1 WHERE id = $2 AND user_id = $3 AND revoked_at IS NULL",
     )
     .bind(now)
     .bind(id)
