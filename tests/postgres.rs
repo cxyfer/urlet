@@ -43,7 +43,8 @@ struct Column {
     /// `integer`, `text` or `blob`.
     kind: String,
     not_null: bool,
-    has_default: bool,
+    /// The default expression, normalised by [`normalised_default`].
+    default: Option<String>,
 }
 
 /// One single-column foreign key.
@@ -63,6 +64,27 @@ struct Schema {
     foreign_keys: BTreeSet<ForeignKey>,
     checked_columns: BTreeSet<(String, String)>,
     triggers: BTreeSet<String>,
+}
+
+/// A column default in a form both backends share: PostgreSQL's casts
+/// (`'active'::text`) and either side's redundant parentheses are dropped.
+fn normalised_default(raw: Option<String>) -> Option<String> {
+    let mut value = raw?.trim().to_string();
+    while value.starts_with('(') && value.ends_with(')') {
+        value = value[1..value.len() - 1].trim().to_string();
+    }
+    if let Some(cast) = value.rfind("::") {
+        if value[cast + 2..]
+            .chars()
+            .all(|c| c.is_ascii_alphabetic() || c == ' ')
+        {
+            value.truncate(cast);
+        }
+    }
+    while value.starts_with('(') && value.ends_with(')') {
+        value = value[1..value.len() - 1].trim().to_string();
+    }
+    Some(value)
 }
 
 fn normalised_kind(declared: &str) -> String {
@@ -123,8 +145,7 @@ async fn sqlite_schema(pool: &Pool) -> Schema {
     for (table, sql) in tables {
         let mut columns = Vec::new();
         let rows = sqlx::query(
-            "SELECT name, type, \"notnull\" AS not_null, pk,
-                    CASE WHEN dflt_value IS NULL THEN 0 ELSE 1 END AS has_default
+            "SELECT name, type, \"notnull\" AS not_null, pk, dflt_value
                FROM pragma_table_info($1)",
         )
         .bind(&table)
@@ -139,7 +160,7 @@ async fn sqlite_schema(pool: &Pool) -> Schema {
                 // SQLite does not report a primary key as NOT NULL; PostgreSQL
                 // always makes it one.
                 not_null: row.get::<i64, _>("not_null") == 1 || pk > 0,
-                has_default: row.get::<i64, _>("has_default") == 1,
+                default: normalised_default(row.get("dflt_value")),
             });
         }
         for column in sqlite_checked_columns(&sql, &columns) {
@@ -185,7 +206,7 @@ async fn postgres_schema(pool: &Pool) -> Schema {
     let rows = sqlx::query(
         "SELECT c.table_name::text AS tbl, c.column_name::text AS name, c.data_type::text AS kind,
                 CASE WHEN c.is_nullable = 'NO' THEN 1 ELSE 0 END AS not_null,
-                CASE WHEN c.column_default IS NULL THEN 0 ELSE 1 END AS has_default
+                c.column_default::text AS dflt_value
            FROM information_schema.columns c
            JOIN information_schema.tables t
              ON t.table_schema = c.table_schema AND t.table_name = c.table_name
@@ -203,7 +224,7 @@ async fn postgres_schema(pool: &Pool) -> Schema {
                 name: row.get("name"),
                 kind: normalised_kind(&row.get::<String, _>("kind")),
                 not_null: row.get::<i64, _>("not_null") == 1,
-                has_default: row.get::<i64, _>("has_default") == 1,
+                default: normalised_default(row.get("dflt_value")),
             });
     }
     for columns in schema.columns.values_mut() {
@@ -582,4 +603,76 @@ async fn a_write_transaction_waits_for_the_one_before_it() {
         .expect("the second one proceeds once the first commits")
         .expect("task")
         .expect("second");
+}
+
+#[tokio::test]
+async fn input_postgresql_cannot_store_is_refused_alike_on_both_backends() {
+    let app = TestApp::spawn().await;
+    let (cookie, _) = app.register("nul@example.com", "supersecret").await;
+    let created = app
+        .send(post_json_as(
+            "/api/v1/urls",
+            json!({ "target_url": "https://example.com/", "slug": "beta" }),
+            &cookie,
+        ))
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+
+    // An encoded NUL byte anywhere in the URL.
+    for uri in ["/beta%00", "/api/v1/urls?q=a%00b", "/api/v1/urls?tag=%00"] {
+        let response = app.get_as(uri, &cookie).await;
+        assert_eq!(
+            response.status,
+            StatusCode::BAD_REQUEST,
+            "{uri}: {}",
+            response.body
+        );
+    }
+    // ICU `nocase` would match full-width letters to the ASCII slug.
+    let full_width = app.get("/%EF%BD%82%EF%BD%85%EF%BD%94%EF%BD%81").await;
+    assert_eq!(full_width.status, StatusCode::NOT_FOUND);
+    assert_eq!(app.get("/BETA").await.status, StatusCode::FOUND);
+
+    // A NUL byte in a stored field or a lookup key from a JSON body.
+    let notes = app
+        .send(post_json_as(
+            "/api/v1/urls",
+            json!({ "target_url": "https://example.com/", "notes": "a\u{0}b" }),
+            &cookie,
+        ))
+        .await;
+    assert!(
+        notes.status.is_client_error(),
+        "{} {}",
+        notes.status,
+        notes.body
+    );
+    let login = app
+        .post_json(
+            "/api/v1/auth/login",
+            json!({ "email": "nul\u{0}@example.com", "password": "supersecret" }),
+        )
+        .await;
+    assert!(
+        login.status.is_client_error(),
+        "{} {}",
+        login.status,
+        login.body
+    );
+}
+
+#[tokio::test]
+async fn a_disabled_domain_cannot_become_the_default() {
+    let app = TestApp::spawn().await;
+    let id = app.add_domain("go.example.com", "disabled").await;
+    let err = db::domains::set_default(&app.state.db, id)
+        .await
+        .expect_err("only an active domain can be the default");
+    assert!(matches!(err, sqlx::Error::RowNotFound), "{err}");
+    let default: Option<String> =
+        sqlx::query_scalar("SELECT hostname FROM domains WHERE is_default = 1")
+            .fetch_optional(&app.state.db)
+            .await
+            .expect("default");
+    assert!(default.is_some(), "the previous default is kept");
 }

@@ -77,8 +77,14 @@ const SELECT: &str = "SELECT id, email, email_normalized, password_hash, display
                       deleted_at, is_system FROM users";
 
 /// Insert a user and return its id.
+///
+/// A write transaction, so the group fallback cannot interleave with
+/// `user_groups::delete_with_reassign` on PostgreSQL: there an autocommit
+/// insert could pick a group that is deleted before it commits (a foreign-key
+/// error) or after the reassignment ran (a member left without a group).
 pub async fn create(pool: &Pool, new_user: &NewUser) -> Result<i64, sqlx::Error> {
     let now = now_iso();
+    let mut tx = crate::db::begin_write(pool).await?;
     let id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO users (email, email_normalized, password_hash, display_name, role, status,
                             group_id, created_at, updated_at)
@@ -95,8 +101,9 @@ pub async fn create(pool: &Pool, new_user: &NewUser) -> Result<i64, sqlx::Error>
     .bind(new_user.group_id)
     .bind(&now)
     .bind(&now)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(id)
 }
 
@@ -105,6 +112,11 @@ pub async fn find_by_email(
     pool: &Pool,
     email_normalized: &str,
 ) -> Result<Option<User>, sqlx::Error> {
+    // PostgreSQL refuses a NUL byte in any text parameter; no stored address
+    // contains one, so the answer is "not found" on both backends.
+    if email_normalized.contains('\0') {
+        return Ok(None);
+    }
     sqlx::query_as::<_, User>(&format!("{SELECT} WHERE email_normalized = $1"))
         .bind(email_normalized)
         .fetch_optional(pool)

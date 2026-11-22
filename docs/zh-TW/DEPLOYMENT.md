@@ -114,7 +114,7 @@ URLET_TRUST_PROXY=true      # 只有在代理會覆寫 X-Real-IP 與 X-Forwarded
 | `URLET_DOMAINS` | 空 | 額外網域（僅轉址），以逗號分隔。第一次啟動時插入為 active；不會覆寫既有狀態。所有網域必須和 `URLET_BASE_URL` 使用相同 http/https scheme，且需要 DNS 與 TLS |
 | `URLET_BIND` | `0.0.0.0:8080` | 監聽位址 |
 | `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | 資料庫：`sqlite:` 檔案，或 `postgres://` / `postgresql://` 伺服器（§2.2）。其他 scheme 會使啟動失敗 |
-| `URLET_DATA_DIR` | SQLite 資料庫所在目錄；使用 PostgreSQL 時為 `/data` | 自動產生密鑰的存放位置 |
+| `URLET_DATA_DIR` | SQLite 資料庫所在目錄；使用 PostgreSQL 時為 `data`（映像設為 `/data`） | 自動產生密鑰的存放位置 |
 | `URLET_THEMES_DIR` | `<URLET_DATA_DIR>/themes` | 上傳主題樣式表的存放目錄。docker compose 將 `urlet-themes` volume 掛載於 `/data/themes` |
 | `URLET_SECRET` | 自動產生 | HMAC 密鑰（至少 16 字元，建議 32+；自動產生的為 44 字元 base64）；**更換會讓所有 Session 與解鎖 Cookie 失效，既有邀請碼也無法再顯示（但仍可兌換）** |
 | `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` | — | 啟動時建立或升級管理員 |
@@ -292,13 +292,13 @@ docker compose up -d
 
 ### PostgreSQL
 
-使用 PostgreSQL 時，以 `pg_dump` 備份資料庫；`secret.key` 與上傳的主題仍需依上述方式備份 volume。使用 compose overlay 時：
+使用 PostgreSQL 時，以 `pg_dump` 備份資料庫；`secret.key` 與上傳的主題仍需依上述方式備份 volume。使用 compose overlay 時，請指定與啟動時相同的檔案：
 
 ```bash
-docker compose exec -T postgres pg_dump -U urlet -Fc urlet > "./backups/urlet-$(date +%F).dump"
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml exec -T postgres pg_dump -U urlet -Fc urlet > "./backups/urlet-$(date +%F).dump"
 ```
 
-請先停止 urlet，再以 `pg_restore` 還原，例如 `docker compose exec -T postgres pg_restore -U urlet -d urlet --clean --if-exists < ./backups/urlet-YYYY-MM-DD.dump`。升級資料庫伺服器的作業系統或 ICU 函式庫後，請依 PostgreSQL 的 collation 版本警告，先以 `REINDEX DATABASE urlet;` 重建使用 `nocase` collation 的索引，再執行 `ALTER COLLATION nocase REFRESH VERSION;`。
+請先停止 urlet，再以 `pg_restore` 還原，例如 `docker compose -f docker-compose.yml -f docker-compose.postgres.yml exec -T postgres pg_restore -U urlet -d urlet --clean --if-exists < ./backups/urlet-YYYY-MM-DD.dump`。升級資料庫伺服器的作業系統或 ICU 函式庫後，請依 PostgreSQL 的 collation 版本警告，先以 `REINDEX DATABASE urlet;` 重建使用 `nocase` collation 的索引，再執行 `ALTER COLLATION nocase REFRESH VERSION;`。
 
 ## 8. 升級
 

@@ -180,7 +180,7 @@ COMMANDS:
 ENVIRONMENT:
     URLET_BASE_URL       Public base URL, e.g. https://s.example.com
     URLET_BIND           Listen address (default 0.0.0.0:8080)
-    URLET_DATABASE_URL   SQLite URL (default sqlite:///data/urlet.db?mode=rwc)
+    URLET_DATABASE_URL   sqlite: or postgres:// URL (default sqlite:///data/urlet.db?mode=rwc)
     URLET_DATA_DIR       Directory for the generated secret (default: db directory)
     URLET_SECRET         HMAC secret; generated into the data dir when unset
     URLET_ADMIN_EMAIL    Bootstrap administrator email

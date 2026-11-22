@@ -114,7 +114,7 @@ Section 10 has the Nginx and Traefik settings that make `URLET_TRUST_PROXY=true`
 | `URLET_DOMAINS` | Empty | Extra redirect-only hostnames, comma separated. Inserted as active on first boot; never overrides an existing status. Every domain must use the same http/https scheme as `URLET_BASE_URL` and needs DNS + TLS |
 | `URLET_BIND` | `0.0.0.0:8080` | Listen address |
 | `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | Database: a `sqlite:` file, or a `postgres://` / `postgresql://` server (§2.2). Any other scheme stops startup |
-| `URLET_DATA_DIR` | Directory holding the SQLite database, `/data` with PostgreSQL | Where the auto-generated secret is written |
+| `URLET_DATA_DIR` | Directory holding the SQLite database; `data` with PostgreSQL (the image sets `/data`) | Where the auto-generated secret is written |
 | `URLET_THEMES_DIR` | `<URLET_DATA_DIR>/themes` | Where uploaded theme stylesheets are stored. docker compose mounts the `urlet-themes` volume at `/data/themes` |
 | `URLET_SECRET` | Auto-generated | HMAC secret (at least 16 characters, 32+ recommended; the generated one is 44 characters of base64); **changing it invalidates every session and unlock cookie and makes existing invite codes unreadable, though they still redeem** |
 | `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` | — | Create or promote the administrator at startup |
@@ -292,13 +292,13 @@ docker compose up -d
 
 ### PostgreSQL
 
-With PostgreSQL the database is backed up with `pg_dump`, and `secret.key` and the uploaded themes still need the volume backups above. With the compose overlay:
+With PostgreSQL the database is backed up with `pg_dump`, and `secret.key` and the uploaded themes still need the volume backups above. With the compose overlay, name the same files as when it was started:
 
 ```bash
-docker compose exec -T postgres pg_dump -U urlet -Fc urlet > "./backups/urlet-$(date +%F).dump"
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml exec -T postgres pg_dump -U urlet -Fc urlet > "./backups/urlet-$(date +%F).dump"
 ```
 
-Restore with `pg_restore` while urlet is stopped, for example `docker compose exec -T postgres pg_restore -U urlet -d urlet --clean --if-exists < ./backups/urlet-YYYY-MM-DD.dump`. After upgrading the database server's operating system or ICU library, rebuild the indexes that use the `nocase` collation with `REINDEX DATABASE urlet;` and then `ALTER COLLATION nocase REFRESH VERSION;`, as PostgreSQL's collation version warning advises.
+Restore with `pg_restore` while urlet is stopped, for example `docker compose -f docker-compose.yml -f docker-compose.postgres.yml exec -T postgres pg_restore -U urlet -d urlet --clean --if-exists < ./backups/urlet-YYYY-MM-DD.dump`. After upgrading the database server's operating system or ICU library, rebuild the indexes that use the `nocase` collation with `REINDEX DATABASE urlet;` and then `ALTER COLLATION nocase REFRESH VERSION;`, as PostgreSQL's collation version warning advises.
 
 ## 8. Upgrading
 

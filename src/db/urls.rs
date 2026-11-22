@@ -247,6 +247,12 @@ pub async fn find_by_domain_slug(
     domain_id: i64,
     slug: &str,
 ) -> Result<Option<Url>, sqlx::Error> {
+    // Stored slugs are printable ASCII. Anything else cannot match on SQLite,
+    // but PostgreSQL's ICU `nocase` would match a full-width `ａｂｃ` to `abc`
+    // and reject a NUL byte outright, so both answer "not found" here.
+    if !slug.bytes().all(|byte| byte.is_ascii_graphic()) {
+        return Ok(None);
+    }
     sqlx::query_as::<_, Url>(&format!(
         "{SELECT} WHERE domain_id = $1 AND slug = $2 AND deleted_at IS NULL"
     ))
@@ -438,8 +444,14 @@ enum Bind {
 }
 
 /// Soft delete a link. The slug stays reserved.
+///
+/// A write transaction, so it cannot interleave with `url_previews::save`: on
+/// PostgreSQL the trigger that removes the preview would not see a preview
+/// that a concurrent first save has not committed yet, and the row would
+/// outlive its link (FR-DB-6).
 pub async fn soft_delete(pool: &Pool, id: i64, user_id: Option<i64>) -> Result<bool, sqlx::Error> {
     let now = time::now_iso();
+    let mut tx = crate::db::begin_write(pool).await?;
     let result = match user_id {
         Some(user_id) => {
             sqlx::query(
@@ -450,7 +462,7 @@ pub async fn soft_delete(pool: &Pool, id: i64, user_id: Option<i64>) -> Result<b
             .bind(&now)
             .bind(id)
             .bind(user_id)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?
         }
         None => sqlx::query(
@@ -459,9 +471,10 @@ pub async fn soft_delete(pool: &Pool, id: i64, user_id: Option<i64>) -> Result<b
         .bind(&now)
         .bind(&now)
         .bind(id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?,
     };
+    tx.commit().await?;
     Ok(result.rows_affected() > 0)
 }
 

@@ -74,6 +74,9 @@ pub fn build_router(state: AppState) -> Router {
             state.clone(),
             middleware::domain::domain_gate,
         ))
+        // Inside security headers and the request log, so a refused URL is
+        // still hardened and logged.
+        .layer(axum::middleware::from_fn(middleware::reject_nul))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             middleware::security::security_headers,

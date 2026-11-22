@@ -125,6 +125,13 @@ pub fn validate_display_name(name: &str) -> Result<()> {
             "display name must be a single line",
         ));
     }
+    // PostgreSQL cannot store a NUL byte in text (§6.6).
+    if name.contains('\0') {
+        return Err(AppError::validation(
+            "display_name",
+            "display name must not contain NUL characters",
+        ));
+    }
     Ok(())
 }
 
@@ -533,5 +540,6 @@ mod tests {
         assert!(validate_display_name("").is_ok());
         assert!(validate_display_name("line\nbreak").is_err());
         assert!(validate_display_name(&"x".repeat(61)).is_err());
+        assert!(validate_display_name("nul\0byte").is_err());
     }
 }

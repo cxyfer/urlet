@@ -169,6 +169,24 @@ impl Config {
                 value: crate::db::redacted_url(&database_url).into_owned(),
             });
         }
+        if crate::db::is_in_memory_sqlite(&database_url) {
+            // The migrations and the application pool open separate
+            // connections, and an in-memory database lives only as long as
+            // one of them, so the pool would start on an empty schema.
+            return Err(ConfigError::Invalid {
+                name: "URLET_DATABASE_URL (an in-memory SQLite database is not supported)",
+                value: database_url,
+            });
+        }
+        if let Some(key) = crate::db::unsupported_postgres_parameter(&database_url) {
+            // Only the name is reported: the driver would log the value too.
+            return Err(ConfigError::Invalid {
+                name: "URLET_DATABASE_URL parameter (supported: sslmode, sslrootcert, sslcert, \
+                       sslkey, host, hostaddr, port, dbname, user, password, application_name, \
+                       options, statement-cache-capacity)",
+                value: key,
+            });
+        }
 
         let data_dir = match env_str("URLET_DATA_DIR") {
             Some(dir) => PathBuf::from(dir),

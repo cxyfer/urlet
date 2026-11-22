@@ -160,6 +160,12 @@ pub async fn find_by_id(pool: &Pool, id: i64) -> Result<Option<Domain>, sqlx::Er
 }
 
 pub async fn find_by_hostname(pool: &Pool, hostname: &str) -> Result<Option<Domain>, sqlx::Error> {
+    // Stored hostnames are printable ASCII. PostgreSQL's ICU `nocase` would
+    // match full-width letters to them and refuses a NUL byte, so anything
+    // else is "not found" on both backends, as SQLite answers.
+    if !hostname.bytes().all(|byte| byte.is_ascii_graphic()) {
+        return Ok(None);
+    }
     sqlx::query_as::<_, Domain>(&format!("{SELECT} WHERE hostname = $1 COLLATE NOCASE"))
         .bind(hostname)
         .fetch_optional(pool)
@@ -271,11 +277,19 @@ pub async fn set_default(pool: &Pool, id: i64) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE domains SET is_default = 0 WHERE is_default = 1")
         .execute(&mut *tx)
         .await?;
-    sqlx::query("UPDATE domains SET is_default = 1, updated_at = $1 WHERE id = $2")
-        .bind(now_iso())
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
+    // Re-checked under the row lock: `disable` and `delete` run outside the
+    // write lock, so on PostgreSQL either may commit after the read above.
+    // Dropping the transaction rolls the cleared default back.
+    let promoted = sqlx::query(
+        "UPDATE domains SET is_default = 1, updated_at = $1 WHERE id = $2 AND status = 'active'",
+    )
+    .bind(now_iso())
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+    if promoted.rows_affected() == 0 {
+        return Err(sqlx::Error::RowNotFound);
+    }
 
     tx.commit().await?;
     Ok(())

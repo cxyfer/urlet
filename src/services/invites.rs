@@ -136,6 +136,13 @@ impl Issuer<'_> {
                         format!("the note must be at most {MAX_INVITE_NOTE} characters"),
                     ));
                 }
+                // PostgreSQL cannot store a NUL byte in text (§6.6).
+                if note.contains('\0') {
+                    return Err(AppError::validation(
+                        "note",
+                        "text must not contain NUL characters",
+                    ));
+                }
                 Some(note.to_string())
             }
             None => None,

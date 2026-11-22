@@ -734,6 +734,14 @@ impl Settings {
 
 /// Validate and canonicalise a setting value.
 fn validate_value(key: &str, value: &str) -> Result<String> {
+    // PostgreSQL cannot store a NUL byte in text (§6.6); no setting needs one,
+    // comments in the rule lists included.
+    if value.contains('\0') {
+        return Err(AppError::validation(
+            "value",
+            "text must not contain NUL characters",
+        ));
+    }
     if key == "url_cleaning_rules" {
         super::url_cleaning::parse_rules(value)?;
         return Ok(value.trim().to_string());

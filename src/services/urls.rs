@@ -164,6 +164,14 @@ pub fn validate_notes(raw: &str) -> Result<Option<String>> {
             format!("notes must be at most {MAX_NOTES_LEN} characters"),
         ));
     }
+    // PostgreSQL cannot store a NUL byte in text (§6.6), so neither backend
+    // accepts one.
+    if trimmed.contains('\0') {
+        return Err(AppError::validation(
+            "notes",
+            "notes must not contain NUL characters",
+        ));
+    }
     Ok(Some(trimmed.to_string()))
 }
 
@@ -950,6 +958,8 @@ mod tests {
             Some("note".to_string())
         );
         assert!(validate_notes(&"x".repeat(MAX_NOTES_LEN + 1)).is_err());
+        assert!(validate_notes("line one\nline two").is_ok());
+        assert!(validate_notes("nul\0byte").is_err());
     }
 
     #[test]

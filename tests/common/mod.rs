@@ -225,6 +225,18 @@ pub async fn fresh_postgres_database() -> Option<String> {
     let _ = admin.close().await;
     let mut url = url::Url::parse(&admin_url).expect("valid URLET_TEST_DATABASE_URL");
     url.set_path(&format!("/{name}"));
+    // A `dbname` parameter would override the path and point the test at the
+    // administrative database, so only the other parameters are kept.
+    let kept: Vec<(String, String)> = url
+        .query_pairs()
+        .filter(|(key, _)| key != "dbname")
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect();
+    if kept.is_empty() {
+        url.set_query(None);
+    } else {
+        url.query_pairs_mut().clear().extend_pairs(kept);
+    }
     Some(url.to_string())
 }
 
@@ -317,7 +329,12 @@ fn drop_postgres_database(url: String) {
     };
     let _ = std::thread::spawn(move || {
         use sqlx::Connection;
-        let Some(name) = url.rsplit('/').next().map(str::to_string) else {
+        // The path names the database; the query (`sslmode`, …) does not.
+        let Some(name) = url::Url::parse(&url)
+            .ok()
+            .map(|url| url.path().trim_start_matches('/').to_string())
+            .filter(|name| name.starts_with("urlet_t_"))
+        else {
             return;
         };
         let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
@@ -327,11 +344,21 @@ fn drop_postgres_database(url: String) {
             return;
         };
         runtime.block_on(async move {
-            if let Ok(mut admin) = sqlx::postgres::PgConnection::connect(&admin_url).await {
-                let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
-                    .execute(&mut admin)
-                    .await;
-                let _ = admin.close().await;
+            // Under a parallel run the server can briefly refuse new clients;
+            // retry rather than leave the database behind.
+            for attempt in 0..10u64 {
+                if let Ok(mut admin) = sqlx::postgres::PgConnection::connect(&admin_url).await {
+                    let dropped =
+                        sqlx::query(&format!("DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
+                            .execute(&mut admin)
+                            .await
+                            .is_ok();
+                    let _ = admin.close().await;
+                    if dropped {
+                        return;
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100 * (attempt + 1))).await;
             }
         });
     })
