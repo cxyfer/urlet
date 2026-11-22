@@ -4,8 +4,8 @@
 //! to an explicit allowlist. The site-wide default remains the fallback when the
 //! group has none or the selected domain was disabled or deleted.
 
+use crate::db::user_groups;
 use crate::db::Pool;
-use sqlx::FromRow;
 
 use crate::db::domains as domain_db;
 use crate::db::users::User;
@@ -82,15 +82,6 @@ impl DomainPolicy {
     }
 }
 
-#[derive(Debug, FromRow)]
-struct GroupDomainRow {
-    default_domain_id: Option<i64>,
-    #[sqlx(try_from = "crate::db::Flag")]
-    allow_domain_selection: bool,
-    #[sqlx(try_from = "crate::db::Flag")]
-    restrict_domains: bool,
-}
-
 /// Resolve the policy for `user`; ungrouped users get the site default, every
 /// active domain and selection enabled.
 pub async fn effective(pool: &Pool, user: &User) -> Result<DomainPolicy> {
@@ -108,14 +99,9 @@ pub async fn effective(pool: &Pool, user: &User) -> Result<DomainPolicy> {
     let Some(group_id) = user.group_id else {
         return Ok(defaults);
     };
-    let group = sqlx::query_as::<_, GroupDomainRow>(
-        "SELECT default_domain_id, allow_domain_selection, restrict_domains
-           FROM user_groups WHERE id = $1",
-    )
-    .bind(group_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(AppError::from)?;
+    let group = user_groups::domain_settings(pool, group_id)
+        .await
+        .map_err(AppError::from)?;
     let Some(group) = group else {
         // The group vanished after the user row was loaded; keep the request
         // useful with the site defaults rather than failing.
@@ -133,17 +119,9 @@ pub async fn effective(pool: &Pool, user: &User) -> Result<DomainPolicy> {
     .unwrap_or(global.id);
 
     let allowed_domain_ids = if group.restrict_domains {
-        sqlx::query_scalar(
-            "SELECT gd.domain_id
-               FROM group_domains gd
-               JOIN domains d ON d.id = gd.domain_id
-              WHERE gd.group_id = $1 AND d.status = 'active'
-              ORDER BY gd.domain_id",
-        )
-        .bind(group_id)
-        .fetch_all(pool)
-        .await
-        .map_err(AppError::from)?
+        user_groups::active_domain_ids(pool, group_id)
+            .await
+            .map_err(AppError::from)?
     } else {
         Vec::new()
     };

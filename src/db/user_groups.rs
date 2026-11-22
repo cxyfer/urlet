@@ -330,3 +330,76 @@ pub async fn delete_with_reassign(pool: &Pool, id: i64, target: i64) -> Result<b
     tx.commit().await?;
     Ok(true)
 }
+
+/// The group columns that participate in limit resolution.
+#[derive(Debug, Clone, FromRow)]
+pub struct GroupOverrides {
+    pub max_urls: Option<i64>,
+    pub max_api_tokens: Option<i64>,
+    #[sqlx(try_from = "crate::db::Flag")]
+    pub allow_custom_slug: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
+    pub allow_password: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
+    pub allow_expiry: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
+    pub allow_max_clicks: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
+    pub allow_tags: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
+    pub allow_api_tokens: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
+    pub allow_domain_selection: bool,
+    pub redirect_mode_policy: String,
+}
+
+/// The limit columns of one group, or `None` when it no longer exists.
+pub async fn overrides(pool: &Pool, id: i64) -> Result<Option<GroupOverrides>, sqlx::Error> {
+    sqlx::query_as::<_, GroupOverrides>(
+        "SELECT max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry,
+                allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection,
+                redirect_mode_policy
+           FROM user_groups WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+#[derive(Debug, FromRow)]
+/// The group columns that shape the domain policy.
+pub struct GroupDomainSettings {
+    pub default_domain_id: Option<i64>,
+    #[sqlx(try_from = "crate::db::Flag")]
+    pub allow_domain_selection: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
+    pub restrict_domains: bool,
+}
+
+/// The domain-policy columns of one group, or `None` when it no longer exists.
+pub async fn domain_settings(
+    pool: &Pool,
+    id: i64,
+) -> Result<Option<GroupDomainSettings>, sqlx::Error> {
+    sqlx::query_as::<_, GroupDomainSettings>(
+        "SELECT default_domain_id, allow_domain_selection, restrict_domains
+           FROM user_groups WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// The active domains on a group's allowlist, by id.
+pub async fn active_domain_ids(pool: &Pool, group_id: i64) -> Result<Vec<i64>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT gd.domain_id
+           FROM group_domains gd
+           JOIN domains d ON d.id = gd.domain_id
+          WHERE gd.group_id = $1 AND d.status = 'active'
+          ORDER BY gd.domain_id",
+    )
+    .bind(group_id)
+    .fetch_all(pool)
+    .await
+}

@@ -5,8 +5,8 @@
 //! site-wide defaults, which is why a group can only narrow what the instance
 //! allows, never widen it.
 
+use crate::db::user_groups::{self, GroupOverrides};
 use crate::db::Pool;
-use sqlx::FromRow;
 
 use crate::db::users::User;
 use crate::error::{AppError, Result};
@@ -77,28 +77,6 @@ impl Limits {
     }
 }
 
-/// The group columns that participate in limit resolution.
-#[derive(Debug, Clone, FromRow)]
-struct GroupOverrides {
-    max_urls: Option<i64>,
-    max_api_tokens: Option<i64>,
-    #[sqlx(try_from = "crate::db::Flag")]
-    allow_custom_slug: bool,
-    #[sqlx(try_from = "crate::db::Flag")]
-    allow_password: bool,
-    #[sqlx(try_from = "crate::db::Flag")]
-    allow_expiry: bool,
-    #[sqlx(try_from = "crate::db::Flag")]
-    allow_max_clicks: bool,
-    #[sqlx(try_from = "crate::db::Flag")]
-    allow_tags: bool,
-    #[sqlx(try_from = "crate::db::Flag")]
-    allow_api_tokens: bool,
-    #[sqlx(try_from = "crate::db::Flag")]
-    allow_domain_selection: bool,
-    redirect_mode_policy: String,
-}
-
 /// Resolve the limits for a user. One indexed lookup at most; there is no cache,
 /// so an administrator's change applies to the next request.
 pub async fn effective(pool: &Pool, settings: &Settings, user: &User) -> Result<Limits> {
@@ -127,16 +105,9 @@ pub async fn effective_for_group(
     let Some(group_id) = group_id else {
         return Ok(base);
     };
-    let group = sqlx::query_as::<_, GroupOverrides>(
-        "SELECT max_urls, max_api_tokens, allow_custom_slug, allow_password, allow_expiry,
-                allow_max_clicks, allow_tags, allow_api_tokens, allow_domain_selection,
-                redirect_mode_policy
-           FROM user_groups WHERE id = $1",
-    )
-    .bind(group_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(AppError::from)?;
+    let group = user_groups::overrides(pool, group_id)
+        .await
+        .map_err(AppError::from)?;
     Ok(group.map(|group| base.merge(&group)).unwrap_or(base))
 }
 
