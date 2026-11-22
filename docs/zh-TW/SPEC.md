@@ -444,15 +444,15 @@ SQLite 是預設值，也仍是建議的部署方式：一個檔案、不需外�
 | ID | 需求 | 說明 |
 |----|------|------|
 | FR-DB-1 | 後端選擇 | `URLET_DATABASE_URL` 以 scheme 選擇後端：`sqlite:`（預設，行為不變）或 `postgres://`／`postgresql://`。其他 scheme 會以設定錯誤中止啟動。兩個 driver 都編譯進同一個二進位與映像檔，沒有需要選擇的建置 feature |
-| FR-DB-2 | 功能一致 | §4 的每一項功能需求在兩個後端上行為相同，包括配額、slug／標籤／群組／主機名稱的不分大小寫唯一性、搜尋、軟刪除、SNS 預覽 trigger 與遊客自然週期計數。只有維運面不同：備份方式、管理總覽顯示的資料庫大小，以及 WAL checkpoint（僅 SQLite） |
-| FR-DB-3 | 支援的伺服器 | PostgreSQL 14 以上，且以 ICU 建置（官方映像、Debian／Ubuntu 套件與主要託管服務皆是）。不需要任何 extension，也不需要 superuser：角色需要資料庫的 `CONNECT` 權限，以及目標 schema 的 `CREATE` 權限，遷移會在其中建立資料表、索引、一個 collation、一個 trigger 函式與其 trigger。物件建立在連線 `search_path` 的第一個 schema（預設 `public`）。TLS 在 URL 中設定（`sslmode`、`sslrootcert`），使用 rustls 與 webpki roots，因此 musl 映像仍不需要 OpenSSL |
-| FR-DB-4 | Schema 與遷移 | PostgreSQL 有自己內嵌的遷移組，位於 `migrations/postgres/`。其中 `0001_baseline.sql` 在單一交易內建立 SQLite 執行完 `0018_admin_url_lock.sql` 後的 schema 與種子資料；SQLite 的升級步驟不會重播，因為沒有任何 PostgreSQL 部署早於它們。此後每個遷移都以相同版本名稱成對提供——`migrations/NNNN_name.sql` 與 `migrations/postgres/NNNN_name.sql`——並同時登記在 `src/db/migrate.rs`。兩個後端都在 `schema_migrations` 記錄已套用的版本與 checksum，修改已套用的檔案在任一後端都會中止啟動。一個一致性測試會比對兩邊遷移後的 schema（資料表；欄位的正規化型別、可否為空與預設值；索引；trigger）與種子資料列，因此只加在一邊的遷移會讓 CI 失敗 |
-| FR-DB-5 | 並行遷移 | 在 PostgreSQL 上，遷移程序在整個執行期間以專用連線持有 session 層級的 advisory lock。第二個程序會在與 SQLite 相同的 120 秒上限（`LOCK_WAIT`）內等待，取得後重新讀取 `schema_migrations`，因此不會重複套用，兩個程序在遷移完成前都不會開始監聽。每個遷移在單一交易內執行；PostgreSQL 的 DDL 具交易性 |
-| FR-DB-6 | 寫入序列化 | 在 SQLite 上，每個寫入交易以 `BEGIN IMMEDIATE` 開啟（NFR-PERF-2）。在 PostgreSQL 上則以 `BEGIN`（`READ COMMITTED`）開啟，接著對固定的 urlet 鍵執行 `pg_advisory_xact_lock`，讓寫入交易像在 SQLite 上一樣一次只跑一個，交易內每個「先讀後寫」的檢查（配額、預設標記轉移、邀請碼發放、遊客計數上限）都維持原有保證。不在這類交易內的寫入是單一敘述，其正確性只依賴它自己的列條件；若另一個交易的檢查依賴某個寫入，該寫入在兩個後端上都放在寫入交易內。不使用 `SERIALIZABLE`，因為那樣每個呼叫端都需要重試迴圈 |
-| FR-DB-7 | 約束錯誤 | 唯一性與外鍵違反改以 sqlx 的 error kind 判斷（兩個 driver 皆適用），不再比對 SQLite 結果碼。PostgreSQL 交易中一旦有敘述失敗，整個交易即中止，因此需要從預期中的約束錯誤恢復的交易，會在 savepoint 內處理，或在寫入前先檢查，結果與 SQLite 相同 |
-| FR-DB-8 | 維運 | `/health` 在兩者都以 `SELECT 1` 探測。管理總覽顯示 SQLite 檔案大小或 `pg_database_size(current_database())`。維護工作只在 SQLite 上做 WAL checkpoint；PostgreSQL 交給 autovacuum。`URLET_DATA_DIR` 仍存放 `secret.key`，預設也存放上傳的主題，因此使用 PostgreSQL 時同樣必須是持久儲存（映像已設為 `/data`）。備份為 `pg_dump` 加上該目錄 |
-| FR-DB-9 | 憑證 | 資料庫 URL 不會寫入日誌、顯示於頁面或由 API 回傳。`Config` 的 debug 輸出與啟動日誌只列出後端、主機、連接埠與資料庫名稱，並移除密碼 |
-| FR-DB-10 | 範圍 | 每個資料庫只對應一個 urlet 程序。速率限制器與其他程序內狀態不會共享，上傳的樣式表放在本機檔案系統，因此本修訂版不支援多個副本共用同一個 PostgreSQL 資料庫。也不提供把現有 SQLite 執行個體搬到 PostgreSQL 的工具：新的 PostgreSQL 部署從空資料庫開始（§12）。兩個後端使用相同的連線池設定（NFR-PERF-3） |
+| FR-DB-2 | 功能一致 | §4 的每一項功能需求在兩個後端上行為相同，包括配額、slug／標籤／群組／主機名稱的不分大小寫唯一性、搜尋、軟刪除、SNS 預覽 trigger 與遊客自然週期計數。兩個 collation 效應是明文列出的例外（§6.6）：只差在非 ASCII 大小寫或全半形的標籤與群組名稱在 PostgreSQL 上會衝突，以及不分大小寫的排序（標籤、群組、slug）在 PostgreSQL 上依 ICU 順序而非 ASCII 順序。除此之外只有維運面不同：備份方式、管理總覽顯示的資料庫大小，以及 WAL checkpoint（僅 SQLite） |
+| FR-DB-3 | 支援的伺服器 | PostgreSQL 14 以上，且以 ICU 建置（官方映像、Debian／Ubuntu 套件與主要託管服務皆是）。不需要任何 extension，也不需要 superuser：角色需要資料庫的 `CONNECT` 權限，以及目標 schema 的 `CREATE` 權限，遷移會在其中建立資料表、索引、一個 collation、一個 trigger 函式與其 trigger。物件建立在連線 `search_path` 的第一個 schema（預設 `public`）。TLS 在 URL 中設定（`sslmode`、`sslrootcert`），使用 rustls 與 webpki roots，因此 musl 映像仍不需要 OpenSSL。sqlx 預設 `sslmode=prefer`，會在沒有任何警告的情況下退回明文連線，因此不在同一台主機或私有網路上的伺服器應使用 `sslmode=verify-full`。driver 也會讀取標準 libpq 變數（`PGPASSWORD`、`PGSSLMODE`、`PGSSLROOTCERT`）與 `~/.pgpass`，因此密碼可以不放在 `URLET_DATABASE_URL` 中。不支援 `transaction` 模式的 PgBouncer 等交易層連線池代理：遷移鎖是 session 範圍，driver 也使用 prepared statement |
+| FR-DB-4 | Schema 與遷移 | PostgreSQL 有自己內嵌的遷移組，位於 `migrations/postgres/`。其中 `0001_baseline.sql` 在單一交易內建立 SQLite 執行完 `0018_admin_url_lock.sql` 後的 schema 與種子資料；SQLite 的升級步驟不會重播，因為沒有任何 PostgreSQL 部署早於它們。此後每個遷移都以相同版本名稱成對提供——`migrations/NNNN_name.sql` 與 `migrations/postgres/NNNN_name.sql`——並同時登記在 `src/db/migrate.rs`。兩個後端都在 `schema_migrations` 記錄已套用的版本與 checksum，修改已套用的檔案在任一後端都會中止啟動。一個一致性測試會比對兩邊遷移後的 schema（資料表；欄位的正規化型別、可否為空與預設值；索引；外鍵與其 `ON DELETE` 動作；帶有 `CHECK` 約束的欄位；trigger）與種子資料列，因此只加在一邊的遷移會讓 CI 失敗。比對時忽略 SQLite 內部的 `sqlite_sequence` 表與自動索引，種子資料列也不比對時間值；兩個後端寫入的時間都使用 §6.2 的 ISO 格式 |
+| FR-DB-5 | 並行遷移 | 在 PostgreSQL 上，遷移程序在整個執行期間以專用連線持有 session 層級的 advisory lock，在建立或讀取 `schema_migrations` 之前取得，且使用與 FR-DB-6 不同的鍵。第二個程序會在與 SQLite 相同的 120 秒上限（`LOCK_WAIT`）內等待，取得後重新讀取 `schema_migrations`，因此不會重複套用，兩個程序在遷移完成前都不會開始監聽。每個遷移在單一交易內執行；PostgreSQL 的 DDL 具交易性 |
+| FR-DB-6 | 寫入序列化 | 在 SQLite 上，每個寫入交易以 `BEGIN IMMEDIATE` 開啟（NFR-PERF-2），而 SQLite 一次只允許一個寫入者，autocommit 敘述也包含在內。在 PostgreSQL 上，寫入交易會執行 `BEGIN ISOLATION LEVEL READ COMMITTED`（不論伺服器預設為何）、`SET LOCAL lock_timeout = '5s'`，以及對固定 urlet 鍵的 `pg_advisory_xact_lock`，讓寫入交易一次只跑一個，等待中的交易在五秒後放棄，與 SQLite 的 `busy_timeout` 相同。PostgreSQL 不會序列化 autocommit 敘述，因此每個受彙總或其他列保護的寫入——目前是計數受限的插入 `urls::create_within_quota`、`tokens::create_within_quota`、`login_attempts::reserve_failure`（鎖定門檻），以及 `public_quota::reserve` 中的遊客計數上限——在兩個後端上都放在寫入交易內，邀請碼發放已是如此。只有以其目標列本身為條件的寫入（例如點擊上限的 `UPDATE … WHERE click_count < max_clicks`，或 upsert 的 `DO UPDATE … WHERE`）可以維持 autocommit，因為 PostgreSQL 會在列鎖下重新檢查該列。不使用 `SERIALIZABLE`，因為那樣每個呼叫端都需要重試迴圈。測試會在距配額只差一筆時並行建立連結，並預期恰好一筆成功 |
+| FR-DB-7 | 約束錯誤 | 唯一性與外鍵違反改以 sqlx 的 error kind 判斷（兩個 driver 皆適用），不再比對 SQLite 結果碼。PostgreSQL 交易中一旦有敘述失敗，整個交易即中止，因此需要從預期中的約束錯誤恢復的交易，會在 savepoint 內處理，或在寫入前先檢查，結果與 SQLite 相同。PostgreSQL 的鎖逾時（`55P03`）或死結（`40P01`）比照 SQLite 的 busy timeout 回報 |
+| FR-DB-8 | 維運 | `/health` 在兩者都以 `SELECT 1` 探測。管理總覽顯示 SQLite 檔案大小或 `pg_database_size(current_database())`。維護工作只在 SQLite 上做 WAL checkpoint；PostgreSQL 交給 autovacuum。`URLET_DATA_DIR` 仍存放 `secret.key`，`URLET_THEMES_DIR` 存放上傳的樣式表，因此使用 PostgreSQL 時兩者同樣必須是持久儲存（映像設為 `/data` 與 `/data/themes`，compose 分別掛載 `urlet-data` 與 `urlet-themes` volume）。備份為 `pg_dump` 加上這兩個目錄。資料庫伺服器升級作業系統或 ICU 後，應依 PostgreSQL 的 collation 版本警告，以 `REINDEX` 重建使用 `nocase` collation 的索引 |
+| FR-DB-9 | 憑證 | 資料庫 URL 不會寫入日誌、顯示於頁面或由 API 回傳。`Config` 的 debug 輸出（目前會印出完整 URL）與啟動日誌只列出後端、主機、連接埠與資料庫名稱，並移除密碼 |
+| FR-DB-10 | 範圍 | 每個資料庫只對應一個 urlet 程序。速率限制器與其他程序內狀態不會共享，上傳的樣式表放在本機檔案系統，因此即使 FR-DB-6 能讓它們的寫入保持正確，本修訂版仍不支援多個副本共用同一個 PostgreSQL 資料庫。也不提供把現有 SQLite 執行個體搬到 PostgreSQL 的工具：新的 PostgreSQL 部署從空資料庫開始（§12）。兩個後端使用相同的連線池設定（NFR-PERF-3） |
 
 ---
 
@@ -487,7 +487,7 @@ SQLite 是預設值，也仍是建議的部署方式：一個檔案、不需外�
 | ID | 需求 |
 |----|------|
 | NFR-PERF-1 | 轉址路徑：以索引查詢 URL 與選填預覽 + 佇列化寫入；目標 P95 < 10 ms（歷史轉址基準 0.74 ms；新增預覽查詢尚未測速） |
-| NFR-PERF-2 | SQLite：`journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000`；每個寫入交易以 `BEGIN IMMEDIATE` 開啟，讓「先讀後寫」的交易從一開始就持有寫鎖，而不會因失去 WAL 快照得到 `SQLITE_BUSY_SNAPSHOT`——該錯誤不會觸發 busy handler，因此 `busy_timeout` 無法涵蓋。透過 `Any` driver 時，這些 pragma 會套用到每條新連線；SQLite URL 沒有 `mode` 參數時會補上 `mode=rwc`，首次啟動仍會建立檔案。PostgreSQL 的寫入交易則改用 FR-DB-6 的 advisory lock |
+| NFR-PERF-2 | SQLite：`journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000`；每個寫入交易以 `BEGIN IMMEDIATE` 開啟，讓「先讀後寫」的交易從一開始就持有寫鎖，而不會因失去 WAL 快照得到 `SQLITE_BUSY_SNAPSHOT`——該錯誤不會觸發 busy handler，因此 `busy_timeout` 無法涵蓋。sqlx 的預設值只涵蓋 `foreign_keys` 與 `busy_timeout`，因此透過 `Any` driver 時，`journal_mode`、`synchronous` 與 `journal_size_limit=8388608` 會套用到每條新連線；SQLite URL 沒有 `mode` 參數時會補上 `mode=rwc`，首次啟動仍會建立檔案。PostgreSQL 的寫入交易則改用 FR-DB-6 的 advisory lock |
 | NFR-PERF-3 | 連線池：`max_connections=8`；點擊寫入由單一背景 writer 序列化（避免 WAL 因並發寫入無法 checkpoint 而無限成長） |
 | NFR-PERF-4 | 列表查詢一律分頁（預設 20，上限 100） |
 | NFR-PERF-5 | 統計查詢使用 `url_daily_stats` 與索引，避免全表掃描 |
@@ -502,7 +502,7 @@ SQLite 是預設值，也仍是建議的部署方式：一個檔案、不需外�
 | NFR-OPS-4 | 日誌輸出 stdout（`tracing`，JSON 或 compact 由 `URLET_LOG_FORMAT` 控制） |
 | NFR-OPS-5 | 設定全部來自環境變數（12-factor），`.env.example` 完整說明 |
 | NFR-OPS-6 | 每日維護任務：清理過期 Session、可選清理過期點擊紀錄 |
-| NFR-OPS-7 | 備份 = 複製 `urlet.db`（WAL checkpoint 後），以及 `URLET_THEMES_DIR` 的上傳主題檔案；README 與 DEPLOYMENT 有說明；使用 PostgreSQL 時為 `pg_dump` 加上資料目錄（FR-DB-8） |
+| NFR-OPS-7 | 備份 = 複製 `urlet.db`（WAL checkpoint 後），以及 `URLET_THEMES_DIR` 的上傳主題檔案；README 與 DEPLOYMENT 有說明；使用 PostgreSQL 時為 `pg_dump` 加上 `URLET_DATA_DIR` 與 `URLET_THEMES_DIR`（FR-DB-8） |
 | NFR-OPS-8 | 非 root 使用者執行容器；唯讀根檔案系統可運作 |
 | NFR-OPS-9 | 語言目錄以 `include_str!` 內嵌於二進位檔，部署仍為單一 binary；唯一可寫入的資產目錄是 `URLET_THEMES_DIR`，供管理員上傳使用 |
 
@@ -512,7 +512,7 @@ SQLite 是預設值，也仍是建議的部署方式：一個檔案、不需外�
 |----|------|
 | NFR-MAINT-1 | 分層：`routes/`（HTTP）→ `services/`（業務）→ `db/`（SQL）；不跨層直接查詢 |
 | NFR-MAINT-2 | 單一錯誤型別 `AppError`，集中轉換為 HTTP 回應 |
-| NFR-MAINT-3 | 所有 SQL 集中於 `src/db/` 各模組，使用執行期查詢（無需 `DATABASE_URL` 即可編譯）。每段查詢文字依 §6.6 的規則，在 SQLite 與 PostgreSQL 上不經修改即可執行；少數必須不同的敘述透過 `db::Dialect` 選擇 |
+| NFR-MAINT-3 | 所有 SQL 集中於 `src/db/` 各模組，使用執行期查詢（無需 `DATABASE_URL` 即可編譯）。每段查詢文字依 §6.6 的規則，在 SQLite 與 PostgreSQL 上不經修改即可執行；少數必須不同的敘述透過 `db::Dialect` 選擇。`services/domain_policy.rs` 與 `services/limits.rs` 目前仍直接執行的查詢，會在這次移植時移入 `src/db/` |
 | NFR-MAINT-4 | `cargo clippy -- -D warnings` 與 `cargo fmt --check` 通過 |
 | NFR-MAINT-5 | 單元測試 + 整合測試（含 `tower::ServiceExt::oneshot` 端到端）覆蓋核心流程 |
 | NFR-MAINT-6 | 所有介面字串只存在於三份語言目錄中；模板與 handler 不得硬寫顯示文字 |
@@ -637,21 +637,21 @@ PostgreSQL 的 baseline 逐欄轉換 SQLite schema：
 |--------|------------|------|
 | `INTEGER`（id、計數、0/1 旗標） | `BIGINT` | 同樣是 64 位元範圍；旗標保留 `CHECK (x IN (0, 1))` |
 | `INTEGER PRIMARY KEY AUTOINCREMENT` | `BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY` | baseline 會把每個 identity 推進到種子資料的 id 之後 |
-| `TEXT` | `TEXT COLLATE "C"` | 與 SQLite 的 `BINARY` 相同的位元組順序，因此無論資料庫預設 collation 為何，ISO 時間、鍵值與 `ORDER BY` 的比較結果都一致 |
+| `TEXT` | `TEXT COLLATE "C"` | 與 SQLite 的 `BINARY` 相同的位元組順序，因此無論資料庫預設 collation 為何，這些欄位上的 ISO 時間、鍵值與 `ORDER BY` 比較結果都一致 |
 | `TEXT COLLATE NOCASE` | `TEXT COLLATE nocase` | `nocase` 是 baseline 建立的 ICU nondeterministic collation（`und-u-ks-level2`），因此寫著 `COLLATE NOCASE` 的 SQL 在兩邊都不需修改 |
 | `BLOB` | `BYTEA` | SNS 預覽圖片 |
 | Trigger | PL/pgSQL 函式加 trigger | `url_previews_delete_with_link` |
 
-SQLite 的 `NOCASE` 只折疊 ASCII 字母，`nocase` 則會折疊所有文字系統的大小寫，也忽略全形／半形差異。slug 與主機名稱都是 ASCII，行為完全相同；只差在非 ASCII 大小寫或全半形的標籤與群組名稱，在 SQLite 上是不同的值，在 PostgreSQL 上則會衝突。子字串搜尋在兩邊都維持 ASCII 不分大小寫：SQLite 的 `LIKE` 本來就是如此，PostgreSQL 則使用 `COLLATE "C" ILIKE` 搭配相同的跳脫字元，因為 PostgreSQL 18 之前無法在 nondeterministic collation 上做樣式比對。
+SQLite 的 `NOCASE` 只折疊 ASCII 字母，`nocase` 則會折疊所有文字系統的大小寫，也忽略全形／半形差異。slug 與主機名稱都是 ASCII，相等與唯一性的行為完全相同；只差在非 ASCII 大小寫或全半形的標籤與群組名稱，在 SQLite 上是不同的值，在 PostgreSQL 上則會衝突。依 `nocase` 欄位排序時採用 ICU 順序，標點、數字與非 ASCII 字母的順序可能與 SQLite 的 ASCII 順序不同；這只影響顯示順序。子字串搜尋在兩邊都維持 ASCII 不分大小寫：SQLite 的 `LIKE` 本來就是如此，PostgreSQL 則使用 `COLLATE "C" ILIKE` 搭配相同的跳脫字元，因為 PostgreSQL 18 之前無法在 nondeterministic collation 上做樣式比對。
 
 查詢文字遵守以下規則，讓同一個字串在兩個後端都成立：
 
 1. placeholder 一律為 `$1`…`$N`；sqlx 在 SQLite 上也接受，重複的編號會沿用同一個參數。不使用 `?` 與 `?N`。
-2. 使用 `COALESCE`，不用 `IFNULL`；使用 `INSERT … ON CONFLICT … DO NOTHING`，不用 `INSERT OR IGNORE`；使用 `RETURNING id`，不用 `last_insert_rowid()`；使用 `CASE`，不用兩個參數的 `MAX`／`MIN`。
+2. 使用 `COALESCE`，不用 `IFNULL`；使用 `IS NOT DISTINCT FROM`，不用 `IS $n`；使用 `INSERT … ON CONFLICT … DO NOTHING`，不用 `INSERT OR IGNORE`；使用 `RETURNING id`，不用 `last_insert_rowid()`；使用 `CASE`，不用兩個參數的 `MAX`／`MIN`。
 3. `SUM` 一律包在 `CAST(… AS BIGINT)` 中，因為 PostgreSQL 會回傳 `Any` driver 無法解碼的 `NUMERIC`；加總條件時寫成 `CASE WHEN … THEN 1 ELSE 0 END`，不直接加總比較式。
-4. `ON CONFLICT … DO UPDATE SET` 右側的欄位要加上資料表名稱（`t.col + excluded.col`）；PostgreSQL 會把未限定的名稱視為模稜兩可而拒絕。
+4. `ON CONFLICT … DO UPDATE SET … WHERE` 中，`SET` 右側與 `WHERE` 內的欄位要加上資料表名稱（`t.col + excluded.col`）；PostgreSQL 會把未限定的名稱視為模稜兩可而拒絕。
 5. 旗標以整數字面值比較、以 `i64` 綁定；不綁定 Rust `bool`，因為 PostgreSQL 不會把布林參數存進整數欄位。旗標欄位與布林運算式透過 `db::Flag` 解碼，它同時接受整數與布林，因為 `Any` driver 只會從布林值解碼 `bool`。
-6. 綁定值的型別要與欄位一致（`TEXT` 綁文字、`BIGINT` 綁整數）；PostgreSQL 不會在兩者之間轉換。分組查詢中每個非彙總欄位都要列在 `GROUP BY`，字串字面值使用單引號，`WHERE` 條件一律是比較式，不直接使用整數欄位。
+6. 綁定值的型別要與欄位一致（`TEXT` 綁文字、`BIGINT` 綁整數）；PostgreSQL 不會在兩者之間轉換。分組查詢中每個非彙總欄位都要列在 `GROUP BY`，字串字面值使用單引號，所有布林位置（`WHERE`、`CASE WHEN`、`AND`／`OR`／`NOT` 的運算元）都放比較式，例如 `$n = 1`，不直接放整數欄位或參數。
 
 方言專屬的敘述只出現在 `db::Dialect` 的呼叫點：交易開始（FR-DB-6）、不分大小寫搜尋、資料庫大小、WAL 維護與遷移 runner。
 
@@ -813,7 +813,7 @@ SQLite 的 `NOCASE` 只折疊 ASCII 字母，`nocase` 則會折疊所有文字�
 
 `docker-compose.tls.yml`：額外加入 Caddy（80/443、自動 Let's Encrypt），urlet 不對外暴露連接埠，由 Caddy 反向代理。
 
-`docker-compose.postgres.yml`：加入一個 `postgres` 服務，使用獨立的 `urlet-postgres` volume 與健康檢查，把 `URLET_DATABASE_URL` 指向它，並在資料庫健康後才啟動 urlet。`urlet-data` volume 仍保留，因為其中存放 `secret.key` 與上傳的主題（FR-DB-8）。
+`docker-compose.postgres.yml`：加入一個 `postgres` 服務，使用獨立的 `urlet-postgres` volume 與健康檢查，把 `URLET_DATABASE_URL` 指向它，密碼另外透過 `PGPASSWORD` 傳入，並在資料庫健康後才啟動 urlet。`urlet-data` 與 `urlet-themes` volume 仍保留，因為其中存放 `secret.key` 與上傳的樣式表（FR-DB-8）。
 
 ---
 
@@ -823,7 +823,7 @@ SQLite 的 `NOCASE` 只折疊 ASCII 字母，`nocase` 則會折疊所有文字�
 |------|------|------|
 | 單元測試 | slug 產生/驗證/保留字、UA 解析、過期判定、設定解析、群組配額繼承（NULL／0／自訂值、未分組回退）、密碼雜湊、IP 雜湊、CSRF 同源判斷、`Accept-Language` 協商（`q=` 權重、回退英文）、語言目錄回退、驗證碼啟用條件矩陣、驗證碼失敗關閉判定 | `#[cfg(test)]` 模組 |
 | 整合測試 | 註冊→登入→建立→轉址→統計；密碼保護流程；過期與點擊上限；所有權隔離；admin 授權；API Token；群組 CRUD 與預設標記轉移；各群組的連結與 Token 配額；建立與更新時的功能開關強制；帶群組的邀請碼；刪除群組並改派；CSRF 拒絕；語言協商與 cookie 切換；API JSON 維持英文；註冊、登入與建立時的驗證碼拒絕（網頁與 JSON API）；導覽首頁；中轉頁渲染、密碼優先與轉址方式政策 | `tests/`——`auth.rs`、`urls.rs`、`redirect.rs`、`splash.rs`、`pages.rs`、`admin.rs`、`groups.rs`、`invites.rs`、`i18n.rs`、`captcha.rs`、`multi_domain.rs`、`previews.rs`、`public_urls.rs`、`themes.rs`、`url_cleaning.rs`、`guest_allowlist.rs`，外加 `contract.rs`、`api_docs.rs` 與 `ci_workflow.rs`——以 `tower::ServiceExt::oneshot` 對臨時 SQLite 執行。`contract.rs` 檢查 §4.9 所述的 router 與合約集合相等，`ci_workflow.rs` 檢查每個 CI job 都在 gate 的 `REQUIRED` 清單中 |
-| PostgreSQL 後端 | 當 `URLET_TEST_DATABASE_URL` 是 `postgres://` URL 時，`tests/` 下的整合測試會再對 PostgreSQL 執行一次，每個測試 app 使用全新的資料庫；`tests/postgres.rs` 另外檢查與 SQLite 的 schema 與種子資料一致（FR-DB-4）、寫入序列化（FR-DB-6）、並行遷移（FR-DB-5）與 §6.6 的對應（不分大小寫唯一性、搜尋、種子資料後的 identity）。`#[cfg(test)]` 模組、SQLite 遷移升級測試、`smoke.sh` 與 `merge-check.sh` 仍只跑 SQLite | CI job `PostgreSQL`，使用 `postgres:17-alpine` service container |
+| PostgreSQL 後端 | 當 `URLET_TEST_DATABASE_URL` 是 `postgres://` URL 時，`tests/` 下的整合測試會再對 PostgreSQL 執行一次，每個測試 app 使用全新的資料庫。為此 `tests/common/mod.rs` 與測試檔直接執行的 SQL 改用 `Any` pool 並遵守 §6.6 的規則；檢查 SQLite 本身（檔案、pragma 或升級路徑）的測試標為僅限 SQLite。設定 `URLET_REQUIRE_POSTGRES=1`（CI job 會設定）而缺少 `URLET_TEST_DATABASE_URL` 時，`tests/postgres.rs` 會失敗而不是略過，因此設定錯誤的 job 不會因略過而通過；它另外檢查與 SQLite 的 schema 與種子資料一致（FR-DB-4）、包含配額邊界並行建立在內的寫入序列化（FR-DB-6）、並行遷移（FR-DB-5）與 §6.6 的對應（不分大小寫唯一性、搜尋、種子資料後的 identity）。`#[cfg(test)]` 模組、SQLite 遷移升級測試、`smoke.sh` 與 `merge-check.sh` 仍只跑 SQLite | CI job `PostgreSQL`，使用 `postgres:17-alpine` service container，並列在 gate 的 `REQUIRED` 清單 |
 | 端對端煙霧測試 | 以真實二進位 + curl 走完主要流程 | `scripts/smoke.sh` |
 | 靜態檢查 | `cargo fmt --check`、`cargo clippy -D warnings` | CI 指令（README 說明） |
 
@@ -926,4 +926,4 @@ v1.6 新增項目：
 | 點擊明細匯出 / CSV | `clicks` 完整欄位 + 索引 |
 | 稽核合規 | `audit_logs.metadata` JSON 保留完整上下文 |
 | SQLite → PostgreSQL 複製 | 兩邊 schema 逐欄相同（§6.6），因此 `urlet copy-db` 指令可依相依順序串流每張資料表並推進 identity |
-| 多個執行個體共用 PostgreSQL | 寫入序列化已在資料庫內完成（FR-DB-6）；速率限制器、快取與上傳主題則需移出程序記憶體與本機檔案系統 |
+| 多個執行個體共用 PostgreSQL | 寫入交易與受彙總保護的寫入已在資料庫內序列化（FR-DB-6）；速率限制器、快取與上傳主題則需移出程序記憶體與本機檔案系統 |
