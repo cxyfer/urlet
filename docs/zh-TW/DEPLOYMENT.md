@@ -12,7 +12,7 @@
 | Docker | 24.x | 最新版 |
 | Docker Compose | 2.24（overlay 使用 `!override` / `!reset`） | 最新版 |
 
-不需要外部資料庫、Redis 或反向代理。單一容器即可對外服務（建議前面加一層 TLS）。
+不需要外部資料庫、Redis 或反向代理；PostgreSQL 為選用（§2.2）。單一容器即可對外服務（建議前面加一層 TLS）。
 
 ## 2. 快速部署（HTTP）
 
@@ -61,6 +61,30 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 - 套件預設為**私有**。請先登入（`docker login ghcr.io`，權杖需具備 `read:packages`），或在 *Package settings → Change visibility* 將套件改為公開。
 - 映像以 uid/gid `10001` 執行，與本機建置的映像相同，因此 `/data` volume 的權限設定不變。
 
+### 2.2 改用 PostgreSQL
+
+預設仍是 SQLite，不需要任何額外服務。若想改把資料存放在 PostgreSQL 14 或更新版本，將 `URLET_DATABASE_URL` 設為 `postgres://` 或 `postgresql://` 開頭的 URL 即可；同一個執行檔與映像兩種後端都支援，啟動時也同樣會自動套用遷移。伺服器必須以 ICU 建置；官方映像、Debian 與 Ubuntu 套件及主要的託管服務都符合。
+
+若要用 docker compose 在 urlet 旁一起執行 PostgreSQL，先在 `.env` 寫入密碼，再加上 overlay：
+
+```bash
+echo "URLET_POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> .env
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build
+```
+
+這個 overlay 會新增一個 `postgres:17-alpine` 服務及其專屬的 `urlet-postgres` volume，以 `PGPASSWORD` 而非 URL 把密碼交給 urlet，並等資料庫健康檢查通過後才啟動 urlet。它可以與映像及 TLS overlay 一起使用。
+
+若連線到自行維運的伺服器：
+
+- **角色。** 不需要超級使用者，也不需要任何擴充套件。角色需要資料庫的 `CONNECT` 權限，以及寫入目標 schema 的 `CREATE` 權限；目標是 `search_path` 中的第一個 schema（預設為 `public`），遷移會在其中建立資料表、索引、一個名為 `nocase` 的 ICU collation，以及一個觸發器與其函式。例如：`CREATE ROLE urlet LOGIN PASSWORD '…'; CREATE DATABASE urlet OWNER urlet;`。
+- **密碼。** 不要寫在 URL 裡：驅動程式會讀取 `PGPASSWORD` 與 `~/.pgpass`，也會讀取 `PGSSLMODE` 與 `PGSSLROOTCERT`。urlet 不會記錄含密碼的 URL；啟動日誌只顯示後端、主機、連接埠與資料庫名稱。
+- **TLS。** 在 URL 中設定，例如 `postgres://urlet@db.example.com:5432/urlet?sslmode=verify-full&sslrootcert=/run/secrets/ca.pem`。預設的 `sslmode=prefer` 會在無聲無息間退回明文連線，因此只要伺服器不在同一台主機或私有網路內，就應使用 `verify-full`。
+- **連線池。** 直接連線，或經由 session 模式的連線池。不支援 `transaction` 模式的 PgBouncer：遷移鎖以 session 為範圍，而驅動程式會使用 prepared statement。
+- **單一實例。** 每個資料庫只執行一個 urlet 程序。速率限制等程序內狀態不會共享，上傳的樣式表也存放在本機磁碟。
+- **持久化 volume。** `URLET_DATA_DIR` 仍存放 `secret.key`，`URLET_THEMES_DIR` 仍存放上傳的樣式表，因此使用 PostgreSQL 時同樣要保留 `urlet-data` 與 `urlet-themes` volume。
+
+不支援把既有的 SQLite 實例搬到 PostgreSQL：新的 PostgreSQL 部署會從空資料庫開始。由於 PostgreSQL 透過 ICU 比較大小寫，有兩處行為略有不同：只差在非 ASCII 大小寫或全半形的標籤與群組名稱（例如 `Ä` 與 `ä`）會視為同一個名稱，而不分大小寫的清單會依 ICU 順序而非 ASCII 順序排序。
+
 ## 3. 加上自動 HTTPS（Caddy）
 
 ```bash
@@ -89,8 +113,8 @@ URLET_TRUST_PROXY=true      # 只有在代理會覆寫 X-Real-IP 與 X-Forwarded
 | `URLET_BASE_URL` | `http://localhost:8080` | 對外網址；用於產生短網址、CSRF 同源檢查、Cookie `Secure` 判斷。Host 必須是 ASCII（IDN 請用 punycode）；IPv6 literal 與底線服務名稱僅限 canonical host |
 | `URLET_DOMAINS` | 空 | 額外網域（僅轉址），以逗號分隔。第一次啟動時插入為 active；不會覆寫既有狀態。所有網域必須和 `URLET_BASE_URL` 使用相同 http/https scheme，且需要 DNS 與 TLS |
 | `URLET_BIND` | `0.0.0.0:8080` | 監聽位址 |
-| `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite 連線字串 |
-| `URLET_DATA_DIR` | 資料庫所在目錄 | 自動產生密鑰的存放位置 |
+| `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | 資料庫：`sqlite:` 檔案，或 `postgres://` / `postgresql://` 伺服器（§2.2）。其他 scheme 會使啟動失敗 |
+| `URLET_DATA_DIR` | SQLite 資料庫所在目錄；使用 PostgreSQL 時為 `/data` | 自動產生密鑰的存放位置 |
 | `URLET_THEMES_DIR` | `<URLET_DATA_DIR>/themes` | 上傳主題樣式表的存放目錄。docker compose 將 `urlet-themes` volume 掛載於 `/data/themes` |
 | `URLET_SECRET` | 自動產生 | HMAC 密鑰（至少 16 字元，建議 32+；自動產生的為 44 字元 base64）；**更換會讓所有 Session 與解鎖 Cookie 失效，既有邀請碼也無法再顯示（但仍可兌換）** |
 | `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` | — | 啟動時建立或升級管理員 |
@@ -112,13 +136,14 @@ URLET_TRUST_PROXY=true      # 只有在代理會覆寫 X-Real-IP 與 X-Forwarded
 | `URLET_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | `urlet healthcheck` 的目標 |
 | `TZ` | 系統時區（映像內為 `UTC`） | 訪客日曆配額與首頁時鐘使用的伺服器時區，例如 `Asia/Taipei`；啟動時讀取。時鐘顯示於首頁底部有伺服器資訊條的設計（預設 Verdant 與以其為基礎的上傳主題）。`landing_clock=utc` 讓首頁不顯示伺服器時區；`off` 隱藏時鐘。Docker Compose 會轉傳（`TZ: ${TZ:-UTC}`）。訪客配額一律跟隨 `TZ` |
 
-另外三個變數由 compose 檔讀取，urlet 二進位檔本身不會讀取：
+另外四個變數由 compose 檔讀取，urlet 二進位檔本身不會讀取：
 
 | 變數 | 預設 | 說明 |
 |------|------|------|
 | `URLET_PORT` | `8080` | `docker-compose.yml` 對外發布的主機連接埠（容器本身一律監聽 8080） |
 | `URLET_DOMAIN` | — | `docker-compose.tls.yml` overlay 申請憑證用的網域；該 overlay 必填 |
 | `URLET_IMAGE` | `ghcr.io/cxyfer/urlet:latest` | `docker-compose.image.yml` overlay 使用的映像（僅在該 overlay 生效） |
+| `URLET_POSTGRES_PASSWORD` | — | `docker-compose.postgres.yml` overlay 的資料庫密碼，以 `PGPASSWORD` 傳給 urlet；該 overlay 必填 |
 
 站台層級設定（站名、註冊模式、配額、預設轉址類型、統計開關、點擊保留天數）在 **Admin → Settings** 調整，會存進資料庫並即時生效。非空的環境變數一律覆蓋設定表中的值。
 
@@ -265,6 +290,16 @@ docker run --rm -v urlet-themes:/themes -v "$PWD":/backup alpine \
 docker compose up -d
 ```
 
+### PostgreSQL
+
+使用 PostgreSQL 時，以 `pg_dump` 備份資料庫；`secret.key` 與上傳的主題仍需依上述方式備份 volume。使用 compose overlay 時：
+
+```bash
+docker compose exec -T postgres pg_dump -U urlet -Fc urlet > "./backups/urlet-$(date +%F).dump"
+```
+
+請先停止 urlet，再以 `pg_restore` 還原，例如 `docker compose exec -T postgres pg_restore -U urlet -d urlet --clean --if-exists < ./backups/urlet-YYYY-MM-DD.dump`。升級資料庫伺服器的作業系統或 ICU 函式庫後，請依 PostgreSQL 的 collation 版本警告，先以 `REINDEX DATABASE urlet;` 重建使用 `nocase` collation 的索引，再執行 `ALTER COLLATION nocase REFRESH VERSION;`。
+
 ## 8. 升級
 
 ```bash
@@ -348,6 +383,9 @@ Traefik 會自行寫入 `X-Real-Ip`。在不信任連線位址的入口點（預
 
 | 症狀 | 原因與處理 |
 |------|-----------|
+| 啟動失敗並顯示 `URLET_DATABASE_URL (expected sqlite:, postgres:// or postgresql://)` | URL 使用了其他 scheme，例如 `mysql://` 或單純的路徑；目前只支援 SQLite 與 PostgreSQL |
+| PostgreSQL 啟動時建立 `nocase` collation 失敗 | 伺服器未以 ICU 建置，或角色缺少其 schema 的 `CREATE` 權限；請改用 ICU 建置並授予 `CREATE`（§2.2） |
+| PostgreSQL 請求回傳 500，日誌出現 `lock timeout` | 某次寫入等待另一次寫入超過五秒，通常是有人手動對同一個資料庫執行了很長的交易；請結束它，或檢查是否有第二個 urlet 程序連到同一個資料庫 |
 | 啟動即失敗並顯示 migration checksum 不符 | `migrations/` 中已套用的檔案被修改；請還原該檔案或改用新的遷移檔 |
 | 登入後馬上被登出 | `URLET_BASE_URL` 與實際網址不一致，或 `URLET_SECURE_COOKIES=true` 卻用 HTTP 存取 |
 | 短網址指向 `http://localhost:8080` | 沒設定 `URLET_BASE_URL` |

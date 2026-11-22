@@ -12,7 +12,7 @@
 | Docker | 24.x | Latest |
 | Docker Compose | 2.24 (`!override` / `!reset` are used by the overlays) | Latest |
 
-No external database, Redis or reverse proxy is needed. A single container can serve traffic on its own (putting a TLS terminator in front of it is recommended).
+No external database, Redis or reverse proxy is needed; PostgreSQL is optional (§2.2). A single container can serve traffic on its own (putting a TLS terminator in front of it is recommended).
 
 ## 2. Quick start (HTTP)
 
@@ -61,6 +61,30 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 - The package defaults to **private**. Either authenticate (`docker login ghcr.io` with a token that has `read:packages`) or make the package public under *Package settings → Change visibility*.
 - The image runs as uid/gid `10001`, exactly like a locally built one, so the `/data` volume permissions are unchanged.
 
+### 2.2 PostgreSQL instead of SQLite
+
+SQLite stays the default and needs nothing else. To keep the data in PostgreSQL 14 or newer instead, set `URLET_DATABASE_URL` to a `postgres://` or `postgresql://` URL; the same binary and image serve both, and migrations run at startup either way. The server must be built with ICU, as the official images, the Debian and Ubuntu packages and the major managed services are.
+
+To run PostgreSQL next to urlet with docker compose, put a password in `.env` and add the overlay:
+
+```bash
+echo "URLET_POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> .env
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build
+```
+
+The overlay adds a `postgres:17-alpine` service with its own `urlet-postgres` volume, passes the password to urlet as `PGPASSWORD` rather than in the URL, and starts urlet only once the database reports healthy. It combines with the image and TLS overlays.
+
+For a server you run elsewhere:
+
+- **Role.** No superuser and no extension are needed. The role needs `CONNECT` on the database and `CREATE` on the schema it writes to, the first one in its `search_path` (`public` by default), where migrations create the tables, indexes, one ICU collation named `nocase`, and one trigger with its function. For example: `CREATE ROLE urlet LOGIN PASSWORD '…'; CREATE DATABASE urlet OWNER urlet;`.
+- **Password.** Keep it out of the URL: the driver reads `PGPASSWORD` and `~/.pgpass`, and also `PGSSLMODE` and `PGSSLROOTCERT`. urlet never logs the URL with its password; the startup log shows the backend, host, port and database only.
+- **TLS.** Set it in the URL, for example `postgres://urlet@db.example.com:5432/urlet?sslmode=verify-full&sslrootcert=/run/secrets/ca.pem`. The default, `sslmode=prefer`, silently falls back to plaintext, so use `verify-full` for any server that is not on the same host or private network.
+- **Pooling.** Connect directly or through a session-mode pooler. PgBouncer in `transaction` mode is not supported: the migration lock is held for the session and the driver uses prepared statements.
+- **One instance.** Run one urlet process per database. Rate limits and other in-process state are not shared, and uploaded stylesheets live on the local disk.
+- **Persistent volumes.** `URLET_DATA_DIR` still holds `secret.key` and `URLET_THEMES_DIR` the uploaded stylesheets, so keep the `urlet-data` and `urlet-themes` volumes with PostgreSQL too.
+
+Moving an existing SQLite instance to PostgreSQL is not supported: a new PostgreSQL deployment starts empty. Two behaviours differ slightly, because PostgreSQL compares case through ICU. Tag and group names that differ only in non-ASCII case or width, such as `Ä` and `ä`, count as the same name, and case-insensitive lists sort in ICU order rather than ASCII order.
+
 ## 3. Automatic HTTPS (Caddy)
 
 ```bash
@@ -89,8 +113,8 @@ Section 10 has the Nginx and Traefik settings that make `URLET_TRUST_PROXY=true`
 | `URLET_BASE_URL` | `http://localhost:8080` | Public URL; used to build short links, for the CSRF same-origin check and to decide whether cookies are `Secure`. The host must be ASCII (punycode for IDN); IPv6 literals and underscore service names are accepted for the canonical host only |
 | `URLET_DOMAINS` | Empty | Extra redirect-only hostnames, comma separated. Inserted as active on first boot; never overrides an existing status. Every domain must use the same http/https scheme as `URLET_BASE_URL` and needs DNS + TLS |
 | `URLET_BIND` | `0.0.0.0:8080` | Listen address |
-| `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | SQLite connection string |
-| `URLET_DATA_DIR` | Directory holding the database | Where the auto-generated secret is written |
+| `URLET_DATABASE_URL` | `sqlite:///data/urlet.db?mode=rwc` | Database: a `sqlite:` file, or a `postgres://` / `postgresql://` server (§2.2). Any other scheme stops startup |
+| `URLET_DATA_DIR` | Directory holding the SQLite database, `/data` with PostgreSQL | Where the auto-generated secret is written |
 | `URLET_THEMES_DIR` | `<URLET_DATA_DIR>/themes` | Where uploaded theme stylesheets are stored. docker compose mounts the `urlet-themes` volume at `/data/themes` |
 | `URLET_SECRET` | Auto-generated | HMAC secret (at least 16 characters, 32+ recommended; the generated one is 44 characters of base64); **changing it invalidates every session and unlock cookie and makes existing invite codes unreadable, though they still redeem** |
 | `URLET_ADMIN_EMAIL` / `URLET_ADMIN_PASSWORD` | — | Create or promote the administrator at startup |
@@ -112,13 +136,14 @@ Section 10 has the Nginx and Traefik settings that make `URLET_TRUST_PROXY=true`
 | `URLET_HEALTHCHECK_URL` | `http://127.0.0.1:<port>/health` | Target of `urlet healthcheck` |
 | `TZ` | OS timezone (`UTC` in the image) | Server process timezone for guest calendar quotas and the landing-page clock, for example `Asia/Taipei`; read at startup. The clock is shown in designs with a server information strip (default Verdant and uploaded themes based on it). `landing_clock=utc` keeps the landing page from displaying the server time zone; `off` hides the clock. Docker Compose forwards it (`TZ: ${TZ:-UTC}`). Guest quotas always follow `TZ` |
 
-Three further variables are read by the compose files, not by the urlet binary:
+Four further variables are read by the compose files, not by the urlet binary:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `URLET_PORT` | `8080` | Host port that `docker-compose.yml` publishes (the container itself always listens on 8080) |
 | `URLET_DOMAIN` | — | Domain the `docker-compose.tls.yml` overlay requests a certificate for; required by that overlay |
 | `URLET_IMAGE` | `ghcr.io/cxyfer/urlet:latest` | Image used by the `docker-compose.image.yml` overlay (ignored without it) |
+| `URLET_POSTGRES_PASSWORD` | — | Database password for the `docker-compose.postgres.yml` overlay, passed to urlet as `PGPASSWORD`; required by that overlay |
 
 Instance-level settings (site name, registration mode, quota, default redirect type, analytics switch, click retention) are edited in **Admin → Settings**; they are stored in the database and take effect immediately. A non-empty environment variable always overrides the value stored there.
 
@@ -265,6 +290,16 @@ docker run --rm -v urlet-themes:/themes -v "$PWD":/backup alpine \
 docker compose up -d
 ```
 
+### PostgreSQL
+
+With PostgreSQL the database is backed up with `pg_dump`, and `secret.key` and the uploaded themes still need the volume backups above. With the compose overlay:
+
+```bash
+docker compose exec -T postgres pg_dump -U urlet -Fc urlet > "./backups/urlet-$(date +%F).dump"
+```
+
+Restore with `pg_restore` while urlet is stopped, for example `docker compose exec -T postgres pg_restore -U urlet -d urlet --clean --if-exists < ./backups/urlet-YYYY-MM-DD.dump`. After upgrading the database server's operating system or ICU library, rebuild the indexes that use the `nocase` collation with `REINDEX DATABASE urlet;` and then `ALTER COLLATION nocase REFRESH VERSION;`, as PostgreSQL's collation version warning advises.
+
 ## 8. Upgrading
 
 ```bash
@@ -348,6 +383,9 @@ Any other proxy has to do the equivalent: set `X-Real-IP` to the address of the 
 
 | Symptom | Cause and fix |
 |---------|---------------|
+| Startup fails with `URLET_DATABASE_URL (expected sqlite:, postgres:// or postgresql://)` | The URL uses another scheme, such as `mysql://` or a bare path; only SQLite and PostgreSQL are supported |
+| PostgreSQL startup fails creating the `nocase` collation | The server was built without ICU, or the role lacks `CREATE` on its schema; use an ICU build and grant `CREATE` (§2.2) |
+| PostgreSQL requests fail with 500 and `lock timeout` in the log | A write waited more than five seconds for another one, usually a long transaction run by hand against the same database; finish it, or look for a second urlet process on the same database |
 | Startup fails with a migration checksum mismatch | A file in `migrations/` that was already applied has been edited; restore it or add a new migration instead |
 | Signed out immediately after signing in | `URLET_BASE_URL` does not match the real URL, or `URLET_SECURE_COOKIES=true` while browsing over HTTP |
 | Short links point at `http://localhost:8080` | `URLET_BASE_URL` is not set |

@@ -68,6 +68,17 @@ docker compose -f docker-compose.yml -f docker-compose.image.yml up -d
 
 此 overlay 會移除本機 `build` 設定，改為直接拉取映像。套件可能是私有的，請先執行 `docker login ghcr.io`（需要具備 `read:packages` 的權杖），或在 *Package settings → Change visibility* 將套件設為公開。固定版本與升級方式見 [`docs/zh-TW/DEPLOYMENT.md`](docs/zh-TW/DEPLOYMENT.md#21-使用預先建置的映像)。
 
+### PostgreSQL
+
+預設使用 SQLite。若想改把資料存放在 PostgreSQL 14 或更新版本，將 `URLET_DATABASE_URL` 指向 `postgres://` URL 即可；同一個執行檔與映像兩者都支援。若要在 urlet 旁一起執行 PostgreSQL 容器：
+
+```bash
+echo "URLET_POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> .env
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --build
+```
+
+所需的角色權限、TLS、備份與行為差異見 [`docs/zh-TW/DEPLOYMENT.md`](docs/zh-TW/DEPLOYMENT.md#22-改用-postgresql)。
+
 ### 直接執行二進位檔
 
 ```bash
@@ -126,7 +137,7 @@ urlet version | help
 | 層級 | 選擇 | 為什麼 |
 |------|------|--------|
 | HTTP | Axum 0.8 + Tokio | 型別安全、生態成熟、單一二進位 |
-| 資料庫 | SQLite（sqlx，WAL） | 免外部服務、單檔備份，自託管規模足夠 |
+| 資料庫 | 預設 SQLite（sqlx，WAL），可選用 PostgreSQL | SQLite 免外部服務、單檔備份，自託管規模足夠；已在維運託管資料庫時可改用 PostgreSQL |
 | 遷移 | 內嵌 SQL + checksum 驗證 | 啟動自動遷移，二進位檔自帶 schema |
 | 介面 | Askama SSR + 手寫 CSS/JS | 沒有 Node/Vite 建置步驟，映像檔極小 |
 | 認證 | 伺服器端 Session + API Token | 可即時撤銷，不必引入 JWT 相依 |
@@ -187,7 +198,7 @@ bash scripts/smoke.sh      # 對真實二進位檔跑端對端驗收
 bash scripts/demo.sh       # 產生示範站並輸出截圖到 .tmp/demo/shots
 ```
 
-需要 Rust 1.88 以上，CI 會以 1.88 實際檢查建置。整合測試使用獨立的臨時 SQLite，不會碰到你的開發資料。
+需要 Rust 1.88 以上，CI 會以 1.88 實際檢查建置。整合測試使用獨立的臨時 SQLite，不會碰到你的開發資料。若也想在 PostgreSQL 上執行，將 `URLET_TEST_DATABASE_URL` 設為測試可在其上建立與刪除資料庫的伺服器，例如 `postgres://postgres:postgres@localhost:5432/postgres`；每個測試 app 都會有自己的資料庫，CI 的 `PostgreSQL` job 也是如此。
 
 前五個指令也會在每個 pull request 的 CI 中執行，見 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。`demo.sh` 需要 Playwright 與 Chromium，只在本機使用。
 
