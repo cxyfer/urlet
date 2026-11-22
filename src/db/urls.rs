@@ -1,6 +1,7 @@
 //! `urls` table.
 
-use sqlx::{FromRow, SqlitePool};
+use crate::db::Pool;
+use sqlx::FromRow;
 
 use crate::services::time;
 
@@ -141,14 +142,14 @@ const SELECT: &str =
                       FROM urls";
 
 /// Insert a short link.
-pub async fn create(pool: &SqlitePool, new_url: &NewUrl) -> Result<i64, sqlx::Error> {
+pub async fn create(pool: &Pool, new_url: &NewUrl) -> Result<i64, sqlx::Error> {
     let now = time::now_iso();
-    let result = sqlx::query(
+    let id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO urls (user_id, domain_id, slug, target_url, title, notes, password_hash,
                            expires_at, max_clicks, redirect_type, redirect_mode,
                            splash_delay_seconds, splash_title, splash_message, status,
                            is_custom_slug, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'active', $15, $16, $17)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'active', $15, $16, $17) RETURNING id",
     )
     .bind(new_url.user_id)
     .bind(new_url.domain_id)
@@ -167,30 +168,33 @@ pub async fn create(pool: &SqlitePool, new_url: &NewUrl) -> Result<i64, sqlx::Er
     .bind(i64::from(new_url.is_custom_slug))
     .bind(&now)
     .bind(&now)
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
-    Ok(result.last_insert_rowid())
+    Ok(id)
 }
 
 /// Insert a short link only while the user is below `limit` live links.
 ///
-/// The count and the insert are one statement, so two concurrent creations
-/// cannot both pass a check made before either insert. Returns `None` when the
+/// The count and the insert run in one write transaction, so two concurrent
+/// creations cannot both pass a check made before either insert. Returns `None` when the
 /// quota is already full.
 pub async fn create_within_quota(
-    pool: &SqlitePool,
+    pool: &Pool,
     new_url: &NewUrl,
     limit: i64,
 ) -> Result<Option<i64>, sqlx::Error> {
     let now = time::now_iso();
-    let result = sqlx::query(
+    // 計數與插入同屬一個寫入交易：PostgreSQL 不會序列化 autocommit 敘述，
+    // 單一 `INSERT … SELECT … WHERE (SELECT COUNT(*) …)` 在並行時可能超額（FR-DB-6）。
+    let mut tx = crate::db::begin_write(pool).await?;
+    let id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO urls (user_id, domain_id, slug, target_url, title, notes, password_hash,
                            expires_at, max_clicks, redirect_type, redirect_mode,
                            splash_delay_seconds, splash_title, splash_message, status,
                            is_custom_slug, created_at, updated_at)
          SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'active', $15, $16, $17
           WHERE (SELECT COUNT(*) FROM urls
-                  WHERE user_id = $18 AND deleted_at IS NULL) < $19",
+                  WHERE user_id = $18 AND deleted_at IS NULL) < $19 RETURNING id",
     )
     .bind(new_url.user_id)
     .bind(new_url.domain_id)
@@ -211,17 +215,14 @@ pub async fn create_within_quota(
     .bind(&now)
     .bind(new_url.user_id)
     .bind(limit)
-    .execute(pool)
+    .fetch_optional(&mut *tx)
     .await?;
-    if result.rows_affected() == 0 {
-        Ok(None)
-    } else {
-        Ok(Some(result.last_insert_rowid()))
-    }
+    tx.commit().await?;
+    Ok(id)
 }
 
 /// Find a live link by id (any owner). Soft deleted links are not returned.
-pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Url>, sqlx::Error> {
+pub async fn find_by_id(pool: &Pool, id: i64) -> Result<Option<Url>, sqlx::Error> {
     sqlx::query_as::<_, Url>(&format!("{SELECT} WHERE id = $1 AND deleted_at IS NULL"))
         .bind(id)
         .fetch_optional(pool)
@@ -229,11 +230,7 @@ pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Url>, sqlx:
 }
 
 /// Find a live link by id, restricted to its owner.
-pub async fn find_owned(
-    pool: &SqlitePool,
-    id: i64,
-    user_id: i64,
-) -> Result<Option<Url>, sqlx::Error> {
+pub async fn find_owned(pool: &Pool, id: i64, user_id: i64) -> Result<Option<Url>, sqlx::Error> {
     sqlx::query_as::<_, Url>(&format!(
         "{SELECT} WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL"
     ))
@@ -246,7 +243,7 @@ pub async fn find_owned(
 /// Find a live link by `(domain_id, slug)`. `slug` is `COLLATE NOCASE`, so this
 /// is case-insensitive and uses the `(domain_id, slug)` unique index.
 pub async fn find_by_domain_slug(
-    pool: &SqlitePool,
+    pool: &Pool,
     domain_id: i64,
     slug: &str,
 ) -> Result<Option<Url>, sqlx::Error> {
@@ -261,11 +258,7 @@ pub async fn find_by_domain_slug(
 
 /// True when the slug is taken on `domain_id` (including by soft deleted links,
 /// which keep their slug reserved so old links cannot be hijacked).
-pub async fn slug_taken(
-    pool: &SqlitePool,
-    domain_id: i64,
-    slug: &str,
-) -> Result<bool, sqlx::Error> {
+pub async fn slug_taken(pool: &Pool, domain_id: i64, slug: &str) -> Result<bool, sqlx::Error> {
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE domain_id = $1 AND slug = $2")
             .bind(domain_id)
@@ -278,7 +271,7 @@ pub async fn slug_taken(
 /// Like [`slug_taken`], but ignores one row (used when moving a link or
 /// changing its slug).
 pub async fn slug_taken_excluding(
-    pool: &SqlitePool,
+    pool: &Pool,
     domain_id: i64,
     slug: &str,
     exclude_id: i64,
@@ -342,7 +335,7 @@ impl UrlUpdate {
 /// With `user_id` (the owner's path), setting `status = 'active'` only matches
 /// links no administrator holds disabled.
 pub async fn update(
-    pool: &SqlitePool,
+    pool: &Pool,
     id: i64,
     user_id: Option<i64>,
     changes: &UrlUpdate,
@@ -353,7 +346,10 @@ pub async fn update(
     macro_rules! set {
         ($column:ident, $bind:expr) => {{
             binds.push($bind);
-            sql.push_str(&format!(concat!(", ", stringify!($column), " = ${}"), binds.len()));
+            sql.push_str(&format!(
+                concat!(", ", stringify!($column), " = ${}"),
+                binds.len()
+            ));
         }};
     }
 
@@ -442,11 +438,7 @@ enum Bind {
 }
 
 /// Soft delete a link. The slug stays reserved.
-pub async fn soft_delete(
-    pool: &SqlitePool,
-    id: i64,
-    user_id: Option<i64>,
-) -> Result<bool, sqlx::Error> {
+pub async fn soft_delete(pool: &Pool, id: i64, user_id: Option<i64>) -> Result<bool, sqlx::Error> {
     let now = time::now_iso();
     let result = match user_id {
         Some(user_id) => {
@@ -474,7 +466,7 @@ pub async fn soft_delete(
 }
 
 /// Number of live links owned by a user.
-pub async fn count_for_user(pool: &SqlitePool, user_id: i64) -> Result<i64, sqlx::Error> {
+pub async fn count_for_user(pool: &Pool, user_id: i64) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE user_id = $1 AND deleted_at IS NULL")
         .bind(user_id)
         .fetch_one(pool)
@@ -488,7 +480,7 @@ pub async fn count_for_user(pool: &SqlitePool, user_id: i64) -> Result<i64, sqlx
 /// rows are affected instead of renaming or deleting them: the slug column is
 /// `COLLATE NOCASE`, so a differently cased slug is reported too, and the owner
 /// decides what to do with their own link.
-pub async fn count_live_with_slug(pool: &SqlitePool, slug: &str) -> Result<i64, sqlx::Error> {
+pub async fn count_live_with_slug(pool: &Pool, slug: &str) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar("SELECT COUNT(*) FROM urls WHERE slug = $1 AND deleted_at IS NULL")
         .bind(slug)
         .fetch_one(pool)
@@ -511,18 +503,20 @@ pub struct StateCounts {
 /// One statement, so a redirect that reaches a click limit meanwhile cannot be
 /// counted in both cards.
 pub async fn count_states_for_user(
-    pool: &SqlitePool,
+    pool: &Pool,
     user_id: i64,
     now: &str,
 ) -> Result<StateCounts, sqlx::Error> {
     sqlx::query_as(
         "SELECT COUNT(*) AS links,
-                COALESCE(SUM(status = 'active'
+                CAST(COALESCE(SUM(CASE WHEN status = 'active'
                     AND (expires_at IS NULL OR expires_at > $1)
-                    AND (max_clicks IS NULL OR click_count < max_clicks)), 0) AS active,
-                COALESCE(SUM(status = 'active'
+                    AND (max_clicks IS NULL OR click_count < max_clicks)
+                    THEN 1 ELSE 0 END), 0) AS BIGINT) AS active,
+                CAST(COALESCE(SUM(CASE WHEN status = 'active'
                     AND ((expires_at IS NOT NULL AND expires_at <= $1)
-                         OR (max_clicks IS NOT NULL AND click_count >= max_clicks))), 0) AS expired
+                         OR (max_clicks IS NOT NULL AND click_count >= max_clicks))
+                    THEN 1 ELSE 0 END), 0) AS BIGINT) AS expired
          FROM urls
          WHERE user_id = $2 AND deleted_at IS NULL",
     )
@@ -594,7 +588,7 @@ pub fn like_pattern(term: &str) -> String {
 
 /// List links owned by one user.
 pub async fn list_for_user(
-    pool: &SqlitePool,
+    pool: &Pool,
     user_id: i64,
     filter: &UserUrlFilter,
     limit: i64,
@@ -609,7 +603,7 @@ pub async fn list_for_user(
          WHERE deleted_at IS NULL AND user_id = $1
            AND ($2 IS NULL OR status = $2)
            AND ($3 IS NULL OR slug LIKE $3 ESCAPE '\\' OR target_url LIKE $3 ESCAPE '\\'
-                          OR IFNULL(title, '') LIKE $3 ESCAPE '\\')
+                          OR COALESCE(title, '') LIKE $3 ESCAPE '\\')
            AND ($4 IS NULL OR id IN (SELECT ut.url_id FROM url_tags ut
                                      JOIN tags t ON t.id = ut.tag_id
                                      WHERE t.user_id = $1 AND t.name = $4))
@@ -635,7 +629,7 @@ pub async fn list_for_user(
 
 /// Count links owned by one user.
 pub async fn count_for_user_filtered(
-    pool: &SqlitePool,
+    pool: &Pool,
     user_id: i64,
     filter: &UserUrlFilter,
 ) -> Result<i64, sqlx::Error> {
@@ -645,7 +639,7 @@ pub async fn count_for_user_filtered(
          WHERE deleted_at IS NULL AND user_id = $1
            AND ($2 IS NULL OR status = $2)
            AND ($3 IS NULL OR slug LIKE $3 ESCAPE '\\' OR target_url LIKE $3 ESCAPE '\\'
-                          OR IFNULL(title, '') LIKE $3 ESCAPE '\\')
+                          OR COALESCE(title, '') LIKE $3 ESCAPE '\\')
            AND ($4 IS NULL OR id IN (SELECT ut.url_id FROM url_tags ut
                                      JOIN tags t ON t.id = ut.tag_id
                                      WHERE t.user_id = $1 AND t.name = $4))",
@@ -660,7 +654,7 @@ pub async fn count_for_user_filtered(
 
 /// List every link (administrative view).
 pub async fn list_all(
-    pool: &SqlitePool,
+    pool: &Pool,
     filter: &AdminUrlFilter,
     limit: i64,
     offset: i64,
@@ -672,7 +666,7 @@ pub async fn list_all(
            AND ($1 IS NULL OR user_id = $1)
            AND ($2 IS NULL OR status = $2)
            AND ($3 IS NULL OR slug LIKE $3 ESCAPE '\\' OR target_url LIKE $3 ESCAPE '\\'
-                          OR IFNULL(title, '') LIKE $3 ESCAPE '\\')
+                          OR COALESCE(title, '') LIKE $3 ESCAPE '\\')
          ORDER BY
            CASE WHEN $4 = 1 THEN click_count END DESC,
            CASE WHEN $4 = 2 THEN slug END ASC,
@@ -690,7 +684,7 @@ pub async fn list_all(
 }
 
 /// Count every link (administrative view).
-pub async fn count_all(pool: &SqlitePool, filter: &AdminUrlFilter) -> Result<i64, sqlx::Error> {
+pub async fn count_all(pool: &Pool, filter: &AdminUrlFilter) -> Result<i64, sqlx::Error> {
     let search = filter.search.as_deref().map(like_pattern);
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM urls
@@ -698,7 +692,7 @@ pub async fn count_all(pool: &SqlitePool, filter: &AdminUrlFilter) -> Result<i64
            AND ($1 IS NULL OR user_id = $1)
            AND ($2 IS NULL OR status = $2)
            AND ($3 IS NULL OR slug LIKE $3 ESCAPE '\\' OR target_url LIKE $3 ESCAPE '\\'
-                          OR IFNULL(title, '') LIKE $3 ESCAPE '\\')",
+                          OR COALESCE(title, '') LIKE $3 ESCAPE '\\')",
     )
     .bind(filter.user_id)
     .bind(filter.status.as_deref())
@@ -708,10 +702,10 @@ pub async fn count_all(pool: &SqlitePool, filter: &AdminUrlFilter) -> Result<i64
 }
 
 /// Global link statistics (administrative dashboard).
-pub async fn global_counts(pool: &SqlitePool) -> Result<(i64, i64, i64), sqlx::Error> {
+pub async fn global_counts(pool: &Pool) -> Result<(i64, i64, i64), sqlx::Error> {
     let row: (i64, i64, i64) = sqlx::query_as(
-        "SELECT COUNT(*), IFNULL(SUM(click_count), 0),
-                IFNULL(SUM(CASE WHEN expires_at IS NOT NULL AND expires_at <= $1 THEN 1 ELSE 0 END), 0)
+        "SELECT COUNT(*), CAST(COALESCE(SUM(click_count), 0) AS BIGINT),
+                CAST(COALESCE(SUM(CASE WHEN expires_at IS NOT NULL AND expires_at <= $1 THEN 1 ELSE 0 END), 0) AS BIGINT)
          FROM urls WHERE deleted_at IS NULL",
     )
     .bind(time::now_iso())

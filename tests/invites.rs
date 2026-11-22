@@ -1291,11 +1291,12 @@ async fn deleting_a_group_removes_its_issuance_rows() {
             .status,
         StatusCode::CREATED
     );
-    let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM invite_issuance WHERE group_id = $1")
-        .bind(group_id)
-        .fetch_one(&app.state.db)
-        .await
-        .expect("issuance count");
+    let before: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM invite_issuance WHERE group_id = $1")
+            .bind(group_id)
+            .fetch_one(&app.state.db)
+            .await
+            .expect("issuance count");
     assert_eq!(before, 1);
 
     let deleted = app

@@ -3,10 +3,9 @@
 //! The map is kept in memory and refreshed on write, so request handling never
 //! pays for a settings query.
 
+use crate::db::Pool;
 use std::collections::HashMap;
 use std::sync::RwLock;
-
-use sqlx::SqlitePool;
 
 use crate::config::Config;
 use crate::db;
@@ -332,7 +331,7 @@ impl std::fmt::Debug for Settings {
 
 impl Settings {
     /// Load settings, applying environment overrides.
-    pub async fn load(pool: &SqlitePool, config: &Config) -> Result<Self> {
+    pub async fn load(pool: &Pool, config: &Config) -> Result<Self> {
         db::settings::ensure_defaults(pool)
             .await
             .map_err(|err| AppError::internal(format!("cannot seed settings: {err}")))?;
@@ -661,7 +660,7 @@ impl Settings {
     /// Validate and persist one setting, then refresh the cache.
     pub async fn update(
         &self,
-        pool: &SqlitePool,
+        pool: &Pool,
         key: &str,
         value: &str,
         actor: Option<i64>,
@@ -678,7 +677,7 @@ impl Settings {
     /// saved without its keys would lock every visitor out.
     pub async fn update_many(
         &self,
-        pool: &SqlitePool,
+        pool: &Pool,
         values: &[(String, String)],
         actor: Option<i64>,
     ) -> Result<()> {

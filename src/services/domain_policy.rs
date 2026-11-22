@@ -4,7 +4,8 @@
 //! to an explicit allowlist. The site-wide default remains the fallback when the
 //! group has none or the selected domain was disabled or deleted.
 
-use sqlx::{FromRow, SqlitePool};
+use crate::db::Pool;
+use sqlx::FromRow;
 
 use crate::db::domains as domain_db;
 use crate::db::users::User;
@@ -84,13 +85,15 @@ impl DomainPolicy {
 #[derive(Debug, FromRow)]
 struct GroupDomainRow {
     default_domain_id: Option<i64>,
+    #[sqlx(try_from = "crate::db::Flag")]
     allow_domain_selection: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
     restrict_domains: bool,
 }
 
 /// Resolve the policy for `user`; ungrouped users get the site default, every
 /// active domain and selection enabled.
-pub async fn effective(pool: &SqlitePool, user: &User) -> Result<DomainPolicy> {
+pub async fn effective(pool: &Pool, user: &User) -> Result<DomainPolicy> {
     let global = domain_db::active_default(pool)
         .await
         .map_err(AppError::from)?

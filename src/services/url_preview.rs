@@ -1,10 +1,10 @@
 //! 明確公開的 SNS 預覽。外部圖片只儲存網址，伺服器不代抓內容。
 mod webp;
 
+use crate::db::Pool;
 use std::io::Cursor;
 
 use image::{ImageFormat, Limits};
-use sqlx::SqlitePool;
 
 use crate::db::{
     url_previews::{self, Changes, Image, Preview},
@@ -148,19 +148,14 @@ fn validate_gif(bytes: &[u8]) -> std::result::Result<(), ()> {
     }
 }
 
-pub async fn owned(pool: &SqlitePool, user_id: i64, id: i64) -> Result<()> {
+pub async fn owned(pool: &Pool, user_id: i64, id: i64) -> Result<()> {
     urls::find_owned(pool, id, user_id)
         .await?
         .ok_or_else(AppError::not_found)?;
     Ok(())
 }
 
-pub async fn save(
-    pool: &SqlitePool,
-    user_id: i64,
-    id: i64,
-    changes: Changes,
-) -> Result<Option<Preview>> {
+pub async fn save(pool: &Pool, user_id: i64, id: i64, changes: Changes) -> Result<Option<Preview>> {
     if !url_previews::save(pool, id, user_id, &changes).await? {
         return Err(AppError::not_found());
     }

@@ -1,6 +1,7 @@
 //! `api_tokens` table.
 
-use sqlx::{FromRow, SqlitePool};
+use crate::db::Pool;
+use sqlx::FromRow;
 
 #[derive(Debug, Clone, FromRow)]
 pub struct ApiToken {
@@ -31,7 +32,7 @@ const SELECT: &str = "SELECT id, user_id, name, token_prefix, token_hash, scopes
                       expires_at, created_at, revoked_at FROM api_tokens";
 
 /// Look up a token by the hash of its secret.
-pub async fn find_by_hash(pool: &SqlitePool, hash: &str) -> Result<Option<ApiToken>, sqlx::Error> {
+pub async fn find_by_hash(pool: &Pool, hash: &str) -> Result<Option<ApiToken>, sqlx::Error> {
     sqlx::query_as::<_, ApiToken>(&format!("{SELECT} WHERE token_hash = $1"))
         .bind(hash)
         .fetch_optional(pool)
@@ -51,14 +52,14 @@ pub struct NewToken<'a> {
 
 /// Create a token row.
 pub async fn create(
-    pool: &SqlitePool,
+    pool: &Pool,
     token: &NewToken<'_>,
     created_at: &str,
 ) -> Result<i64, sqlx::Error> {
-    let result = sqlx::query(
+    let id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO api_tokens (user_id, name, token_prefix, token_hash, scopes, expires_at,
                                  created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
     )
     .bind(token.user_id)
     .bind(token.name)
@@ -67,23 +68,26 @@ pub async fn create(
     .bind(token.scopes)
     .bind(token.expires_at)
     .bind(created_at)
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
-    Ok(result.last_insert_rowid())
+    Ok(id)
 }
 
 /// Insert a token only while the user has fewer than `limit` usable tokens.
 ///
-/// The count and the insert are one statement, so concurrent creations cannot
-/// both pass a check made before either insert. Returns `false` when the quota
+/// The count and the insert run in one write transaction, so concurrent
+/// creations cannot both pass a check made before either insert. Returns `false` when the quota
 /// is already full.
 pub async fn create_within_quota(
-    pool: &SqlitePool,
+    pool: &Pool,
     token: &NewToken<'_>,
     created_at: &str,
     now: &str,
     limit: i64,
 ) -> Result<bool, sqlx::Error> {
+    // 計數與插入同屬一個寫入交易：PostgreSQL 不會序列化 autocommit 敘述，
+    // 單一 `INSERT … SELECT … WHERE (SELECT COUNT(*) …)` 在並行時可能超額（FR-DB-6）。
+    let mut tx = crate::db::begin_write(pool).await?;
     let result = sqlx::query(
         "INSERT INTO api_tokens (user_id, name, token_prefix, token_hash, scopes, expires_at,
                                  created_at)
@@ -102,13 +106,14 @@ pub async fn create_within_quota(
     .bind(token.user_id)
     .bind(now)
     .bind(limit)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(result.rows_affected() > 0)
 }
 
 /// Record token usage (called on every authenticated API request).
-pub async fn touch_last_used(pool: &SqlitePool, id: i64, now: &str) -> Result<(), sqlx::Error> {
+pub async fn touch_last_used(pool: &Pool, id: i64, now: &str) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE api_tokens SET last_used_at = $1 WHERE id = $2")
         .bind(now)
         .bind(id)
@@ -118,7 +123,7 @@ pub async fn touch_last_used(pool: &SqlitePool, id: i64, now: &str) -> Result<()
 }
 
 /// Number of live tokens across the whole instance.
-pub async fn count_active(pool: &SqlitePool, now: &str) -> Result<i64, sqlx::Error> {
+pub async fn count_active(pool: &Pool, now: &str) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM api_tokens
          WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at > $1)",
@@ -130,7 +135,7 @@ pub async fn count_active(pool: &SqlitePool, now: &str) -> Result<i64, sqlx::Err
 
 /// Number of usable tokens of one user: not revoked and not expired.
 pub async fn count_active_for_user(
-    pool: &SqlitePool,
+    pool: &Pool,
     user_id: i64,
     now: &str,
 ) -> Result<i64, sqlx::Error> {
@@ -146,7 +151,7 @@ pub async fn count_active_for_user(
 }
 
 /// Tokens of one user, newest first.
-pub async fn list_for_user(pool: &SqlitePool, user_id: i64) -> Result<Vec<ApiToken>, sqlx::Error> {
+pub async fn list_for_user(pool: &Pool, user_id: i64) -> Result<Vec<ApiToken>, sqlx::Error> {
     sqlx::query_as::<_, ApiToken>(&format!(
         "{SELECT} WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100"
     ))
@@ -156,11 +161,7 @@ pub async fn list_for_user(pool: &SqlitePool, user_id: i64) -> Result<Vec<ApiTok
 }
 
 /// Revoke every live token of a user (used when credentials change).
-pub async fn revoke_all_for_user(
-    pool: &SqlitePool,
-    user_id: i64,
-    now: &str,
-) -> Result<u64, sqlx::Error> {
+pub async fn revoke_all_for_user(pool: &Pool, user_id: i64, now: &str) -> Result<u64, sqlx::Error> {
     let result = sqlx::query(
         "UPDATE api_tokens SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL",
     )
@@ -172,12 +173,7 @@ pub async fn revoke_all_for_user(
 }
 
 /// Revoke a token owned by `user_id`. Returns `true` when a row changed.
-pub async fn revoke(
-    pool: &SqlitePool,
-    id: i64,
-    user_id: i64,
-    now: &str,
-) -> Result<bool, sqlx::Error> {
+pub async fn revoke(pool: &Pool, id: i64, user_id: i64, now: &str) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
         "UPDATE api_tokens SET revoked_at = $1 WHERE id = $2 AND user_id = $3 AND revoked_at IS NULL",
     )

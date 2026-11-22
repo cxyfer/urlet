@@ -1,7 +1,7 @@
 //! 依伺服器時區計算遊客的自然週期配額。
 
+use crate::db::Pool;
 use jiff::{tz::TimeZone, Timestamp};
-use sqlx::SqlitePool;
 use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
 
 use crate::db;
@@ -119,7 +119,7 @@ fn midnight(date: Date, zone: &TimeZone) -> Result<i64> {
 
 /// `0` 表示不限；用量存進 SQLite，重啟仍會繼續計數到下一個自然邊界。
 pub async fn enforce(
-    pool: &SqlitePool,
+    pool: &Pool,
     zone: &TimeZone,
     scope: &str,
     limit: i64,

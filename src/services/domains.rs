@@ -1,9 +1,8 @@
 //! Domain validation, normalisation and the in-process domain registry.
 
+use crate::db::Pool;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-
-use sqlx::SqlitePool;
 
 use crate::db::domains::{self as domain_db, source, status, Domain, DomainWithCount, NewDomain};
 use crate::db::users::User;
@@ -183,7 +182,7 @@ fn parse_host(raw: &str) -> std::result::Result<String, HostError> {
 /// `validate_domain_hostname` rejects (IPv6 literal or underscore service name).
 /// Only an existing active domain is accepted.
 pub async fn find_active_by_input(
-    pool: &SqlitePool,
+    pool: &Pool,
     raw: &str,
 ) -> std::result::Result<Option<Domain>, sqlx::Error> {
     if let Ok(hostname) = validate_domain_hostname(raw) {
@@ -201,7 +200,7 @@ pub async fn find_active_by_input(
 
 /// Domain management for the admin UI and API.
 pub struct DomainContext<'a> {
-    pub pool: &'a SqlitePool,
+    pub pool: &'a Pool,
     pub actor: &'a User,
     pub ip_hash: Option<&'a str>,
 }
@@ -439,11 +438,11 @@ impl DomainContext<'_> {
 }
 
 fn is_unique_violation(err: &sqlx::Error) -> bool {
-    matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("2067"))
+    crate::db::is_unique_violation(err)
 }
 
 fn is_foreign_key_violation(err: &sqlx::Error) -> bool {
-    matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("787"))
+    crate::db::is_foreign_key_violation(err)
 }
 
 /// One domain as exposed to the create/edit form.
@@ -565,7 +564,7 @@ impl DomainRegistry {
     }
 
     /// Reload every domain from the database.
-    pub async fn reload(&self, pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    pub async fn reload(&self, pool: &Pool) -> Result<(), sqlx::Error> {
         let domains = domain_db::all(pool).await?;
         self.replace(domains);
         Ok(())

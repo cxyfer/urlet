@@ -5,7 +5,8 @@
 //! site-wide defaults, which is why a group can only narrow what the instance
 //! allows, never widen it.
 
-use sqlx::{FromRow, SqlitePool};
+use crate::db::Pool;
+use sqlx::FromRow;
 
 use crate::db::users::User;
 use crate::error::{AppError, Result};
@@ -81,19 +82,26 @@ impl Limits {
 struct GroupOverrides {
     max_urls: Option<i64>,
     max_api_tokens: Option<i64>,
+    #[sqlx(try_from = "crate::db::Flag")]
     allow_custom_slug: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
     allow_password: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
     allow_expiry: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
     allow_max_clicks: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
     allow_tags: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
     allow_api_tokens: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
     allow_domain_selection: bool,
     redirect_mode_policy: String,
 }
 
 /// Resolve the limits for a user. One indexed lookup at most; there is no cache,
 /// so an administrator's change applies to the next request.
-pub async fn effective(pool: &SqlitePool, settings: &Settings, user: &User) -> Result<Limits> {
+pub async fn effective(pool: &Pool, settings: &Settings, user: &User) -> Result<Limits> {
     // The reserved Guest account that owns anonymous links draws on the public
     // shortener's own budget rather than the per-user quota: a flood of
     // anonymous links must not consume the limit an administrator set for real
@@ -111,7 +119,7 @@ pub async fn effective(pool: &SqlitePool, settings: &Settings, user: &User) -> R
 
 /// Resolve the limits for a group id (`None` = site defaults).
 pub async fn effective_for_group(
-    pool: &SqlitePool,
+    pool: &Pool,
     settings: &Settings,
     group_id: Option<i64>,
 ) -> Result<Limits> {

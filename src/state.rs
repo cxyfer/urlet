@@ -1,8 +1,8 @@
 //! Shared application state handed to every handler.
 
+use crate::db::Pool;
 use std::sync::Arc;
 
-use sqlx::SqlitePool;
 use time::OffsetDateTime;
 
 use crate::config::Config;
@@ -15,7 +15,7 @@ use crate::services::theme::ThemeRegistry;
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
-    pub db: SqlitePool,
+    pub db: crate::db::Pool,
     pub settings: Arc<Settings>,
     pub domains: Arc<DomainRegistry>,
     /// Administrator's theme choices, cached for the request path.
@@ -27,7 +27,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(config: Config, db: SqlitePool, settings: Settings) -> Self {
+    pub fn new(config: Config, db: Pool, settings: Settings) -> Self {
         let config = Arc::new(config);
         let settings = Arc::new(settings);
         let domains = Arc::new(DomainRegistry::new(&config.base_host));

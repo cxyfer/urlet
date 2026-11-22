@@ -1,8 +1,9 @@
 //! `tags` and `url_tags` tables.
 
+use crate::db::Pool;
 use std::collections::HashMap;
 
-use sqlx::{query_as, FromRow, SqlitePool};
+use sqlx::{query_as, FromRow};
 
 use crate::services::time::now_iso;
 
@@ -27,13 +28,15 @@ pub struct TagWithCount {
 const SELECT: &str = "SELECT id, user_id, name, color, created_at FROM tags";
 
 /// Create the tag when missing, then return its id.
-pub async fn ensure(pool: &SqlitePool, user_id: i64, name: &str) -> Result<i64, sqlx::Error> {
-    sqlx::query("INSERT OR IGNORE INTO tags (user_id, name, created_at) VALUES ($1, $2, $3)")
-        .bind(user_id)
-        .bind(name)
-        .bind(now_iso())
-        .execute(pool)
-        .await?;
+pub async fn ensure(pool: &Pool, user_id: i64, name: &str) -> Result<i64, sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO tags (user_id, name, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+    )
+    .bind(user_id)
+    .bind(name)
+    .bind(now_iso())
+    .execute(pool)
+    .await?;
 
     sqlx::query_scalar("SELECT id FROM tags WHERE user_id = $1 AND name = $2")
         .bind(user_id)
@@ -44,7 +47,7 @@ pub async fn ensure(pool: &SqlitePool, user_id: i64, name: &str) -> Result<i64, 
 
 /// Find one tag by name.
 pub async fn find_by_name(
-    pool: &SqlitePool,
+    pool: &Pool,
     user_id: i64,
     name: &str,
 ) -> Result<Option<Tag>, sqlx::Error> {
@@ -56,10 +59,7 @@ pub async fn find_by_name(
 }
 
 /// Tags of one user, with usage counts.
-pub async fn list_for_user(
-    pool: &SqlitePool,
-    user_id: i64,
-) -> Result<Vec<TagWithCount>, sqlx::Error> {
+pub async fn list_for_user(pool: &Pool, user_id: i64) -> Result<Vec<TagWithCount>, sqlx::Error> {
     sqlx::query_as::<_, TagWithCount>(
         "SELECT t.id, t.name, t.color,
                 (SELECT COUNT(*) FROM url_tags ut JOIN urls u ON u.id = ut.url_id
@@ -74,7 +74,7 @@ pub async fn list_for_user(
 }
 
 /// Tags attached to a link.
-pub async fn for_url(pool: &SqlitePool, url_id: i64) -> Result<Vec<Tag>, sqlx::Error> {
+pub async fn for_url(pool: &Pool, url_id: i64) -> Result<Vec<Tag>, sqlx::Error> {
     sqlx::query_as::<_, Tag>(&format!(
         "{SELECT} WHERE id IN (SELECT tag_id FROM url_tags WHERE url_id = $1)
          ORDER BY name COLLATE NOCASE ASC"
@@ -85,10 +85,7 @@ pub async fn for_url(pool: &SqlitePool, url_id: i64) -> Result<Vec<Tag>, sqlx::E
 }
 
 /// Tags for many links at once, keyed by link id.
-pub async fn for_urls(
-    pool: &SqlitePool,
-    url_ids: &[i64],
-) -> Result<HashMap<i64, Vec<Tag>>, sqlx::Error> {
+pub async fn for_urls(pool: &Pool, url_ids: &[i64]) -> Result<HashMap<i64, Vec<Tag>>, sqlx::Error> {
     if url_ids.is_empty() {
         return Ok(HashMap::new());
     }
@@ -131,18 +128,14 @@ pub async fn for_urls(
 }
 
 /// Replace the tag set of a link.
-pub async fn set_for_url(
-    pool: &SqlitePool,
-    url_id: i64,
-    tag_ids: &[i64],
-) -> Result<(), sqlx::Error> {
+pub async fn set_for_url(pool: &Pool, url_id: i64, tag_ids: &[i64]) -> Result<(), sqlx::Error> {
     let mut tx = crate::db::begin_write(pool).await?;
     sqlx::query("DELETE FROM url_tags WHERE url_id = $1")
         .bind(url_id)
         .execute(&mut *tx)
         .await?;
     for tag_id in tag_ids {
-        sqlx::query("INSERT OR IGNORE INTO url_tags (url_id, tag_id) VALUES ($1, $2)")
+        sqlx::query("INSERT INTO url_tags (url_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
             .bind(url_id)
             .bind(tag_id)
             .execute(&mut *tx)
@@ -153,7 +146,7 @@ pub async fn set_for_url(
 }
 
 /// Delete a tag owned by a user (the link association cascades).
-pub async fn delete(pool: &SqlitePool, tag_id: i64, user_id: i64) -> Result<bool, sqlx::Error> {
+pub async fn delete(pool: &Pool, tag_id: i64, user_id: i64) -> Result<bool, sqlx::Error> {
     let result = sqlx::query("DELETE FROM tags WHERE id = $1 AND user_id = $2")
         .bind(tag_id)
         .bind(user_id)
@@ -164,7 +157,7 @@ pub async fn delete(pool: &SqlitePool, tag_id: i64, user_id: i64) -> Result<bool
 
 /// Rename a tag.
 pub async fn rename(
-    pool: &SqlitePool,
+    pool: &Pool,
     tag_id: i64,
     user_id: i64,
     name: &str,

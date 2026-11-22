@@ -3,9 +3,8 @@
 //! Audit writes must never break a user visible action, so failures are logged
 //! and swallowed.
 
-use sqlx::SqlitePool;
-
 use crate::db::audit::{AuditFilter, AuditLog, NewAuditLog};
+use crate::db::Pool;
 use crate::services::time::now_iso;
 
 /// Known audit actions.
@@ -100,7 +99,7 @@ impl Audit {
     }
 
     /// Persist the entry. Errors are logged, never propagated.
-    pub async fn record(self, pool: &SqlitePool) {
+    pub async fn record(self, pool: &Pool) {
         if let Err(err) = crate::db::audit::insert(pool, &self.entry).await {
             tracing::warn!(error = %err, action = %self.entry.action, "audit write failed");
         }
@@ -109,7 +108,7 @@ impl Audit {
 
 /// Read audit entries (admin UI).
 pub async fn list(
-    pool: &SqlitePool,
+    pool: &Pool,
     filter: &AuditFilter,
     limit: i64,
     offset: i64,
@@ -118,12 +117,12 @@ pub async fn list(
 }
 
 /// Count audit entries (admin UI).
-pub async fn count(pool: &SqlitePool, filter: &AuditFilter) -> Result<i64, sqlx::Error> {
+pub async fn count(pool: &Pool, filter: &AuditFilter) -> Result<i64, sqlx::Error> {
     crate::db::audit::count(pool, filter).await
 }
 
 /// Retention: drop entries older than `days`.
-pub async fn prune(pool: &SqlitePool, days: i64) -> Result<u64, sqlx::Error> {
+pub async fn prune(pool: &Pool, days: i64) -> Result<u64, sqlx::Error> {
     if days <= 0 {
         return Ok(0);
     }

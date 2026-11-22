@@ -1,6 +1,7 @@
 //! `sessions` table: server side login state.
 
-use sqlx::{FromRow, SqlitePool};
+use crate::db::Pool;
+use sqlx::FromRow;
 
 #[derive(Debug, Clone, FromRow)]
 pub struct Session {
@@ -26,7 +27,7 @@ const SELECT: &str = "SELECT id, user_id, token_hash, user_agent, ip_hash, creat
 
 /// Create a session row.
 pub async fn create(
-    pool: &SqlitePool,
+    pool: &Pool,
     user_id: i64,
     token_hash: &str,
     user_agent: Option<&str>,
@@ -34,10 +35,10 @@ pub async fn create(
     created_at: &str,
     expires_at: &str,
 ) -> Result<i64, sqlx::Error> {
-    let result = sqlx::query(
+    let id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO sessions (user_id, token_hash, user_agent, ip_hash, created_at, last_seen_at,
                                expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
     )
     .bind(user_id)
     .bind(token_hash)
@@ -46,14 +47,14 @@ pub async fn create(
     .bind(created_at)
     .bind(created_at)
     .bind(expires_at)
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
-    Ok(result.last_insert_rowid())
+    Ok(id)
 }
 
 /// Look up a session by the hash of its token.
 pub async fn find_by_token_hash(
-    pool: &SqlitePool,
+    pool: &Pool,
     token_hash: &str,
 ) -> Result<Option<Session>, sqlx::Error> {
     sqlx::query_as::<_, Session>(&format!("{SELECT} WHERE token_hash = $1"))
@@ -66,7 +67,7 @@ pub async fn find_by_token_hash(
 /// session was last seen before `stale_before` (keeps the write path off the
 /// hot read path). This is what makes the session slide.
 pub async fn touch(
-    pool: &SqlitePool,
+    pool: &Pool,
     id: i64,
     stale_before: &str,
     now: &str,
@@ -86,7 +87,7 @@ pub async fn touch(
 }
 
 /// Revoke one session. Returns the number of rows changed.
-pub async fn revoke(pool: &SqlitePool, id: i64, now: &str) -> Result<u64, sqlx::Error> {
+pub async fn revoke(pool: &Pool, id: i64, now: &str) -> Result<u64, sqlx::Error> {
     let result =
         sqlx::query("UPDATE sessions SET revoked_at = $1 WHERE id = $2 AND revoked_at IS NULL")
             .bind(now)
@@ -98,7 +99,7 @@ pub async fn revoke(pool: &SqlitePool, id: i64, now: &str) -> Result<u64, sqlx::
 
 /// Revoke every session of a user, optionally keeping one alive.
 pub async fn revoke_for_user(
-    pool: &SqlitePool,
+    pool: &Pool,
     user_id: i64,
     now: &str,
     keep: Option<i64>,
@@ -130,7 +131,7 @@ pub async fn revoke_for_user(
 
 /// Revoke a session that belongs to `user_id`.
 pub async fn revoke_owned(
-    pool: &SqlitePool,
+    pool: &Pool,
     id: i64,
     user_id: i64,
     now: &str,
@@ -147,7 +148,7 @@ pub async fn revoke_owned(
 }
 
 /// Sessions belonging to a user, newest first.
-pub async fn list_for_user(pool: &SqlitePool, user_id: i64) -> Result<Vec<Session>, sqlx::Error> {
+pub async fn list_for_user(pool: &Pool, user_id: i64) -> Result<Vec<Session>, sqlx::Error> {
     sqlx::query_as::<_, Session>(&format!(
         "{SELECT} WHERE user_id = $1 ORDER BY last_seen_at DESC LIMIT 50"
     ))
@@ -157,7 +158,7 @@ pub async fn list_for_user(pool: &SqlitePool, user_id: i64) -> Result<Vec<Sessio
 }
 
 /// Delete sessions that expired or were revoked before `before`.
-pub async fn delete_stale(pool: &SqlitePool, before: &str) -> Result<u64, sqlx::Error> {
+pub async fn delete_stale(pool: &Pool, before: &str) -> Result<u64, sqlx::Error> {
     let result = sqlx::query("DELETE FROM sessions WHERE expires_at < $1 OR revoked_at < $2")
         .bind(before)
         .bind(before)

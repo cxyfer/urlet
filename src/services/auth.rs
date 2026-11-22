@@ -1,10 +1,9 @@
 //! Authentication flows: registration, login, sessions, password changes.
 
-use sqlx::SqlitePool;
-
 use crate::config::Config;
 use crate::db::sessions::Session;
 use crate::db::users::User;
+use crate::db::Pool;
 use crate::db::{invites, login_attempts, sessions, users};
 use crate::error::{AppError, Result};
 use crate::services::audit::{action, target, Audit};
@@ -20,7 +19,7 @@ const LOCKOUT_THRESHOLD: i64 = 30;
 
 /// Everything an authentication flow needs from the request context.
 pub struct AuthContext<'a> {
-    pub pool: &'a SqlitePool,
+    pub pool: &'a Pool,
     pub config: &'a Config,
     pub settings: &'a Settings,
     pub user_agent: Option<&'a str>,
@@ -444,7 +443,7 @@ impl AuthContext<'_> {
 ///
 /// `session_ttl_hours` is used to slide the expiry forward on activity.
 pub async fn resolve_session(
-    pool: &SqlitePool,
+    pool: &Pool,
     token: &str,
     session_ttl_hours: i64,
 ) -> Result<Option<(Session, User)>> {
@@ -482,7 +481,7 @@ pub async fn resolve_session(
 
 /// Resolve an API token to its record and owner.
 pub async fn resolve_api_token(
-    pool: &SqlitePool,
+    pool: &Pool,
     token: &str,
 ) -> Result<Option<(crate::db::tokens::ApiToken, User)>> {
     let token_hash = secret::sha256_hex(token);
@@ -510,7 +509,7 @@ pub async fn resolve_api_token(
 
 /// SQLite reports constraint violations as a database error with code 2067.
 fn is_unique_violation(err: &sqlx::Error) -> bool {
-    matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("2067"))
+    crate::db::is_unique_violation(err)
 }
 
 #[cfg(test)]

@@ -14,10 +14,9 @@
 //! "show it again" view (`services::invite_code`). The plaintext is handed to
 //! the caller of [`Issuer::create`] and never written to the database as is.
 
-use sqlx::SqlitePool;
-
 use crate::db::user_groups::{self, UserGroup};
 use crate::db::users::User;
+use crate::db::Pool;
 use crate::db::{invite_issuance, invites};
 use crate::error::{AppError, Result};
 use crate::services::audit::{action, target, Audit};
@@ -79,7 +78,7 @@ pub fn registration_link(base_url: &str, code: &str) -> String {
 
 /// Who is issuing the code and under which policy.
 pub struct Issuer<'a> {
-    pub pool: &'a SqlitePool,
+    pub pool: &'a Pool,
     pub settings: &'a Settings,
     pub actor: &'a User,
     pub ip_hash: Option<&'a str>,
@@ -279,7 +278,7 @@ impl Issuer<'_> {
 
 /// The group a member issues codes for: their own, or the default group when the
 /// account has none. `None` means the instance has no usable group.
-pub async fn member_group(pool: &SqlitePool, user: &User) -> Result<Option<UserGroup>> {
+pub async fn member_group(pool: &Pool, user: &User) -> Result<Option<UserGroup>> {
     match user.group_id {
         Some(group_id) => user_groups::find_by_id(pool, group_id)
             .await

@@ -15,10 +15,9 @@
 //! upload metadata, reloaded after every write so a request never pays for a
 //! query just to choose a stylesheet.
 
+use crate::db::Pool;
 use std::future::Future;
 use std::sync::RwLock;
-
-use sqlx::SqlitePool;
 
 use crate::db::custom_themes::{self as custom_db, CustomThemeRow};
 use crate::db::themes::{self as theme_db, ThemeRow};
@@ -479,14 +478,14 @@ impl ThemeRegistry {
     }
 
     /// Load the current rows into the cache.
-    pub async fn load(pool: &SqlitePool) -> Result<Self> {
+    pub async fn load(pool: &Pool) -> Result<Self> {
         let registry = Self::new();
         registry.reload(pool).await?;
         Ok(registry)
     }
 
     /// Refresh the cache after an administrator write.
-    pub async fn reload(&self, pool: &SqlitePool) -> Result<()> {
+    pub async fn reload(&self, pool: &Pool) -> Result<()> {
         let rows = theme_db::all(pool)
             .await
             .map_err(|err| AppError::internal(format!("cannot load themes: {err}")))?;
@@ -757,7 +756,7 @@ pub struct AppliedSelection {
 /// committed in one database transaction, then the two in-memory caches are
 /// updated from the values that transaction wrote.
 pub async fn update_selection(
-    pool: &SqlitePool,
+    pool: &Pool,
     registry: &ThemeRegistry,
     settings: &Settings,
     enabled: Option<&[String]>,

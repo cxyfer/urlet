@@ -1,6 +1,7 @@
 //! `audit_logs` table.
 
-use sqlx::{FromRow, SqlitePool};
+use crate::db::Pool;
+use sqlx::FromRow;
 
 #[derive(Debug, Clone, FromRow)]
 pub struct AuditLog {
@@ -28,7 +29,7 @@ pub struct NewAuditLog {
 }
 
 /// Append an audit entry.
-pub async fn insert(pool: &SqlitePool, entry: &NewAuditLog) -> Result<(), sqlx::Error> {
+pub async fn insert(pool: &Pool, entry: &NewAuditLog) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO audit_logs (actor_user_id, actor_role, action, target_type, target_id,
                                  metadata, ip_hash, created_at)
@@ -57,7 +58,7 @@ pub struct AuditFilter {
 
 /// List audit entries, newest first.
 pub async fn list(
-    pool: &SqlitePool,
+    pool: &Pool,
     filter: &AuditFilter,
     limit: i64,
     offset: i64,
@@ -82,7 +83,7 @@ pub async fn list(
 }
 
 /// Count audit entries matching a filter.
-pub async fn count(pool: &SqlitePool, filter: &AuditFilter) -> Result<i64, sqlx::Error> {
+pub async fn count(pool: &Pool, filter: &AuditFilter) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM audit_logs
          WHERE ($1 IS NULL OR action = $1)
@@ -97,7 +98,7 @@ pub async fn count(pool: &SqlitePool, filter: &AuditFilter) -> Result<i64, sqlx:
 }
 
 /// Delete entries older than `before`.
-pub async fn delete_older_than(pool: &SqlitePool, before: &str) -> Result<u64, sqlx::Error> {
+pub async fn delete_older_than(pool: &Pool, before: &str) -> Result<u64, sqlx::Error> {
     let result = sqlx::query("DELETE FROM audit_logs WHERE created_at < $1")
         .bind(before)
         .execute(pool)

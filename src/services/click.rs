@@ -7,9 +7,9 @@
 //! are serialised anyway, and concurrent writers starve the automatic WAL
 //! checkpoint, which makes the `-wal` file grow without bound.
 
+use crate::db::Pool;
 use std::sync::Arc;
 
-use sqlx::SqlitePool;
 use tokio::sync::mpsc;
 
 use crate::config::Config;
@@ -43,7 +43,7 @@ pub struct ClickRecorder {
 impl ClickRecorder {
     /// Start the writer task. It stops when every clone of the recorder is gone.
     pub fn start(
-        pool: SqlitePool,
+        pool: Pool,
         config: Arc<Config>,
         settings: Arc<Settings>,
         domains: Arc<DomainRegistry>,
@@ -84,7 +84,7 @@ impl ClickRecorder {
 ///
 /// Used by tests that want deterministic timing.
 pub async fn record(
-    pool: &SqlitePool,
+    pool: &Pool,
     config: &Config,
     domains: &DomainRegistry,
     analytics_enabled: bool,
@@ -99,7 +99,7 @@ pub async fn record(
 }
 
 async fn record_inner(
-    pool: &SqlitePool,
+    pool: &Pool,
     config: &Config,
     domains: &DomainRegistry,
     input: &ClickInput,

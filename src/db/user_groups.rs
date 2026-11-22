@@ -1,8 +1,9 @@
 //! `user_groups` table: quota and feature-toggle groups.
 
+use crate::db::Pool;
 use std::collections::HashMap;
 
-use sqlx::{FromRow, SqlitePool};
+use sqlx::FromRow;
 
 use crate::services::time::now_iso;
 
@@ -24,18 +25,28 @@ pub struct UserGroup {
     /// Calendar period of the invite counter: `day`, `week` or `month`.
     pub invite_period: String,
     /// Whether the group's members may issue invite codes themselves.
+    #[sqlx(try_from = "crate::db::Flag")]
     pub allow_invites: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
     pub allow_custom_slug: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
     pub allow_password: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
     pub allow_expiry: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
     pub allow_max_clicks: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
     pub allow_tags: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
     pub allow_api_tokens: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
     pub allow_domain_selection: bool,
     /// Which redirect modes members may use: `direct`, `splash` or `choice`.
     pub redirect_mode_policy: String,
     pub default_domain_id: Option<i64>,
+    #[sqlx(try_from = "crate::db::Flag")]
     pub restrict_domains: bool,
+    #[sqlx(try_from = "crate::db::Flag")]
     pub is_default: bool,
     pub created_at: String,
     pub updated_at: String,
@@ -72,7 +83,7 @@ pub struct GroupValues<'a> {
 }
 
 /// Groups in display order: the default first, then by name.
-pub async fn list(pool: &SqlitePool) -> Result<Vec<UserGroup>, sqlx::Error> {
+pub async fn list(pool: &Pool) -> Result<Vec<UserGroup>, sqlx::Error> {
     sqlx::query_as::<_, UserGroup>(&format!(
         "{SELECT} ORDER BY is_default DESC, name COLLATE NOCASE ASC"
     ))
@@ -81,7 +92,7 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<UserGroup>, sqlx::Error> {
 }
 
 /// Find a group by id.
-pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<UserGroup>, sqlx::Error> {
+pub async fn find_by_id(pool: &Pool, id: i64) -> Result<Option<UserGroup>, sqlx::Error> {
     sqlx::query_as::<_, UserGroup>(&format!("{SELECT} WHERE id = $1"))
         .bind(id)
         .fetch_optional(pool)
@@ -90,7 +101,7 @@ pub async fn find_by_id(pool: &SqlitePool, id: i64) -> Result<Option<UserGroup>,
 
 /// Find a group by name. `name` uses `COLLATE NOCASE`, so the comparison is
 /// case-insensitive without normalising the input.
-pub async fn find_by_name(pool: &SqlitePool, name: &str) -> Result<Option<UserGroup>, sqlx::Error> {
+pub async fn find_by_name(pool: &Pool, name: &str) -> Result<Option<UserGroup>, sqlx::Error> {
     sqlx::query_as::<_, UserGroup>(&format!("{SELECT} WHERE name = $1"))
         .bind(name)
         .fetch_optional(pool)
@@ -98,21 +109,21 @@ pub async fn find_by_name(pool: &SqlitePool, name: &str) -> Result<Option<UserGr
 }
 
 /// The group marked as default, if one exists.
-pub async fn default_group(pool: &SqlitePool) -> Result<Option<UserGroup>, sqlx::Error> {
+pub async fn default_group(pool: &Pool) -> Result<Option<UserGroup>, sqlx::Error> {
     sqlx::query_as::<_, UserGroup>(&format!("{SELECT} WHERE is_default = 1"))
         .fetch_optional(pool)
         .await
 }
 
 /// Id of the default group, used when creating users and redeeming invites.
-pub async fn default_id(pool: &SqlitePool) -> Result<Option<i64>, sqlx::Error> {
+pub async fn default_id(pool: &Pool) -> Result<Option<i64>, sqlx::Error> {
     sqlx::query_scalar("SELECT id FROM user_groups WHERE is_default = 1")
         .fetch_optional(pool)
         .await
 }
 
 /// Live member counts keyed by group id.
-pub async fn member_counts(pool: &SqlitePool) -> Result<HashMap<i64, i64>, sqlx::Error> {
+pub async fn member_counts(pool: &Pool) -> Result<HashMap<i64, i64>, sqlx::Error> {
     let rows: Vec<(i64, i64)> = sqlx::query_as(
         "SELECT group_id, COUNT(*) FROM users
          WHERE group_id IS NOT NULL AND deleted_at IS NULL
@@ -124,7 +135,7 @@ pub async fn member_counts(pool: &SqlitePool) -> Result<HashMap<i64, i64>, sqlx:
 }
 
 /// Number of live members in one group.
-pub async fn count_members(pool: &SqlitePool, group_id: i64) -> Result<i64, sqlx::Error> {
+pub async fn count_members(pool: &Pool, group_id: i64) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE group_id = $1 AND deleted_at IS NULL")
         .bind(group_id)
         .fetch_one(pool)
@@ -134,20 +145,20 @@ pub async fn count_members(pool: &SqlitePool, group_id: i64) -> Result<i64, sqlx
 /// Insert a group. The caller has already checked the name is free; `is_default`
 /// is only honoured when no default group exists yet.
 pub async fn create(
-    pool: &SqlitePool,
+    pool: &Pool,
     values: &GroupValues<'_>,
     is_default: bool,
     allowed_domain_ids: &[i64],
 ) -> Result<i64, sqlx::Error> {
     let now = now_iso();
     let mut tx = crate::db::begin_write(pool).await?;
-    let result = sqlx::query(
+    let id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO user_groups
             (name, description, max_urls, max_api_tokens, max_invites, invite_period,
              allow_invites, allow_custom_slug, allow_password, allow_expiry, allow_max_clicks,
              allow_tags, allow_api_tokens, allow_domain_selection, redirect_mode_policy,
              default_domain_id, restrict_domains, is_default, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING id",
     )
     .bind(values.name)
     .bind(values.description)
@@ -155,23 +166,22 @@ pub async fn create(
     .bind(values.max_api_tokens)
     .bind(values.max_invites)
     .bind(values.invite_period)
-    .bind(values.allow_invites)
-    .bind(values.allow_custom_slug)
-    .bind(values.allow_password)
-    .bind(values.allow_expiry)
-    .bind(values.allow_max_clicks)
-    .bind(values.allow_tags)
-    .bind(values.allow_api_tokens)
-    .bind(values.allow_domain_selection)
+    .bind(crate::db::flag(values.allow_invites))
+    .bind(crate::db::flag(values.allow_custom_slug))
+    .bind(crate::db::flag(values.allow_password))
+    .bind(crate::db::flag(values.allow_expiry))
+    .bind(crate::db::flag(values.allow_max_clicks))
+    .bind(crate::db::flag(values.allow_tags))
+    .bind(crate::db::flag(values.allow_api_tokens))
+    .bind(crate::db::flag(values.allow_domain_selection))
     .bind(values.redirect_mode_policy)
     .bind(values.default_domain_id)
-    .bind(values.restrict_domains)
-    .bind(is_default)
+    .bind(crate::db::flag(values.restrict_domains))
+    .bind(crate::db::flag(is_default))
     .bind(&now)
     .bind(&now)
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
     .await?;
-    let id = result.last_insert_rowid();
     for domain_id in allowed_domain_ids {
         sqlx::query("INSERT INTO group_domains (group_id, domain_id) VALUES ($1, $2)")
             .bind(id)
@@ -189,7 +199,7 @@ pub async fn create(
 /// update that fails halfway must not leave two defaults or none. Returns
 /// `false` when the row no longer exists; the marker is then left untouched.
 pub async fn update(
-    pool: &SqlitePool,
+    pool: &Pool,
     id: i64,
     values: &GroupValues<'_>,
     make_default: bool,
@@ -213,17 +223,17 @@ pub async fn update(
     .bind(values.max_api_tokens)
     .bind(values.max_invites)
     .bind(values.invite_period)
-    .bind(values.allow_invites)
-    .bind(values.allow_custom_slug)
-    .bind(values.allow_password)
-    .bind(values.allow_expiry)
-    .bind(values.allow_max_clicks)
-    .bind(values.allow_tags)
-    .bind(values.allow_api_tokens)
-    .bind(values.allow_domain_selection)
+    .bind(crate::db::flag(values.allow_invites))
+    .bind(crate::db::flag(values.allow_custom_slug))
+    .bind(crate::db::flag(values.allow_password))
+    .bind(crate::db::flag(values.allow_expiry))
+    .bind(crate::db::flag(values.allow_max_clicks))
+    .bind(crate::db::flag(values.allow_tags))
+    .bind(crate::db::flag(values.allow_api_tokens))
+    .bind(crate::db::flag(values.allow_domain_selection))
     .bind(values.redirect_mode_policy)
     .bind(values.default_domain_id)
-    .bind(values.restrict_domains)
+    .bind(crate::db::flag(values.restrict_domains))
     .bind(&now)
     .bind(id)
     .execute(&mut *tx)
@@ -270,7 +280,7 @@ pub async fn update(
 }
 
 /// The explicit domain allowlist of one group.
-pub async fn domain_ids(pool: &SqlitePool, group_id: i64) -> Result<Vec<i64>, sqlx::Error> {
+pub async fn domain_ids(pool: &Pool, group_id: i64) -> Result<Vec<i64>, sqlx::Error> {
     sqlx::query_scalar("SELECT domain_id FROM group_domains WHERE group_id = $1 ORDER BY domain_id")
         .bind(group_id)
         .fetch_all(pool)
@@ -278,7 +288,7 @@ pub async fn domain_ids(pool: &SqlitePool, group_id: i64) -> Result<Vec<i64>, sq
 }
 
 /// Domain allowlists for every group, keyed by group id.
-pub async fn domain_ids_by_group(pool: &SqlitePool) -> Result<HashMap<i64, Vec<i64>>, sqlx::Error> {
+pub async fn domain_ids_by_group(pool: &Pool) -> Result<HashMap<i64, Vec<i64>>, sqlx::Error> {
     let rows: Vec<(i64, i64)> = sqlx::query_as(
         "SELECT group_id, domain_id FROM group_domains ORDER BY group_id, domain_id",
     )
@@ -300,11 +310,7 @@ pub async fn domain_ids_by_group(pool: &SqlitePool) -> Result<HashMap<i64, Vec<i
 /// check, and deleting it then would leave the instance without a default. The
 /// member reassignment is rolled back with it. Returns `false` when the group is
 /// (or became) the default.
-pub async fn delete_with_reassign(
-    pool: &SqlitePool,
-    id: i64,
-    target: i64,
-) -> Result<bool, sqlx::Error> {
+pub async fn delete_with_reassign(pool: &Pool, id: i64, target: i64) -> Result<bool, sqlx::Error> {
     let now = now_iso();
     let mut tx = crate::db::begin_write(pool).await?;
     sqlx::query("UPDATE users SET group_id = $1, updated_at = $2 WHERE group_id = $3")

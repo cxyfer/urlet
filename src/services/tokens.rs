@@ -1,9 +1,8 @@
 //! API token issuance and lifecycle.
 
-use sqlx::SqlitePool;
-
 use crate::db::tokens::{self, ApiToken, NewToken};
 use crate::db::users::User;
+use crate::db::Pool;
 use crate::error::{AppError, Result};
 use crate::services::audit::{action, target, Audit};
 use crate::services::limits::{self, blocked};
@@ -68,7 +67,7 @@ pub fn validate_expiry(raw: Option<&str>) -> Result<Option<String>> {
 
 /// Create a token for a user. The plain value is returned exactly once.
 pub async fn create(
-    pool: &SqlitePool,
+    pool: &Pool,
     settings: &Settings,
     actor: &User,
     name: &str,
@@ -130,14 +129,14 @@ pub async fn create(
 }
 
 /// Tokens of a user, newest first.
-pub async fn list(pool: &SqlitePool, user_id: i64) -> Result<Vec<ApiToken>> {
+pub async fn list(pool: &Pool, user_id: i64) -> Result<Vec<ApiToken>> {
     tokens::list_for_user(pool, user_id)
         .await
         .map_err(AppError::from)
 }
 
 /// Revoke a token owned by a user.
-pub async fn revoke(pool: &SqlitePool, actor: &User, id: i64, ip_hash: Option<&str>) -> Result<()> {
+pub async fn revoke(pool: &Pool, actor: &User, id: i64, ip_hash: Option<&str>) -> Result<()> {
     let revoked = tokens::revoke(pool, id, actor.id, &time::now_iso())
         .await
         .map_err(AppError::from)?;

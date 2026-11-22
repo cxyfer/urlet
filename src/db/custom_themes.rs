@@ -5,8 +5,7 @@
 //! makes the upload participate in the normal enabled/default catalogue, so a
 //! custom theme behaves exactly like a compiled one once it is registered.
 
-use sqlx::SqlitePool;
-
+use crate::db::Pool;
 use crate::services::theme::ThemeAppearance;
 use crate::services::time::now_iso;
 
@@ -55,7 +54,7 @@ pub struct NewCustomTheme {
 }
 
 /// Every uploaded theme, oldest first.
-pub async fn all(pool: &SqlitePool) -> Result<Vec<CustomThemeRow>, sqlx::Error> {
+pub async fn all(pool: &Pool) -> Result<Vec<CustomThemeRow>, sqlx::Error> {
     let rows: Vec<ThemeTuple> = sqlx::query_as(
         "SELECT id, key, name, description, appearance, css_version, css_size,
                 original_filename, created_by, created_at, updated_at
@@ -68,7 +67,7 @@ pub async fn all(pool: &SqlitePool) -> Result<Vec<CustomThemeRow>, sqlx::Error> 
 }
 
 /// One upload by primary key.
-pub async fn find(pool: &SqlitePool, id: i64) -> Result<Option<CustomThemeRow>, sqlx::Error> {
+pub async fn find(pool: &Pool, id: i64) -> Result<Option<CustomThemeRow>, sqlx::Error> {
     let row: Option<ThemeTuple> = sqlx::query_as(
         "SELECT id, key, name, description, appearance, css_version, css_size,
                 original_filename, created_by, created_at, updated_at
@@ -82,10 +81,7 @@ pub async fn find(pool: &SqlitePool, id: i64) -> Result<Option<CustomThemeRow>, 
 }
 
 /// One upload by stable catalogue key.
-pub async fn find_by_key(
-    pool: &SqlitePool,
-    key: &str,
-) -> Result<Option<CustomThemeRow>, sqlx::Error> {
+pub async fn find_by_key(pool: &Pool, key: &str) -> Result<Option<CustomThemeRow>, sqlx::Error> {
     let row: Option<ThemeTuple> = sqlx::query_as(
         "SELECT id, key, name, description, appearance, css_version, css_size,
                 original_filename, created_by, created_at, updated_at
@@ -99,21 +95,21 @@ pub async fn find_by_key(
 }
 
 /// Number of uploads, used for the catalogue limit.
-pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
+pub async fn count(pool: &Pool) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar("SELECT COUNT(*) FROM custom_themes")
         .fetch_one(pool)
         .await
 }
 
 /// Stable keys of every upload, used by the startup reconciliation.
-pub async fn keys(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
+pub async fn keys(pool: &Pool) -> Result<Vec<String>, sqlx::Error> {
     sqlx::query_scalar("SELECT key FROM custom_themes ORDER BY id")
         .fetch_all(pool)
         .await
 }
 
 /// Register an upload and its `themes` catalogue row in one transaction.
-pub async fn create(pool: &SqlitePool, new: &NewCustomTheme) -> Result<i64, sqlx::Error> {
+pub async fn create(pool: &Pool, new: &NewCustomTheme) -> Result<i64, sqlx::Error> {
     let now = now_iso();
     let mut tx = crate::db::begin_write(pool).await?;
 
@@ -129,11 +125,11 @@ pub async fn create(pool: &SqlitePool, new: &NewCustomTheme) -> Result<i64, sqlx
     .execute(&mut *tx)
     .await?;
 
-    let result = sqlx::query(
+    let id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO custom_themes
              (key, name, description, appearance, css_version, css_size,
               original_filename, created_by, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
     )
     .bind(&new.key)
     .bind(&new.name)
@@ -145,11 +141,11 @@ pub async fn create(pool: &SqlitePool, new: &NewCustomTheme) -> Result<i64, sqlx
     .bind(new.created_by)
     .bind(&now)
     .bind(&now)
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
     .await?;
 
     tx.commit().await?;
-    Ok(result.last_insert_rowid())
+    Ok(id)
 }
 
 /// Update the editable metadata and, when supplied, the replaced stylesheet in
@@ -159,7 +155,7 @@ pub async fn create(pool: &SqlitePool, new: &NewCustomTheme) -> Result<i64, sqlx
 /// `css_version` still names the old file would serve the previous stylesheet
 /// under the new label until the next restart.
 pub async fn update(
-    pool: &SqlitePool,
+    pool: &Pool,
     id: i64,
     name: &str,
     description: &str,
@@ -198,7 +194,7 @@ pub async fn update(
 }
 
 /// Delete the upload and its catalogue row in one transaction.
-pub async fn delete(pool: &SqlitePool, id: i64, key: &str) -> Result<(), sqlx::Error> {
+pub async fn delete(pool: &Pool, id: i64, key: &str) -> Result<(), sqlx::Error> {
     let mut tx = crate::db::begin_write(pool).await?;
     sqlx::query("DELETE FROM custom_themes WHERE id = $1")
         .bind(id)

@@ -4,9 +4,8 @@
 //! a group must satisfy before it is written, and the member counts the admin
 //! page and API show next to it.
 
+use crate::db::Pool;
 use std::collections::HashMap;
-
-use sqlx::SqlitePool;
 
 use crate::db::user_groups::{self, GroupValues, UserGroup};
 use crate::error::{AppError, Result};
@@ -180,7 +179,7 @@ pub struct GroupOverview {
 }
 
 /// Every group, default first, with member counts.
-pub async fn overview(pool: &SqlitePool) -> Result<Vec<GroupOverview>> {
+pub async fn overview(pool: &Pool) -> Result<Vec<GroupOverview>> {
     let groups = user_groups::list(pool).await.map_err(AppError::from)?;
     let counts = user_groups::member_counts(pool)
         .await
@@ -199,7 +198,7 @@ pub async fn overview(pool: &SqlitePool) -> Result<Vec<GroupOverview>> {
 }
 
 /// Id → name lookup, used by the admin user and invite lists.
-pub async fn name_map(pool: &SqlitePool) -> Result<HashMap<i64, String>> {
+pub async fn name_map(pool: &Pool) -> Result<HashMap<i64, String>> {
     Ok(user_groups::list(pool)
         .await
         .map_err(AppError::from)?
