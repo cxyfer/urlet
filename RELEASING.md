@@ -60,6 +60,7 @@ The full image name is `ghcr.io/cxyfer/urlet`. It is derived from `github.reposi
 9. **The GitHub Release is manual, in the standard format.** Publish it after the image exists, with notes scaffolded by [`scripts/release-notes.sh`](scripts/release-notes.sh) and shaped by [`.github/release-notes-template.md`](.github/release-notes-template.md). Keep every prose paragraph and highlight bullet on one source line — GitHub turns a newline inside a release body into a hard break — and run [`scripts/release-notes-lint.sh`](scripts/release-notes-lint.sh) on the draft.
 10. **GHCR visibility is a repository setting.** A private repository produces a private package. Authenticate with `docker login ghcr.io` (token scope `read:packages`) or make the package public.
 11. **The `image:` value in [docker-compose.yml](docker-compose.yml) is a local build tag, but it must still carry the release version.** It publishes nothing — every released image comes from the workflow — yet leaving it behind makes `docker compose up --build` label a local build with an older version, which is how `v1.3.0-rc.6` shipped a Compose file still naming `v1.3.0-rc.5`. Keep it in step with `Cargo.toml` and `Cargo.lock`.
+12. **The release commit carries no pull-request number.** Its subject is exactly `🔖 release: vX.Y.Z`, with no `(#N)` suffix. Land it without a squash merge: this contract pushes the bump to `master`, and a pull request merged with **Rebase and merge** keeps the subject too; a squash merge appends the number.
 
 ## Release checklist
 
@@ -121,6 +122,8 @@ git push origin master
 ```
 
 The repository uses gitmoji-style subjects; `🔖 release: vX.Y.Z` matches the existing history.
+
+The subject is exactly `🔖 release: vX.Y.Z`, with nothing after the version. Push the bump to `master`, or merge its pull request with **Rebase and merge**; a squash merge appends `(#N)`, which the release commit must not carry.
 
 Check that all three agree before you tag:
 

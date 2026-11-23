@@ -60,6 +60,7 @@
 9. **GitHub Release 由人工發布，格式固定。** 映像發布完成後，用 [`scripts/release-notes.sh`](../../scripts/release-notes.sh) 產生草稿，並依 [`.github/release-notes-template.md`](../../.github/release-notes-template.md) 撰寫。每一段散文與每個 highlight 項目都放在同一行——GitHub 會把 release body 內的換行渲染成強制換行 ——並用 [`scripts/release-notes-lint.sh`](../../scripts/release-notes-lint.sh) 檢查草稿。
 10. **GHCR 可見性是儲存庫設定。** 私有儲存庫會產生私有套件；請執行 `docker login ghcr.io`（token 需要 `read:packages`），或把套件設為公開。
 11. **[docker-compose.yml](../../docker-compose.yml) 的 `image:` 是本機建置標籤，但仍必須帶上發布版本。** 它不會發布任何東西——正式映像一律來自 workflow——但漏改會讓 `docker compose up --build` 把本機建置標成舊版本，`v1.3.0-rc.6` 就是這樣留下仍寫著 `v1.3.0-rc.5` 的 Compose 檔。請讓它與 `Cargo.toml`、`Cargo.lock` 保持一致。
+12. **release commit 不帶 pull request 編號。** 主旨必須正好是 `🔖 release: vX.Y.Z`，結尾不加 `(#N)`。不要用 squash merge：本流程會把升版推送到 `master`，或讓 pull request 以 **Rebase and merge** 合併，兩者都會保留主旨；squash merge 會把編號接在主旨後面。
 
 ## 發布檢查清單
 
@@ -120,7 +121,7 @@ git commit -m "🔖 release: v1.2.3"
 git push origin master
 ```
 
-本專案使用 gitmoji 風格的主旨；`🔖 release: vX.Y.Z` 與現有歷史一致。建立標籤前先確認三處一致：
+本專案使用 gitmoji 風格的主旨；`🔖 release: vX.Y.Z` 與現有歷史一致。主旨必須正好是 `🔖 release: vX.Y.Z`，版本後面不接任何東西。升版可直接推送到 `master`，或以 **Rebase and merge** 合併其 pull request；squash merge 會接上 `(#N)`，而 release commit 不能帶編號。建立標籤前先確認三處一致：
 
 ```bash
 grep -m1 '^version' Cargo.toml
