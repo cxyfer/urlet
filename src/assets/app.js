@@ -38,10 +38,31 @@
         });
     }
 
+    /* 螢幕閱讀器看不到按鈕文字的短暫替換，因此另建一個只在需要時才產生的
+       視覺隱藏 live region 來播報結果；樣式以行內方式設定，免去各主題 CSS。 */
+    var liveRegion = null;
+    var liveTimer = null;
+
+    function announce(message) {
+        if (!liveRegion) {
+            liveRegion = document.createElement("div");
+            liveRegion.setAttribute("role", "status");
+            liveRegion.setAttribute("aria-live", "polite");
+            liveRegion.setAttribute("aria-atomic", "true");
+            liveRegion.style.cssText = "position:absolute;width:1px;height:1px;margin:-1px;padding:0;" +
+                "overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0;";
+            document.body.appendChild(liveRegion);
+        }
+        liveRegion.textContent = message;
+        window.clearTimeout(liveTimer);
+        liveTimer = window.setTimeout(function () { liveRegion.textContent = ""; }, 1400);
+    }
+
     function flash(button, message) {
         var original = button.getAttribute("data-label") || button.textContent;
         button.setAttribute("data-label", original);
         button.textContent = message;
+        announce(message);
         window.setTimeout(function () { button.textContent = original; }, 1400);
     }
 

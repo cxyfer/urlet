@@ -278,6 +278,35 @@ async fn wrong_credentials_render_an_error() {
 }
 
 #[tokio::test]
+async fn failed_login_banner_is_an_alert_in_every_design() {
+    let app = TestApp::spawn().await;
+    app.register("user@example.com", "supersecret").await;
+
+    for theme in urlet::services::theme::ALL {
+        let cookie = format!("urlet_theme={}", theme.key());
+        let response = app
+            .send(post_form(
+                "/app/login",
+                "email=user@example.com&password=wrong",
+                Some(&cookie),
+                Some("http://localhost:8080"),
+            ))
+            .await;
+        assert_eq!(response.status, StatusCode::OK, "{}", theme.key());
+        assert!(
+            response.body.contains("Invalid email or password"),
+            "{}",
+            theme.key()
+        );
+        assert!(
+            response.body.contains("role=\"alert\""),
+            "{} 的登入錯誤橫幅缺少 role=\"alert\"",
+            theme.key()
+        );
+    }
+}
+
+#[tokio::test]
 async fn registration_form_creates_and_signs_in() {
     let app = TestApp::spawn().await;
     let response = app

@@ -37,7 +37,7 @@
             <div class="auth-sheet">
                 {% match notice %}
                 {% when Some with (message) %}
-                <div class="alert alert-ok">
+                <div class="alert alert-ok" role="status">
                     <span class="alert-glyph" aria-hidden="true">+</span>
                     <span>{{ message }}</span>
                 </div>
@@ -46,7 +46,7 @@
 
                 {% match error %}
                 {% when Some with (message) %}
-                <div class="alert alert-error">
+                <div class="alert alert-error" role="alert">
                     <span class="alert-glyph" aria-hidden="true">!</span>
                     <span>{{ message }}</span>
                 </div>

@@ -19,7 +19,7 @@
 
 {% match new_code %}
 {% when Some with (code) %}
-<div class="alert alert-info">
+<div class="alert alert-info" role="status">
     <div>
         <strong>{{ lang.t("admin.invites.copy_now") }}</strong> {{ lang.t("admin.invites.copy_once") }}
         <div class="copy-row mt">

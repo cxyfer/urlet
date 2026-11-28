@@ -33,7 +33,7 @@
 <main id="main-content" class="wrap">
     {% match chrome.flash %}
     {% when Some with (flash) %}
-    <div class="alert alert-{{ flash.kind }}" data-flash {% if flash.kind == "ok" %}data-auto-dismiss{% endif %}>
+    <div class="alert alert-{{ flash.kind }}" data-flash {% if flash.kind == "error" %}role="alert"{% else %}role="status"{% endif %} {% if flash.kind == "ok" %}data-auto-dismiss{% endif %}>
         {{ flash.message }}
     </div>
     {% when None %}

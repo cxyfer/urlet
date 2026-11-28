@@ -29,13 +29,13 @@
         <div class="card auth-panel">
             {% match notice %}
             {% when Some with (message) %}
-            <div class="alert alert-ok">{{ message }}</div>
+            <div class="alert alert-ok" role="status">{{ message }}</div>
             {% when None %}
             {% endmatch %}
 
             {% match error %}
             {% when Some with (message) %}
-            <div class="alert alert-error">{{ message }}</div>
+            <div class="alert alert-error" role="alert">{{ message }}</div>
             {% when None %}
             {% endmatch %}
 

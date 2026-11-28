@@ -21,14 +21,14 @@
 
             <div class="auth-card">
                 {% if !registration_open %}
-                <div class="alert alert-warn">
+                <div class="alert alert-warn" role="status">
                     {{ lang.t("auth.register.closed") }}
                 </div>
                 {% endif %}
 
                 {% match error %}
                 {% when Some with (message) %}
-                <div class="alert alert-error">{{ message }}</div>
+                <div class="alert alert-error" role="alert">{{ message }}</div>
                 {% when None %}
                 {% endmatch %}
 

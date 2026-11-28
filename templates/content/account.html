@@ -102,7 +102,7 @@
 
     {% match new_token %}
     {% when Some with (token) %}
-    <div class="alert alert-info">
+    <div class="alert alert-info" role="status">
         <div>
             <strong>{{ lang.t("account.tokens.copy_now") }}</strong> {{ lang.t("account.tokens.copy_once") }}
             <div class="copy-row mt">

@@ -34,7 +34,7 @@
         <div class="span-5">
             <div class="auth-sheet">
                 {% if !registration_open %}
-                <div class="alert alert-warn">
+                <div class="alert alert-warn" role="status">
                     <span class="alert-glyph" aria-hidden="true">!</span>
                     <span>{{ lang.t("auth.register.closed") }}</span>
                 </div>
@@ -42,7 +42,7 @@
 
                 {% match error %}
                 {% when Some with (message) %}
-                <div class="alert alert-error">
+                <div class="alert alert-error" role="alert">
                     <span class="alert-glyph" aria-hidden="true">!</span>
                     <span>{{ message }}</span>
                 </div>
